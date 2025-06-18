@@ -1,0 +1,10 @@
+/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/.venv/lib/python3.10/site-packages/pydantic/_internal/_config.py:373: UserWarning: Valid config keys have changed in V2:
+* 'allow_population_by_field_name' has been renamed to 'validate_by_name'
+* 'schema_extra' has been renamed to 'json_schema_extra'
+  warnings.warn(message, UserWarning)
+/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/.venv/lib/python3.10/site-packages/pydantic/_internal/_config.py:373: UserWarning: Valid config keys have changed in V2:
+* 'schema_extra' has been renamed to 'json_schema_extra'
+  warnings.warn(message, UserWarning)
+[[31m[1merror    [0m] [1mDatabase cursor operation failed[0m [[0m[1m[34mmlb_sharp_betting.db.connection[0m][0m [36merror[0m=[35m'Constraint Error: Duplicate key "id: 1" violates primary key constraint.'[0m
+[[31m[1merror    [0m] [1mDatabase layer demo failed    [0m [[0m[1m[34m__main__[0m][0m [36merror[0m=[35m'Database cursor operation failed: Constraint Error: Duplicate key "id: 1" violates primary key constraint.'[0m
+[[31m[1merror    [0m] [1mPhase 2 Implementation Demo failed[0m [[0m[1m[34m__main__[0m][0m [36merror[0m=[35m'Database cursor operation failed: Constraint Error: Duplicate key "id: 1" violates primary key constraint.'[0m

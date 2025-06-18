@@ -1,0 +1,24 @@
+[database]
+# Database file path
+path = "data/raw/mlb_betting.duckdb"
+
+[schema]
+# Schema name
+name = "splits"
+
+[tables]
+# Main table for MLB betting splits
+mlb_betting_splits = "raw_mlb_betting_splits"
+
+# Legacy table (for backward compatibility)
+legacy_splits = "splits"
+
+[data_sources]
+# Source identifiers
+sbd = "SBD"  # SportsBettingDime
+vsin = "VSIN"  # VSIN
+
+[api]
+# SportsBettingDime API configuration
+sbd_url = "https://srfeeds.sportsbettingdime.com/v2/matchups/mlb/betting-splits"
+sbd_books = ["betmgm", "bet365", "fanatics", "draftkings", "caesars", "fanduel"] 

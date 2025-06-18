@@ -1,0 +1,123 @@
+[project]
+name = "sports-betting-dime-splits"
+version = "0.2.0"
+description = "MLB Sharp Betting Data Analysis System - A modular system for collecting, analyzing, and monitoring sharp betting action"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "duckdb>=1.3.0",
+    "json5>=0.12.0",
+    "mlb-statsapi>=1.9.0",
+    "requests>=2.32.4",
+    "toml>=0.10.2",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
+    "pytz>=2024.1",
+    "pydantic>=2.8.0",
+    "pydantic-settings>=2.4.0",
+    "structlog>=24.4.0",
+    "tenacity>=9.0.0",
+    "httpx>=0.27.0",
+    "click>=8.2.1",
+    "python-dateutil>=2.9.0.post0",
+    "aiohttp>=3.12.13",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-cov>=5.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-mock>=3.14.0",
+    "mypy>=1.11.0",
+    "ruff>=0.6.0",
+    "black>=24.8.0",
+    "pre-commit>=3.8.0",
+    "types-requests>=2.32.0",
+    "types-toml>=0.10.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mlb_sharp_betting"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--cov=src/mlb_sharp_betting",
+    "--cov-report=html",
+    "--cov-report=term-missing",
+    "--cov-fail-under=80",
+    "-v",
+]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "mlb_statsapi.*",
+    "json5.*",
+    "structlog.*",
+]
+ignore_missing_imports = true
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings  
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501", # line too long, handled by black
+    "B008", # do not perform function calls in argument defaults
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

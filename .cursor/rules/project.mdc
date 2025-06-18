@@ -1,0 +1,32 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+[python]
+Use UV over PIP
+- we should always use "uv run" instead of "python" to run programs
+
+Use Ruff to format Python code
+
+
+[stack]
+Python
+DuckDB - not SQLite
+MLB-StatsAPI is available at [mlb_stats_api_endpoints.mdc](mdc:.cursor/rules/mlb_stats_api_endpoints.mdc) if we need official MLB data for games
+
+
+[logistics]
+Always use Context7 to get updated documentation for any tools we are using
+
+When you update one file, if that causes a breaking change in another file, please make the updates
+
+When you make changes to a file 2 times, on the 3rd time you go to make a change: explain in detail why that change is the right change. And evaluate your own statement to see if it makes sense.
+
+From root dir, the project code files are at: ./src/mlb_sharp_betting/
+
+Always use rules files when able, especially [pydantic.mdc](mdc:.cursor/rules/pydantic.mdc)
+
+When we need official data for a baseball game (time, weather, location, lineups), use [mlb_stats_api_endpoints.mdc](mdc:.cursor/rules/mlb_stats_api_endpoints.mdc)
+
+Sign off all messages as General Balls
