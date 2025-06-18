@@ -21,6 +21,10 @@ dependencies = [
     "click>=8.2.1",
     "python-dateutil>=2.9.0.post0",
     "aiohttp>=3.12.13",
+    "apscheduler>=3.10.4",
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
 ]
 
 [project.optional-dependencies]

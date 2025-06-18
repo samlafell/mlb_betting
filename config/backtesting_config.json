@@ -1,0 +1,156 @@
+{
+  "backtesting": {
+    "enabled": true,
+    "schedule": {
+      "daily_run_hour": 2,
+      "daily_run_minute": 0,
+      "timezone": "US/Eastern",
+      "midday_check_hour": 14,
+      "weekly_analysis_day": "monday",
+      "weekly_analysis_hour": 6
+    },
+    "data_quality": {
+      "min_completeness_percent": 95.0,
+      "max_freshness_hours": 6.0,
+      "alert_freshness_hours": 12.0
+    },
+    "statistical_validation": {
+      "confidence_level": 0.95,
+      "min_sample_size_analysis": 20,
+      "min_sample_size_threshold_adjustment": 50,
+      "bootstrap_iterations": 1000,
+      "significance_level": 0.05
+    },
+    "performance_thresholds": {
+      "break_even_win_rate": 0.5238,
+      "profitable_threshold": 0.524,
+      "strong_performance_threshold": 0.55,
+      "excellent_performance_threshold": 0.60,
+      "critical_decline_threshold": 0.45,
+      "win_rate_drop_alert": 0.10
+    },
+    "risk_controls": {
+      "max_threshold_change_per_day": 0.25,
+      "max_daily_recommendations": 5,
+      "cooling_period_days": 14,
+      "min_hours_between_changes": 12,
+      "max_strategy_allocation_change": 0.25,
+      "automatic_suspension_win_rate": 0.45
+    }
+  },
+  "alerts": {
+    "enabled": true,
+    "retention_days": 30,
+    "rate_limit_minutes": 15,
+    "max_active_alerts": 100,
+    "escalation": {
+      "enabled": true,
+      "delay_minutes": 60,
+      "max_escalation_levels": 3
+    },
+    "severity_thresholds": {
+      "critical_consecutive_losses": 7,
+      "high_consecutive_losses": 5,
+      "medium_consecutive_losses": 3,
+      "critical_win_rate_threshold": 0.40,
+      "high_win_rate_threshold": 0.45,
+      "medium_win_rate_threshold": 0.50
+    }
+  },
+  "notifications": {
+    "console": {
+      "enabled": true,
+      "severity_filter": ["MEDIUM", "HIGH", "CRITICAL"]
+    },
+    "email": {
+      "enabled": false,
+      "severity_filter": ["HIGH", "CRITICAL"],
+      "config": {
+        "smtp_server": "",
+        "smtp_port": 587,
+        "username": "",
+        "password": "",
+        "from_email": "",
+        "to_emails": []
+      }
+    },
+    "slack": {
+      "enabled": false,
+      "severity_filter": ["MEDIUM", "HIGH", "CRITICAL"],
+      "config": {
+        "webhook_url": "",
+        "channel": "#betting-alerts",
+        "username": "MLB Betting Bot"
+      }
+    },
+    "webhook": {
+      "enabled": false,
+      "severity_filter": ["HIGH", "CRITICAL"],
+      "config": {
+        "url": "",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "retry_attempts": 3,
+        "retry_delay_seconds": 30
+      }
+    }
+  },
+  "circuit_breaker": {
+    "enabled": true,
+    "max_consecutive_failures": 3,
+    "cooldown_minutes": 60,
+    "failure_threshold_minutes": 5
+  },
+  "reporting": {
+    "daily_report": {
+      "enabled": true,
+      "hour": 8,
+      "minute": 0,
+      "include_charts": false,
+      "store_locally": true,
+      "storage_path": "reports/daily"
+    },
+    "weekly_report": {
+      "enabled": true,
+      "day": "monday",
+      "hour": 6,
+      "minute": 0,
+      "include_trend_analysis": true,
+      "store_locally": true,
+      "storage_path": "reports/weekly"
+    }
+  },
+  "database": {
+    "backup_before_changes": true,
+    "store_backtest_results": true,
+    "retention_days": 365,
+    "performance_schema": "mlb_betting.backtesting"
+  },
+  "strategy_thresholds": {
+    "vsin": {
+      "strong_threshold": 20.0,
+      "moderate_threshold": 15.0,
+      "weak_threshold": 10.0,
+      "file_path": "analysis_scripts/validated_betting_detector.py",
+      "adjustable": true
+    },
+    "sbd": {
+      "moderate_threshold": 25.0,
+      "weak_threshold": 15.0,
+      "file_path": "analysis_scripts/validated_betting_detector.py",
+      "adjustable": true
+    }
+  },
+  "monitoring": {
+    "health_check_interval_minutes": 30,
+    "performance_metrics_retention_days": 90,
+    "log_level": "INFO",
+    "metrics_export": {
+      "enabled": false,
+      "format": "prometheus",
+      "endpoint": "/metrics"
+    }
+  }
+} 

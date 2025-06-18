@@ -1,6 +1,46 @@
-# MLB Betting Splits Data Pipeline
+# 🎯 MLB Sharp Betting Analysis System
 
-A Python-based data pipeline for collecting and analyzing MLB betting splits data from SportsBettingDime and other sources.
+A comprehensive sports betting analysis platform focused on identifying profitable MLB betting opportunities through advanced analytics, sharp action detection, and automated backtesting.
+
+## 🚀 Quick Start - New CLI Structure (v2.0)
+
+The project has been reorganized with a clean CLI structure. All Python scripts have been moved from the root directory into the proper package structure:
+
+### 🔧 CLI Commands
+
+```bash
+# Automated Backtesting System
+uv run -m mlb_sharp_betting.cli.commands.backtesting --mode scheduler
+
+# Comprehensive Analysis Runner  
+uv run -m mlb_sharp_betting.cli.commands.analysis
+
+# Daily Game Updates
+uv run -m mlb_sharp_betting.cli.commands.daily_update
+
+# MLB Betting Scheduler
+uv run -m mlb_sharp_betting.cli.commands.scheduler
+```
+
+### 🔍 Development Utilities
+
+```bash
+# Database Inspection (formerly check_splits.py)
+uv run -m mlb_sharp_betting.utils.database_inspector
+
+# Quick Database Check (formerly quick_check.py)  
+uv run -m mlb_sharp_betting.utils.quick_db_check
+```
+
+### 🧪 Testing
+
+```bash
+# Integration Tests
+uv run -m pytest tests/integration/
+
+# Manual Test Scripts
+uv run -m pytest tests/manual/
+```
 
 ## Project Structure
 

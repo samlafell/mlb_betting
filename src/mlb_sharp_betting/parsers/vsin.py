@@ -15,7 +15,6 @@ from .base import BaseParser, ValidationResult, ValidationConfig
 from ..models.splits import BettingSplit, SplitType, BookType, DataSource
 from ..models.game import Team
 from ..core.exceptions import ValidationError
-from ..services.mlb_api_service import MLBStatsAPIService
 
 logger = structlog.get_logger(__name__)
 
@@ -40,8 +39,8 @@ class VSINParser(BaseParser):
             validation_config=validation_config
         )
         
-        # Initialize MLB Stats API service for official game IDs
-        self.mlb_api_service = MLBStatsAPIService()
+        # MLB Stats API service will be initialized lazily to avoid circular imports
+        self._mlb_api_service = None
         
         # Field mappings for different VSIN table formats
         # Based on ACTUAL VSIN scraper output - updated after testing scraper
@@ -61,8 +60,8 @@ class VSINParser(BaseParser):
             'under_bets_pct': ['under bets %'],
             
             # Spread bet percentage fields
-            'spread_home_bets_pct': ['spread bets %'],
-            'spread_away_bets_pct': ['spread bets away %'],
+            'spread_home_bets_pct': ['home spread bets %', 'spread bets %'],
+            'spread_away_bets_pct': ['away spread bets %', 'spread bets away %'],
             
             # Stake/Handle percentage fields - EXACT match from scraper output
             'home_stake_pct': ['home handle %'],
@@ -71,8 +70,8 @@ class VSINParser(BaseParser):
             'under_stake_pct': ['under handle %'],
             
             # Spread handle fields - EXACT match from scraper output
-            'spread_home_stake_pct': ['spread handle %'],
-            'spread_away_stake_pct': ['spread handle away %'],
+            'spread_home_stake_pct': ['home spread handle %', 'spread handle %'],
+            'spread_away_stake_pct': ['away spread handle %', 'spread handle away %'],
             
             # Count fields (not in current scraper output but keep for future)
             'home_bets_count': ['home bets', 'home count'],
@@ -85,6 +84,13 @@ class VSINParser(BaseParser):
     def target_model_class(self) -> Type[BettingSplit]:
         """Get the target model class for this parser."""
         return BettingSplit
+    
+    def _get_mlb_api_service(self):
+        """Lazy initialization of MLB API service to avoid circular imports."""
+        if self._mlb_api_service is None:
+            from ..services.mlb_api_service import MLBStatsAPIService
+            self._mlb_api_service = MLBStatsAPIService()
+        return self._mlb_api_service
     
     async def parse_raw_data(self, raw_data: Dict[str, Any]) -> Optional[BettingSplit]:
         """
@@ -183,7 +189,7 @@ class VSINParser(BaseParser):
                 for game_key, game_info in unique_games.items():
                     try:
                         # Get comprehensive game data from MLB API
-                        mlb_game_data = self.mlb_api_service.get_game_data(
+                        mlb_game_data = self._get_mlb_api_service().get_game_data(
                             home_team=game_info['home_team'],
                             away_team=game_info['away_team'],
                             estimated_datetime=game_info['game_datetime']

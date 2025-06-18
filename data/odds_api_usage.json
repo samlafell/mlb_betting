@@ -1,0 +1,12 @@
+{
+  "month": "2025-06",
+  "used": 0,
+  "calls": [
+    {
+      "timestamp": "2025-06-18T11:29:24.915310",
+      "cost": 0,
+      "endpoint": "sports/baseball_mlb/events",
+      "markets": []
+    }
+  ]
+}

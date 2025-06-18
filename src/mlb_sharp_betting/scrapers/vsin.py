@@ -120,12 +120,9 @@ class VSINScraper(HTMLScraper):
                 f"Available sportsbooks: {', '.join(self.SPORTSBOOK_VIEWS.keys())}"
             )
         
-        # Build URL with VSIN format
-        # DK uses base URL without view parameter, others use ?view={sportsbook}
-        if sportsbook_param == 'dk':
-            url = f"{self.base_url}/{sport_param}/betting-splits/"
-        else:
-            url = f"{self.base_url}/{sport_param}/betting-splits/?view={sportsbook_param}"
+        # Build URL with updated VSIN format from vsin_new_url_and_info.md
+        # Both DK and Circa now use the format: /betting-splits/?bookid={book}&view={sport}
+        url = f"{self.base_url}/betting-splits/?bookid={sportsbook_param}&view={sport_param}"
         
         self.logger.debug("Built VSIN URL", 
                          sport=sport, sportsbook=sportsbook, url=url)
@@ -453,10 +450,17 @@ class VSINScraper(HTMLScraper):
         if any(cls in str(table_classes).lower() for cls in betting_classes):
             return True
         
+        # Check for links to team pages (strong indicator of betting table)
+        team_links = table.find_all('a', href=True)
+        mlb_team_links = [link for link in team_links if '/mlb/teams/' in link.get('href', '')]
+        if len(mlb_team_links) >= 4:  # Should have multiple team links
+            return True
+        
         # Check table content for betting-related terms and team names
         table_text = table.get_text().lower()
         betting_terms = ['spread', 'total', 'moneyline', 'bets', 'stake', '%', 'handle']
-        team_indicators = ['yankees', 'dodgers', 'red sox', 'giants', 'cubs', 'cardinals']
+        team_indicators = ['yankees', 'dodgers', 'red sox', 'giants', 'cubs', 'cardinals', 
+                          'phillies', 'marlins', 'pirates', 'tigers']
         
         has_betting_terms = any(term in table_text for term in betting_terms)
         has_team_data = any(team in table_text for team in team_indicators)
@@ -491,13 +495,14 @@ class VSINScraper(HTMLScraper):
         sportsbook: str
     ) -> Optional[Dict[str, Any]]:
         """
-        Parse a single betting data row from VSIN freezetable.
+        Parse a single betting data row from VSIN table.
         
-        VSIN structure:
-        - Cell 1: "TeamATeamBHistory..." with team links
-        - Cell 2: Moneyline odds like "-175+143" 
-        - Cell 3: Handle percentages like "87%13%-"
-        - Additional cells contain more betting data
+        Updated structure based on vsin_new_url_and_info.md:
+        - Cell 0: Team names and links with <hr> separator
+        - Cell 1: Moneyline odds (away/home) with <hr> separator
+        - Cell 2: Handle percentages with <hr> separator  
+        - Cell 3: Bet percentages with <hr> separator
+        - Additional cells for spreads, totals, etc.
         
         Args:
             row: Table row element
@@ -511,68 +516,138 @@ class VSINScraper(HTMLScraper):
         try:
             cells = row.find_all(['td', 'th'])
             
-            # Skip header rows (first two rows have different structure)
-            if len(cells) < 100:  # Data rows have 250+ cells
+            # Skip header rows - data rows should have at least 10 cells
+            if len(cells) < 10:
                 return None
             
-            # Extract team information from first cell
+            # Extract team information from first cell (cell 0)
             first_cell = cells[0]
-            team_links = first_cell.find_all('a')
+            team_links = first_cell.find_all('a', href=True)
             
-            # Find team names from links (skip empty links)
+            # Find team names from links that have "/mlb/teams/" in href
             team_names = []
             for link in team_links:
-                link_text = link.get_text(strip=True)
-                if link_text and len(link_text) > 3 and link_text not in ['History', 'VSiN Picks']:
-                    # Filter out non-team links
-                    if not any(keyword in link_text.lower() for keyword in ['history', 'pick', 'vsin']):
+                href = link.get('href', '')
+                if '/mlb/teams/' in href:
+                    link_text = link.get_text(strip=True)
+                    if link_text and len(link_text) > 3:
                         team_names.append(link_text)
             
             if len(team_names) < 2:
+                self.logger.debug("Could not find two team names", team_names=team_names)
                 return None
             
-            away_team = team_names[0]
-            home_team = team_names[1]
+            away_team = team_names[0]  # First team is away
+            home_team = team_names[1]  # Second team is home
             
-            # Extract moneyline odds from second cell
+            # Extract moneyline odds from second cell (cell 1)
             moneyline_cell = cells[1]
-            moneyline_links = moneyline_cell.find_all('a')
             
+            # Look for odds within divs or links, separated by <hr>
             away_line = None
             home_line = None
             
-            if len(moneyline_links) >= 2:
-                away_line = moneyline_links[0].get_text(strip=True)
-                home_line = moneyline_links[1].get_text(strip=True)
+            # Try to find odds in links first (for DK)
+            odds_links = moneyline_cell.find_all('a')
+            if len(odds_links) >= 2:
+                away_line = odds_links[0].get_text(strip=True)
+                home_line = odds_links[1].get_text(strip=True)
+            else:
+                # Try to find odds in divs (for Circa)
+                odds_divs = moneyline_cell.find_all('div', class_='scorebox_highlight')
+                if len(odds_divs) >= 2:
+                    away_line = odds_divs[0].get_text(strip=True)
+                    home_line = odds_divs[1].get_text(strip=True)
             
-            # Extract handle percentages from third cell
+            # Extract handle percentages from third cell (cell 2)
             handle_cell = cells[2]
-            handle_text = handle_cell.get_text(strip=True)
+            handle_divs = handle_cell.find_all('div')
             
-            # Parse handle percentages (format: "87%13%-")
             import re
-            handle_percentages = re.findall(r'(\d+)%', handle_text)
-            
             away_handle = None
             home_handle = None
             
-            if len(handle_percentages) >= 2:
-                home_handle = f"{handle_percentages[0]}%"  # First percentage is usually home
-                away_handle = f"{handle_percentages[1]}%"  # Second is away
+            if len(handle_divs) >= 2:
+                # First div is typically away team, second is home team
+                away_handle_text = handle_divs[0].get_text(strip=True)
+                home_handle_text = handle_divs[1].get_text(strip=True)
+                
+                away_handle_match = re.search(r'(\d+)%', away_handle_text)
+                home_handle_match = re.search(r'(\d+)%', home_handle_text)
+                
+                if away_handle_match:
+                    away_handle = away_handle_match.group(1) + '%'
+                if home_handle_match:
+                    home_handle = home_handle_match.group(1) + '%'
             
-            # Look for bet percentages in subsequent cells
+            # Extract bet percentages from fourth cell (cell 3)
+            bet_cell = cells[3] if len(cells) > 3 else None
             away_bets = None
             home_bets = None
             
-            # Check cells 3-10 for bet percentages
-            for i in range(3, min(10, len(cells))):
-                cell_text = cells[i].get_text(strip=True)
-                if '%' in cell_text:
-                    bet_percentages = re.findall(r'(\d+)%', cell_text)
-                    if len(bet_percentages) >= 2:
-                        home_bets = f"{bet_percentages[0]}%"
-                        away_bets = f"{bet_percentages[1]}%"
-                        break
+            if bet_cell:
+                bet_divs = bet_cell.find_all('div')
+                if len(bet_divs) >= 2:
+                    away_bets_text = bet_divs[0].get_text(strip=True)
+                    home_bets_text = bet_divs[1].get_text(strip=True)
+                    
+                    away_bets_match = re.search(r'(\d+)%', away_bets_text)
+                    home_bets_match = re.search(r'(\d+)%', home_bets_text)
+                    
+                    if away_bets_match:
+                        away_bets = away_bets_match.group(1) + '%'
+                    if home_bets_match:
+                        home_bets = home_bets_match.group(1) + '%'
+            
+            # Extract spread/run line data from eighth cell (cell 7, index 7)
+            # Based on HTML structure: RL column contains spread like -1.5/+1.5
+            spread_cell = cells[7] if len(cells) > 7 else None
+            away_spread = None
+            home_spread = None
+            
+            if spread_cell:
+                spread_divs = spread_cell.find_all('div', class_='scorebox_highlight')
+                if len(spread_divs) >= 2:
+                    away_spread = spread_divs[0].get_text(strip=True)
+                    home_spread = spread_divs[1].get_text(strip=True)
+            
+            # Extract spread handle percentages from ninth cell (cell 8, index 8)
+            spread_handle_cell = cells[8] if len(cells) > 8 else None
+            away_spread_handle = None
+            home_spread_handle = None
+            
+            if spread_handle_cell:
+                spread_handle_divs = spread_handle_cell.find_all('div')
+                if len(spread_handle_divs) >= 2:
+                    away_spread_handle_text = spread_handle_divs[0].get_text(strip=True)
+                    home_spread_handle_text = spread_handle_divs[1].get_text(strip=True)
+                    
+                    away_spread_handle_match = re.search(r'(\d+)%', away_spread_handle_text)
+                    home_spread_handle_match = re.search(r'(\d+)%', home_spread_handle_text)
+                    
+                    if away_spread_handle_match:
+                        away_spread_handle = away_spread_handle_match.group(1) + '%'
+                    if home_spread_handle_match:
+                        home_spread_handle = home_spread_handle_match.group(1) + '%'
+            
+            # Extract spread bet percentages from tenth cell (cell 9, index 9)
+            spread_bet_cell = cells[9] if len(cells) > 9 else None
+            away_spread_bets = None
+            home_spread_bets = None
+            
+            if spread_bet_cell:
+                spread_bet_divs = spread_bet_cell.find_all('div')
+                if len(spread_bet_divs) >= 2:
+                    away_spread_bets_text = spread_bet_divs[0].get_text(strip=True)
+                    home_spread_bets_text = spread_bet_divs[1].get_text(strip=True)
+                    
+                    away_spread_bets_match = re.search(r'(\d+)%', away_spread_bets_text)
+                    home_spread_bets_match = re.search(r'(\d+)%', home_spread_bets_text)
+                    
+                    if away_spread_bets_match:
+                        away_spread_bets = away_spread_bets_match.group(1) + '%'
+                    if home_spread_bets_match:
+                        home_spread_bets = home_spread_bets_match.group(1) + '%'
             
             # Create betting data structure
             betting_data = {
@@ -603,8 +678,33 @@ class VSINScraper(HTMLScraper):
             if home_bets:
                 betting_data['Home Bets %'] = home_bets
             
+            # Add spread data if available
+            if away_spread:
+                betting_data['Away Spread'] = away_spread
+            if home_spread:
+                betting_data['Home Spread'] = home_spread
+            
+            # Add spread handle data if available
+            if away_spread_handle:
+                betting_data['Away Spread Handle %'] = away_spread_handle
+            if home_spread_handle:
+                betting_data['Home Spread Handle %'] = home_spread_handle
+            
+            # Add spread bet percentage data if available
+            if away_spread_bets:
+                betting_data['Away Spread Bets %'] = away_spread_bets
+            if home_spread_bets:
+                betting_data['Home Spread Bets %'] = home_spread_bets
+            
             # Only return if we have meaningful betting data
-            has_meaningful_data = any([away_line, home_line, away_handle, home_handle])
+            has_meaningful_data = any([away_line, home_line, away_handle, home_handle, away_spread, home_spread])
+            
+            if has_meaningful_data:
+                self.logger.debug("Successfully parsed VSIN row", 
+                                away_team=away_team, home_team=home_team,
+                                away_line=away_line, home_line=home_line,
+                                away_handle=away_handle, home_handle=home_handle,
+                                away_spread=away_spread, home_spread=home_spread)
             
             return betting_data if has_meaningful_data else None
             

@@ -43,8 +43,10 @@ class DatabaseManager:
     def __init__(self) -> None:
         """Initialize database manager."""
         if hasattr(self, "_initialized"):
+            logger.info("Database manager already initialized, skipping")
             return
             
+        logger.info("Initializing new database manager instance")
         self._connection: Optional[duckdb.DuckDBPyConnection] = None
         self._connection_lock = threading.RLock()
         self._initialized = True
@@ -57,6 +59,15 @@ class DatabaseManager:
     def _init_connection(self) -> None:
         """Initialize the single DuckDB connection."""
         try:
+            # Close any existing connection first
+            if self._connection is not None:
+                logger.info("Closing existing connection before creating new one")
+                try:
+                    self._connection.close()
+                except Exception as close_error:
+                    logger.warning("Error closing existing connection", error=str(close_error))
+                self._connection = None
+            
             # Hardcoded database path to bypass configuration issues
             db_path = Path("data/raw/mlb_betting.duckdb")
             logger.info("Database path being used", path=str(db_path))
@@ -64,21 +75,15 @@ class DatabaseManager:
             # Ensure database directory exists
             db_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Create the single connection with basic configuration
-            config = {
-                'threads': 4,  # Use 4 threads by default
-                'memory_limit': '1GB'  # Set a reasonable memory limit
-            }
-            
+            # Create the single connection with minimal configuration
+            # Use minimal config to avoid conflicts with existing connections
             self._connection = duckdb.connect(
-                database=str(db_path),
-                config=config
+                database=str(db_path)
             )
             
             logger.info(
                 "DuckDB connection established",
-                database_path=str(db_path),
-                config=config
+                database_path=str(db_path)
             )
         except Exception as e:
             logger.error("Failed to initialize DuckDB connection", error=str(e))
@@ -369,12 +374,21 @@ class DatabaseManager:
     def __del__(self) -> None:
         """Cleanup on deletion."""
         self.close()
+    
+    @classmethod
+    def reset_singleton(cls) -> None:
+        """Reset the singleton instance. Use with caution."""
+        with cls._lock:
+            if cls._instance is not None:
+                try:
+                    cls._instance.close()
+                except Exception as e:
+                    logger.warning("Error closing connection during reset", error=str(e))
+            cls._instance = None
+            logger.info("Database manager singleton reset")
 
 
 # Module-level functions for convenience
-_db_manager: Optional[DatabaseManager] = None
-
-
 def get_db_manager() -> DatabaseManager:
     """
     Get the singleton database manager instance.
@@ -382,10 +396,7 @@ def get_db_manager() -> DatabaseManager:
     Returns:
         The database manager instance
     """
-    global _db_manager
-    if _db_manager is None:
-        _db_manager = DatabaseManager()
-    return _db_manager
+    return DatabaseManager()
 
 
 def get_db_connection() -> Any:

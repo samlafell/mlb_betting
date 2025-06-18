@@ -196,7 +196,7 @@ class MLBStatsAPIService:
     def find_game_by_teams(self, home_team: str, away_team: str, 
                           target_date: Optional[date] = None) -> Optional[MLBGameInfo]:
         """
-        Find an MLB game by team names.
+        Find an MLB game by team names, prioritizing upcoming games over completed ones.
         
         Args:
             home_team: Home team name from betting data
@@ -209,11 +209,11 @@ class MLBStatsAPIService:
         if target_date is None:
             target_date = date.today()
         
-        # Also search the day before and after to handle timezone differences
+        # Search today first, then yesterday and tomorrow to handle timezone differences
         search_dates = [
-            target_date - timedelta(days=1),
-            target_date,
-            target_date + timedelta(days=1)
+            target_date,          # Today first (most likely for upcoming games)
+            target_date + timedelta(days=1),  # Tomorrow 
+            target_date - timedelta(days=1),  # Yesterday (last resort for completed games)
         ]
         
         # Normalize team names
@@ -226,6 +226,9 @@ class MLBStatsAPIService:
                         home_team_norm=home_team_norm,
                         away_team_norm=away_team_norm,
                         search_dates=[d.strftime('%Y-%m-%d') for d in search_dates])
+        
+        # Collect all matching games, then prioritize by status
+        all_matches = []
         
         for search_date in search_dates:
             games = self.get_games_for_date(search_date)
@@ -265,11 +268,43 @@ class MLBStatsAPIService:
                         match_found = True
                 
                 if match_found:
-                    self.logger.info("Found matching game", 
-                                   game_pk=game.game_pk,
-                                   matchup=f"{game.away_team} @ {game.home_team}",
-                                   game_date=game.game_date.strftime('%Y-%m-%d %H:%M:%S'))
-                    return game
+                    all_matches.append(game)
+        
+        # If we found matches, prioritize by status and date
+        if all_matches:
+            # Define status priority (upcoming games first)
+            status_priority = {
+                'Pre-Game': 1,
+                'Scheduled': 2, 
+                'In Progress': 3,
+                'Warmup': 4,
+                'Delayed': 5,
+                'Final': 10,  # Completed games last
+                'Game Over': 10,
+                'Postponed': 15,
+                'Cancelled': 20
+            }
+            
+            # Sort by status priority, then by date (future dates first for upcoming games)
+            def sort_key(game):
+                status_rank = status_priority.get(game.status, 99)
+                # For upcoming games, prefer future dates; for completed games, prefer recent dates
+                if status_rank < 10:  # Upcoming game
+                    date_rank = (date.today() - game.game_date.date()).days  # Negative for future
+                else:  # Completed game
+                    date_rank = abs((date.today() - game.game_date.date()).days)  # Positive for past
+                return (status_rank, date_rank)
+            
+            all_matches.sort(key=sort_key)
+            best_match = all_matches[0]
+            
+            self.logger.info("Found matching game", 
+                           game_pk=best_match.game_pk,
+                           matchup=f"{best_match.away_team} @ {best_match.home_team}",
+                           game_date=best_match.game_date.strftime('%Y-%m-%d %H:%M:%S'),
+                           status=best_match.status,
+                           total_matches=len(all_matches))
+            return best_match
         
         self.logger.warning("No matching game found", 
                           home_team=home_team,

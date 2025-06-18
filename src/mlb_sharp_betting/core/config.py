@@ -294,6 +294,13 @@ class Settings(BaseSettings):
         env="SHARP_MINIMUM_STAKE"
     )
     
+    # The Odds API settings
+    odds_api_key: Optional[str] = Field(
+        default=None,
+        description="The Odds API key for retrieving betting odds",
+        env="ODDS_API_KEY"
+    )
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

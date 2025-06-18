@@ -1,0 +1,44 @@
+/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/.venv/lib/python3.10/site-packages/pydantic/_internal/_config.py:373: UserWarning: Valid config keys have changed in V2:
+* 'schema_extra' has been renamed to 'json_schema_extra'
+  warnings.warn(message, UserWarning)
+/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/.venv/lib/python3.10/site-packages/pydantic/_internal/_config.py:373: UserWarning: Valid config keys have changed in V2:
+* 'allow_population_by_field_name' has been renamed to 'validate_by_name'
+  warnings.warn(message, UserWarning)
+🏈 MLB Betting Analysis Scheduler
+==================================================
+2025-06-18 17:09:01 [info     ] Starting MLB betting scheduler service=scheduler
+2025-06-18 17:09:01 [info     ] Scheduler started successfully jobs_count=2 service=scheduler
+🚀 Scheduler started successfully!
+
+📋 Schedule:
+   🕐 Hourly data collection: Every hour at :00
+   🌅 Daily setup: 6:00 AM EST (gets today's games)
+   ⚾ Game alerts: 5 minutes before each game
+
+💡 Notifications will appear in this console
+   You can also integrate with Slack/Discord/email later
+
+🎯 Your betting analysis will run:
+   • Every hour for general updates
+   • 5 minutes before each game for real-time analysis
+
+Press Ctrl+C to stop the scheduler...
+==================================================
+
+📊 Initial Status: 2 jobs scheduled
+2025-06-18 17:09:01 [info     ] Fetching MLB games             date=2025-06-18 service=mlb_stats_api
+2025-06-18 17:09:01 [info     ] Successfully fetched MLB games date=2025-06-18 games_count=15 service=mlb_stats_api
+2025-06-18 17:09:01 [info     ] Scheduled game alert           alert_time=datetime.datetime(2025, 6, 18, 22, 35, tzinfo=datetime.timezone.utc) game='Philadelphia Phillies @ Miami Marlins' game_time=datetime.datetime(2025, 6, 18, 22, 40, tzinfo=datetime.timezone.utc) service=scheduler
+2025-06-18 17:09:01 [info     ] Scheduled game alert           alert_time=datetime.datetime(2025, 6, 18, 22, 40, tzinfo=datetime.timezone.utc) game='Colorado Rockies @ Washington Nationals' game_time=datetime.datetime(2025, 6, 18, 22, 45, tzinfo=datetime.timezone.utc) service=scheduler
+2025-06-18 17:09:01 [info     ] Scheduled game alert           alert_time=datetime.datetime(2025, 6, 18, 23, 0, tzinfo=datetime.timezone.utc) game='Los Angeles Angels @ New York Yankees' game_time=datetime.datetime(2025, 6, 18, 23, 5, tzinfo=datetime.timezone.utc) service=scheduler
+2025-06-18 17:09:01 [info     ] Scheduled game alert           alert_time=datetime.datetime(2025, 6, 18, 23, 2, tzinfo=datetime.timezone.utc) game='Arizona Diamondbacks @ Toronto Blue Jays' game_time=datetime.datetime(2025, 6, 18, 23, 7, tzinfo=datetime.timezone.utc) service=scheduler
+2025-06-18 17:09:01 [info     ] Scheduled game alert           alert_time=datetime.datetime(2025, 6, 18, 23, 5, tzinfo=datetime.timezone.utc) game='Minnesota Twins @ Cincinnati Reds' game_time=datetime.datetime(2025, 6, 18, 23, 10, tzinfo=datetime.timezone.utc) service=scheduler
+2025-06-18 17:09:01 [info     ] Scheduled game alert           alert_time=datetime.datetime(2025, 6, 18, 23, 10, tzinfo=datetime.timezone.utc) game='New York Mets @ Atlanta Braves' game_time=datetime.datetime(2025, 6, 18, 23, 15, tzinfo=datetime.timezone.utc) service=scheduler
+2025-06-18 17:09:01 [info     ] Scheduled game alert           alert_time=datetime.datetime(2025, 6, 18, 23, 30, tzinfo=datetime.timezone.utc) game='Baltimore Orioles @ Tampa Bay Rays' game_time=datetime.datetime(2025, 6, 18, 23, 35, tzinfo=datetime.timezone.utc) service=scheduler
+2025-06-18 17:09:01 [info     ] Scheduled game alert           alert_time=datetime.datetime(2025, 6, 18, 23, 35, tzinfo=datetime.timezone.utc) game='St. Louis Cardinals @ Chicago White Sox' game_time=datetime.datetime(2025, 6, 18, 23, 40, tzinfo=datetime.timezone.utc) service=scheduler
+2025-06-18 17:09:01 [info     ] Scheduled game alert           alert_time=datetime.datetime(2025, 6, 19, 0, 0, tzinfo=datetime.timezone.utc) game='Kansas City Royals @ Texas Rangers' game_time=datetime.datetime(2025, 6, 19, 0, 5, tzinfo=datetime.timezone.utc) service=scheduler
+2025-06-18 17:09:01 [info     ] Scheduled game alert           alert_time=datetime.datetime(2025, 6, 19, 0, 0, tzinfo=datetime.timezone.utc) game='Milwaukee Brewers @ Chicago Cubs' game_time=datetime.datetime(2025, 6, 19, 0, 5, tzinfo=datetime.timezone.utc) service=scheduler
+2025-06-18 17:09:01 [info     ] Scheduled game alert           alert_time=datetime.datetime(2025, 6, 19, 1, 40, tzinfo=datetime.timezone.utc) game='Cleveland Guardians @ San Francisco Giants' game_time=datetime.datetime(2025, 6, 19, 1, 45, tzinfo=datetime.timezone.utc) service=scheduler
+2025-06-18 17:09:01 [info     ] Scheduled game alert           alert_time=datetime.datetime(2025, 6, 19, 2, 0, tzinfo=datetime.timezone.utc) game='Houston Astros @ Athletics' game_time=datetime.datetime(2025, 6, 19, 2, 5, tzinfo=datetime.timezone.utc) service=scheduler
+2025-06-18 17:09:01 [info     ] Scheduled game alert           alert_time=datetime.datetime(2025, 6, 19, 2, 5, tzinfo=datetime.timezone.utc) game='San Diego Padres @ Los Angeles Dodgers' game_time=datetime.datetime(2025, 6, 19, 2, 10, tzinfo=datetime.timezone.utc) service=scheduler
+2025-06-18 17:09:01 [info     ] Game alerts scheduled for today alerts_scheduled=13 games_found=15 service=scheduler

@@ -149,7 +149,7 @@ def analyze():
             cursor.execute("""
                 SELECT 
                     COUNT(*) as total_splits,
-                    SUM(CASE WHEN sharp_action = TRUE THEN 1 ELSE 0 END) as sharp_splits,
+                    SUM(CASE WHEN sharp_action IS NOT NULL AND sharp_action != '' THEN 1 ELSE 0 END) as sharp_splits,
                     AVG(ABS(home_or_over_bets_percentage - home_or_over_stake_percentage)) as avg_diff
                 FROM splits.raw_mlb_betting_splits
             """)
@@ -168,9 +168,10 @@ def analyze():
             cursor.execute("""
                 SELECT game_id, home_team, away_team, split_type,
                        home_or_over_bets_percentage, home_or_over_stake_percentage,
-                       ABS(home_or_over_bets_percentage - home_or_over_stake_percentage) as diff
+                       ABS(home_or_over_bets_percentage - home_or_over_stake_percentage) as diff,
+                       sharp_action
                 FROM splits.raw_mlb_betting_splits
-                WHERE sharp_action = TRUE
+                WHERE sharp_action IS NOT NULL AND sharp_action != ''
                 ORDER BY diff DESC
                 LIMIT 5
             """)
@@ -180,7 +181,7 @@ def analyze():
             if sharp_games:
                 click.echo("\n🔥 Top Sharp Action Games:")
                 for game in sharp_games:
-                    click.echo(f"  {game[1]} vs {game[2]} ({game[3]}): {game[6]:.1f}% difference")
+                    click.echo(f"  {game[1]} vs {game[2]} ({game[3]}): {game[6]:.1f}% difference - Sharp: {game[7]}")
             
     except Exception as e:
         click.echo(f"❌ Analysis failed: {e}")

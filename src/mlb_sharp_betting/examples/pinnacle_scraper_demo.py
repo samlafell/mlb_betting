@@ -1,149 +1,151 @@
 """
-Pinnacle Scraper Demo
+Demo script for Pinnacle scraper using the new three-step approach.
 
-This demo shows how to use the new Pinnacle scraper to extract 
-essential MLB betting data from Pinnacle's JSON endpoints.
+This script demonstrates how to use the restructured PinnacleScraper that:
+1. Gets matchup IDs from the league endpoint
+2. Gets team info from matchup details endpoints  
+3. Gets market data (moneyline, total, spread only) from markets endpoints
+
+Run with: uv run pinnacle_scraper_demo.py
 """
 
 import asyncio
-import json
 from datetime import datetime
-import structlog
-
-from mlb_sharp_betting.scrapers.pinnacle import PinnacleScraper
-from mlb_sharp_betting.models.game import Team
-
-# Configure logging
-structlog.configure(
-    processors=[
-        structlog.stdlib.filter_by_level,
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
-        structlog.stdlib.PositionalArgumentsFormatter(),
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
-        structlog.processors.UnicodeDecoder(),
-        structlog.processors.JSONRenderer()
-    ],
-    context_class=dict,
-    logger_factory=structlog.stdlib.LoggerFactory(),
-    wrapper_class=structlog.stdlib.BoundLogger,
-    cache_logger_on_first_use=True,
-)
-
-logger = structlog.get_logger()
+from ..scrapers.pinnacle import PinnacleScraper
+from ..models.game import Team
 
 
 async def demo_pinnacle_scraper():
-    """Demonstrate the Pinnacle scraper functionality."""
-    print("🏟️  Pinnacle Scraper Demo")
-    print("=" * 50)
+    """Demonstrate the new Pinnacle scraper functionality."""
+    print("🏟️  Pinnacle MLB Scraper Demo (New 3-Step Approach)")
+    print("=" * 60)
     
-    # Initialize the scraper
     scraper = PinnacleScraper()
     
+    # Demo 1: Get all current MLB matchups and markets
+    print("\n📊 Step 1: Getting all MLB matchups with team info and markets...")
+    
     try:
-        async with scraper:
-            print("\n📊 Scraping all current MLB betting data from Pinnacle...")
+        result = await scraper.scrape()
+        
+        print(f"\n✅ Scraping Results:")
+        print(f"   Success: {result.success}")
+        print(f"   Complete Matchups: {len(result.data)}")
+        print(f"   Total Requests: {result.request_count}")
+        print(f"   Response Time: {result.response_time_ms:.1f}ms")
+        print(f"   Avg Time per Request: {result.response_time_ms/result.request_count:.1f}ms")
+        
+        if result.errors:
+            print(f"   Errors: {len(result.errors)}")
+            for error in result.errors[:3]:  # Show first 3 errors
+                print(f"     - {error}")
+        
+        # Show sample data structure
+        if result.data:
+            print(f"\n📋 Sample Matchup Data Structure:")
+            sample_matchup = result.data[0]
+            print(f"   Matchup ID: {sample_matchup.get('matchup_id')}")
+            print(f"   Home Team: {sample_matchup.get('home_team')}")
+            print(f"   Away Team: {sample_matchup.get('away_team')}")
+            print(f"   Start Time: {sample_matchup.get('start_time')}")
+            print(f"   Markets Count: {len(sample_matchup.get('markets', []))}")
             
-            # Scrape all current MLB data
-            result = await scraper.scrape()
+            # Show market types
+            market_types = {}
+            for matchup in result.data:
+                for market in matchup.get('markets', []):
+                    market_type = market.get('type', 'unknown')
+                    market_types[market_type] = market_types.get(market_type, 0) + 1
             
-            print(f"✅ Scraping completed!")
-            print(f"   Success: {result.success}")
-            print(f"   Markets found: {result.data_count}")
-            print(f"   Errors: {result.error_count}")
-            print(f"   Response time: {result.response_time_ms:.2f}ms")
-            print(f"   Requests made: {result.request_count}")
+            print(f"\n📈 Market Distribution:")
+            for market_type, count in sorted(market_types.items()):
+                print(f"   {market_type.title()}: {count} markets")
             
-            if result.has_data:
-                print("\n📈 Sample Market Data:")
-                # Show first few markets
-                for i, market in enumerate(result.data[:3]):
-                    print(f"\n   Market {i+1}:")
-                    print(f"     Type: {market.get('market_type', 'N/A')}")
-                    print(f"     Teams: {market.get('teams', {})}")
-                    print(f"     Status: {market.get('status', 'N/A')}")
-                    
-                    # Show prices
-                    prices = market.get('prices', [])
-                    if prices:
-                        print(f"     Prices:")
-                        for price in prices:
-                            print(f"       {price.get('designation', 'N/A')}: {price.get('price', 'N/A')}")
-                    
-                    # Show line value if available
-                    if 'line_value' in market:
-                        print(f"     Line: {market['line_value']}")
-                    
-                    # Show limits if available
-                    limits = market.get('limits', [])
-                    if limits:
-                        print(f"     Limits:")
-                        for limit in limits:
-                            print(f"       {limit.get('type', 'N/A')}: ${limit.get('amount', 'N/A')}")
-            
-            if result.error_count > 0:
-                print(f"\n⚠️  Errors encountered:")
-                for error in result.errors:
-                    print(f"   - {error}")
-            
-            # Demonstrate team-specific scraping
-            print(f"\n🎯 Scraping specific team matchup...")
-            print(f"   Looking for: Houston Astros @ Oakland Athletics")
-            
-            team_result = await scraper.scrape_team_matchup(Team.HOU, Team.OAK)
-            
-            print(f"✅ Team-specific scraping completed!")
-            print(f"   Success: {team_result.success}")
-            print(f"   Markets found: {team_result.data_count}")
-            
-            if team_result.has_data:
-                print(f"\n📊 Team Matchup Markets:")
-                for market in team_result.data:
-                    print(f"   - {market.get('market_type', 'N/A').title()}")
-                    prices = market.get('prices', [])
-                    for price in prices:
-                        print(f"     {price.get('designation', 'N/A')}: {price.get('price', 'N/A')}")
-            else:
-                print(f"   No markets found for this specific matchup")
-            
-            # Show scraper metrics
-            print(f"\n📈 Scraper Performance Metrics:")
-            metrics = scraper.get_metrics()
-            print(f"   Total requests: {metrics['total_requests']}")
-            print(f"   Failed requests: {metrics['failed_requests']}")
-            print(f"   Success rate: {metrics['success_rate']:.2%}")
-            print(f"   Avg response time: {metrics['average_response_time_ms']:.2f}ms")
-            
+            # Show a detailed market example
+            print(f"\n💰 Sample Market Details:")
+            for matchup in result.data[:3]:  # Check first few matchups
+                for market in matchup.get('markets', []):
+                    if market.get('type') == 'moneyline':
+                        print(f"   Market Type: {market.get('type').title()}")
+                        print(f"   Status: {market.get('status', 'unknown')}")
+                        print(f"   Prices: {len(market.get('prices', []))} options")
+                        
+                        # Show first few prices
+                        for i, price in enumerate(market.get('prices', [])[:3]):
+                            designation = price.get('designation', f"Option {i+1}")
+                            odds = price.get('price', 'N/A')
+                            print(f"     {designation}: {odds}")
+                        
+                        # Show limits if available
+                        limits = market.get('limits', [])
+                        if limits:
+                            for limit in limits:
+                                print(f"     Limit: ${limit.get('amount', 'N/A')} ({limit.get('type', 'unknown')})")
+                        break
+                break
+        
+        # Demo 2: Try team-specific search
+        print(f"\n🔍 Step 2: Searching for specific team matchup...")
+        team_result = await scraper.scrape_team_matchup(Team.LAD, Team.SF)
+        
+        print(f"\n✅ Team Search Results (LAD vs SF):")
+        print(f"   Success: {team_result.success}")
+        print(f"   Matching Matchups: {len(team_result.data)}")
+        
+        if team_result.data:
+            for matchup in team_result.data:
+                print(f"   Found: {matchup.get('away_team')} @ {matchup.get('home_team')}")
+                print(f"          Start: {matchup.get('start_time')}")
+                print(f"          Markets: {len(matchup.get('markets', []))}")
+        
+        # Performance summary
+        print(f"\n⚡ Performance Summary:")
+        print(f"   Total Data Points: {len(result.data)} complete matchups")
+        print(f"   Request Efficiency: {len(result.data)/result.request_count:.2f} matchups per request")
+        print(f"   Rate Limit Compliance: ✅ (1 req/sec, max 30/min)")
+        print(f"   Focus: Only essential betting data (team info + ML/spread/total)")
+        
     except Exception as e:
         print(f"❌ Demo failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+
+async def demo_data_extraction_focus():
+    """Show what data we're extracting vs. what we're ignoring."""
+    print(f"\n🎯 Data Extraction Focus")
+    print("=" * 40)
     
-    print(f"\n🎉 Pinnacle scraper demo completed!")
-
-
-def demo_data_extraction():
-    """Show how the scraper extracts only essential data."""
-    print(f"\n🔍 Data Extraction Focus")
-    print("=" * 30)
-    print("The Pinnacle scraper is designed to extract ONLY essential information:")
-    print("   ✅ Team names and matchup IDs")
-    print("   ✅ Market types (moneyline, spread, total)")
-    print("   ✅ Current odds/prices")
-    print("   ✅ Market status and timing")
-    print("   ✅ Betting limits (crucial for sharp betting)")
-    print("   ❌ Unnecessary UI elements")
-    print("   ❌ Marketing content")
-    print("   ❌ Historical data")
-    print("   ❌ Player statistics")
-    print("\nThis focused approach:")
-    print("   • Reduces bandwidth usage")
-    print("   • Improves scraping speed")
-    print("   • Minimizes storage requirements")
-    print("   • Focuses on actionable betting data")
+    print("✅ EXTRACTING (Essential for Betting Analysis):")
+    print("   📍 Team Information:")
+    print("     - Home team name (normalized to Team enum)")
+    print("     - Away team name (normalized to Team enum)")
+    print("     - Game start time")
+    print("   💰 Market Data (Moneyline, Spread, Total only):")
+    print("     - Market type and status")
+    print("     - Odds/prices for each side")
+    print("     - Line values (for spread/total)")
+    print("     - Betting limits (max stake amounts)")
+    print("     - Market version and cutoff times")
+    
+    print("\n❌ IGNORING (Unnecessary for our use case):")
+    print("   - Player props and exotic markets")
+    print("   - Detailed matchup metadata")
+    print("   - Historical market movement")
+    print("   - Participant details beyond team alignment")
+    print("   - Complex nested market structures")
+    
+    print("\n⚡ Three-Step Efficiency:")
+    print("   1️⃣  Get unique matchup IDs (1 request)")
+    print("   2️⃣  Get team info per matchup (N requests)")  
+    print("   3️⃣  Get essential markets per matchup (N requests)")
+    print("   📊 Total: 1 + 2N requests for N matchups")
+    print("   🚀 Concurrent processing with rate limiting")
 
 
 if __name__ == "__main__":
-    demo_data_extraction()
-    asyncio.run(demo_pinnacle_scraper()) 
+    print(f"🚀 Starting Pinnacle Scraper Demo - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    asyncio.run(demo_pinnacle_scraper())
+    asyncio.run(demo_data_extraction_focus())
+    print(f"\n🏁 Demo completed - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("\nGeneral Balls ⚾") 
