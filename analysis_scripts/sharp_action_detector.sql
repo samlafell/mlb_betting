@@ -1,6 +1,11 @@
 -- Sharp Action Detection Strategy
 -- Identifies when stake % significantly exceeds bet % (indicating larger average bet sizes)
 -- This typically suggests "sharp" or professional money is on that side
+--
+-- DEDUPLICATION APPROACH:
+-- This script preserves ALL line movement data for analysis but implements 
+-- recommendation-level deduplication to ensure only ONE final bet per game per market.
+-- Final recommendations use data closest to 5 minutes before first pitch.
 
 WITH sharp_action_data AS (
     SELECT 
@@ -19,6 +24,9 @@ WITH sharp_action_data AS (
         
         -- Calculate hours before game
         EXTRACT('epoch' FROM (rmbs.game_datetime - rmbs.last_updated)) / 3600 AS hours_before_game,
+        
+        -- Calculate minutes before game for 5-minute rule
+        EXTRACT('epoch' FROM (rmbs.game_datetime - rmbs.last_updated)) / 60 AS minutes_before_game,
         
         -- Sharp action indicators
         CASE 
@@ -90,7 +98,14 @@ closing_sharp_action AS (
         home_cover_spread,
         over,
         
-        ROW_NUMBER() OVER (PARTITION BY game_id, source, book, split_type ORDER BY last_updated DESC) as rn
+        -- RECOMMENDATION-LEVEL DEDUPLICATION:
+        -- Select the record closest to 5 minutes before game time for final betting recommendation
+        ROW_NUMBER() OVER (
+            PARTITION BY game_id, source, book, split_type 
+            ORDER BY 
+                ABS(minutes_before_game - 5) ASC,  -- Closest to 5 minutes before game
+                last_updated DESC                  -- Most recent if tied
+        ) as rn
         
     FROM sharp_action_data
 ),

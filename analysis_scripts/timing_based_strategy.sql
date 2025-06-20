@@ -46,6 +46,7 @@ WITH timing_data AS (
     FROM mlb_betting.splits.raw_mlb_betting_splits rmbs
     JOIN mlb_betting.main.game_outcomes go ON rmbs.game_id = go.game_id
     WHERE rmbs.last_updated < rmbs.game_datetime
+      AND rmbs.game_datetime < CURRENT_TIMESTAMP - INTERVAL '6 hours'  -- Only completed games
       AND rmbs.split_value IS NOT NULL
       AND rmbs.game_datetime IS NOT NULL
       AND rmbs.home_or_over_stake_percentage IS NOT NULL

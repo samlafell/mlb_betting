@@ -1,0 +1,53 @@
+{
+  "report_date": "2025-06-18",
+  "total_opportunities_analyzed": 1,
+  "selected_opportunities": [
+    {
+      "game_id": "777474",
+      "home_team": "CIN",
+      "away_team": "MIN",
+      "game_datetime": "2025-06-18 19:10:00",
+      "bet_type": "moneyline",
+      "recommended_side": "home",
+      "line_value": "{\"home\": -128, \"away\": 105}",
+      "source": "VSIN",
+      "sportsbook": "draftkings",
+      "stake_percentage": 0.0,
+      "bet_percentage": 0.0,
+      "differential": 15.0,
+      "confidence_score": 0.65,
+      "roi_estimate": 25.0,
+      "kelly_criterion": 0.025,
+      "edge_strength": "STRONG",
+      "stake_amount": "128",
+      "win_amount": "100",
+      "total_return": "228",
+      "detected_at": "2025-06-18 18:40:04.811811",
+      "minutes_before_game": 29,
+      "detection_priority": 3,
+      "strategy_source": "follow_stronger_vsin",
+      "signal_strength": 15.0,
+      "last_updated": "2025-06-18 18:40:04.811811",
+      "actual_result": "WIN",
+      "actual_profit_loss": "100"
+    }
+  ],
+  "total_risk_amount": "128",
+  "potential_win_amount": "100",
+  "expected_value": "32.00",
+  "actual_results_available": true,
+  "completed_bets": 1,
+  "wins": 1,
+  "losses": 0,
+  "pushes": 0,
+  "actual_profit_loss": "100",
+  "actual_roi": 78.125,
+  "data_completeness_pct": 100.0,
+  "average_confidence_score": 0.65,
+  "detection_time_distribution": {
+    "closing": 1
+  },
+  "execution_time_seconds": 0.52211,
+  "generated_at": "2025-06-19 05:08:08.215357+00:00",
+  "report_version": "1.0"
+}

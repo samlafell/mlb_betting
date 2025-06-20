@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Set, Union, Callable
 from decimal import Decimal, InvalidOperation
 import re
 from datetime import datetime, timedelta
+import json
 
 import structlog
 from pydantic import BaseModel, ValidationError as PydanticValidationError
@@ -706,11 +707,176 @@ def assess_data_quality(data: List[Dict[str, Any]]) -> Dict[str, Any]:
     return DataQualityValidator.assess_data_quality(data)
 
 
+def is_moneyline_too_juiced(odds_value: Union[str, int, float], 
+                           recommended_side: str, 
+                           home_team: str, 
+                           away_team: str,
+                           threshold: int = -160) -> bool:
+    """
+    Check if the RECOMMENDED SIDE has moneyline odds that are too juiced.
+    
+    Only filters bets where we're betting ON the heavily favored team (paying the juice).
+    If we're betting the underdog, we get plus odds and there's no juice problem.
+    
+    Args:
+        odds_value: Odds in various formats (JSON string, integer, float)
+        recommended_side: 'home' or 'away' - which team we're betting
+        home_team: Home team name (for logging)
+        away_team: Away team name (for logging)
+        threshold: Maximum juice threshold (default: -160)
+        
+    Returns:
+        True if the RECOMMENDED SIDE is too juiced (should refuse bet)
+        
+    Examples:
+        # NYY is -200, LAA is +180, strategy says bet NYY
+        is_moneyline_too_juiced('{"home": -200, "away": 180}', 'home', 'NYY', 'LAA')  # True (refuse NYY)
+        
+        # NYY is -200, LAA is +180, strategy says bet LAA  
+        is_moneyline_too_juiced('{"home": -200, "away": 180}', 'away', 'NYY', 'LAA')  # False (take LAA)
+    """
+    try:
+        # Handle JSON string format (from VSIN)
+        if isinstance(odds_value, str) and odds_value.strip().startswith('{'):
+            odds_data = json.loads(odds_value)
+            
+            # Get the odds for the recommended side
+            if recommended_side.lower() == 'home':
+                recommended_odds = odds_data.get('home')
+                team_name = home_team
+            elif recommended_side.lower() == 'away':
+                recommended_odds = odds_data.get('away')
+                team_name = away_team
+            else:
+                logger.warning("Invalid recommended_side", side=recommended_side)
+                return False
+            
+            # Only filter if the RECOMMENDED side is too juiced (negative and worse than threshold)
+            if (recommended_odds and isinstance(recommended_odds, (int, float)) and 
+                recommended_odds < threshold):
+                logger.info("Refusing bet: Recommended team too juiced", 
+                           team=team_name,
+                           recommended_odds=recommended_odds, 
+                           threshold=threshold)
+                return True
+                
+            return False
+            
+        # Handle direct numeric odds (can't determine which side without more context)
+        elif isinstance(odds_value, (int, float)):
+            # For direct odds, we assume this IS the recommended side's odds
+            if odds_value < threshold:
+                logger.info("Refusing bet: Recommended side odds too juiced", 
+                           odds=odds_value, threshold=threshold)
+                return True
+            return False
+            
+        # Handle string numeric odds
+        elif isinstance(odds_value, str):
+            # Clean the odds string (remove +, spaces, etc.)
+            clean_odds = re.sub(r'[^\d-]', '', odds_value.strip())
+            if clean_odds:
+                odds_int = int(clean_odds)
+                if odds_int < threshold:
+                    logger.info("Refusing bet: Recommended side string odds too juiced", 
+                               odds=odds_int, threshold=threshold)
+                    return True
+            return False
+        
+        # Unknown format - be conservative and allow
+        return False
+        
+    except (json.JSONDecodeError, ValueError, TypeError) as e:
+        logger.warning("Failed to parse odds for juice check", 
+                      odds_value=odds_value, error=str(e))
+        # If we can't parse, be conservative and allow the bet
+        return False
+
+
+def get_recommended_side_odds(odds_value: Union[str, int, float], 
+                             recommended_side: str, 
+                             home_team: str, 
+                             away_team: str) -> Optional[int]:
+    """
+    Extract the specific odds for the recommended side.
+    
+    Args:
+        odds_value: Odds in various formats
+        recommended_side: 'home' or 'away'
+        home_team: Home team name
+        away_team: Away team name
+        
+    Returns:
+        Integer odds for the recommended side or None
+    """
+    try:
+        # Handle JSON format
+        if isinstance(odds_value, str) and odds_value.strip().startswith('{'):
+            odds_data = json.loads(odds_value)
+            return odds_data.get(recommended_side)
+            
+        # For non-JSON, we don't know which side the odds represent
+        # so we can't determine the specific side
+        return None
+        
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return None
+
+
+def validate_betting_opportunity(opportunity: Dict[str, Any]) -> bool:
+    """
+    Comprehensive validation of a betting opportunity.
+    
+    Args:
+        opportunity: Dictionary containing bet details
+        
+    Returns:
+        True if the opportunity passes all filters
+    """
+    # Check if it's a moneyline bet
+    bet_type = opportunity.get('bet_type', '').lower()
+    if bet_type != 'moneyline':
+        return True  # Only filter moneyline bets
+    
+    # Check if odds are too juiced
+    odds_value = opportunity.get('line_value') or opportunity.get('split_value')
+    if odds_value and is_moneyline_too_juiced(odds_value):
+        logger.info("Filtering out juiced moneyline bet", 
+                   game=f"{opportunity.get('away_team')} @ {opportunity.get('home_team')}",
+                   odds=odds_value)
+        return False
+    
+    return True
+
+
+# Backward compatibility (simplified version that checks both sides)
+def is_odds_too_juiced(odds_value: Union[str, int, float]) -> bool:
+    """
+    Simplified version for backward compatibility.
+    Checks if ANY side is too juiced (old behavior).
+    """
+    try:
+        if isinstance(odds_value, str) and odds_value.strip().startswith('{'):
+            odds_data = json.loads(odds_value)
+            home_odds = odds_data.get('home', 0)
+            away_odds = odds_data.get('away', 0)
+            return (home_odds < -160) or (away_odds < -160)
+        elif isinstance(odds_value, (int, float)):
+            return odds_value < -160
+        return False
+    except:
+        return False
+
+
 __all__ = [
     'ValidationRule',
     'FieldValidator', 
     'BettingSplitValidator',
     'DataQualityValidator',
     'validate_betting_split',
-    'assess_data_quality'
+    'assess_data_quality',
+    'is_moneyline_too_juiced',
+    'get_recommended_side_odds',
+    'validate_betting_opportunity',
+    'is_odds_too_juiced'
 ] 

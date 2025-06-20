@@ -7,6 +7,8 @@ DuckDB uses a single connection per database with multiple cursors for concurren
 
 import logging
 import threading
+import time
+import random
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator, List, Optional
@@ -18,6 +20,27 @@ import structlog
 from ..core.exceptions import DatabaseConnectionError, DatabaseError
 
 logger = structlog.get_logger(__name__)
+
+
+def retry_on_conflict(max_retries=3, base_delay=0.1):
+    """Decorator to retry operations on DuckDB transaction conflicts"""
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if "Transaction conflict" in str(e) or "cannot update a table that has been altered" in str(e):
+                        if attempt < max_retries - 1:
+                            # Exponential backoff with jitter
+                            delay = base_delay * (2 ** attempt) + random.uniform(0, 0.1)
+                            logger.warning(f"Transaction conflict, retrying in {delay:.2f}s (attempt {attempt + 1}/{max_retries})")
+                            time.sleep(delay)
+                            continue
+                    raise
+            return None
+        return wrapper
+    return decorator
 
 
 class DatabaseManager:
@@ -57,16 +80,9 @@ class DatabaseManager:
         logger.info("Database manager initialized")
 
     def _init_connection(self) -> None:
-        """Initialize the single DuckDB connection."""
+        """Initialize the DuckDB connection."""
         try:
-            # Close any existing connection first
-            if self._connection is not None:
-                logger.info("Closing existing connection before creating new one")
-                try:
-                    self._connection.close()
-                except Exception as close_error:
-                    logger.warning("Error closing existing connection", error=str(close_error))
-                self._connection = None
+            logger.info("Initializing DuckDB connection")
             
             # Hardcoded database path to bypass configuration issues
             db_path = Path("data/raw/mlb_betting.duckdb")
@@ -77,22 +93,47 @@ class DatabaseManager:
             
             # Create the single connection with minimal configuration
             # Use minimal config to avoid conflicts with existing connections
-            self._connection = duckdb.connect(
-                database=str(db_path)
-            )
-            
-            logger.info(
-                "DuckDB connection established",
-                database_path=str(db_path)
-            )
+            try:
+                self._connection = duckdb.connect(
+                    database=str(db_path),
+                    config={
+                        'threads': 2,  # Limit threads to reduce contention
+                        'preserve_insertion_order': False  # Better performance for analytical queries
+                    }
+                )
+                logger.info(
+                    "DuckDB connection established",
+                    database_path=str(db_path)
+                )
+            except duckdb.duckdb.IOException as e:
+                if "Conflicting lock" in str(e):
+                    logger.error(
+                        "Database is locked by another process. "
+                        "Check for stuck processes and kill them if necessary.",
+                        error=str(e)
+                    )
+                    # Provide helpful information about finding the process
+                    import os
+                    current_pid = os.getpid()
+                    logger.error(
+                        "Current process PID: %d. "
+                        "Use 'ps aux | grep python | grep mlb' to find conflicting processes.",
+                        current_pid
+                    )
+                raise DatabaseConnectionError(
+                    f"Database is locked by another process. "
+                    f"Kill any stuck processes and try again: {e}"
+                )
+                
         except Exception as e:
             logger.error("Failed to initialize DuckDB connection", error=str(e))
             raise DatabaseConnectionError(f"Failed to initialize connection: {e}")
 
     @contextmanager
+    @retry_on_conflict(max_retries=3, base_delay=0.1)
     def get_cursor(self) -> Generator[duckdb.DuckDBPyConnection, None, None]:
         """
-        Context manager for database cursors.
+        Context manager for database cursors with retry logic.
         
         In DuckDB, cursors are created from the main connection and are the
         recommended way to handle concurrent access from multiple threads.
@@ -126,9 +167,10 @@ class DatabaseManager:
                     logger.warning("Error closing cursor", error=str(e))
 
     @contextmanager
+    @retry_on_conflict(max_retries=3, base_delay=0.1)
     def get_connection(self) -> Generator[duckdb.DuckDBPyConnection, None, None]:
         """
-        Context manager for the main database connection.
+        Context manager for the main database connection with retry logic.
         
         Use this sparingly - prefer get_cursor() for most operations.
         This is provided for compatibility but should be used with caution
@@ -152,6 +194,7 @@ class DatabaseManager:
                 raise
             raise DatabaseError(f"Database connection operation failed: {e}")
 
+    @retry_on_conflict(max_retries=3, base_delay=0.1)
     def execute_query(
         self, 
         query: str, 
@@ -159,7 +202,7 @@ class DatabaseManager:
         fetch: bool = True
     ) -> Optional[List[tuple]]:
         """
-        Execute a query with optional parameters.
+        Execute a query with optional parameters and retry logic.
         
         Args:
             query: SQL query to execute
@@ -186,13 +229,14 @@ class DatabaseManager:
             logger.error("Query execution failed", query=query, error=str(e))
             raise DatabaseError(f"Query execution failed: {e}")
 
+    @retry_on_conflict(max_retries=3, base_delay=0.1)
     def execute_many(
         self,
         query: str,
         parameters_list: List[tuple]
     ) -> None:
         """
-        Execute a query multiple times with different parameters.
+        Execute a query multiple times with different parameters and retry logic.
         
         Args:
             query: SQL query to execute
@@ -211,9 +255,10 @@ class DatabaseManager:
                         query=query, batch_size=len(parameters_list), error=str(e))
             raise DatabaseError(f"Batch query execution failed: {e}")
 
+    @retry_on_conflict(max_retries=3, base_delay=0.1)
     def execute_script(self, script: str) -> None:
         """
-        Execute a SQL script.
+        Execute a SQL script with retry logic.
         
         Args:
             script: SQL script to execute

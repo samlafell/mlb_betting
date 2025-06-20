@@ -320,6 +320,9 @@ SELECT
     ROUND(((wins * 100) - ((total_bets - wins) * 110)) / (total_bets * 110) * 100, 1) as roi_percentage_110,
     ROUND(((wins * 100) - ((total_bets - wins) * 105)) / (total_bets * 105) * 100, 1) as roi_percentage_105,
     
+    -- Expected field name for backtesting service
+    ROUND(((wins * 100) - ((total_bets - wins) * 110)) / (total_bets * 110) * 100, 1) as roi_per_100_unit,
+    
     -- Supporting metrics
     ROUND(avg_line_movement, 1) as avg_line_move,
     ROUND(avg_differential, 1) as avg_diff,
@@ -352,4 +355,5 @@ FROM strategy_results
 WHERE total_bets >= 3
 ORDER BY 
     roi_percentage_110 DESC,
-    total_bets DESC; 
+    total_bets DESC,
+    strategy_name ASC;

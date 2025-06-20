@@ -323,6 +323,11 @@ class GameUpdater:
             home_spread_line = None
             moneyline_data = None
             
+            # Track what we've already seen to avoid duplicate logging
+            seen_moneyline_values = set()
+            logged_count = 0
+            max_logs_per_game = 3  # Limit logs per game to reduce spam
+            
             for split in splits:
                 # Extract line values based on split_type and split_value
                 if split.split_value is not None:
@@ -361,11 +366,21 @@ class GameUpdater:
                         if isinstance(split.split_value, str) and split.split_value.strip():
                             try:
                                 import json
-                                moneyline_data = json.loads(split.split_value)
-                                logger.debug("Found moneyline data",
-                                           home_team=home_team.value,
-                                           away_team=away_team.value,
-                                           moneyline_data=moneyline_data)
+                                current_moneyline_data = json.loads(split.split_value)
+                                
+                                # Create a hashable key from the moneyline data for deduplication
+                                moneyline_key = f"{current_moneyline_data.get('home', 0)}_{current_moneyline_data.get('away', 0)}"
+                                
+                                # Only log if this is a new unique value and we haven't logged too many
+                                if moneyline_key not in seen_moneyline_values and logged_count < max_logs_per_game:
+                                    logger.debug("Found moneyline data",
+                                               home_team=home_team.value,
+                                               away_team=away_team.value,
+                                               moneyline_data=current_moneyline_data)
+                                    seen_moneyline_values.add(moneyline_key)
+                                    logged_count += 1
+                                
+                                moneyline_data = current_moneyline_data
                             except (json.JSONDecodeError, TypeError):
                                 logger.warning("Invalid moneyline JSON", 
                                              split_value=split.split_value, 

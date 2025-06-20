@@ -47,6 +47,7 @@ from pathlib import Path
 from typing import Optional
 
 import structlog
+import click
 
 from ...services.automated_backtesting_scheduler import AutomatedBacktestingScheduler
 from ...services.backtesting_service import BacktestingService
@@ -271,6 +272,7 @@ class AutomatedBacktestingCLI:
                 stable_strategies=0,
                 threshold_recommendations=[],
                 strategy_alerts=[],
+                strategy_metrics=strategy_metrics,
                 data_completeness_pct=100.0,  # Assume complete for report
                 game_outcome_freshness_hours=0.0,
                 execution_time_seconds=0.0,
@@ -323,6 +325,117 @@ class AutomatedBacktestingCLI:
         print("   To stop: Press Ctrl+C")
         print("=" * 70)
     
+    def _format_strategy_name(self, strategy_name: str, source_book: str, split_type: str) -> str:
+        """Format strategy name into human-readable description."""
+        
+        # Strategy name mapping for better readability
+        strategy_descriptions = {
+            "strategy_comparison_roi": "ROI Strategy",
+            "sharp_action_detector": "Sharp Action",
+            "timing_based_strategy": "Timing-Based",
+            "hybrid_line_sharp_strategy": "Hybrid Line/Sharp",
+            "line_movement_strategy": "Line Movement",
+            "signal_combinations": "Signal Combo",
+            "opposing_markets_strategy": "Opposing Markets",
+            "consensus_heavy_strategy": "Consensus Heavy",
+            "consensus_moneyline_strategy": "Consensus ML",
+            "consensus_signals_current": "Consensus Signals",
+            "mixed_consensus_strategy": "Mixed Consensus",
+            "executive_summary_report": "Executive Summary"
+        }
+        
+        # Extract base strategy name
+        base_strategy = strategy_name.split('_')[0] + '_' + strategy_name.split('_')[1] + '_' + strategy_name.split('_')[2] if len(strategy_name.split('_')) >= 3 else strategy_name
+        
+        # Get clean strategy name
+        clean_name = strategy_descriptions.get(base_strategy, base_strategy.replace('_', ' ').title())
+        
+        # Extract variant from strategy name
+        parts = strategy_name.split('_')
+        if len(parts) > 3:
+            variant = '_'.join(parts[3:])
+            
+            # Variant descriptions
+            variant_descriptions = {
+                "FOLLOW_STRONG_SHARP": "Follow Strong Sharp",
+                "FOLLOW_STRONG_SH": "Follow Strong Sharp",  # Truncated version
+                "STEAM_PLAYS": "Steam Plays",
+                "HYBRID_CONFIRMATION": "Hybrid Confirmation", 
+                "FOLLOW_BIG_LINE_MOVEMENT": "Follow Big Line Movement",
+                "WEAK_SHARP_AWAY_UNDER": "Weak Sharp Away/Under",
+                "STRONG_SHARP_AWAY_UNDER": "Strong Sharp Away/Under",
+                "STRONG_SHARP_HOME_OVER": "Strong Sharp Home/Over",
+                "spread_preference": "Spread Preference",
+                "spread_prefere": "Spread Preference",  # Truncated version
+                "follow_stronger": "Follow Stronger",
+                "follow_stronge": "Follow Stronger",  # Truncated version
+                "ml_preference": "ML Preference",
+                "contrarian": "Contrarian",
+                "cross_book_consensus": "Cross Book Consensus",
+                "line_movement_confirmation": "Line Movement Confirmation"
+            }
+            
+            clean_variant = variant_descriptions.get(variant, variant.replace('_', ' ').title())
+        else:
+            clean_variant = ""
+        
+        # Clean up book names
+        book_mapping = {
+            "VSIN-draftkings": "VSIN-DK",
+            "VSIN-circa": "VSIN-Circa", 
+            "SBD-UNKNOWN": "SBD",
+            "SBD--": "SBD"
+        }
+        
+        clean_book = book_mapping.get(source_book, source_book)
+        
+        # Format market type
+        market_mapping = {
+            "moneyline": "ML",
+            "spread": "Spread", 
+            "total": "Total",
+            "": ""
+        }
+        
+        clean_market = market_mapping.get(split_type, split_type)
+        
+        # Build final description
+        if clean_variant and clean_market:
+            return f"{clean_book} {clean_market} • {clean_variant}"
+        elif clean_variant:
+            return f"{clean_book} • {clean_variant}"
+        elif clean_market:
+            return f"{clean_book} {clean_market} • {clean_name}"
+        else:
+            return f"{clean_book} • {clean_name}"
+    
+    def _format_strategy_name_simple(self, strategy_name: str) -> str:
+        """Format strategy name into a simple format."""
+        
+        # Strategy name mapping for better readability
+        strategy_descriptions = {
+            "strategy_comparison_roi": "ROI Strategy",
+            "sharp_action_detector": "Sharp Action",
+            "timing_based_strategy": "Timing-Based",
+            "hybrid_line_sharp_strategy": "Hybrid Line/Sharp",
+            "line_movement_strategy": "Line Movement",
+            "signal_combinations": "Signal Combo",
+            "opposing_markets_strategy": "Opposing Markets",
+            "consensus_heavy_strategy": "Consensus Heavy",
+            "consensus_moneyline_strategy": "Consensus ML",
+            "consensus_signals_current": "Consensus Signals",
+            "mixed_consensus_strategy": "Mixed Consensus",
+            "executive_summary_report": "Executive Summary"
+        }
+        
+        # Extract base strategy name
+        base_strategy = strategy_name.split('_')[0] + '_' + strategy_name.split('_')[1] + '_' + strategy_name.split('_')[2] if len(strategy_name.split('_')) >= 3 else strategy_name
+        
+        # Get clean strategy name
+        clean_name = strategy_descriptions.get(base_strategy, base_strategy.replace('_', ' ').title())
+        
+        return clean_name
+    
     def _print_analysis_results(self, results, alerts, execution_time: float, detailed: bool = False) -> None:
         """Print single analysis results."""
         print("\n" + "📊 BACKTESTING ANALYSIS RESULTS" + "\n")
@@ -343,25 +456,71 @@ class AutomatedBacktestingCLI:
         if results.threshold_recommendations:
             print(f"\n🎯 Threshold Recommendations:")
             for rec in results.threshold_recommendations[:3]:  # Show first 3
-                print(f"   • {rec.strategy_name}: {rec.current_threshold} → {rec.recommended_threshold}")
+                print(f"   • {self._format_strategy_name_simple(rec.strategy_name)}")
         
         if alerts:
-            print(f"\n🚨 Top Alerts:")
+            print(f"\n🚨 Alerts ({len(alerts)}):")
             for alert in alerts[:3]:  # Show first 3
-                # Handle both Alert objects and dictionaries
-                if hasattr(alert, 'severity') and hasattr(alert, 'message'):
-                    # Alert object
-                    severity = alert.severity.value if hasattr(alert.severity, 'value') else str(alert.severity)
-                    message = alert.message
-                elif isinstance(alert, dict):
-                    # Dictionary
-                    severity = alert['severity']
-                    message = alert['message']
-                else:
-                    # Fallback
-                    severity = "UNKNOWN"
-                    message = str(alert)
-                print(f"   • {severity}: {message[:150]}..." if len(message) > 150 else f"   • {severity}: {message}")
+                severity = alert.severity.value if hasattr(alert.severity, 'value') else str(alert.severity)
+                severity_emoji = {"CRITICAL": "🔥", "HIGH": "🟠", "MEDIUM": "🟡"}.get(severity, "ℹ️")
+                print(f"   {severity_emoji} {alert.message}")
+        
+        # Strategy performance summary
+        if results.strategy_metrics:
+            profitable_strategies = [s for s in results.strategy_metrics if s.win_rate > 0.524]
+            basic_strategies = [s for s in results.strategy_metrics if s.total_bets >= 25 and s.total_bets < 50]
+            reliable_strategies = [s for s in results.strategy_metrics if s.total_bets >= 50]
+            
+            def calculate_weighted_score(strategy):
+                return (strategy.win_rate * 100) + (strategy.roi_per_100 * 0.5) + (strategy.total_bets * 0.1)
+            
+            def deterministic_sort_key(strategy):
+                """Create a deterministic sort key with tie-breakers for consistent ordering."""
+                score = calculate_weighted_score(strategy)
+                # Tie-breakers in order of preference: strategy_name (alphabetical)
+                return (-score, strategy.strategy_name, strategy.source_book_type, strategy.split_type)
+            
+            if reliable_strategies:
+                print(f"\n🎯 Reliable Strategies (≥50 bets):")
+                reliable_sorted = sorted(reliable_strategies, key=deterministic_sort_key)
+                
+                for i, strategy in enumerate(reliable_sorted, 1):
+                    score = calculate_weighted_score(strategy)
+                    profitable_indicator = "🟢" if strategy.win_rate > 0.524 else "🔴"
+                    formatted_name = self._format_strategy_name(strategy.strategy_name, strategy.source_book_type, strategy.split_type)
+                    print(f"   {i:2d}. {profitable_indicator} {formatted_name:<50} | "
+                          f"{strategy.total_bets:3d} bets | "
+                          f"{strategy.win_rate*100:5.1f}% WR | "
+                          f"{strategy.roi_per_100:+6.1f}% ROI | "
+                          f"Score: {score:5.1f}")
+            else:
+                print(f"\n⚠️  No strategies meet the reliable sample size threshold (≥50 bets)")
+                print(f"     This indicates insufficient historical data for meaningful analysis.")
+                
+                if basic_strategies:
+                    print(f"\n📊 Basic Sample Size Strategies (25-49 bets) - USE WITH CAUTION:")
+                    basic_sorted = sorted(basic_strategies, key=deterministic_sort_key)[:5]
+                    
+                    for i, strategy in enumerate(basic_sorted, 1):
+                        score = calculate_weighted_score(strategy)
+                        profitable_indicator = "🟢" if strategy.win_rate > 0.524 else "🔴"
+                        formatted_name = self._format_strategy_name(strategy.strategy_name, strategy.source_book_type, strategy.split_type)
+                        print(f"   {i:2d}. {profitable_indicator} {formatted_name:<50} | "
+                              f"{strategy.total_bets:3d} bets | "
+                              f"{strategy.win_rate*100:5.1f}% WR | "
+                              f"{strategy.roi_per_100:+6.1f}% ROI | "
+                              f"Score: {score:5.1f}")
+                    
+                    print(f"\n     ⚠️  WARNING: Basic sample sizes (25-49 bets) have limited statistical reliability")
+                    print(f"         Recommended: Collect more data before making significant decisions")
+        
+        if results.threshold_recommendations:
+            print(f"\n🎯 Detailed Recommendations:")
+            for rec in results.threshold_recommendations:
+                print(f"   • {self._format_strategy_name(rec.strategy_name, rec.source_book, rec.split_type)}")
+                print(f"     Current: {rec.current_threshold} → Recommended: {rec.recommended_threshold}")
+                print(f"     Confidence: {rec.confidence_level}")
+                print(f"     Expected Improvement: +{rec.expected_improvement:.1f}%")
         
         print("=" * 60)
     
@@ -418,6 +577,100 @@ class AutomatedBacktestingCLI:
                 print(f"      • {issue}")
         
         print("=" * 50)
+
+
+@click.group(name="backtesting")
+@click.pass_context
+def backtesting_group(ctx):
+    """Automated backtesting and strategy validation commands."""
+    pass
+
+@backtesting_group.command("run")
+@click.option("--mode", 
+              type=click.Choice(["scheduler", "single-run", "status", "test", "report"]),
+              default="single-run",
+              help="Operation mode")
+@click.option("--config", 
+              type=click.Path(exists=True, path_type=Path),
+              help="Path to configuration file")
+@click.option("--debug", 
+              is_flag=True,
+              help="Enable debug logging")
+@click.option("--no-alerts", 
+              is_flag=True,
+              help="Disable alert notifications")
+@click.option("--force", 
+              is_flag=True,
+              help="Bypass circuit breaker (use with caution)")
+def run_backtesting(mode: str, config: Optional[Path], debug: bool, no_alerts: bool, force: bool):
+    """Run backtesting analysis."""
+    
+    async def _run():
+        # Set log level
+        if debug:
+            structlog.configure(
+                processors=[
+                    structlog.stdlib.filter_by_level,
+                    structlog.stdlib.add_logger_name,
+                    structlog.stdlib.add_log_level,
+                    structlog.stdlib.PositionalArgumentsFormatter(),
+                    structlog.dev.ConsoleRenderer(colors=True, pad_event=20)
+                ],
+                context_class=dict,
+                logger_factory=structlog.stdlib.LoggerFactory(),
+                wrapper_class=structlog.stdlib.BoundLogger,
+                cache_logger_on_first_use=True,
+            )
+        
+        # Initialize CLI
+        cli = AutomatedBacktestingCLI(config_path=config)
+        
+        try:
+            # Execute based on mode
+            if mode == "scheduler":
+                await cli.run_scheduler_mode(debug=debug, no_alerts=no_alerts)
+            elif mode == "single-run":
+                await cli.run_single_analysis(force=force)
+            elif mode == "status":
+                await cli.show_status()
+            elif mode == "test":
+                await cli.run_test_mode()
+            elif mode == "report":
+                await cli.generate_report_only()
+                
+        except KeyboardInterrupt:
+            logger.info("Interrupted by user")
+        except Exception as e:
+            logger.error("Application failed", error=str(e))
+            raise click.ClickException(f"Backtesting failed: {e}")
+    
+    asyncio.run(_run())
+
+@backtesting_group.command("status")
+@click.option("--config", 
+              type=click.Path(exists=True, path_type=Path),
+              help="Path to configuration file")
+def show_backtesting_status(config: Optional[Path]):
+    """Show current backtesting system status."""
+    
+    async def _show_status():
+        cli = AutomatedBacktestingCLI(config_path=config)
+        await cli.show_status()
+    
+    asyncio.run(_show_status())
+
+@backtesting_group.command("test")
+@click.option("--config", 
+              type=click.Path(exists=True, path_type=Path),
+              help="Path to configuration file")
+def test_backtesting_system(config: Optional[Path]):
+    """Test backtesting system components."""
+    
+    async def _test():
+        cli = AutomatedBacktestingCLI(config_path=config)
+        await cli.run_test_mode()
+    
+    asyncio.run(_test())
 
 
 async def main():

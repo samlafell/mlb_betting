@@ -204,8 +204,9 @@ class MLBStatsAPIClient:
         completed_games = []
         for date_entry in schedule_data["dates"]:
             for game in date_entry.get("games", []):
-                # Only include completed games
-                if game.get("status", {}).get("statusCode") == "F":
+                # Include completed games (F = Final, FR = Final: Rain, etc.)
+                status_code = game.get("status", {}).get("statusCode")
+                if status_code in ["F", "FR", "FG"]:  # F=Final, FR=Final:Rain, FG=Final:Game Over
                     completed_games.append(game)
         
         return completed_games

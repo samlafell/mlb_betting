@@ -42,3 +42,209 @@ Press Ctrl+C to stop the scheduler...
 2025-06-18 17:09:01 [info     ] Scheduled game alert           alert_time=datetime.datetime(2025, 6, 19, 2, 0, tzinfo=datetime.timezone.utc) game='Houston Astros @ Athletics' game_time=datetime.datetime(2025, 6, 19, 2, 5, tzinfo=datetime.timezone.utc) service=scheduler
 2025-06-18 17:09:01 [info     ] Scheduled game alert           alert_time=datetime.datetime(2025, 6, 19, 2, 5, tzinfo=datetime.timezone.utc) game='San Diego Padres @ Los Angeles Dodgers' game_time=datetime.datetime(2025, 6, 19, 2, 10, tzinfo=datetime.timezone.utc) service=scheduler
 2025-06-18 17:09:01 [info     ] Game alerts scheduled for today alerts_scheduled=13 games_found=15 service=scheduler
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 0
+   • Game alerts sent: 0
+   • Errors: 0
+   • Games scheduled today: 13
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-18 18:00:00-04:00
+     - Game Alert: Philadelphia Phillies @ Miami Marlins: 2025-06-18 22:35:00+00:00
+     - Game Alert: Colorado Rockies @ Washington Nationals: 2025-06-18 22:40:00+00:00
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 0
+   • Game alerts sent: 0
+   • Errors: 0
+   • Games scheduled today: 13
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-18 18:00:00-04:00
+     - Game Alert: Philadelphia Phillies @ Miami Marlins: 2025-06-18 22:35:00+00:00
+     - Game Alert: Colorado Rockies @ Washington Nationals: 2025-06-18 22:40:00+00:00
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 0
+   • Game alerts sent: 0
+   • Errors: 0
+   • Games scheduled today: 13
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-18 18:00:00-04:00
+     - Game Alert: Philadelphia Phillies @ Miami Marlins: 2025-06-18 22:35:00+00:00
+     - Game Alert: Colorado Rockies @ Washington Nationals: 2025-06-18 22:40:00+00:00
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 0
+   • Game alerts sent: 0
+   • Errors: 0
+   • Games scheduled today: 13
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-18 18:00:00-04:00
+     - Game Alert: Philadelphia Phillies @ Miami Marlins: 2025-06-18 22:35:00+00:00
+     - Game Alert: Colorado Rockies @ Washington Nationals: 2025-06-18 22:40:00+00:00
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 0
+   • Game alerts sent: 0
+   • Errors: 0
+   • Games scheduled today: 13
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-18 18:00:00-04:00
+     - Game Alert: Philadelphia Phillies @ Miami Marlins: 2025-06-18 22:35:00+00:00
+     - Game Alert: Colorado Rockies @ Washington Nationals: 2025-06-18 22:40:00+00:00
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 0
+   • Game alerts sent: 0
+   • Errors: 0
+   • Games scheduled today: 13
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-18 18:00:00-04:00
+     - Game Alert: Philadelphia Phillies @ Miami Marlins: 2025-06-18 22:35:00+00:00
+     - Game Alert: Colorado Rockies @ Washington Nationals: 2025-06-18 22:40:00+00:00
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 0
+   • Game alerts sent: 0
+   • Errors: 0
+   • Games scheduled today: 13
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-18 18:00:00-04:00
+     - Game Alert: Philadelphia Phillies @ Miami Marlins: 2025-06-18 22:35:00+00:00
+     - Game Alert: Colorado Rockies @ Washington Nationals: 2025-06-18 22:40:00+00:00
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 0
+   • Game alerts sent: 0
+   • Errors: 0
+   • Games scheduled today: 13
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-18 18:00:00-04:00
+     - Game Alert: Philadelphia Phillies @ Miami Marlins: 2025-06-18 22:35:00+00:00
+     - Game Alert: Colorado Rockies @ Washington Nationals: 2025-06-18 22:40:00+00:00
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 0
+   • Game alerts sent: 0
+   • Errors: 0
+   • Games scheduled today: 13
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-18 18:00:00-04:00
+     - Game Alert: Philadelphia Phillies @ Miami Marlins: 2025-06-18 22:35:00+00:00
+     - Game Alert: Colorado Rockies @ Washington Nationals: 2025-06-18 22:40:00+00:00
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 0
+   • Game alerts sent: 0
+   • Errors: 0
+   • Games scheduled today: 13
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-18 18:00:00-04:00
+     - Game Alert: Philadelphia Phillies @ Miami Marlins: 2025-06-18 22:35:00+00:00
+     - Game Alert: Colorado Rockies @ Washington Nationals: 2025-06-18 22:40:00+00:00
+2025-06-18 18:00:00 [info     ] Executing hourly data collection service=scheduler
+2025-06-18 18:00:00 [info     ] Starting entrypoint execution  context=hourly service=scheduler
+2025-06-18 18:00:17 [info     ] Entrypoint executed successfully context=hourly execution_time=17.517507 service=scheduler stdout_lines=38
+2025-06-18 18:00:17 [info     ] Hourly execution completed successfully execution_time=17.517507 service=scheduler
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 1
+   • Game alerts sent: 0
+   • Errors: 0
+   • Games scheduled today: 13
+   • Next jobs:
+     - Game Alert: Philadelphia Phillies @ Miami Marlins: 2025-06-18 22:35:00+00:00
+     - Game Alert: Colorado Rockies @ Washington Nationals: 2025-06-18 22:40:00+00:00
+     - Game Alert: Los Angeles Angels @ New York Yankees: 2025-06-18 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 1
+   • Game alerts sent: 0
+   • Errors: 0
+   • Games scheduled today: 13
+   • Next jobs:
+     - Game Alert: Philadelphia Phillies @ Miami Marlins: 2025-06-18 22:35:00+00:00
+     - Game Alert: Colorado Rockies @ Washington Nationals: 2025-06-18 22:40:00+00:00
+     - Game Alert: Los Angeles Angels @ New York Yankees: 2025-06-18 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 1
+   • Game alerts sent: 0
+   • Errors: 0
+   • Games scheduled today: 13
+   • Next jobs:
+     - Game Alert: Philadelphia Phillies @ Miami Marlins: 2025-06-18 22:35:00+00:00
+     - Game Alert: Colorado Rockies @ Washington Nationals: 2025-06-18 22:40:00+00:00
+     - Game Alert: Los Angeles Angels @ New York Yankees: 2025-06-18 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 1
+   • Game alerts sent: 0
+   • Errors: 0
+   • Games scheduled today: 13
+   • Next jobs:
+     - Game Alert: Philadelphia Phillies @ Miami Marlins: 2025-06-18 22:35:00+00:00
+     - Game Alert: Colorado Rockies @ Washington Nationals: 2025-06-18 22:40:00+00:00
+     - Game Alert: Los Angeles Angels @ New York Yankees: 2025-06-18 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 1
+   • Game alerts sent: 0
+   • Errors: 0
+   • Games scheduled today: 13
+   • Next jobs:
+     - Game Alert: Philadelphia Phillies @ Miami Marlins: 2025-06-18 22:35:00+00:00
+     - Game Alert: Colorado Rockies @ Washington Nationals: 2025-06-18 22:40:00+00:00
+     - Game Alert: Los Angeles Angels @ New York Yankees: 2025-06-18 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 1
+   • Game alerts sent: 0
+   • Errors: 0
+   • Games scheduled today: 13
+   • Next jobs:
+     - Game Alert: Philadelphia Phillies @ Miami Marlins: 2025-06-18 22:35:00+00:00
+     - Game Alert: Colorado Rockies @ Washington Nationals: 2025-06-18 22:40:00+00:00
+     - Game Alert: Los Angeles Angels @ New York Yankees: 2025-06-18 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 1
+   • Game alerts sent: 0
+   • Errors: 0
+   • Games scheduled today: 13
+   • Next jobs:
+     - Game Alert: Philadelphia Phillies @ Miami Marlins: 2025-06-18 22:35:00+00:00
+     - Game Alert: Colorado Rockies @ Washington Nationals: 2025-06-18 22:40:00+00:00
+     - Game Alert: Los Angeles Angels @ New York Yankees: 2025-06-18 23:00:00+00:00
+2025-06-18 18:35:00 [info     ] Triggering game alert          game='Philadelphia Phillies @ Miami Marlins' service=scheduler
+2025-06-18 18:35:00 [info     ] NOTIFICATION                   context=game_alert message='🏈 GAME ALERT: Philadelphia Phillies @ Miami Marlins starts in 5 minutes! Running analysis...' service=scheduler
+
+🚨 [2025-06-18 18:35:00] GAME_ALERT: 🏈 GAME ALERT: Philadelphia Phillies @ Miami Marlins starts in 5 minutes! Running analysis...
+
+2025-06-18 18:35:00 [info     ] Starting entrypoint execution  context=game_alert service=scheduler
+2025-06-18 18:35:00 [error    ] Entrypoint execution failed    context=game_alert returncode=1 service=scheduler stderr='/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/.venv/lib/python3.10/site-packages/pydantic/_internal/_config.py:373: UserWarning: Valid config keys have changed in V2:\n* \'schema_extra\' has been renamed to \'json_schema_extra\'\n  warnings.warn(message, UserWarning)\n/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/.venv/lib/python3.10/site-packages/pydantic/_internal/_config.py:373: UserWarning: Valid config keys have changed in V2:\n* \'allow_population_by_field_name\' has been renamed to \'validate_by_name\'\n  warnings.warn(message, UserWarning)\n[\x1b[31m\x1b[1merror    \x1b[0m] \x1b[1mFailed to initialize DuckDB connection\x1b[0m [\x1b[0m\x1b[1m\x1b[34mmlb_sharp_betting.db.connection\x1b[0m]\x1b[0m \x1b[36merror\x1b[0m=\x1b[35m\'IO Error: Could not set lock on file "/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/data/raw/mlb_betting.duckdb": Conflicting lock is held in /Users/samlafell/.pyenv/versions/3.10.13/bin/python3.10 (PID 57562) by user samlafell. See also https://duckdb.org/docs/stable/connect/concurrency\'\x1b[0m\nTraceback (most recent call last):\n  File "/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/src/mlb_sharp_betting/db/connection.py", line 80, in _init_connection\n    self._connection = duckdb.connect(\nduckdb.duckdb.IOException: IO Error: Could not set lock on file "/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/data/raw/mlb_betting.duckdb": Conflicting lock is held in /Users/samlafell/.pyenv/versions/3.10.13/bin/python3.10 (PID 57562) by user samlafell. See also https://duckdb.org/docs/stable/connect/concurrency\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File "/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/src/mlb_sharp_betting/entrypoint.py", line 466, in <module>\n    asyncio.run(main()) \n  File "/Users/samlafell/.pyenv/versions/3.10.13/lib/python3.10/asyncio/runners.py", line 44, in run\n    return loop.run_until_complete(main)\n  File "/Users/samlafell/.pyenv/versions/3.10.13/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete\n    return future.result()\n  File "/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/src/mlb_sharp_betting/entrypoint.py", line 450, in main\n    pipeline = DataPipeline(\n  File "/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/src/mlb_sharp_betting/entrypoint.py", line 77, in __init__\n    self.db_manager = get_db_manager()\n  File "/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/src/mlb_sharp_betting/db/connection.py", line 399, in get_db_manager\n    return DatabaseManager()\n  File "/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/src/mlb_sharp_betting/db/connection.py", line 55, in __init__\n    self._init_connection()\n  File "/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/src/mlb_sharp_betting/db/connection.py", line 90, in _init_connection\n    raise DatabaseConnectionError(f"Failed to initialize connection: {e}")\nmlb_sharp_betting.core.exceptions.DatabaseConnectionError: Failed to initialize connection: IO Error: Could not set lock on file "/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/data/raw/mlb_betting.duckdb": Conflicting lock is held in /Users/samlafell/.pyenv/versions/3.10.13/bin/python3.10 (PID 57562) by user samlafell. See also https://duckdb.org/docs/stable/connect/concurrency\n'
+2025-06-18 18:35:00 [info     ] NOTIFICATION                   context=game_alert_error message='❌ Analysis failed for Philadelphia Phillies @ Miami Marlins! Error: Exit code 1' service=scheduler
+
+🚨 [2025-06-18 18:35:00] GAME_ALERT_ERROR: ❌ Analysis failed for Philadelphia Phillies @ Miami Marlins! Error: Exit code 1
+
+
+🛑 Received signal 15, shutting down gracefully...
+2025-06-18 18:36:48 [info     ] Stopping scheduler             service=scheduler
+✅ Scheduler stopped. Goodbye!

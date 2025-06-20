@@ -15,6 +15,9 @@ import click
 import structlog
 
 from mlb_sharp_betting.entrypoint import DataPipeline
+from mlb_sharp_betting.cli.commands.pre_game import pregame_group
+from mlb_sharp_betting.cli.commands.daily_report import daily_report_group
+from mlb_sharp_betting.cli.commands.backtesting import backtesting_group
 
 # Configure logging
 logger = structlog.get_logger(__name__)
@@ -245,6 +248,10 @@ def demo():
         click.echo(f"❌ Demo failed: {e}")
 
 
+# Add pre-game commands
+cli.add_command(pregame_group)
+
+
 @cli.command()
 @click.option('--setup-schema', is_flag=True, help='Set up database schema')
 @click.option('--verify-schema', is_flag=True, help='Verify database schema')
@@ -356,6 +363,11 @@ async def _database_operations(
                 click.echo(f"Errors: {cleanup_stats['errors']}")
         except Exception as e:
             click.echo(f"❌ Cleanup failed: {e}")
+
+
+# Add command groups
+cli.add_command(daily_report_group)
+cli.add_command(backtesting_group)
 
 
 if __name__ == '__main__':

@@ -60,7 +60,15 @@ class BaseRepository(ABC):
             db_manager: Database manager instance (uses default if None)
         """
         self.db = db_manager or get_db_manager()
+        self._coordinator = None  # Lazy loaded to avoid circular imports
         self.logger = logger.bind(repository=self.__class__.__name__)
+    
+    def _get_coordinator(self):
+        """Lazy load coordinator to avoid circular imports"""
+        if self._coordinator is None:
+            from ..services.database_coordinator import get_database_coordinator
+            self._coordinator = get_database_coordinator()
+        return self._coordinator
 
     @property
     @abstractmethod
@@ -204,8 +212,8 @@ class BaseRepository(ABC):
             
             parameters = tuple(data.values())
             
-            # Execute without explicit transaction - let DuckDB handle it
-            self.db.execute_query(query, parameters, fetch=False)
+            # Use coordinated database access to prevent conflicts
+            self._get_coordinator().execute_write(query, parameters)
                 
             self.logger.info("Entity created successfully", 
                            table=self.table_name, model_id=getattr(model, 'id', None))
@@ -318,8 +326,8 @@ class BaseRepository(ABC):
             
             parameters = tuple(list(updates.values()) + [entity_id])
             
-            # Execute without explicit transaction - let DuckDB handle it
-            result = self.db.execute_query(query, parameters, fetch=False)
+            # Use coordinated database access to prevent conflicts
+            self._get_coordinator().execute_write(query, parameters)
                 
             self.logger.info("Entity updated successfully", 
                            entity_id=entity_id, updates=updates)
@@ -343,8 +351,8 @@ class BaseRepository(ABC):
         try:
             query = f"DELETE FROM {self.table_name} WHERE id = ?"
             
-            # Execute without explicit transaction - let DuckDB handle it
-            self.db.execute_query(query, (entity_id,), fetch=False)
+            # Use coordinated database access to prevent conflicts
+            self._get_coordinator().execute_write(query, (entity_id,))
                 
             self.logger.info("Entity deleted successfully", entity_id=entity_id)
             return True
@@ -387,8 +395,8 @@ class BaseRepository(ABC):
                 
                 parameters_list = [tuple(data.values()) for data in data_list]
                 
-                # Execute without explicit transaction - let DuckDB handle it
-                self.db.execute_many(query, parameters_list)
+                # Use coordinated database access to prevent conflicts
+                self._get_coordinator().execute_bulk_insert(query, parameters_list)
                     
                 created_models.extend(batch)
                 

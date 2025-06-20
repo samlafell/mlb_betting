@@ -120,6 +120,9 @@ class BacktestingResults:
     threshold_recommendations: List[ThresholdRecommendation]
     strategy_alerts: List[Dict[str, Any]]
     
+    # Strategy Details
+    strategy_metrics: List[StrategyMetrics]
+    
     # Quality Metrics
     data_completeness_pct: float
     game_outcome_freshness_hours: float
@@ -236,6 +239,7 @@ class BacktestingService:
                 stable_strategies=len([m for m in strategy_metrics if m.trend_direction == 'stable']),
                 threshold_recommendations=threshold_recommendations,
                 strategy_alerts=strategy_alerts,
+                strategy_metrics=strategy_metrics,
                 data_completeness_pct=data_quality["completeness_pct"],
                 game_outcome_freshness_hours=data_quality["freshness_hours"],
                 execution_time_seconds=execution_time,
@@ -259,19 +263,20 @@ class BacktestingService:
         try:
             with self.db_manager.get_cursor() as cursor:
                 # Check game outcome completeness (count unique games, not records)
+                # Only look at games that are at least 6 hours old to ensure they're completed
                 cursor.execute("""
                     WITH recent_games AS (
                         SELECT COUNT(DISTINCT rmbs.game_id) as total_unique_games
                         FROM mlb_betting.splits.raw_mlb_betting_splits rmbs
                         WHERE rmbs.game_datetime >= CURRENT_DATE - INTERVAL '7 days'
-                          AND rmbs.game_datetime < CURRENT_DATE
+                          AND rmbs.game_datetime < CURRENT_TIMESTAMP - INTERVAL '6 hours'
                     ),
                     games_with_outcomes AS (
                         SELECT COUNT(DISTINCT rmbs.game_id) as games_with_outcomes  
                         FROM mlb_betting.splits.raw_mlb_betting_splits rmbs
                         JOIN mlb_betting.main.game_outcomes go ON rmbs.game_id = go.game_id
                         WHERE rmbs.game_datetime >= CURRENT_DATE - INTERVAL '7 days'
-                          AND rmbs.game_datetime < CURRENT_DATE
+                          AND rmbs.game_datetime < CURRENT_TIMESTAMP - INTERVAL '6 hours'
                     )
                     SELECT 
                         rg.total_unique_games,
@@ -289,13 +294,23 @@ class BacktestingService:
                 # Check data freshness
                 cursor.execute("""
                     SELECT 
-                        EXTRACT('epoch' FROM (CURRENT_TIMESTAMP - MAX(last_updated))) / 3600 as hours_since_last_update
-                    FROM mlb_betting.splits.raw_mlb_betting_splits
-                    WHERE game_datetime >= CURRENT_DATE - INTERVAL '1 day'
+                        EXTRACT('epoch' FROM (CURRENT_TIMESTAMP - MAX(last_updated))) / 3600 as hours_since_last_splits_update,
+                        EXTRACT('epoch' FROM (CURRENT_TIMESTAMP - MAX(go.updated_at))) / 3600 as hours_since_last_outcomes_update
+                    FROM mlb_betting.splits.raw_mlb_betting_splits rmbs
+                    LEFT JOIN mlb_betting.main.game_outcomes go ON rmbs.game_id = go.game_id
+                    WHERE rmbs.game_datetime >= CURRENT_DATE - INTERVAL '2 days'
+                       OR go.game_date >= CURRENT_DATE - INTERVAL '2 days'
                 """)
                 
                 freshness_result = cursor.fetchone()
-                freshness_hours = freshness_result[0] if freshness_result else 999.0
+                if freshness_result:
+                    splits_freshness_hours = freshness_result[0] if freshness_result[0] else 999.0
+                    outcomes_freshness_hours = freshness_result[1] if freshness_result[1] else 999.0
+                    
+                    # Use the most recent update between splits and outcomes
+                    freshness_hours = min(splits_freshness_hours, outcomes_freshness_hours)
+                else:
+                    freshness_hours = 999.0
                 
                 return {
                     "completeness_pct": completeness_pct,
@@ -351,56 +366,105 @@ class BacktestingService:
         """Analyze strategy performance with statistical validation."""
         strategy_metrics = []
         
+        # Minimum sample sizes for different levels of confidence
+        MIN_SAMPLE_SIZE_BASIC = 25      # Basic analysis (was 5)
+        MIN_SAMPLE_SIZE_RELIABLE = 50   # Reliable analysis  
+        MIN_SAMPLE_SIZE_ROBUST = 100    # Robust analysis
+        
+        print(f"\n🔍 STRATEGY ANALYSIS BREAKDOWN:")
+        print(f"{'='*60}")
+        
+        total_evaluated = 0
+        basic_threshold_passed = 0
+        reliable_threshold_passed = 0
+        robust_threshold_passed = 0
+        
         # Process each strategy from backtesting results
         for script_name, results in backtest_results.items():
+            if not results:
+                continue
+                
+            print(f"\n📊 {script_name.upper()}:")
+            script_strategies = 0
+            script_reliable = 0
+            
             for result in results:
                 try:
                     # Extract common fields
                     total_bets = result.get('total_bets', 0)
                     wins = result.get('wins', 0) or result.get('sharp_wins', 0)
-                    win_rate = float(result.get('win_rate', 0)) / 100.0  # Convert percentage
+                    win_rate = float(result.get('win_rate', 0))
                     roi_per_100 = float(result.get('roi_per_100_unit', 0))
                     
-                    if total_bets < self.config["min_sample_size_analysis"]:
+                    total_evaluated += 1
+                    
+                    # Determine sample size category
+                    sample_category = "INSUFFICIENT"
+                    if total_bets >= MIN_SAMPLE_SIZE_ROBUST:
+                        sample_category = "ROBUST"
+                        robust_threshold_passed += 1
+                    elif total_bets >= MIN_SAMPLE_SIZE_RELIABLE:
+                        sample_category = "RELIABLE"
+                        reliable_threshold_passed += 1
+                    elif total_bets >= MIN_SAMPLE_SIZE_BASIC:
+                        sample_category = "BASIC"
+                        basic_threshold_passed += 1
+                    
+                    # Get strategy identification
+                    source_book = result.get('source_book_type', 'unknown')
+                    strategy_variant = result.get('strategy_variant', '') or result.get('final_sharp_indicator', '') or result.get('strategy_name', '')
+                    
+                    # Print detailed breakdown
+                    profitable_marker = "🟢" if win_rate > 52.4 else "🔴"
+                    print(f"   {profitable_marker} {source_book} ({strategy_variant}): {total_bets} bets, {win_rate:.1f}% WR, {roi_per_100:.1f}% ROI [{sample_category}]")
+                    
+                    # Only include strategies that meet minimum sample size for analysis
+                    if total_bets < MIN_SAMPLE_SIZE_BASIC:
                         continue
+                    
+                    script_strategies += 1
+                    if total_bets >= MIN_SAMPLE_SIZE_RELIABLE:
+                        script_reliable += 1
                     
                     # Calculate statistical metrics
                     confidence_interval = self._calculate_confidence_interval(wins, total_bets)
                     p_value = self._calculate_significance_test(wins, total_bets)
-                    sharpe_ratio = self._calculate_sharpe_ratio(wins, total_bets, win_rate)
+                    sharpe_ratio = self._calculate_sharpe_ratio(wins, total_bets, win_rate / 100.0)
                     
                     # Get trend analysis
                     trend_metrics = await self._calculate_trend_metrics(
-                        result.get('source_book_type', ''),
+                        source_book,
                         result.get('split_type', ''),
                         script_name
                     )
                     
-                    # Handle strategy variants (like opposing markets strategies)
-                    strategy_variant = result.get('strategy_variant', '') or result.get('final_sharp_indicator', '')
-                    strategy_name = f"{script_name}_{strategy_variant}" if strategy_variant else script_name
+                    # Create strategy name that reflects the actual strategy + variant
+                    strategy_name = f"{script_name}"
+                    if strategy_variant:
+                        strategy_name += f"_{strategy_variant}"
                     
+                    # Create metrics object
                     metrics = StrategyMetrics(
                         strategy_name=strategy_name,
-                        source_book_type=result.get('source_book_type', ''),
+                        source_book_type=source_book,
                         split_type=result.get('split_type', ''),
                         total_bets=total_bets,
                         wins=wins,
-                        win_rate=win_rate,
+                        win_rate=win_rate / 100.0,  # Convert to decimal
                         roi_per_100=roi_per_100,
                         sharpe_ratio=sharpe_ratio,
-                        max_drawdown=0.0,  # Would need historical data
+                        max_drawdown=0.0,  # Would need historical data to calculate properly
                         confidence_interval_lower=confidence_interval[0],
                         confidence_interval_upper=confidence_interval[1],
-                        sample_size_adequate=total_bets >= self.config["min_sample_size_threshold_adjustment"],
-                        statistical_significance=p_value < 0.05,
+                        statistical_significance=(p_value < 0.05),
                         p_value=p_value,
-                        seven_day_win_rate=trend_metrics.get('seven_day_win_rate'),
-                        thirty_day_win_rate=trend_metrics.get('thirty_day_win_rate'),
-                        trend_direction=trend_metrics.get('trend_direction'),
+                        seven_day_win_rate=trend_metrics.get('seven_day_win_rate', 0.0),
+                        thirty_day_win_rate=trend_metrics.get('thirty_day_win_rate', 0.0),
+                        trend_direction=trend_metrics.get('trend_direction', 'stable'),
                         consecutive_losses=trend_metrics.get('consecutive_losses', 0),
                         volatility=trend_metrics.get('volatility', 0.0),
-                        kelly_criterion=self._calculate_kelly_criterion(win_rate, 1.91),  # Assume -110 odds
+                        kelly_criterion=self._calculate_kelly_criterion(win_rate / 100.0, 1.91),  # Assume -110 odds
+                        sample_size_adequate=(total_bets >= MIN_SAMPLE_SIZE_RELIABLE),
                         last_updated=datetime.now(timezone.utc),
                         backtest_date=datetime.now(timezone.utc).date(),
                         created_at=datetime.now(timezone.utc)
@@ -408,9 +472,29 @@ class BacktestingService:
                     
                     strategy_metrics.append(metrics)
                     
-                except Exception as e:
-                    self.logger.error("Failed to analyze strategy", 
-                                    strategy=script_name, error=str(e))
+                except (ValueError, TypeError) as e:
+                    self.logger.warning("Failed to process strategy result", 
+                                      script=script_name, error=str(e))
+                    continue
+            
+            print(f"   📈 Script Summary: {script_strategies} strategies with ≥{MIN_SAMPLE_SIZE_BASIC} bets ({script_reliable} with ≥{MIN_SAMPLE_SIZE_RELIABLE} bets)")
+        
+        # Print overall summary
+        print(f"\n📊 OVERALL STRATEGY SUMMARY:")
+        print(f"{'='*60}")
+        print(f"   🔢 Total strategies evaluated: {total_evaluated}")
+        print(f"   ✅ Basic threshold (≥{MIN_SAMPLE_SIZE_BASIC} bets): {basic_threshold_passed}")
+        print(f"   🎯 Reliable threshold (≥{MIN_SAMPLE_SIZE_RELIABLE} bets): {reliable_threshold_passed}")
+        print(f"   💪 Robust threshold (≥{MIN_SAMPLE_SIZE_ROBUST} bets): {robust_threshold_passed}")
+        
+        profitable_reliable = len([s for s in strategy_metrics if s.win_rate > 0.524 and s.sample_size_adequate])
+        total_reliable = len([s for s in strategy_metrics if s.sample_size_adequate])
+        
+        print(f"   🟢 Profitable reliable strategies (>52.4% with ≥{MIN_SAMPLE_SIZE_RELIABLE} bets): {profitable_reliable}/{total_reliable}")
+        
+        if total_reliable == 0:
+            print(f"   ⚠️  WARNING: No strategies meet the reliable sample size threshold!")
+            print(f"       This suggests insufficient data for meaningful backtesting.")
         
         return strategy_metrics
     
@@ -665,7 +749,7 @@ class BacktestingService:
                 # Insert strategy metrics
                 for metrics in strategy_metrics:
                     cursor.execute("""
-                        INSERT INTO mlb_betting.backtesting.strategy_performance
+                        INSERT OR REPLACE INTO mlb_betting.backtesting.strategy_performance
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         f"{metrics.strategy_name}_{metrics.source_book_type}_{metrics.split_type}_{metrics.backtest_date}",
@@ -697,7 +781,7 @@ class BacktestingService:
                 # Insert threshold recommendations
                 for rec in threshold_recommendations:
                     cursor.execute("""
-                        INSERT INTO mlb_betting.backtesting.threshold_recommendations
+                        INSERT OR REPLACE INTO mlb_betting.backtesting.threshold_recommendations
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         f"{rec.strategy_name}_{rec.created_at.isoformat()}",

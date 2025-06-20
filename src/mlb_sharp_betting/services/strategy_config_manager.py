@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """
-Strategy Configuration Manager
-
-Manages dynamic strategy configurations based on backtesting results.
-Provides validated thresholds and strategy performance data to live detectors.
+Strategy Configuration Manager for dynamically loading and managing
+betting strategy configurations based on backtesting results.
 """
 
 import json
@@ -13,9 +11,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import structlog
+import asyncio
 
 from ..db.connection import DatabaseManager, get_db_manager
 from ..core.exceptions import DatabaseError
+from mlb_sharp_betting.core.config import get_settings
+from mlb_sharp_betting.core.logging import get_logger
+from mlb_sharp_betting.services.juice_filter_service import get_juice_filter_service
 
 
 logger = structlog.get_logger(__name__)
@@ -83,12 +85,14 @@ class StrategyConfigManager:
         """Initialize the configuration manager."""
         self.db_manager = db_manager or get_db_manager()
         self.logger = logger.bind(service="strategy_config")
+        self.settings = get_settings()
+        self.juice_filter = get_juice_filter_service()
         
-        # Cache configurations for performance
-        self._strategy_cache: Optional[Dict[str, StrategyConfig]] = None
-        self._threshold_cache: Optional[Dict[str, ThresholdConfig]] = None
-        self._cache_timestamp: Optional[datetime] = None
-        self._cache_ttl_minutes = 15  # Refresh every 15 minutes
+        # Cache for strategy configurations
+        self._strategy_cache: Dict[str, StrategyConfig] = {}
+        self._threshold_cache: Dict[str, ThresholdConfig] = {}
+        self._cache_expiry = datetime.now(timezone.utc)
+        self._cache_duration = timedelta(minutes=15)  # Refresh every 15 minutes
         
         # Default fallback configurations (conservative)
         self._default_thresholds = {
@@ -131,20 +135,24 @@ class StrategyConfigManager:
         if not self._strategy_cache:
             return []
         
-        # Return only active strategies with good performance
+        # Return only active strategies with strict performance requirements
         active_strategies = [
             config for config in self._strategy_cache.values()
             if config.is_active and 
-               config.win_rate > 0.52 and  # Above break-even
-               config.total_bets >= 5      # Minimum sample size
+               config.win_rate >= 0.52 and     # Minimum 52% win rate
+               config.roi_per_100 >= 10.0 and  # Minimum 10% ROI
+               config.total_bets >= 5          # Minimum sample size
         ]
         
         # Sort by performance (ROI then win rate)
         active_strategies.sort(key=lambda x: (x.roi_per_100, x.win_rate), reverse=True)
         
-        self.logger.info("Retrieved active strategies", 
-                        total_strategies=len(active_strategies),
-                        top_performer=active_strategies[0].strategy_name if active_strategies else None)
+        # Only log once at startup, not during every ranking lookup
+        if not hasattr(self, '_logged_strategies'):
+            self.logger.info("Retrieved active strategies", 
+                            total_strategies=len(active_strategies),
+                            top_performer=active_strategies[0].strategy_name if active_strategies else None)
+            self._logged_strategies = True
         
         return active_strategies
     
@@ -182,6 +190,24 @@ class StrategyConfigManager:
         
         # Return top 3 strategies by ROI
         return active_strategies[:3]
+    
+    async def get_strategy_ranking(self, strategy_name: str) -> Optional[Dict[str, str]]:
+        """Get the ranking information for a specific strategy."""
+        await self._refresh_cache_if_needed()
+        
+        # Get all active strategies sorted by performance
+        active_strategies = await self.get_active_strategies()
+        
+        # Find the strategy and its rank
+        for rank, strategy in enumerate(active_strategies, 1):
+            if strategy.strategy_name == strategy_name:
+                return {
+                    "rank": rank,
+                    "total_strategies": len(active_strategies),
+                    "rank_display": f"#{rank} of {len(active_strategies)}"
+                }
+        
+        return None
     
     async def is_strategy_enabled(self, strategy_name: str, min_win_rate: float = 0.52) -> bool:
         """Check if a strategy is currently enabled and performing well."""
@@ -248,14 +274,14 @@ class StrategyConfigManager:
         }
     
     async def _refresh_cache_if_needed(self) -> None:
-        """Refresh cache if it's stale or empty."""
+        """Refresh cache if it's expired or empty."""
         now = datetime.now(timezone.utc)
         
-        if (self._cache_timestamp is None or 
-            (now - self._cache_timestamp).total_seconds() > self._cache_ttl_minutes * 60):
+        if (self._cache_expiry is None or 
+            (now - self._cache_expiry).total_seconds() > self._cache_duration.total_seconds()):
             
             await self._load_configurations()
-            self._cache_timestamp = now
+            self._cache_expiry = now
     
     async def _load_configurations(self) -> None:
         """Load strategy configurations and thresholds from database."""
@@ -451,4 +477,44 @@ class StrategyConfigManager:
             },
             "status": "Active strategies available",
             "last_updated": max(s.last_updated for s in active_strategies)
-        } 
+        }
+    
+    def filter_recommendation_by_juice(
+        self,
+        recommendation: Dict,
+        moneyline_odds: any,
+        strategy_name: str
+    ) -> bool:
+        """
+        Filter a betting recommendation through the centralized juice filter.
+        
+        Args:
+            recommendation: Dict containing recommendation details (must have 'recommended_team', 'home_team', 'away_team')
+            moneyline_odds: The moneyline odds for the game
+            strategy_name: Name of the strategy making the recommendation
+            
+        Returns:
+            True if recommendation should be kept, False if filtered out
+        """
+        if not self.settings.juice_filter.enabled or not self.settings.juice_filter.apply_to_all_strategies:
+            return True
+        
+        # Extract required fields
+        recommended_team = recommendation.get('recommended_team') or recommendation.get('follow_stronger_rec')
+        home_team = recommendation.get('home_team')
+        away_team = recommendation.get('away_team')
+        
+        if not all([recommended_team, home_team, away_team]):
+            # If we can't determine the teams, allow the bet to proceed
+            return True
+        
+        # Use the centralized juice filter
+        should_filter = self.juice_filter.should_filter_bet(
+            moneyline_odds=moneyline_odds,
+            recommended_team=recommended_team,
+            home_team=home_team,
+            away_team=away_team,
+            strategy_name=strategy_name
+        )
+        
+        return not should_filter  # Return True if bet should be kept (not filtered) 

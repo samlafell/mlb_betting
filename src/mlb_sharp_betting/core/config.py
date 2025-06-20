@@ -10,7 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
-from pydantic import Field, validator
+from pydantic import Field, field_validator, validator
 from pydantic_settings import BaseSettings
 
 from mlb_sharp_betting.core.exceptions import ConfigurationError
@@ -247,10 +247,54 @@ class LoggingSettings(BaseSettings):
     @validator("level")
     def validate_log_level(cls, v: str) -> str:
         """Validate logging level."""
-        valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         if v.upper() not in valid_levels:
             raise ValueError(f"Invalid log level: {v}. Must be one of {valid_levels}")
         return v.upper()
+
+
+class JuiceFilterSettings(BaseSettings):
+    """Juice filter configuration to protect against heavily juiced lines."""
+    
+    enabled: bool = Field(
+        default=True,
+        description="Enable juice filtering across all strategies",
+        env="JUICE_FILTER_ENABLED"
+    )
+    
+    max_juice_threshold: int = Field(
+        default=-160,
+        description="Maximum acceptable juice for moneyline favorites (e.g., -160)",
+        le=-100,
+        ge=-500,
+        env="MAX_JUICE_THRESHOLD"
+    )
+    
+    log_filtered_bets: bool = Field(
+        default=True,
+        description="Log when bets are filtered due to juice",
+        env="LOG_FILTERED_BETS"
+    )
+    
+    apply_to_all_strategies: bool = Field(
+        default=True,
+        description="Apply juice filter to all betting strategies",
+        env="APPLY_JUICE_FILTER_TO_ALL"
+    )
+    
+    class Config:
+        env_prefix = ""
+        case_sensitive = False
+        use_enum_values = True
+    
+    @validator("max_juice_threshold")
+    def validate_juice_threshold(cls, v: int) -> int:
+        """Validate juice threshold is negative and reasonable."""
+        if v >= -100:
+            raise ValueError("Juice threshold must be worse than -100 (e.g., -160)")
+        if v <= -500:
+            raise ValueError("Juice threshold too extreme, must be better than -500")
+        return v
 
 
 class Settings(BaseSettings):
@@ -276,6 +320,7 @@ class Settings(BaseSettings):
     api: APISettings = Field(default_factory=APISettings)
     vsin: VSINSettings = Field(default_factory=VSINSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    juice_filter: JuiceFilterSettings = Field(default_factory=JuiceFilterSettings)
     
     # Sharp detection settings
     sharp_threshold_percentage: float = Field(
@@ -300,6 +345,31 @@ class Settings(BaseSettings):
         description="The Odds API key for retrieving betting odds",
         env="ODDS_API_KEY"
     )
+    
+    # Email notification settings
+    email_from_address: Optional[str] = Field(
+        default=None,
+        description="Gmail address to send notifications from",
+        env="EMAIL_FROM_ADDRESS"
+    )
+    
+    email_app_password: Optional[str] = Field(
+        default=None,
+        description="Gmail app password for authentication",
+        env="EMAIL_APP_PASSWORD"
+    )
+    
+    email_to_addresses: str = Field(
+        default="",
+        description="Comma-separated list of email addresses to send notifications to",
+        env="EMAIL_TO_ADDRESSES"
+    )
+    
+    def get_email_list(self) -> List[str]:
+        """Get email addresses as a list."""
+        if not self.email_to_addresses.strip():
+            return []
+        return [email.strip() for email in self.email_to_addresses.split(',')]
     
     class Config:
         env_file = ".env"

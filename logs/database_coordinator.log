@@ -1,0 +1,28 @@
+/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/.venv/lib/python3.10/site-packages/pydantic/_internal/_config.py:373: UserWarning: Valid config keys have changed in V2:
+* 'schema_extra' has been renamed to 'json_schema_extra'
+  warnings.warn(message, UserWarning)
+/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/.venv/lib/python3.10/site-packages/pydantic/_internal/_config.py:373: UserWarning: Valid config keys have changed in V2:
+* 'allow_population_by_field_name' has been renamed to 'validate_by_name'
+  warnings.warn(message, UserWarning)
+🚀 Starting Database Coordinator process...
+2025-06-19 23:17:45 [info     ] Starting database coordinator
+2025-06-19 23:17:45 [info     ] Database coordinator started   pid=80887
+/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/.venv/lib/python3.10/site-packages/pydantic/_internal/_config.py:373: UserWarning: Valid config keys have changed in V2:
+* 'schema_extra' has been renamed to 'json_schema_extra'
+  warnings.warn(message, UserWarning)
+/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/.venv/lib/python3.10/site-packages/pydantic/_internal/_config.py:373: UserWarning: Valid config keys have changed in V2:
+* 'allow_population_by_field_name' has been renamed to 'validate_by_name'
+  warnings.warn(message, UserWarning)
+2025-06-19 23:17:46 [info     ] Writer process started
+2025-06-19 23:17:46 [info     ] Initializing new database manager instance
+2025-06-19 23:17:46 [info     ] Initializing DuckDB connection
+2025-06-19 23:17:46 [info     ] Database path being used       path=data/raw/mlb_betting.duckdb
+2025-06-19 23:17:46 [info     ] DuckDB connection established  database_path=data/raw/mlb_betting.duckdb
+2025-06-19 23:17:46 [info     ] Database manager initialized
+2025-06-19 23:17:47 [error    ] Fatal error in writer process  error="module 'multiprocessing' has no attribute 'Empty'"
+2025-06-19 23:17:47 [info     ] Writer process ended
+✅ Database Coordinator running (PID: 80884)
+   Press Ctrl+C to stop
+
+🛑 Received signal 15, shutting down coordinator...
+✅ Database Coordinator stopped
