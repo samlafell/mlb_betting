@@ -579,7 +579,9 @@ class PreGameRecommendationTracker:
                 
                 win_rate = len(wins) / completed_count if completed_count > 0 else 0.0
                 total_pnl = sum(r['profit_loss'] or 0 for r in completed)
-                roi_per_100 = (total_pnl / completed_count) if completed_count > 0 else 0.0
+                # Calculate ROI as percentage: (Net Profit / Total Wagered) * 100
+                # Assuming $110 wagered per bet at -110 odds
+                roi_per_100 = (total_pnl / (completed_count * 110) * 100) if completed_count > 0 else 0.0
                 avg_bet_profit = total_pnl / completed_count if completed_count > 0 else 0.0
                 
                 # Breakdowns
@@ -717,7 +719,9 @@ This typically means:
                 
                 win_rate = len(wins) / completed_count if completed_count > 0 else 0.0
                 total_pnl = sum(r['profit_loss'] or 0 for r in completed)
-                roi_per_100 = (total_pnl / completed_count) if completed_count > 0 else 0.0
+                # Calculate ROI as percentage: (Net Profit / Total Wagered) * 100
+                # Assuming $110 wagered per bet at -110 odds
+                roi_per_100 = (total_pnl / (completed_count * 110) * 100) if completed_count > 0 else 0.0
                 avg_bet_profit = total_pnl / completed_count if completed_count > 0 else 0.0
                 
                 # Breakdowns

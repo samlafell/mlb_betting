@@ -19,10 +19,11 @@ from mlb_sharp_betting.core.exceptions import ConfigurationError
 class DatabaseSettings(BaseSettings):
     """Database configuration settings."""
     
-    path: Path = Field(
+    db_path: Path = Field(
         default=Path("data/raw/mlb_betting.duckdb"),
         description="Path to the DuckDB database file",
-        env="MLB_DB_PATH"
+        env="MLB_DATABASE_PATH",
+        alias="path"
     )
     
     connection_timeout: int = Field(
@@ -51,12 +52,22 @@ class DatabaseSettings(BaseSettings):
         case_sensitive = False
         use_enum_values = True
     
-    @validator("path")
+    @validator("db_path")
     def validate_db_path(cls, v: Path) -> Path:
-        """Validate database path."""
-        # Only create directory if path looks reasonable (not system PATH)
+        """Validate database path and ensure it's absolute."""
+        # Convert to absolute path to prevent relative path issues
+        if not v.is_absolute():
+            # Get the project root (4 levels up from this config file)
+            config_file = Path(__file__)
+            project_root = config_file.parent.parent.parent.parent
+            v = project_root / v
+        
+        # Resolve any symlinks and normalize the path
+        v = v.resolve()
+        
+        # Only create directory if path looks reasonable
         path_str = str(v)
-        if ":" not in path_str and len(path_str) < 1000:
+        if len(path_str) < 1000 and v.suffix == '.duckdb':
             try:
                 v.parent.mkdir(parents=True, exist_ok=True)
             except (OSError, Exception):

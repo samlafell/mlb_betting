@@ -163,6 +163,8 @@ class BacktestingService:
             "line_movement_strategy": "analysis_scripts/line_movement_strategy.sql",
             "signal_combinations": "analysis_scripts/signal_combinations.sql",
             "opposing_markets_strategy": "analysis_scripts/opposing_markets_strategy.sql",
+            "public_money_fade_strategy": "analysis_scripts/public_money_fade_strategy.sql",
+            "book_conflicts_strategy": "analysis_scripts/book_conflicts_strategy.sql",
             "executive_summary_report": "analysis_scripts/executive_summary_report.sql"
         }
         
@@ -367,7 +369,7 @@ class BacktestingService:
         strategy_metrics = []
         
         # Minimum sample sizes for different levels of confidence
-        MIN_SAMPLE_SIZE_BASIC = 25      # Basic analysis (was 5)
+        MIN_SAMPLE_SIZE_BASIC = 17      # Basic analysis (was 25)
         MIN_SAMPLE_SIZE_RELIABLE = 50   # Reliable analysis  
         MIN_SAMPLE_SIZE_ROBUST = 100    # Robust analysis
         
@@ -420,6 +422,10 @@ class BacktestingService:
                     
                     # Only include strategies that meet minimum sample size for analysis
                     if total_bets < MIN_SAMPLE_SIZE_BASIC:
+                        continue
+                    
+                    # Filter out losing strategies (below break-even at -110 odds)
+                    if win_rate <= 52.4:
                         continue
                     
                     script_strategies += 1
@@ -477,7 +483,7 @@ class BacktestingService:
                                       script=script_name, error=str(e))
                     continue
             
-            print(f"   📈 Script Summary: {script_strategies} strategies with ≥{MIN_SAMPLE_SIZE_BASIC} bets ({script_reliable} with ≥{MIN_SAMPLE_SIZE_RELIABLE} bets)")
+            print(f"   📈 Script Summary: {script_strategies} profitable strategies with ≥{MIN_SAMPLE_SIZE_BASIC} bets ({script_reliable} with ≥{MIN_SAMPLE_SIZE_RELIABLE} bets)")
         
         # Print overall summary
         print(f"\n📊 OVERALL STRATEGY SUMMARY:")

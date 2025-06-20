@@ -203,22 +203,22 @@ strategy_performance AS (
         -- Strategy 1: Follow stronger signal
         SUM(stronger_signal_win) as stronger_signal_wins,
         ROUND(AVG(stronger_signal_win) * 100, 2) as stronger_signal_win_rate,
-        ROUND((AVG(stronger_signal_win) * 2.1 - 1) * 100, 2) as stronger_signal_roi_per_100,
+        ROUND(((SUM(stronger_signal_win) * 100) - ((COUNT(winning_team) - SUM(stronger_signal_win)) * 110)) / (COUNT(winning_team) * 110) * 100, 1) as stronger_signal_roi_per_100,
         
         -- Strategy 2: ML preference
         SUM(ml_preference_win) as ml_preference_wins,
         ROUND(AVG(ml_preference_win) * 100, 2) as ml_preference_win_rate,
-        ROUND((AVG(ml_preference_win) * 2.1 - 1) * 100, 2) as ml_preference_roi_per_100,
+        ROUND(((SUM(ml_preference_win) * 100) - ((COUNT(winning_team) - SUM(ml_preference_win)) * 110)) / (COUNT(winning_team) * 110) * 100, 1) as ml_preference_roi_per_100,
         
         -- Strategy 3: Spread preference
         SUM(spread_preference_win) as spread_preference_wins,
         ROUND(AVG(spread_preference_win) * 100, 2) as spread_preference_win_rate,
-        ROUND((AVG(spread_preference_win) * 2.1 - 1) * 100, 2) as spread_preference_roi_per_100,
+        ROUND(((SUM(spread_preference_win) * 100) - ((COUNT(winning_team) - SUM(spread_preference_win)) * 110)) / (COUNT(winning_team) * 110) * 100, 1) as spread_preference_roi_per_100,
         
         -- Strategy 4: Contrarian
         SUM(contrarian_win) as contrarian_wins,
         ROUND(AVG(contrarian_win) * 100, 2) as contrarian_win_rate,
-        ROUND((AVG(contrarian_win) * 2.1 - 1) * 100, 2) as contrarian_roi_per_100
+        ROUND(((SUM(contrarian_win) * 100) - ((COUNT(winning_team) - SUM(contrarian_win)) * 110)) / (COUNT(winning_team) * 110) * 100, 1) as contrarian_roi_per_100
         
     FROM strategy_results
     WHERE winning_team IS NOT NULL  -- Only completed games

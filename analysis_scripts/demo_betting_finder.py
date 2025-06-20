@@ -221,7 +221,8 @@ def run_demo_finder(conn):
         if split_value:
             bet_type_display += f" ({split_value})"
         
-        roi_estimate = (est_win_rate/100 * 90.91) - ((100-est_win_rate)/100 * 100)
+        # Calculate estimated ROI based on win rate (assuming -110 odds)
+        roi_estimate = ((est_win_rate/100 * 100) - ((100-est_win_rate)/100 * 110)) / 110 * 100
         
         print(f"  {confidence_emoji} {timing_emoji} {bet_type_display}")
         print(f"     💰 RECOMMENDATION: {bet_rec}")

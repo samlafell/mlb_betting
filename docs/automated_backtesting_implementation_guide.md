@@ -250,7 +250,7 @@ Automatically generated and stored in `reports/daily/`:
 | Metric | Calculation | Usage |
 |--------|-------------|-------|
 | **Win Rate** | wins / total_bets | Primary performance indicator |
-| **ROI per $100** | (wins × 90.91) - (losses × 100) | Profitability measure |
+| **ROI per $100** | ((wins × 100) - (losses × 110)) / (total_bets × 110) × 100 | Profitability percentage |
 | **Sharpe Ratio** | excess_return / volatility | Risk-adjusted performance |
 | **Kelly Criterion** | (bp - q) / b | Optimal bet sizing |
 | **95% Confidence Interval** | Binomial distribution | Statistical reliability |

@@ -96,7 +96,7 @@ SELECT
     COUNT(*) as total_bets,
     SUM(consensus_follow_correct) as wins,
     ROUND(AVG(consensus_follow_correct) * 100, 1) as win_rate_pct,
-    ROUND((SUM(consensus_follow_correct) * 100.0 - (COUNT(*) - SUM(consensus_follow_correct)) * 110.0) / COUNT(*), 1) as roi_per_100,
+    ROUND(((SUM(consensus_follow_correct) * 100.0) - ((COUNT(*) - SUM(consensus_follow_correct)) * 110.0)) / (COUNT(*) * 110.0) * 100, 1) as roi_per_100,
     ROUND(AVG(consensus_strength), 1) as avg_consensus_strength,
     ROUND(AVG(consensus_alignment), 1) as avg_consensus_alignment,
     COUNT(DISTINCT home_team || '-' || away_team || '-' || DATE(g.game_datetime)) as unique_games
@@ -114,7 +114,7 @@ SELECT
     COUNT(*) as total_bets,
     SUM(consensus_fade_correct) as wins,
     ROUND(AVG(consensus_fade_correct) * 100, 1) as win_rate_pct,
-    ROUND((SUM(consensus_fade_correct) * 100.0 - (COUNT(*) - SUM(consensus_fade_correct)) * 110.0) / COUNT(*), 1) as roi_per_100,
+    ROUND(((SUM(consensus_fade_correct) * 100.0) - ((COUNT(*) - SUM(consensus_fade_correct)) * 110.0)) / (COUNT(*) * 110.0) * 100, 1) as roi_per_100,
     ROUND(AVG(consensus_strength), 1) as avg_consensus_strength,
     ROUND(AVG(consensus_alignment), 1) as avg_consensus_alignment,
     COUNT(DISTINCT home_team || '-' || away_team || '-' || DATE(g.game_datetime)) as unique_games

@@ -285,12 +285,12 @@ class MLBStatsAPIService:
                 'Cancelled': 20
             }
             
-            # Sort by status priority, then by date (future dates first for upcoming games)
+            # Sort by status priority, then by date (today's games first for upcoming games)
             def sort_key(game):
                 status_rank = status_priority.get(game.status, 99)
-                # For upcoming games, prefer future dates; for completed games, prefer recent dates
+                # For upcoming games, prefer today's games over future dates
                 if status_rank < 10:  # Upcoming game
-                    date_rank = (date.today() - game.game_date.date()).days  # Negative for future
+                    date_rank = abs((game.game_date.date() - date.today()).days)  # 0 for today, 1 for tomorrow, etc.
                 else:  # Completed game
                     date_rank = abs((date.today() - game.game_date.date()).days)  # Positive for past
                 return (status_rank, date_rank)

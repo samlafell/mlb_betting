@@ -206,16 +206,39 @@ class VSINParser(BaseParser):
                             else:
                                 est_datetime = official_datetime
                             
+                            # CRITICAL FIX: Don't override VSIN's date if there's a significant discrepancy
+                            # VSIN often has more current information about game date changes
+                            vsin_date = game_info['game_datetime'].date()
+                            mlb_api_date = est_datetime.date()
+                            
+                            if abs((vsin_date - mlb_api_date).days) > 1:
+                                # Use VSIN's date but MLB API's time
+                                self.logger.warning(
+                                    "Date discrepancy between VSIN and MLB API - using VSIN date",
+                                    vsin_date=vsin_date.strftime('%Y-%m-%d'),
+                                    mlb_api_date=mlb_api_date.strftime('%Y-%m-%d'),
+                                    game_key=game_key
+                                )
+                                # Keep VSIN's date, use MLB API's time
+                                final_datetime = game_info['game_datetime'].replace(
+                                    hour=est_datetime.hour,
+                                    minute=est_datetime.minute,
+                                    second=est_datetime.second
+                                )
+                            else:
+                                # Use MLB API datetime when dates are close
+                                final_datetime = est_datetime
+                            
                             official_game_data[game_key] = {
                                 'game_id': str(mlb_game_data['game_id']),
-                                'game_datetime': est_datetime
+                                'game_datetime': final_datetime
                             }
                             
                             self.logger.debug(
                                 "Got official game data",
                                 vsin_game_key=game_key,
                                 official_game_id=mlb_game_data['game_id'],
-                                official_datetime=est_datetime.strftime('%Y-%m-%d %H:%M:%S'),
+                                final_datetime=final_datetime.strftime('%Y-%m-%d %H:%M:%S'),
                                 matchup=f"{game_info['away_team']} @ {game_info['home_team']}"
                             )
                         else:

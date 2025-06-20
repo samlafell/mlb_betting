@@ -160,12 +160,7 @@ SELECT
     
     -- ROI calculation (assuming -110 odds)
     ROUND(
-        CASE 
-            WHEN (100.0 * sharp_wins / total_bets) > 52.38 THEN
-                (sharp_wins * 90.91) - ((total_bets - sharp_wins) * 100)
-            ELSE
-                (sharp_wins * 90.91) - ((total_bets - sharp_wins) * 100)
-        END, 2
+        ((sharp_wins * 100) - ((total_bets - sharp_wins) * 110)) / (total_bets * 110) * 100, 1
     ) as roi_per_100_unit,
     
     -- Average differential

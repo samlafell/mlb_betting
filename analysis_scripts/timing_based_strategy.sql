@@ -205,10 +205,10 @@ SELECT
     ROUND(100.0 * wins / total_bets, 1) as win_rate,
     
     -- ROI calculation for $100 unit bets (assuming -110 odds)
-    ROUND((wins * 90.91) - ((total_bets - wins) * 100), 2) as roi_per_100_unit,
+    ROUND(((wins * 100) - ((total_bets - wins) * 110)) / (total_bets * 110) * 100, 1) as roi_per_100_unit,
     
     -- Profit per bet
-    ROUND((wins * 90.91 - (total_bets - wins) * 100) / total_bets, 2) as profit_per_bet,
+    ROUND(((wins * 100) - ((total_bets - wins) * 110)) / total_bets, 2) as profit_per_bet,
     
     -- Timing metrics
     ROUND(avg_earliest_sharp_hours, 1) as avg_early_hours,

@@ -467,10 +467,6 @@ class AutomatedBacktestingCLI:
         
         # Strategy performance summary
         if results.strategy_metrics:
-            profitable_strategies = [s for s in results.strategy_metrics if s.win_rate > 0.524]
-            basic_strategies = [s for s in results.strategy_metrics if s.total_bets >= 25 and s.total_bets < 50]
-            reliable_strategies = [s for s in results.strategy_metrics if s.total_bets >= 50]
-            
             def calculate_weighted_score(strategy):
                 return (strategy.win_rate * 100) + (strategy.roi_per_100 * 0.5) + (strategy.total_bets * 0.1)
             
@@ -480,9 +476,14 @@ class AutomatedBacktestingCLI:
                 # Tie-breakers in order of preference: strategy_name (alphabetical)
                 return (-score, strategy.strategy_name, strategy.source_book_type, strategy.split_type)
             
+            # Categorize strategies by sample size
+            reliable_strategies = [s for s in results.strategy_metrics if s.total_bets >= 50 and s.win_rate > 0.524]
+            basic_strategies = [s for s in results.strategy_metrics if s.total_bets >= 17 and s.win_rate > 0.524]
+            
+            # Show reliable strategies if available
             if reliable_strategies:
-                print(f"\n🎯 Reliable Strategies (≥50 bets):")
-                reliable_sorted = sorted(reliable_strategies, key=deterministic_sort_key)
+                print(f"\n🎯 Reliable Sample Size Strategies (≥50 bets):")
+                reliable_sorted = sorted(reliable_strategies, key=deterministic_sort_key)[:10]
                 
                 for i, strategy in enumerate(reliable_sorted, 1):
                     score = calculate_weighted_score(strategy)
@@ -498,8 +499,8 @@ class AutomatedBacktestingCLI:
                 print(f"     This indicates insufficient historical data for meaningful analysis.")
                 
                 if basic_strategies:
-                    print(f"\n📊 Basic Sample Size Strategies (25-49 bets) - USE WITH CAUTION:")
-                    basic_sorted = sorted(basic_strategies, key=deterministic_sort_key)[:5]
+                    print(f"\n📊 Profitable Strategies (≥17 bets) - USE WITH CAUTION:")
+                    basic_sorted = sorted(basic_strategies, key=deterministic_sort_key)[:10]
                     
                     for i, strategy in enumerate(basic_sorted, 1):
                         score = calculate_weighted_score(strategy)
@@ -511,7 +512,7 @@ class AutomatedBacktestingCLI:
                               f"{strategy.roi_per_100:+6.1f}% ROI | "
                               f"Score: {score:5.1f}")
                     
-                    print(f"\n     ⚠️  WARNING: Basic sample sizes (25-49 bets) have limited statistical reliability")
+                    print(f"\n     ⚠️  WARNING: Sample sizes (17-49 bets) have limited statistical reliability")
                     print(f"         Recommended: Collect more data before making significant decisions")
         
         if results.threshold_recommendations:

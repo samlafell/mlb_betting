@@ -403,21 +403,21 @@ class VSINScraper(HTMLScraper):
                 if not self._is_betting_table(table):
                     continue
                 
-                # Parse rows from this table
-                rows = table.find_all('tr')
+                # Try two different parsing approaches:
+                # 1. tbody structure (each game in separate row)
+                # 2. freezetable structure (all games in one row)
                 
-                # For VSIN freezetable, skip the first 2 header rows
-                data_rows = []
-                for i, row in enumerate(rows):
-                    cells = row.find_all(['td', 'th'])
-                    if len(cells) >= 100:  # Data rows have 100+ cells
-                        data_rows.append(row)
+                # Approach 1: Check for tbody with individual game rows
+                tbody_splits = self._parse_tbody_structure(table, sport, sportsbook)
+                if tbody_splits:
+                    splits_data.extend(tbody_splits)
+                    continue
                 
-                # Parse data rows
-                for row in data_rows:
-                    split_data = self._parse_betting_row(row, [], sport, sportsbook)
-                    if split_data:
-                        splits_data.append(split_data)
+                # Approach 2: Parse freezetable structure (all games in one row)
+                freezetable_splits = self._parse_freezetable_structure(table, sport, sportsbook)
+                if freezetable_splits:
+                    splits_data.extend(freezetable_splits)
+                    continue
             
             # If no tables found, look for alternative structures
             if not splits_data:
@@ -427,6 +427,333 @@ class VSINScraper(HTMLScraper):
             self.logger.error("Error parsing betting splits", error=str(e))
         
         return splits_data
+    
+    def _parse_tbody_structure(self, table: Tag, sport: str, sportsbook: str) -> List[Dict[str, Any]]:
+        """
+        Parse tbody structure where each game is in a separate row.
+        
+        Args:
+            table: Table element
+            sport: Sport being parsed
+            sportsbook: Sportsbook source
+            
+        Returns:
+            List of parsed betting splits data
+        """
+        splits_data = []
+        
+        try:
+            # Look for tbody elements
+            tbodies = table.find_all('tbody')
+            
+            for tbody in tbodies:
+                rows = tbody.find_all('tr')
+                
+                # Parse each row as a separate game
+                for row in rows:
+                    split_data = self._parse_betting_row(row, [], sport, sportsbook)
+                    if split_data:
+                        splits_data.append(split_data)
+            
+        except Exception as e:
+            self.logger.debug("Error parsing tbody structure", error=str(e))
+        
+        return splits_data
+    
+    def _parse_freezetable_structure(self, table: Tag, sport: str, sportsbook: str) -> List[Dict[str, Any]]:
+        """
+        Parse freezetable structure where all games are in one row with many cells.
+        
+        Args:
+            table: Table element
+            sport: Sport being parsed
+            sportsbook: Sportsbook source
+            
+        Returns:
+            List of parsed betting splits data
+        """
+        splits_data = []
+        
+        try:
+            # Check if this is a freezetable
+            table_classes = table.get('class', [])
+            if 'freezetable' not in table_classes:
+                return splits_data
+            
+            # Get all rows
+            rows = table.find_all('tr')
+            
+            # Find the row with the most team links (contains all game data)
+            best_row = None
+            max_team_links = 0
+            
+            for row in rows:
+                team_links = row.find_all('a', href=True)
+                mlb_team_links = [link for link in team_links if '/mlb/teams/' in link.get('href', '')]
+                
+                if len(mlb_team_links) > max_team_links:
+                    max_team_links = len(mlb_team_links)
+                    best_row = row
+            
+            if not best_row or max_team_links < 4:  # Need at least 2 games (4 teams)
+                return splits_data
+            
+            self.logger.info("Found freezetable data row", 
+                           team_links=max_team_links, 
+                           expected_games=max_team_links // 2)
+            
+            # Parse multiple games from this single row
+            splits_data = self._parse_multiple_games_from_row(best_row, sport, sportsbook)
+            
+        except Exception as e:
+            self.logger.debug("Error parsing freezetable structure", error=str(e))
+        
+        return splits_data
+    
+    def _parse_multiple_games_from_row(self, row: Tag, sport: str, sportsbook: str) -> List[Dict[str, Any]]:
+        """
+        Parse multiple games from a single freezetable row.
+        
+        In VSIN's freezetable, all games are in one row with each game occupying
+        approximately 10 cells (based on analysis showing games at cell 0, 10, 20, 30, etc.)
+        
+        Args:
+            row: Table row element containing multiple games
+            sport: Sport being parsed  
+            sportsbook: Sportsbook source
+            
+        Returns:
+            List of parsed betting splits data for all games
+        """
+        splits_data = []
+        
+        try:
+            cells = row.find_all(['td', 'th'])
+            
+            # Find all cells that contain team links
+            game_cells = []
+            for i, cell in enumerate(cells):
+                team_links = cell.find_all('a', href=True)
+                mlb_team_links = [link for link in team_links if '/mlb/teams/' in link.get('href', '')]
+                
+                if len(mlb_team_links) >= 2:  # Cell contains a complete game (2 teams)
+                    game_cells.append((i, cell, mlb_team_links))
+            
+            self.logger.info("Found game cells in freezetable row", 
+                           total_cells=len(cells),
+                           game_cells=len(game_cells))
+            
+            # Parse each game
+            for cell_index, cell, team_links in game_cells:
+                try:
+                    # Extract team names
+                    team_names = [link.get_text(strip=True) for link in team_links[:2]]
+                    away_team = team_names[0]
+                    home_team = team_names[1]
+                    
+                    # For freezetable, we need to extract data from multiple cells
+                    # Based on analysis: game data spans ~10 cells starting from the team cell
+                    game_data = self._extract_game_data_from_freezetable(
+                        cells, cell_index, away_team, home_team, sport, sportsbook
+                    )
+                    
+                    if game_data:
+                        splits_data.append(game_data)
+                        
+                except Exception as e:
+                    self.logger.debug("Error parsing individual game from freezetable", 
+                                    cell_index=cell_index, error=str(e))
+                    continue
+            
+        except Exception as e:
+            self.logger.error("Error parsing multiple games from row", error=str(e))
+        
+        return splits_data
+    
+    def _extract_game_data_from_freezetable(
+        self, 
+        cells: List[Tag], 
+        start_cell: int, 
+        away_team: str, 
+        home_team: str,
+        sport: str,
+        sportsbook: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Extract betting data for a single game from freezetable cells.
+        
+        Args:
+            cells: All cells in the row
+            start_cell: Index of cell containing team names
+            away_team: Away team name
+            home_team: Home team name
+            sport: Sport being parsed
+            sportsbook: Sportsbook source
+            
+        Returns:
+            Parsed betting data or None if extraction fails
+        """
+        try:
+            # Based on analysis, each game spans exactly 10 cells:
+            # Cell 0: Teams, Cell 1: Moneyline, Cell 2: ML Handle %, Cell 3: ML Bet %
+            # Cell 4: Total odds, Cell 5: Total Handle %, Cell 6: Total Bet %
+            # Cell 7: Spread/RL, Cell 8: Spread Handle %, Cell 9: Spread Bet %
+            end_cell = min(start_cell + 10, len(cells))
+            game_cells = cells[start_cell:end_cell]
+            
+            # Extract moneyline odds (cell 1 relative to team cell)
+            away_line = None
+            home_line = None
+            
+            if len(game_cells) > 1:
+                moneyline_cell = game_cells[1]
+                
+                # Try to find odds in links (for DK) or divs (for Circa)
+                odds_links = moneyline_cell.find_all('a')
+                if len(odds_links) >= 2:
+                    away_line = odds_links[0].get_text(strip=True)
+                    home_line = odds_links[1].get_text(strip=True)
+                else:
+                    odds_divs = moneyline_cell.find_all('div', class_='scorebox_highlight')
+                    if len(odds_divs) >= 2:
+                        away_line = odds_divs[0].get_text(strip=True)
+                        home_line = odds_divs[1].get_text(strip=True)
+                
+                # Fix missing + signs for positive odds
+                if away_line and away_line.isdigit():
+                    away_line = '+' + away_line
+                if home_line and home_line.isdigit():
+                    home_line = '+' + home_line
+            
+            # Extract handle percentages (cell 2)
+            away_handle = None
+            home_handle = None
+            
+            if len(game_cells) > 2:
+                handle_cell = game_cells[2]
+                handle_text = handle_cell.get_text(strip=True)
+                
+                import re
+                # Handle text format: "19%81%-"
+                handle_matches = re.findall(r'(\d+)%', handle_text)
+                if len(handle_matches) >= 2:
+                    away_handle = handle_matches[0] + '%'
+                    home_handle = handle_matches[1] + '%'
+            
+            # Extract bet percentages (cell 3)
+            away_bets = None
+            home_bets = None
+            
+            if len(game_cells) > 3:
+                bet_cell = game_cells[3]
+                bet_text = bet_cell.get_text(strip=True)
+                
+                # Bet text format: "22%78%-"
+                bet_matches = re.findall(r'(\d+)%', bet_text)
+                if len(bet_matches) >= 2:
+                    away_bets = bet_matches[0] + '%'
+                    home_bets = bet_matches[1] + '%'
+            
+            # Extract spread data (cell 7)
+            away_spread = None
+            home_spread = None
+            
+            if len(game_cells) > 7:
+                spread_cell = game_cells[7]
+                
+                # Try to find spread in links (for DK) or divs (for Circa)
+                spread_links = spread_cell.find_all('a')
+                if len(spread_links) >= 2:
+                    away_spread = spread_links[0].get_text(strip=True)
+                    home_spread = spread_links[1].get_text(strip=True)
+                else:
+                    spread_divs = spread_cell.find_all('div', class_='scorebox_highlight')
+                    if len(spread_divs) >= 2:
+                        away_spread = spread_divs[0].get_text(strip=True)
+                        home_spread = spread_divs[1].get_text(strip=True)
+            
+            # Extract spread handle percentages (cell 8)
+            away_spread_handle = None
+            home_spread_handle = None
+            
+            if len(game_cells) > 8:
+                spread_handle_cell = game_cells[8]
+                spread_handle_text = spread_handle_cell.get_text(strip=True)
+                
+                # Handle text format: "4%96%-"
+                spread_handle_matches = re.findall(r'(\d+)%', spread_handle_text)
+                if len(spread_handle_matches) >= 2:
+                    away_spread_handle = spread_handle_matches[0] + '%'
+                    home_spread_handle = spread_handle_matches[1] + '%'
+            
+            # Extract spread bet percentages (cell 9)
+            away_spread_bets = None
+            home_spread_bets = None
+            
+            if len(game_cells) > 9:
+                spread_bet_cell = game_cells[9]
+                spread_bet_text = spread_bet_cell.get_text(strip=True)
+                
+                # Bet text format: "25%75%-"
+                spread_bet_matches = re.findall(r'(\d+)%', spread_bet_text)
+                if len(spread_bet_matches) >= 2:
+                    away_spread_bets = spread_bet_matches[0] + '%'
+                    home_spread_bets = spread_bet_matches[1] + '%'
+            
+            # Create betting data structure
+            betting_data = {
+                'Game': f"{away_team} @ {home_team}",
+                'Away Team': away_team,
+                'Home Team': home_team,
+                'source': DataSource.VSIN.value,
+                'book': self._normalize_sportsbook(sportsbook),
+                'sport': sport,
+                'scraped_at': datetime.now().isoformat()
+            }
+            
+            # Add moneyline data if available
+            if away_line:
+                betting_data['Away Line'] = away_line
+            if home_line:
+                betting_data['Home Line'] = home_line
+            if away_handle:
+                betting_data['Away Handle %'] = away_handle
+            if home_handle:
+                betting_data['Home Handle %'] = home_handle
+            if away_bets:
+                betting_data['Away Bets %'] = away_bets
+            if home_bets:
+                betting_data['Home Bets %'] = home_bets
+            
+            # Add spread data if available
+            if away_spread:
+                betting_data['Away Spread'] = away_spread
+            if home_spread:
+                betting_data['Home Spread'] = home_spread
+            if away_spread_handle:
+                betting_data['Away Spread Handle %'] = away_spread_handle
+            if home_spread_handle:
+                betting_data['Home Spread Handle %'] = home_spread_handle
+            if away_spread_bets:
+                betting_data['Away Spread Bets %'] = away_spread_bets
+            if home_spread_bets:
+                betting_data['Home Spread Bets %'] = home_spread_bets
+            
+            # Only return if we have meaningful betting data
+            has_meaningful_data = any([away_line, home_line, away_handle, home_handle, away_spread, home_spread])
+            
+            if has_meaningful_data:
+                self.logger.debug("Successfully extracted freezetable game data", 
+                                away_team=away_team, home_team=home_team,
+                                away_line=away_line, home_line=home_line,
+                                away_handle=away_handle, home_handle=home_handle,
+                                away_spread=away_spread, home_spread=home_spread)
+            
+            return betting_data if has_meaningful_data else None
+            
+        except Exception as e:
+            self.logger.debug("Error extracting game data from freezetable", error=str(e))
+            return None
     
     def _is_betting_table(self, table: Tag) -> bool:
         """
@@ -711,10 +1038,6 @@ class VSINScraper(HTMLScraper):
         except Exception as e:
             self.logger.debug("Error parsing VSIN betting row", error=str(e))
             return None
-    
-
-    
-
     
     def _parse_alternative_structure(
         self, 
