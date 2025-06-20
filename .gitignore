@@ -11,3 +11,32 @@ wheels/
 
 # Results
 analysis_results/**
+
+# 🚨 CRITICAL: PROTECT ALL DATABASE FILES FROM GIT
+# Never commit database files - they contain valuable data and can be huge
+*.duckdb
+*.duckdb.wal
+*.db
+*.sqlite
+*.sqlite3
+data/raw/
+analysis_scripts/data/
+logs/
+*.log
+*.pid
+*.lock
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
