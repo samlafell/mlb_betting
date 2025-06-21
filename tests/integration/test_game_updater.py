@@ -99,7 +99,8 @@ async def main():
         # Check database status
         print(f"\n📊 Database Status")
         print("=" * 20)
-        outcome_repo = get_game_outcome_repository()
+        db_manager = get_db_manager()
+        outcome_repo = get_game_outcome_repository(db_manager)
         recent_outcomes = await outcome_repo.get_recent_outcomes(limit=10)
         
         if recent_outcomes:

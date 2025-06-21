@@ -141,11 +141,16 @@ class EmailConfig:
 class PreGameWorkflowService:
     """Service for executing pre-game automated workflows."""
     
+    # Class-level semaphore to ensure only one workflow runs at a time
+    # This prevents database lock conflicts when multiple games have overlapping workflows
+    _workflow_semaphore = asyncio.Semaphore(1)
+    
     def __init__(self, 
                  project_root: Optional[Path] = None,
                  max_retries: int = 3,
                  stage_timeout_seconds: int = 90,  # 90 seconds per stage (total ~4.5 min max)
-                 retry_delay_base: float = 2.0):
+                 retry_delay_base: float = 2.0,
+                 workflow_queue_timeout: float = 300.0):  # 5 minutes max wait for workflow queue
         """
         Initialize the pre-game workflow service.
         
@@ -154,11 +159,13 @@ class PreGameWorkflowService:
             max_retries: Maximum retry attempts per stage
             stage_timeout_seconds: Timeout for each stage execution
             retry_delay_base: Base delay for exponential backoff (seconds)
+            workflow_queue_timeout: Maximum time to wait for workflow queue access
         """
         self.project_root = project_root or Path(__file__).parent.parent.parent.parent
         self.max_retries = max_retries
         self.stage_timeout = stage_timeout_seconds
         self.retry_delay_base = retry_delay_base
+        self.workflow_queue_timeout = workflow_queue_timeout
         
         # Services
         self.mlb_api = MLBStatsAPIService()
@@ -180,6 +187,8 @@ class PreGameWorkflowService:
             "workflows_executed": 0,
             "workflows_successful": 0,
             "workflows_failed": 0,
+            "workflows_queued": 0,  # Number of workflows that waited in queue
+            "workflow_queue_timeouts": 0,  # Number of workflows that timed out waiting for queue
             "stage_failures": 0,
             "emails_sent": 0,
             "success_emails_sent": 0,
@@ -249,22 +258,103 @@ class PreGameWorkflowService:
         game_key = str(game.game_pk)
         self.emails_sent_today[game_key] = (datetime.now(self.est), email_type)
     
-    async def execute_pre_game_workflow(self, game: MLBGameInfo) -> WorkflowResult:
+    async def execute_pre_game_workflow(self, game: MLBGameInfo, context: str = None, minutes_before: int = None, send_email: bool = True) -> WorkflowResult:
         """
         Execute the complete three-stage pre-game workflow for a specific game.
         
         Args:
             game: MLB game information
+            context: Context for this workflow execution (e.g., 'pre_game_30min', 'pre_game_15min', 'pre_game_final')
+            minutes_before: Minutes before game time (for logging/tracking)
+            send_email: Whether to send email notification (default: True)
             
         Returns:
             Complete workflow execution result
         """
-        workflow_id = f"pregame_{game.game_pk}_{datetime.now(timezone.utc).timestamp()}"
+        # Include context in workflow ID for better tracking
+        timestamp = datetime.now(timezone.utc).timestamp()
+        if context:
+            workflow_id = f"pregame_{game.game_pk}_{context}_{timestamp}"
+        else:
+            workflow_id = f"pregame_{game.game_pk}_{timestamp}"
+        
         game_desc = f"{game.away_team} @ {game.home_team}"
         
-        self.logger.info("Starting pre-game workflow", 
+        # Acquire workflow semaphore to prevent concurrent database access
+        try:
+            self.logger.info("Waiting for workflow queue", 
+                           workflow_id=workflow_id,
+                           game=game_desc,
+                           context=context or "default")
+            
+            # Wait for semaphore with timeout to prevent indefinite blocking
+            await asyncio.wait_for(
+                self._workflow_semaphore.acquire(),
+                timeout=self.workflow_queue_timeout
+            )
+            
+            self.logger.info("Acquired workflow queue access", 
+                           workflow_id=workflow_id,
+                           game=game_desc,
+                           context=context or "default")
+            
+            # Track that this workflow was queued
+            self.metrics["workflows_queued"] += 1
+            
+        except asyncio.TimeoutError:
+            error_msg = f"Workflow queue timeout after {self.workflow_queue_timeout}s"
+            self.logger.error("Failed to acquire workflow queue",
+                            workflow_id=workflow_id,
+                            game=game_desc,
+                            timeout=self.workflow_queue_timeout)
+            
+            # Update timeout metrics
+            self.metrics["workflow_queue_timeouts"] += 1
+            self.metrics["workflows_failed"] += 1
+            
+            # Return failed workflow result
+            workflow_result = WorkflowResult(
+                game=game,
+                workflow_id=workflow_id,
+                start_time=datetime.now(timezone.utc),
+                end_time=datetime.now(timezone.utc),
+                overall_status=StageStatus.FAILED
+            )
+            
+            # Create a failed stage result for the timeout
+            failed_stage = StageResult(
+                stage=WorkflowStage.DATA_COLLECTION,
+                status=StageStatus.FAILED,
+                start_time=datetime.now(timezone.utc),
+                end_time=datetime.now(timezone.utc),
+                error_message=error_msg
+            )
+            workflow_result.stages[WorkflowStage.DATA_COLLECTION] = failed_stage
+            
+            return workflow_result
+        
+        try:
+            # Now execute the workflow with exclusive access
+            return await self._execute_workflow_with_semaphore(game, workflow_id, context, minutes_before, send_email)
+            
+        finally:
+            # Always release the semaphore
+            self._workflow_semaphore.release()
+            self.logger.info("Released workflow queue access", 
+                           workflow_id=workflow_id,
+                           game=game_desc,
+                           context=context or "default")
+    
+    async def _execute_workflow_with_semaphore(self, game: MLBGameInfo, workflow_id: str, context: str = None, minutes_before: int = None, send_email: bool = True) -> WorkflowResult:
+        """Execute the workflow with semaphore already acquired."""
+        game_desc = f"{game.away_team} @ {game.home_team}"
+        
+        self.logger.info("Starting pre-game workflow execution", 
                         workflow_id=workflow_id,
                         game=game_desc,
+                        context=context or "default",
+                        minutes_before=minutes_before,
+                        send_email=send_email,
                         game_time=game.game_date.isoformat())
         
         # Initialize workflow result
@@ -305,29 +395,45 @@ class PreGameWorkflowService:
                     error_message="Skipped due to Stage 1 failure"
                 )
             
-            # Stage 3: Email Notification (always execute to report results)
-            # Email stage should not retry to prevent multiple emails
-            email_result = StageResult(
-                stage=WorkflowStage.EMAIL_NOTIFICATION,
-                status=StageStatus.PENDING,
-                start_time=datetime.now(timezone.utc)
-            )
-            
-            try:
-                await self._execute_email_notification(email_result, workflow_result)
-                if email_result.status != StageStatus.FAILED:
-                    email_result.status = StageStatus.SUCCESS
-            except Exception as e:
-                email_result.status = StageStatus.FAILED
-                email_result.error_message = str(e)
-                self.logger.error("Email notification failed", error=str(e))
-            
-            email_result.end_time = datetime.now(timezone.utc)
-            email_result.execution_time_seconds = (
-                email_result.end_time - email_result.start_time
-            ).total_seconds()
-            workflow_result.stages[WorkflowStage.EMAIL_NOTIFICATION] = email_result
-            workflow_result.email_sent = email_result.status == StageStatus.SUCCESS
+            # Stage 3: Email Notification (conditional based on send_email parameter)
+            if send_email:
+                # Email stage should not retry to prevent multiple emails
+                email_result = StageResult(
+                    stage=WorkflowStage.EMAIL_NOTIFICATION,
+                    status=StageStatus.PENDING,
+                    start_time=datetime.now(timezone.utc)
+                )
+                
+                try:
+                    await self._execute_email_notification(email_result, workflow_result)
+                    if email_result.status != StageStatus.FAILED:
+                        email_result.status = StageStatus.SUCCESS
+                except Exception as e:
+                    email_result.status = StageStatus.FAILED
+                    email_result.error_message = str(e)
+                    self.logger.error("Email notification failed", error=str(e))
+                
+                email_result.end_time = datetime.now(timezone.utc)
+                email_result.execution_time_seconds = (
+                    email_result.end_time - email_result.start_time
+                ).total_seconds()
+                workflow_result.stages[WorkflowStage.EMAIL_NOTIFICATION] = email_result
+                workflow_result.email_sent = email_result.status == StageStatus.SUCCESS
+            else:
+                # Skip email notification - create a skipped stage result
+                email_result = StageResult(
+                    stage=WorkflowStage.EMAIL_NOTIFICATION,
+                    status=StageStatus.SKIPPED,
+                    start_time=datetime.now(timezone.utc),
+                    end_time=datetime.now(timezone.utc),
+                    error_message="Email notification skipped by request"
+                )
+                workflow_result.stages[WorkflowStage.EMAIL_NOTIFICATION] = email_result
+                workflow_result.email_sent = False
+                
+                self.logger.info("Email notification skipped by request",
+                               context=context or "default",
+                               minutes_before=minutes_before)
             
             # Determine overall status
             if (data_result.status == StageStatus.SUCCESS and 
@@ -362,7 +468,7 @@ class PreGameWorkflowService:
             
             self.metrics["workflows_executed"] += 1
             
-            self.logger.info("Pre-game workflow completed",
+            self.logger.info("Pre-game workflow execution completed",
                            workflow_id=workflow_id,
                            overall_status=workflow_result.overall_status.value,
                            total_time=workflow_result.total_execution_time,
@@ -491,7 +597,7 @@ class PreGameWorkflowService:
         try:
             # Build command for master betting detector
             detector_path = self.project_root / "analysis_scripts" / "master_betting_detector.py"
-            cmd = ["uv", "run", str(detector_path), "--minutes", "5"]
+            cmd = ["uv", "run", str(detector_path), "--minutes", "15"]
             
             # Execute with timeout
             result = await asyncio.wait_for(
@@ -1027,5 +1133,7 @@ General Balls"""
             **self.metrics,
             "active_workflows": len(self.active_workflows),
             "workflow_history_count": len(self.workflow_history),
-            "email_configured": self.email_config.is_configured()
+            "email_configured": self.email_config.is_configured(),
+            "workflow_queue_available": self._workflow_semaphore._value > 0,  # True if queue available
+            "workflow_queue_capacity": 1  # Always 1 for our semaphore
         } 

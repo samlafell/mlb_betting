@@ -91,14 +91,15 @@ class DatabaseManager:
             # Ensure database directory exists
             db_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Create the single connection with minimal configuration
-            # Use minimal config to avoid conflicts with existing connections
+            # Create the single connection with same config as optimized manager
+            # This ensures compatibility when both legacy and optimized modes access same DB
             try:
                 self._connection = duckdb.connect(
                     database=str(db_path),
                     config={
-                        'threads': 2,  # Limit threads to reduce contention
-                        'preserve_insertion_order': False  # Better performance for analytical queries
+                        'threads': 2,  # Same as optimized read cursors
+                        'preserve_insertion_order': False,
+                        'enable_object_cache': True  # Match optimized configuration
                     }
                 )
                 logger.info(

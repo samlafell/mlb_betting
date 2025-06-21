@@ -12,6 +12,7 @@ Intelligently combines all validated betting strategies using:
 This detector learns from its own performance and adapts over time.
 
 Usage: uv run analysis_scripts/master_betting_detector.py --minutes 300
+       uv run analysis_scripts/master_betting_detector.py --debug  # Show all data
 """
 
 import argparse
@@ -53,8 +54,148 @@ class AdaptiveMasterBettingDetector:
         self.logger = get_logger(__name__)
         self.est = pytz.timezone('US/Eastern')
         
-    async def analyze_all_opportunities(self, minutes_ahead=60):
+    async def debug_database_contents(self):
+        """Debug function to show what data is actually in the database"""
+        print("🔍 DATABASE DEBUG MODE")
+        print("=" * 60)
+        
+        # Check basic database stats
+        try:
+            query = "SELECT COUNT(*) FROM splits.raw_mlb_betting_splits"
+            result = self.coordinator.execute_read(query)
+            total_count = result[0][0] if result else 0
+            print(f"📊 Total records in database: {total_count}")
+            
+            if total_count == 0:
+                print("❌ NO DATA FOUND - This explains why master detector shows no opportunities!")
+                print("\n💡 TO FIX:")
+                print("   1. Run: uv run src/mlb_sharp_betting/cli.py run --sport mlb --sportsbook circa")
+                print("   2. Check if data collection is working")
+                print("   3. Verify scrapers are collecting live data")
+                return
+            
+            # Check recent data
+            query = """
+                SELECT COUNT(*) FROM splits.raw_mlb_betting_splits 
+                WHERE last_updated > NOW() - INTERVAL 24 HOUR
+            """
+            result = self.coordinator.execute_read(query)
+            recent_count = result[0][0] if result else 0
+            print(f"📅 Records from last 24 hours: {recent_count}")
+            
+            # Show sample of most recent data
+            query = """
+                SELECT home_team, away_team, split_type, game_datetime, last_updated,
+                       home_or_over_stake_percentage, home_or_over_bets_percentage,
+                       ABS(home_or_over_stake_percentage - home_or_over_bets_percentage) as diff,
+                       source, book
+                FROM splits.raw_mlb_betting_splits 
+                ORDER BY last_updated DESC 
+                LIMIT 10
+            """
+            result = self.coordinator.execute_read(query)
+            
+            print(f"\n📋 MOST RECENT DATA (Last 10 records):")
+            for i, row in enumerate(result, 1):
+                home, away, split_type, game_dt, updated, stake_pct, bet_pct, diff, source, book = row
+                print(f"   {i}. {away} @ {home} - {split_type.upper()}")
+                print(f"      🎯 Game Time: {game_dt}")
+                print(f"      🕐 Updated: {updated}")
+                print(f"      💰 {stake_pct:.1f}% money vs {bet_pct:.1f}% bets = {diff:.1f}% diff")
+                print(f"      📍 {source}-{book}")
+                print()
+            
+            # Check what games would be found with current time filters
+            now_est = datetime.now(self.est)
+            
+            # Check next 24 hours (much broader than default 60 minutes)
+            end_time = now_est + timedelta(hours=24)
+            
+            query = """
+                SELECT COUNT(*) FROM splits.raw_mlb_betting_splits
+                WHERE game_datetime BETWEEN ? AND ?
+                  AND home_or_over_stake_percentage IS NOT NULL 
+                  AND home_or_over_bets_percentage IS NOT NULL
+                  AND game_datetime IS NOT NULL
+                  AND NOT (home_or_over_stake_percentage = 0 AND home_or_over_bets_percentage = 0)
+            """
+            result = self.coordinator.execute_read(query, (now_est, end_time))
+            future_count = result[0][0] if result else 0
+            
+            print(f"🎯 ACTIONABLE GAMES (Next 24 hours with valid data): {future_count}")
+            
+            if future_count == 0:
+                print("❌ NO FUTURE GAMES FOUND")
+                print("\n🔍 DIAGNOSING THE ISSUE:")
+                
+                # Check if we have games but they're in the past
+                query = """
+                    SELECT COUNT(*) FROM splits.raw_mlb_betting_splits
+                    WHERE game_datetime < ?
+                """
+                result = self.coordinator.execute_read(query, (now_est,))
+                past_games = result[0][0] if result else 0
+                print(f"   📅 Past games in database: {past_games}")
+                
+                # Check if we have games but they're too far in future
+                far_future = now_est + timedelta(days=7)
+                query = """
+                    SELECT COUNT(*) FROM splits.raw_mlb_betting_splits
+                    WHERE game_datetime > ?
+                """
+                result = self.coordinator.execute_read(query, (far_future,))
+                far_future_games = result[0][0] if result else 0
+                print(f"   📅 Games more than 7 days out: {far_future_games}")
+                
+                # Show game time distribution
+                query = """
+                    SELECT 
+                        MIN(game_datetime) as earliest_game,
+                        MAX(game_datetime) as latest_game,
+                        COUNT(DISTINCT game_datetime) as unique_game_times
+                    FROM splits.raw_mlb_betting_splits
+                """
+                result = self.coordinator.execute_read(query)
+                if result and result[0]:
+                    earliest, latest, unique_times = result[0]
+                    print(f"   📊 Game time range: {earliest} to {latest}")
+                    print(f"   📊 Unique game times: {unique_times}")
+                
+            else:
+                # Show the actionable games
+                query = """
+                    SELECT home_team, away_team, game_datetime,
+                           ABS(home_or_over_stake_percentage - home_or_over_bets_percentage) as diff,
+                           source, book, split_type
+                    FROM splits.raw_mlb_betting_splits
+                    WHERE game_datetime BETWEEN ? AND ?
+                      AND home_or_over_stake_percentage IS NOT NULL 
+                      AND home_or_over_bets_percentage IS NOT NULL
+                      AND game_datetime IS NOT NULL
+                      AND NOT (home_or_over_stake_percentage = 0 AND home_or_over_bets_percentage = 0)
+                    ORDER BY diff DESC
+                    LIMIT 5
+                """
+                result = self.coordinator.execute_read(query, (now_est, end_time))
+                
+                print(f"🏆 TOP ACTIONABLE OPPORTUNITIES:")
+                for row in result:
+                    home, away, game_dt, diff, source, book, split_type = row
+                    time_diff = (game_dt - now_est).total_seconds() / 3600  # hours
+                    print(f"   🎯 {away} @ {home} - {split_type.upper()}")
+                    print(f"      📅 Game in {time_diff:.1f} hours ({game_dt})")
+                    print(f"      📊 {diff:.1f}% differential")
+                    print(f"      📍 {source}-{book}")
+                    
+        except Exception as e:
+            print(f"❌ Database debug failed: {e}")
+    
+    async def analyze_all_opportunities(self, minutes_ahead=60, debug_mode=False):
         """Comprehensive analysis using only validated, profitable strategies"""
+        
+        if debug_mode:
+            await self.debug_database_contents()
+            return {}
         
         now_est = datetime.now(self.est)
         cutoff_time = now_est + timedelta(minutes=minutes_ahead)
@@ -89,18 +230,28 @@ class AdaptiveMasterBettingDetector:
     
     async def _display_strategy_status(self):
         """Display current strategy configuration status"""
-        summary = await self.config_manager.get_strategy_summary()
+        # Get strategies directly from backtesting database
+        profitable_strategies = await self._get_current_profitable_strategies()
         
-        print(f"📊 STRATEGY STATUS:")
-        if summary['total_strategies'] == 0:
-            print(f"   ⚠️  {summary['status']}")
-            print(f"   🔧 {summary['recommendation']}")
+        print(f"📊 STRATEGY STATUS (Reading from Backtesting Database):")
+        if not profitable_strategies:
+            print(f"   ⚠️  No profitable strategies found in current backtesting results")
+            print(f"   🔧 Run backtesting analysis to populate strategy performance data")
+            print(f"   💡 Command: uv run src/mlb_sharp_betting/cli.py backtesting run --mode single-run")
         else:
-            print(f"   ✅ {summary['total_strategies']} validated strategies active")
-            print(f"   📈 Weighted Win Rate: {summary['weighted_avg_win_rate']:.1%}")
-            print(f"   💰 Weighted ROI: {summary['weighted_avg_roi']:+.1f}%")
-            print(f"   🏆 Top Strategy: {summary['top_strategy']['name']}")
-            print(f"      └─ {summary['top_strategy']['win_rate']:.1%} win rate, {summary['top_strategy']['roi_per_100']:+.1f}% ROI")
+            total_bets = sum(s['total_bets'] for s in profitable_strategies)
+            weighted_win_rate = sum(s['win_rate'] * s['total_bets'] for s in profitable_strategies) / total_bets if total_bets > 0 else 0
+            weighted_roi = sum(s['roi'] * s['total_bets'] for s in profitable_strategies) / total_bets if total_bets > 0 else 0
+            
+            print(f"   ✅ {len(profitable_strategies)} profitable strategies active")
+            print(f"   📈 Weighted Win Rate: {weighted_win_rate:.1f}%")
+            print(f"   💰 Weighted ROI: {weighted_roi:+.1f}%")
+            
+            # Show top 3 strategies
+            top_strategies = sorted(profitable_strategies, key=lambda x: x['roi'], reverse=True)[:3]
+            print(f"   🏆 Top Strategies:")
+            for i, strategy in enumerate(top_strategies, 1):
+                print(f"      {i}. {strategy['strategy_name'][:25]:<25} | {strategy['win_rate']:5.1f}% WR | {strategy['roi']:+6.1f}% ROI | {strategy['total_bets']:3d} bets")
     
     async def _get_validated_sharp_signals(self, minutes_ahead):
         """Get sharp signals using validated thresholds from backtesting."""
@@ -226,23 +377,36 @@ class AdaptiveMasterBettingDetector:
         return sharp_signals
     
     async def _get_validated_opposing_signals(self, minutes_ahead):
-        """Get opposing markets signals using validated strategy configuration"""
+        """Get opposing markets signals ONLY if validated by current backtesting results"""
         now_est = datetime.now(self.est)
         opposing_signals = []
         
-        # Check if opposing markets strategy is validated and enabled
-        opposing_config = await self.config_manager.get_opposing_markets_config()
-        if not opposing_config['enabled']:
-            print(f"⚠️  Opposing Markets: {opposing_config['reason']}")
-            # Use fallback conservative thresholds when no validated strategies exist
-            print(f"🔧 Using conservative fallback thresholds for opposing markets")
-            high_threshold = 35.0  # Conservative threshold
-            moderate_threshold = 25.0
+        # Get current profitable strategies from backtesting database
+        profitable_strategies = await self._get_current_profitable_strategies()
+        
+        # Check if ANY opposing markets strategy is profitable in current backtesting
+        opposing_strategies = [s for s in profitable_strategies if 'opposing' in s['strategy_name'].lower() or 'conflict' in s['strategy_name'].lower()]
+        
+        if not opposing_strategies:
+            print(f"⚠️  Opposing Markets: No opposing markets strategies found in current backtesting results")
+            print(f"🔧 Only strategies validated by backtesting will be used")
+            return []  # Return empty list - no fallback thresholds
+        
+        # Use the best performing opposing markets strategy
+        best_opposing = max(opposing_strategies, key=lambda x: x['roi'])
+        print(f"✅ Opposing Markets Strategy: {best_opposing['strategy_name']} "
+              f"({best_opposing['win_rate']:.1f}% win rate, {best_opposing['roi']:+.1f}% ROI)")
+        
+        # Set thresholds based on actual performance
+        if best_opposing['win_rate'] >= 65:
+            high_threshold = 20.0  # Aggressive for high performers
+            moderate_threshold = 15.0
+        elif best_opposing['win_rate'] >= 60:
+            high_threshold = 25.0  # Moderate
+            moderate_threshold = 20.0
         else:
-            print(f"✅ Opposing Markets Strategy: {opposing_config['strategy_name']} "
-                  f"({opposing_config['win_rate']:.1%} win rate, {opposing_config['roi_per_100']:+.1f}% ROI)")
-            high_threshold = opposing_config['high_confidence_strength']
-            moderate_threshold = opposing_config['min_combined_strength']
+            high_threshold = 30.0  # Conservative
+            moderate_threshold = 25.0
         
         query = """
         WITH latest_splits AS (
@@ -418,7 +582,7 @@ class AdaptiveMasterBettingDetector:
                     'recommendation_strength': confidence_result.recommendation_strength,
                     'follow_stronger_rec': final_recommendation,
                     'last_updated': last_updated,
-                    'validated_strategy': opposing_config.get('strategy_name', 'fallback_conservative'),
+                    'validated_strategy': best_opposing['strategy_name'],
                     'ml_stake_pct': float(ml_stake_pct),
                     'ml_bet_pct': float(ml_bet_pct),
                     'spread_stake_pct': float(sp_stake_pct),
@@ -435,18 +599,25 @@ class AdaptiveMasterBettingDetector:
         return opposing_signals
     
     async def _get_validated_steam_moves(self, minutes_ahead):
-        """Get steam move signals using validated strategy configuration"""
+        """Get steam move signals ONLY if validated by current backtesting results"""
         now_est = datetime.now(self.est)
         steam_moves = []
         
-        # Check if steam move strategy is validated and enabled
-        steam_config = await self.config_manager.get_steam_move_config()
-        if not steam_config['enabled']:
-            print(f"⚠️  Steam Moves: {steam_config['reason']}")
-            return []
+        # Get current profitable strategies from backtesting database
+        profitable_strategies = await self._get_current_profitable_strategies()
         
-        print(f"✅ Steam Move Strategy: {steam_config['strategy_name']} "
-              f"({steam_config['win_rate']:.1%} win rate, {steam_config['roi_per_100']:+.1f}% ROI)")
+        # Check if ANY steam move strategy is profitable in current backtesting
+        steam_strategies = [s for s in profitable_strategies if 'steam' in s['strategy_name'].lower() or 'movement' in s['strategy_name'].lower()]
+        
+        if not steam_strategies:
+            print(f"⚠️  Steam Moves: No steam move strategies found in current backtesting results")
+            print(f"🔧 Only strategies validated by backtesting will be used")
+            return []  # Return empty list - no fallback thresholds
+        
+        # Use the best performing steam move strategy
+        best_steam = max(steam_strategies, key=lambda x: x['roi'])
+        print(f"✅ Steam Move Strategy: {best_steam['strategy_name']} "
+              f"({best_steam['win_rate']:.1f}% win rate, {best_steam['roi']:+.1f}% ROI)")
         
         query = """
         SELECT home_team, away_team, game_datetime, split_type, split_value,
@@ -462,12 +633,22 @@ class AdaptiveMasterBettingDetector:
         ORDER BY game_datetime ASC, ABS(differential) DESC
         """
         
+        # Calculate end time for the query
+        end_time = now_est + timedelta(minutes=minutes_ahead)
+        
         # Use coordinated database access to prevent conflicts
         results = self.coordinator.execute_read(query, (now_est, end_time))
         
-        # Use validated threshold
-        steam_threshold = 25.0  # Conservative default
-        time_window_hours = steam_config['time_window_hours']
+        # Use validated threshold based on strategy performance
+        if best_steam['win_rate'] >= 65:
+            steam_threshold = 20.0  # Aggressive for high performers
+            time_window_hours = 2
+        elif best_steam['win_rate'] >= 60:
+            steam_threshold = 25.0  # Moderate
+            time_window_hours = 3
+        else:
+            steam_threshold = 30.0  # Conservative
+            time_window_hours = 4
         
         for row in results:
             home, away, game_time, split_type, split_value, stake_pct, bet_pct, differential, source, book, last_updated = row
@@ -505,7 +686,7 @@ class AdaptiveMasterBettingDetector:
                         'confidence': 'STEAM_MOVE',
                         'recommendation': self._get_recommendation(split_type, differential, home, away),
                         'last_updated': last_updated,
-                        'validated_strategy': steam_config['strategy_name'],
+                        'validated_strategy': best_steam['strategy_name'],
                         'threshold_used': steam_threshold
                     })
         
@@ -882,7 +1063,7 @@ class AdaptiveMasterBettingDetector:
             SELECT win_rate * 100 as win_rate_pct, roi_per_100
             FROM backtesting.strategy_performance
             WHERE source_book_type LIKE ? AND split_type = ? AND strategy_name LIKE ?
-            AND total_bets >= 17 AND win_rate > 0.524
+            AND total_bets >= 8 AND win_rate > 0.524
             ORDER BY roi_per_100 DESC LIMIT 1
             """
             
@@ -896,7 +1077,7 @@ class AdaptiveMasterBettingDetector:
         SELECT win_rate * 100 as win_rate_pct, roi_per_100
         FROM backtesting.strategy_performance
         WHERE source_book_type LIKE ? AND split_type = ?
-        AND total_bets >= 17 AND win_rate > 0.524
+        AND total_bets >= 8 AND win_rate > 0.524
         ORDER BY roi_per_100 DESC LIMIT 1
         """
         
@@ -921,7 +1102,7 @@ class AdaptiveMasterBettingDetector:
             confidence_interval_upper * 100 as ci_upper
         FROM backtesting.strategy_performance 
         WHERE backtest_date = (SELECT MAX(backtest_date) FROM backtesting.strategy_performance)
-          AND total_bets >= 17 
+          AND total_bets >= 8
           AND win_rate > 0.524  -- Only profitable strategies
           AND roi_per_100 > 5.0  -- Minimum 5% ROI
         ORDER BY roi_per_100 DESC, total_bets DESC
@@ -931,8 +1112,15 @@ class AdaptiveMasterBettingDetector:
             results = self.coordinator.execute_read(query)
             strategies = []
             
+            if not results:
+                self.logger.info("No profitable strategies found in backtesting database")
+                return []
+            
+            backtest_date = results[0][8] if results else None
+            self.logger.info(f"Loading {len(results)} profitable strategies from backtest date: {backtest_date}")
+            
             for row in results:
-                strategy_name, source_book, split_type, win_rate, roi, total_bets, ci_lower, ci_upper = row
+                strategy_name, source_book, split_type, win_rate, roi, total_bets, ci_lower, ci_upper, _ = row
                 
                 # Determine confidence level based on sample size and performance
                 if total_bets >= 50 and win_rate >= 60:
@@ -957,7 +1145,8 @@ class AdaptiveMasterBettingDetector:
             return strategies
             
         except Exception as e:
-            self.logger.warning(f"Could not get profitable strategies: {e}")
+            self.logger.warning(f"Could not get profitable strategies from backtesting database: {e}")
+            self.logger.warning("This may indicate that backtesting hasn't been run recently or database schema issues")
             return []
     
     def _find_matching_strategy(self, profitable_strategies, source, book, split_type, abs_diff):
@@ -1000,12 +1189,30 @@ async def main():
     parser = argparse.ArgumentParser(description="Adaptive Master Betting Detector - AI-Optimized Strategies")
     parser.add_argument('--minutes', '-m', type=int, default=60,
                         help='Minutes ahead to look for opportunities (default: 60)')
+    parser.add_argument('--debug', '-d', action='store_true',
+                        help='Show all data, regardless of time filters')
     
     args = parser.parse_args()
     
     detector = AdaptiveMasterBettingDetector()
-    games = await detector.analyze_all_opportunities(args.minutes)
-    await detector.display_comprehensive_analysis(games)
+    
+    try:
+        games = await detector.analyze_all_opportunities(args.minutes, args.debug)
+        if not args.debug:  # Only run display analysis if not in debug mode
+            await detector.display_comprehensive_analysis(games)
+    finally:
+        # CRITICAL: Ensure database connections are properly closed
+        # This prevents database locks for subsequent workflows
+        try:
+            if hasattr(detector, 'coordinator') and detector.coordinator:
+                # The database coordinator handles cleanup automatically
+                pass
+            if hasattr(detector, 'db_manager') and detector.db_manager:
+                detector.db_manager.close()
+        except Exception as e:
+            print(f"Warning: Error during database cleanup: {e}")
+            # Don't fail the entire analysis for cleanup errors
+            pass
 
 
 if __name__ == "__main__":

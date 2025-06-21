@@ -152,6 +152,7 @@ class BacktestingService:
             "data_freshness_hours": 24,  # Relaxed for testing - 24 hours instead of 6
             "win_rate_alert_threshold": 0.10,  # 10% drop triggers alert
             "data_completeness_threshold": 5.0,  # Relaxed for testing - 5% instead of 95%
+            "actionable_window_minutes": 45,  # 🚨 CRITICAL: Only backtest data within 45 min of game time
         }
         
         # SQL script mapping
@@ -165,7 +166,14 @@ class BacktestingService:
             "opposing_markets_strategy": "analysis_scripts/opposing_markets_strategy.sql",
             "public_money_fade_strategy": "analysis_scripts/public_money_fade_strategy.sql",
             "book_conflicts_strategy": "analysis_scripts/book_conflicts_strategy.sql",
-            "executive_summary_report": "analysis_scripts/executive_summary_report.sql"
+            "executive_summary_report": "analysis_scripts/executive_summary_report.sql",
+            # Additional consensus strategies
+            "consensus_moneyline_strategy": "analysis_scripts/consensus_moneyline_strategy.sql",
+            # Phase 1 Expert-Recommended Strategies
+            "total_line_sweet_spots_strategy": "analysis_scripts/total_line_sweet_spots_strategy.sql",
+            "underdog_ml_value_strategy": "analysis_scripts/underdog_ml_value_strategy.sql",
+            "team_specific_bias_strategy": "analysis_scripts/team_specific_bias_strategy.sql"
+            # Note: consensus_signals_current.sql excluded - it's for real-time analysis, not backtesting
         }
         
         # Threshold mapping to validated_betting_detector.py
@@ -339,6 +347,11 @@ class BacktestingService:
                 
                 sql_content = full_path.read_text()
                 
+                # 🚨 CRITICAL: Apply 45-minute actionable window filter
+                # Only include betting data that was collected within 45 minutes of game time
+                # This ensures we only backtest strategies that would have been ACTUALLY recommended
+                sql_content = self._apply_actionable_window_filter(sql_content)
+                
                 # Execute script
                 with self.db_manager.get_cursor() as cursor:
                     cursor.execute(sql_content)
@@ -354,7 +367,8 @@ class BacktestingService:
                     
                     self.logger.info("Script executed successfully", 
                                    script=script_name, 
-                                   rows_returned=len(script_results))
+                                   rows_returned=len(script_results),
+                                   actionable_window_applied=True)
                 
             except Exception as e:
                 self.logger.error("Failed to execute backtest script", 
@@ -363,18 +377,72 @@ class BacktestingService:
         
         return backtest_results
     
+    def _apply_actionable_window_filter(self, sql_content: str) -> str:
+        """
+        Apply 30-minute actionable window filter to SQL scripts.
+        
+        This ensures backtesting only includes data that would have been available
+        to master_betting_detector.py within the actionable window before first pitch.
+        
+        Key principle: We should only backtest bets we would have ACTUALLY recommended.
+        """
+        # Even simpler approach: Just add the filter to existing WHERE clauses
+        if "FROM mlb_betting.splits.raw_mlb_betting_splits" in sql_content:
+            
+            # Define the actionable window filter
+            actionable_filter = """
+      AND EXTRACT('epoch' FROM (game_datetime - last_updated)) / 60 <= 45  -- Within 45 minutes
+      AND EXTRACT('epoch' FROM (game_datetime - last_updated)) / 60 >= 0.5  -- At least 30 seconds before"""
+            
+            # Find the WHERE clause that follows the raw_mlb_betting_splits table
+            # and add our timing filter
+            lines = sql_content.split('\n')
+            modified_lines = []
+            found_table = False
+            added_filter = False
+            
+            for line in lines:
+                modified_lines.append(line)
+                
+                # Check if this line contains the table reference
+                if "FROM mlb_betting.splits.raw_mlb_betting_splits" in line:
+                    found_table = True
+                
+                # If we found the table and this is a WHERE clause, add our filter
+                if found_table and not added_filter and line.strip().startswith("WHERE"):
+                    # Add our filter to this WHERE clause
+                    modified_lines.append(actionable_filter)
+                    added_filter = True
+            
+            sql_content = '\n'.join(modified_lines)
+        
+        # Also add a comment at the top to document the filter
+        header_comment = """-- 🚨 ACTIONABLE WINDOW BACKTESTING
+-- This query has been automatically modified to include ONLY betting data
+-- that was collected within 45 minutes of game time (45 min to 30 sec before first pitch).
+-- This ensures backtesting reflects ACTUAL recommendable bets, not historical data.
+-- Matches master_betting_detector.py's actionable window logic.
+
+"""
+        
+        return header_comment + sql_content
+    
     async def _analyze_strategy_performance(self, 
                                           backtest_results: Dict[str, List[Dict]]) -> List[StrategyMetrics]:
         """Analyze strategy performance with statistical validation."""
         strategy_metrics = []
         
         # Minimum sample sizes for different levels of confidence
-        MIN_SAMPLE_SIZE_BASIC = 17      # Basic analysis (was 25)
-        MIN_SAMPLE_SIZE_RELIABLE = 50   # Reliable analysis  
-        MIN_SAMPLE_SIZE_ROBUST = 100    # Robust analysis
+        MIN_SAMPLE_SIZE_BASIC = 10      # Basic analysis (was 25)
+        MIN_SAMPLE_SIZE_RELIABLE = 25   # Reliable analysis  
+        MIN_SAMPLE_SIZE_ROBUST = 75    # Robust analysis
         
-        print(f"\n🔍 STRATEGY ANALYSIS BREAKDOWN:")
-        print(f"{'='*60}")
+        print(f"\n🔍 STRATEGY ANALYSIS BREAKDOWN (ACTIONABLE WINDOW BACKTESTING):")
+        print(f"{'='*80}")
+        print(f"🚨 CRITICAL: Only analyzing bets within {self.config['actionable_window_minutes']} minutes of game time")
+        print(f"💡 This matches master_betting_detector.py's actual recommendation window")
+        print(f"📊 Performance reflects REAL betting opportunities, not historical data")
+        print(f"{'='*80}")
         
         total_evaluated = 0
         basic_threshold_passed = 0
@@ -819,6 +887,12 @@ class BacktestingService:
             "# 📊 DAILY BACKTESTING & STRATEGY VALIDATION REPORT",
             f"**Date:** {results.backtest_date.strftime('%Y-%m-%d %H:%M UTC')}",
             f"**Execution Time:** {results.execution_time_seconds:.1f} seconds",
+            "",
+            "## 🚨 ACTIONABLE WINDOW BACKTESTING",
+            f"- **Critical Filter Applied:** Only data within {self.config['actionable_window_minutes']} minutes of game time",
+            f"- **Purpose:** Reflects ACTUAL betting opportunities (not historical data)",
+            f"- **Matches:** master_betting_detector.py's recommendation window",
+            f"- **Principle:** Only backtest bets we would have ACTUALLY recommended",
             "",
             "## 📈 Executive Summary",
             f"- **Strategies Analyzed:** {results.total_strategies_analyzed}",

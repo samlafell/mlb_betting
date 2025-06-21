@@ -478,7 +478,6 @@ class DailyBettingReportService:
                   -- CRITICAL: Only include signals detected within 15 minutes of game start (sharp action)
                   AND EXTRACT('epoch' FROM (ml.game_datetime - ml.last_updated)) / 60 <= 30  -- Temporarily increased to see available data
                   -- TODO: Re-enable for live betting - only recommend bets that can be placed within 5 minutes of game start
-                  -- AND EXTRACT('epoch' FROM (ml.game_datetime - CURRENT_TIMESTAMP)) / 60 <= 5
                   -- AND EXTRACT('epoch' FROM (ml.game_datetime - CURRENT_TIMESTAMP)) / 60 >= 0  -- Future games only
                 
                 ORDER BY ml.ml_signal_strength DESC

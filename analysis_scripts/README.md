@@ -100,6 +100,50 @@ uv run analysis_scripts/validated_betting_detector.py --minutes 5
 - Specific actionable recommendations with risk management
 - **Key Insight**: Executive-level decision making framework
 
+### 7. `total_line_sweet_spots_strategy.sql` ⭐ **NEW**
+**Purpose**: Identifies value around key total numbers (7.5, 8.5, 9.5)
+- Analyzes public bias patterns at psychologically important total lines
+- Tests Over performance when public heavily on Under at key numbers
+- Detects sharp money disagreement with public at sweet spots
+- **Key Insight**: Public often over-reacts to key total thresholds
+
+### 8. `underdog_ml_value_strategy.sql` ⭐ **NEW**
+**Purpose**: Systematic underdog value when public loves favorites
+- Identifies ML underdog opportunities when public heavily favors favorites
+- Combines with spread betting disagreement for enhanced value spots
+- Tests value at different odds ranges (small dogs vs big dogs)
+- **Key Insight**: Public consistently overvalues favorites, creating dog value
+
+### 9. `team_specific_bias_strategy.sql` ⭐ **NEW**
+**Purpose**: Team-specific public bias analysis
+- Tracks which teams consistently get overbet/underbet by public
+- Identifies large market bias (Yankees, Dodgers) vs small market value
+- Combines team bias with sharp money confirmation
+- **Key Insight**: Popular teams often overvalued, small market teams undervalued
+
+## 🎯 **RUNNING THE NEW PHASE 1 STRATEGIES**
+
+### Test the New Strategies
+```bash
+# Test total line sweet spots
+duckdb data/raw/mlb_betting.duckdb < analysis_scripts/total_line_sweet_spots_strategy.sql
+
+# Test underdog ML value  
+duckdb data/raw/mlb_betting.duckdb < analysis_scripts/underdog_ml_value_strategy.sql
+
+# Test team-specific bias
+duckdb data/raw/mlb_betting.duckdb < analysis_scripts/team_specific_bias_strategy.sql
+```
+
+### Run All Phase 1 Strategies Together
+```bash
+# Create combined Phase 1 analysis
+cat analysis_scripts/total_line_sweet_spots_strategy.sql \
+    analysis_scripts/underdog_ml_value_strategy.sql \
+    analysis_scripts/team_specific_bias_strategy.sql | \
+    duckdb data/raw/mlb_betting.duckdb
+```
+
 ## 🏦 ROI Calculations
 
 All strategies calculate ROI assuming standard betting odds:
@@ -146,7 +190,7 @@ uv run python run_comprehensive_analysis.py
 ```
 
 This will:
-- Execute all 6 analysis scripts in sequence
+- Execute all 9 analysis scripts in sequence
 - Generate detailed console output with results
 - Save results to CSV files in `analysis_results/` directory
 - Create comprehensive log in `analysis_results.log`
@@ -218,3 +262,114 @@ For questions about the analysis or implementing strategies:
 
 **General Balls** 🏈⚾️
 *Professional Sports Betting Analytics* 
+
+# MLB Betting Strategy Analysis Scripts
+
+This directory contains SQL scripts for analyzing MLB betting strategies and identifying profitable opportunities.
+
+## 📊 Strategy Categories
+
+### Phase 1: Expert-Recommended Strategies ✅ IMPLEMENTED
+These three strategies were recommended by MLB betting experts and cover missing gaps in our system:
+
+1. **Total Line Sweet Spots** (`total_line_sweet_spots_strategy.sql`)
+   - Analyzes public bias at psychologically important total lines (7.5, 8.5, 9.5)
+   - Tests Over performance when public heavily bets Under at key numbers
+   - Detects sharp money disagreement with public at sweet spots
+
+2. **Underdog ML Value** (`underdog_ml_value_strategy.sql`) 
+   - Identifies ML underdog opportunities when public heavily favors favorites
+   - Combines with spread betting disagreement for enhanced value
+   - Tests different odds ranges (small dogs vs big dogs)
+
+3. **Team-Specific Public Bias** (`team_specific_bias_strategy.sql`)
+   - Tracks teams consistently overbet/underbet by public
+   - Classifies teams by market size (Yankees/Dodgers vs Rays/Pirates)
+   - Combines team bias with sharp money confirmation
+
+### Existing Strategies
+- **Sharp Action Detection** (`sharp_action_detector.sql`)
+- **Line Movement Analysis** (`line_movement_strategy.sql`)
+- **Timing-Based Strategies** (`timing_based_strategy.sql`)
+- **Signal Combinations** (`signal_combinations.sql`)
+- **Public Money Fade** (`public_money_fade_strategy.sql`)
+- **Book Conflicts** (`book_conflicts_strategy.sql`)
+- **Opposing Markets** (`opposing_markets_strategy.sql`)
+
+## 🔧 Running the Analysis
+
+### Individual Strategy Testing
+```bash
+# Test all Phase 1 strategies
+uv run python analysis_scripts/test_phase1_strategies.py
+
+# Run specific strategies
+uv run python analysis_scripts/run_phase1_strategies.py
+```
+
+### Automated Backtesting Integration ✅ COMPLETED
+The Phase 1 strategies are now fully integrated into the automated backtesting system:
+
+```bash
+# Run full backtesting analysis (includes Phase 1 strategies)
+uv run -m mlb_sharp_betting.cli.commands.backtesting --mode single-run
+
+# Run backtesting scheduler (monitors Phase 1 strategies daily)
+uv run -m mlb_sharp_betting.cli.commands.backtesting --mode scheduler
+```
+
+**Key Features:**
+- **Actionable Window Filtering**: Only analyzes bets within 30 minutes of game time
+- **Sample Size Monitoring**: Tracks when strategies reach reliable sample sizes (≥50 bets)
+- **Performance Alerts**: Automatically alerts when strategies show strong performance
+- **Threshold Recommendations**: Suggests optimal parameter adjustments
+- **Statistical Validation**: Includes confidence intervals and significance testing
+
+**Strategy Names in Backtesting:**
+- `total_line_sweet_spots_strategy` → "Total Sweet Spots"
+- `underdog_ml_value_strategy` → "Underdog ML Value" 
+- `team_specific_bias_strategy` → "Team Bias"
+
+**Variants Tracked:**
+- Sweet Spots: `VALUE_OVER_SWEET_SPOT`, `VALUE_UNDER_SWEET_SPOT`, `SHARP_SWEET_SPOT_OVER`, `SHARP_SWEET_SPOT_UNDER`
+- Underdog Value: `VALUE_AWAY_DOG`, `VALUE_HOME_DOG`, `SHARP_AWAY_DOG`, `SHARP_HOME_DOG`
+- Team Bias: `FADE_BIG_MARKET_HOME`, `FADE_BIG_MARKET_AWAY`, `BACK_SMALL_MARKET_HOME`, `BACK_SMALL_MARKET_AWAY`
+
+## 📈 Current Status
+
+### Data Requirements
+All strategies require:
+- Recent game data with outcomes
+- Betting splits from VSIN and SBD sources
+- Minimum sample sizes for statistical reliability
+
+### Sample Size Thresholds
+- **Basic Analysis**: ≥8 bets
+- **Reliable Analysis**: ≥50 bets (recommended for live betting)
+- **Robust Analysis**: ≥100 bets (highest confidence)
+
+### Next Steps
+1. **Data Accumulation**: Let strategies collect data over 2-4 weeks
+2. **Sample Size Monitoring**: Watch for strategies reaching ≥50 bet threshold
+3. **Performance Validation**: Review backtesting alerts for profitable strategies
+4. **Live Testing**: Start with 0.5-1% bankroll units when strategies show consistent performance
+
+## 🎯 Expert Recommendations Covered
+
+✅ **Sharp Money Tracking**: Covered by existing sharp action detection  
+✅ **Contrarian Public Betting**: Covered by public money fade strategies  
+✅ **Temporal/Timing-Based**: Covered by timing-based strategies  
+✅ **Market Inefficiency**: Covered by book conflicts and opposing markets  
+✅ **Total Line Sweet Spots**: NEW - Phase 1 implementation ✅  
+✅ **Underdog ML Value**: NEW - Phase 1 implementation ✅  
+✅ **Team-Specific Public Bias**: NEW - Phase 1 implementation ✅  
+
+## 🚨 Important Notes
+
+- **Actionable Window**: Backtesting only includes data collected within 30 minutes of game time
+- **Sample Size Warning**: Strategies with <50 bets have limited statistical reliability
+- **Threshold Adjustments**: Will be automatically recommended once adequate sample sizes are reached
+- **Performance Monitoring**: Automated alerts will notify when strategies show strong/declining performance
+
+---
+*General Balls* 

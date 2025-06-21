@@ -244,9 +244,10 @@ class VSINScraper(HTMLScraper):
     
     def _extract_main_content(self, soup: BeautifulSoup) -> Optional[Tag]:
         """
-        Extract the main content using the specific XPath structure for VSIN.
+        Extract the main content using the updated XPath structure for VSIN.
         
-        XPath: /html/body/div[6]/div[2]/div/div[3]/div[1]/div/div[1]/div[2]/div/table/tbody[1]/tr[1]
+        Updated XPath based on user feedback:
+        /html/body/div[6]/div[2]/div/div[3]/div[1]/div/div[1]/div[4]/main/div/table/tbody
         
         Args:
             soup: BeautifulSoup object
@@ -254,11 +255,8 @@ class VSINScraper(HTMLScraper):
         Returns:
             Table element containing betting data or None if not found
         """
-        # Convert XPath to CSS selector approach
-        # /html/body/div[6]/div[2]/div/div[3]/div[1]/div/div[1]/div[2]/div/table/tbody[1]
-        
         try:
-            # Navigate through the DOM structure based on the XPath
+            # Navigate through the DOM structure based on the updated XPath
             body = soup.find('body')
             if not body:
                 self.logger.warning("No body element found")
@@ -271,7 +269,7 @@ class VSINScraper(HTMLScraper):
                 # Fallback: look for any table with betting data
                 return self._find_betting_table_fallback(soup)
             
-            # Navigate: div[6]/div[2]/div/div[3]/div[1]/div/div[1]/div[2]/div/table
+            # Navigate: div[6]/div[2]/div/div[3]/div[1]/div/div[1]/div[4]/main/div/table
             current = body_divs[5]  # div[6] (0-indexed)
             
             # div[2]
@@ -310,11 +308,17 @@ class VSINScraper(HTMLScraper):
                 return self._find_betting_table_fallback(soup)
             current = div_child
             
-            # div[2]
+            # div[4]  # Updated from div[2] to div[4] based on new XPath
             divs = current.find_all('div', recursive=False)
-            if len(divs) < 2:
+            if len(divs) < 4:
                 return self._find_betting_table_fallback(soup)
-            current = divs[1]
+            current = divs[3]  # div[4] (0-indexed)
+            
+            # main
+            main = current.find('main', recursive=False)
+            if not main:
+                return self._find_betting_table_fallback(soup)
+            current = main
             
             # div
             div_child = current.find('div', recursive=False)
@@ -325,14 +329,14 @@ class VSINScraper(HTMLScraper):
             # table
             table = current.find('table', recursive=False)
             if table:
-                self.logger.debug("Found betting table using XPath navigation")
+                self.logger.debug("Found betting table using updated XPath navigation")
                 return table
             
             # If we didn't find the table, try fallback
             return self._find_betting_table_fallback(soup)
             
         except Exception as e:
-            self.logger.debug(f"Error navigating XPath structure: {e}")
+            self.logger.debug(f"Error navigating updated XPath structure: {e}")
             return self._find_betting_table_fallback(soup)
     
     def _find_betting_table_fallback(self, soup: BeautifulSoup) -> Optional[Tag]:
@@ -596,7 +600,7 @@ class VSINScraper(HTMLScraper):
         try:
             # Based on analysis, each game spans exactly 10 cells:
             # Cell 0: Teams, Cell 1: Moneyline, Cell 2: ML Handle %, Cell 3: ML Bet %
-            # Cell 4: Total odds, Cell 5: Total Handle %, Cell 6: Total Bet %
+            # Cell 4: Total line, Cell 5: Total Handle %, Cell 6: Total Bet %
             # Cell 7: Spread/RL, Cell 8: Spread Handle %, Cell 9: Spread Bet %
             end_cell = min(start_cell + 10, len(cells))
             game_cells = cells[start_cell:end_cell]
@@ -653,6 +657,50 @@ class VSINScraper(HTMLScraper):
                 if len(bet_matches) >= 2:
                     away_bets = bet_matches[0] + '%'
                     home_bets = bet_matches[1] + '%'
+            
+            # Extract total line (cell 4)
+            total_line = None
+            
+            if len(game_cells) > 4:
+                total_cell = game_cells[4]
+                
+                # Look for total in scorebox_highlight div
+                total_div = total_cell.find('div', class_='scorebox_highlight')
+                if total_div:
+                    total_text = total_div.get_text(strip=True)
+                    # Total should be a number like 8.5, 9, 10.5, etc.
+                    total_match = re.search(r'(\d+(?:\.\d+)?)', total_text)
+                    if total_match:
+                        total_line = total_match.group(1)
+                        self.logger.debug("Found total line in freezetable", total=total_line, cell_text=total_text)
+            
+            # Extract total handle percentages (cell 5) 
+            over_handle = None
+            under_handle = None
+            
+            if len(game_cells) > 5:
+                total_handle_cell = game_cells[5]
+                total_handle_text = total_handle_cell.get_text(strip=True)
+                
+                # Handle text format: "75%25%-"
+                total_handle_matches = re.findall(r'(\d+)%', total_handle_text)
+                if len(total_handle_matches) >= 2:
+                    over_handle = total_handle_matches[0] + '%'
+                    under_handle = total_handle_matches[1] + '%'
+            
+            # Extract total bet percentages (cell 6)
+            over_bets = None
+            under_bets = None
+            
+            if len(game_cells) > 6:
+                total_bet_cell = game_cells[6]
+                total_bet_text = total_bet_cell.get_text(strip=True)
+                
+                # Bet text format: "80%20%-"
+                total_bet_matches = re.findall(r'(\d+)%', total_bet_text)
+                if len(total_bet_matches) >= 2:
+                    over_bets = total_bet_matches[0] + '%'
+                    under_bets = total_bet_matches[1] + '%'
             
             # Extract spread data (cell 7)
             away_spread = None
@@ -725,6 +773,18 @@ class VSINScraper(HTMLScraper):
             if home_bets:
                 betting_data['Home Bets %'] = home_bets
             
+            # Add total data if available
+            if total_line:
+                betting_data['Total'] = total_line
+            if over_handle:
+                betting_data['Over Handle %'] = over_handle
+            if under_handle:
+                betting_data['Under Handle %'] = under_handle
+            if over_bets:
+                betting_data['Over Bets %'] = over_bets
+            if under_bets:
+                betting_data['Under Bets %'] = under_bets
+            
             # Add spread data if available
             if away_spread:
                 betting_data['Away Spread'] = away_spread
@@ -740,14 +800,15 @@ class VSINScraper(HTMLScraper):
                 betting_data['Home Spread Bets %'] = home_spread_bets
             
             # Only return if we have meaningful betting data
-            has_meaningful_data = any([away_line, home_line, away_handle, home_handle, away_spread, home_spread])
+            has_meaningful_data = any([away_line, home_line, away_handle, home_handle, away_spread, home_spread, total_line])
             
             if has_meaningful_data:
                 self.logger.debug("Successfully extracted freezetable game data", 
                                 away_team=away_team, home_team=home_team,
                                 away_line=away_line, home_line=home_line,
                                 away_handle=away_handle, home_handle=home_handle,
-                                away_spread=away_spread, home_spread=home_spread)
+                                away_spread=away_spread, home_spread=home_spread,
+                                total_line=total_line)
             
             return betting_data if has_meaningful_data else None
             
@@ -926,6 +987,60 @@ class VSINScraper(HTMLScraper):
                     if home_bets_match:
                         home_bets = home_bets_match.group(1) + '%'
             
+            # Extract total (over/under) data from fifth cell (cell 4, index 4)
+            # Based on user HTML: <div class="scorebox_highlight text-center game_highlight_dark">9.5</div>
+            total_cell = cells[4] if len(cells) > 4 else None
+            total_line = None
+            
+            if total_cell:
+                # Look for the total line in scorebox_highlight div
+                total_div = total_cell.find('div', class_='scorebox_highlight')
+                if total_div:
+                    total_text = total_div.get_text(strip=True)
+                    # Total should be a number like 8.5, 9, 10.5, etc.
+                    total_match = re.search(r'(\d+(?:\.\d+)?)', total_text)
+                    if total_match:
+                        total_line = total_match.group(1)
+                        self.logger.debug("Found total line", total=total_line, cell_text=total_text)
+            
+            # Extract total handle percentages from sixth cell (cell 5, index 5) 
+            total_handle_cell = cells[5] if len(cells) > 5 else None
+            over_handle = None
+            under_handle = None
+            
+            if total_handle_cell:
+                total_handle_divs = total_handle_cell.find_all('div')
+                if len(total_handle_divs) >= 2:
+                    over_handle_text = total_handle_divs[0].get_text(strip=True)
+                    under_handle_text = total_handle_divs[1].get_text(strip=True)
+                    
+                    over_handle_match = re.search(r'(\d+)%', over_handle_text)
+                    under_handle_match = re.search(r'(\d+)%', under_handle_text)
+                    
+                    if over_handle_match:
+                        over_handle = over_handle_match.group(1) + '%'
+                    if under_handle_match:
+                        under_handle = under_handle_match.group(1) + '%'
+            
+            # Extract total bet percentages from seventh cell (cell 6, index 6)
+            total_bet_cell = cells[6] if len(cells) > 6 else None
+            over_bets = None
+            under_bets = None
+            
+            if total_bet_cell:
+                total_bet_divs = total_bet_cell.find_all('div')
+                if len(total_bet_divs) >= 2:
+                    over_bets_text = total_bet_divs[0].get_text(strip=True)
+                    under_bets_text = total_bet_divs[1].get_text(strip=True)
+                    
+                    over_bets_match = re.search(r'(\d+)%', over_bets_text)
+                    under_bets_match = re.search(r'(\d+)%', under_bets_text)
+                    
+                    if over_bets_match:
+                        over_bets = over_bets_match.group(1) + '%'
+                    if under_bets_match:
+                        under_bets = under_bets_match.group(1) + '%'
+            
             # Extract spread/run line data from eighth cell (cell 7, index 7)
             # Based on HTML structure: RL column contains spread like -1.5/+1.5
             spread_cell = cells[7] if len(cells) > 7 else None
@@ -1017,6 +1132,18 @@ class VSINScraper(HTMLScraper):
             if home_spread_handle:
                 betting_data['Home Spread Handle %'] = home_spread_handle
             
+            # Add total data if available
+            if total_line:
+                betting_data['Total'] = total_line
+            if over_handle:
+                betting_data['Over Handle %'] = over_handle
+            if under_handle:
+                betting_data['Under Handle %'] = under_handle
+            if over_bets:
+                betting_data['Over Bets %'] = over_bets
+            if under_bets:
+                betting_data['Under Bets %'] = under_bets
+            
             # Add spread bet percentage data if available
             if away_spread_bets:
                 betting_data['Away Spread Bets %'] = away_spread_bets
@@ -1024,14 +1151,15 @@ class VSINScraper(HTMLScraper):
                 betting_data['Home Spread Bets %'] = home_spread_bets
             
             # Only return if we have meaningful betting data
-            has_meaningful_data = any([away_line, home_line, away_handle, home_handle, away_spread, home_spread])
+            has_meaningful_data = any([away_line, home_line, away_handle, home_handle, away_spread, home_spread, total_line])
             
             if has_meaningful_data:
                 self.logger.debug("Successfully parsed VSIN row", 
                                 away_team=away_team, home_team=home_team,
                                 away_line=away_line, home_line=home_line,
                                 away_handle=away_handle, home_handle=home_handle,
-                                away_spread=away_spread, home_spread=home_spread)
+                                away_spread=away_spread, home_spread=home_spread,
+                                total_line=total_line)
             
             return betting_data if has_meaningful_data else None
             

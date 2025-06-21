@@ -50,24 +50,24 @@ class VSINParser(BaseParser):
             'home_team': ['home team', 'home_team', 'home'],
             'away_team': ['away team', 'away_team', 'away', 'visitor'],
             'spread': ['spread', 'line', 'point spread', 'away spread', 'home spread'],  # Updated with new fields
-            'total': ['total', 'over/under', 'o/u'],  # Now using 'Total' from scraper
+            'total': ['total', 'over/under', 'o/u', 'Total'],  # Updated to include 'Total' from scraper
             'moneyline': ['moneyline', 'money line', 'ml', 'Away Line', 'Home Line', 'away line', 'home line'],  # Updated with capitalized fields
             
             # Bet percentage fields - EXACT match from scraper output
-            'home_bets_pct': ['home bets %'],
-            'away_bets_pct': ['away bets %'],
-            'over_bets_pct': ['over bets %'],
-            'under_bets_pct': ['under bets %'],
+            'home_bets_pct': ['home bets %', 'Home Bets %'],
+            'away_bets_pct': ['away bets %', 'Away Bets %'],
+            'over_bets_pct': ['over bets %', 'Over Bets %'],
+            'under_bets_pct': ['under bets %', 'Under Bets %'],
             
             # Spread bet percentage fields
             'spread_home_bets_pct': ['home spread bets %', 'spread bets %'],
             'spread_away_bets_pct': ['away spread bets %', 'spread bets away %'],
             
             # Stake/Handle percentage fields - EXACT match from scraper output
-            'home_stake_pct': ['home handle %'],
-            'away_stake_pct': ['away handle %'],
-            'over_stake_pct': ['over handle %'],
-            'under_stake_pct': ['under handle %'],
+            'home_stake_pct': ['home handle %', 'Home Handle %'],
+            'away_stake_pct': ['away handle %', 'Away Handle %'],
+            'over_stake_pct': ['over handle %', 'Over Handle %'],
+            'under_stake_pct': ['under handle %', 'Under Handle %'],
             
             # Spread handle fields - EXACT match from scraper output
             'spread_home_stake_pct': ['home spread handle %', 'spread handle %'],

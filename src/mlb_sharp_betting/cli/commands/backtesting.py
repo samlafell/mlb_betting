@@ -341,7 +341,11 @@ class AutomatedBacktestingCLI:
             "consensus_moneyline_strategy": "Consensus ML",
             "consensus_signals_current": "Consensus Signals",
             "mixed_consensus_strategy": "Mixed Consensus",
-            "executive_summary_report": "Executive Summary"
+            "executive_summary_report": "Executive Summary",
+            # Phase 1 Expert-Recommended Strategies
+            "total_line_sweet_spots_strategy": "Total Sweet Spots",
+            "underdog_ml_value_strategy": "Underdog ML Value",
+            "team_specific_bias_strategy": "Team Bias"
         }
         
         # Extract base strategy name
@@ -372,7 +376,20 @@ class AutomatedBacktestingCLI:
                 "ml_preference": "ML Preference",
                 "contrarian": "Contrarian",
                 "cross_book_consensus": "Cross Book Consensus",
-                "line_movement_confirmation": "Line Movement Confirmation"
+                "line_movement_confirmation": "Line Movement Confirmation",
+                # Phase 1 Strategy Variants
+                "VALUE_OVER_SWEET_SPOT": "Value Over Sweet Spot",
+                "VALUE_UNDER_SWEET_SPOT": "Value Under Sweet Spot", 
+                "SHARP_SWEET_SPOT_OVER": "Sharp Sweet Spot Over",
+                "SHARP_SWEET_SPOT_UNDER": "Sharp Sweet Spot Under",
+                "VALUE_AWAY_DOG": "Value Away Dog",
+                "VALUE_HOME_DOG": "Value Home Dog",
+                "SHARP_AWAY_DOG": "Sharp Away Dog",
+                "SHARP_HOME_DOG": "Sharp Home Dog",
+                "FADE_BIG_MARKET_HOME": "Fade Big Market Home",
+                "FADE_BIG_MARKET_AWAY": "Fade Big Market Away",
+                "BACK_SMALL_MARKET_HOME": "Back Small Market Home",
+                "BACK_SMALL_MARKET_AWAY": "Back Small Market Away"
             }
             
             clean_variant = variant_descriptions.get(variant, variant.replace('_', ' ').title())
@@ -425,7 +442,11 @@ class AutomatedBacktestingCLI:
             "consensus_moneyline_strategy": "Consensus ML",
             "consensus_signals_current": "Consensus Signals",
             "mixed_consensus_strategy": "Mixed Consensus",
-            "executive_summary_report": "Executive Summary"
+            "executive_summary_report": "Executive Summary",
+            # Phase 1 Expert-Recommended Strategies
+            "total_line_sweet_spots_strategy": "Total Sweet Spots",
+            "underdog_ml_value_strategy": "Underdog ML Value",
+            "team_specific_bias_strategy": "Team Bias"
         }
         
         # Extract base strategy name

@@ -189,57 +189,136 @@ class MLBBettingScheduler:
 
     async def schedule_game_alerts_for_today(self) -> int:
         """
-        Schedule alerts for all games today.
+        Schedule enhanced data collection for all games today.
+        
+        Now schedules multiple collection points:
+        - 30 minutes before game
+        - 15 minutes before game  
+        - 5 minutes before game
         
         Returns:
-            Number of alerts scheduled
+            Number of games with alerts scheduled
         """
         today = datetime.now(timezone.utc).date()
         games = self.mlb_api.get_games_for_date(today)
         
-        scheduled_count = 0
+        scheduled_games = 0
+        total_jobs = 0
+        
+        # Enhanced pre-game data collection schedule
+        collection_points = [
+            {"minutes": 30, "context": "pre_game_30min", "name": "30-min Data Collection"},
+            {"minutes": 15, "context": "pre_game_15min", "name": "15-min Data Collection"},
+            {"minutes": 5, "context": "game_alert", "name": "Game Alert"}  # Keep original 5-min as game alert
+        ]
         
         for game in games:
             # Skip games that are already completed or postponed
             if game.status in ['Final', 'Completed', 'Postponed', 'Cancelled']:
                 continue
                 
-            # Calculate alert time (5 minutes before game)
-            alert_time = game.game_date - timedelta(minutes=self.alert_minutes)
+            game_scheduled = False
             
-            # Only schedule if alert time is in the future
-            if alert_time > datetime.now(timezone.utc):
-                job_id = f"game_alert_{game.game_pk}"
+            # Schedule multiple collection points for each game
+            for point in collection_points:
+                collection_time = game.game_date - timedelta(minutes=point["minutes"])
                 
-                # Remove existing job if it exists
-                if self.scheduler.get_job(job_id):
-                    self.scheduler.remove_job(job_id)
-                
-                # Schedule the alert
-                self.scheduler.add_job(
-                    func=self.game_alert_handler,
-                    trigger=DateTrigger(run_date=alert_time),
-                    args=[game],
-                    id=job_id,
-                    name=f"Game Alert: {game.away_team} @ {game.home_team}",
-                    replace_existing=True
-                )
-                
-                scheduled_count += 1
-                self.logger.info("Scheduled game alert",
-                               game=f"{game.away_team} @ {game.home_team}",
-                               alert_time=alert_time,
-                               game_time=game.game_date)
+                # Only schedule if collection time is in the future
+                if collection_time > datetime.now(timezone.utc):
+                    job_id = f"{point['context']}_{game.game_pk}"
+                    
+                    # Remove existing job if it exists
+                    if self.scheduler.get_job(job_id):
+                        self.scheduler.remove_job(job_id)
+                    
+                    # Schedule the collection job
+                    self.scheduler.add_job(
+                        func=self.enhanced_game_handler,
+                        trigger=DateTrigger(run_date=collection_time),
+                        args=[game, point["context"], point["minutes"]],
+                        id=job_id,
+                        name=f"{point['name']}: {game.away_team} @ {game.home_team}",
+                        replace_existing=True
+                    )
+                    
+                    total_jobs += 1
+                    game_scheduled = True
+                    
+                    self.logger.info("Scheduled enhanced data collection",
+                                   game=f"{game.away_team} @ {game.home_team}",
+                                   collection_type=point["name"],
+                                   collection_time=collection_time,
+                                   game_time=game.game_date,
+                                   minutes_before=point["minutes"])
+            
+            if game_scheduled:
+                scheduled_games += 1
         
-        self.metrics['scheduled_games_today'] = scheduled_count
+        self.metrics['scheduled_games_today'] = scheduled_games
         self.metrics['active_alerts'] = len([job for job in self.scheduler.get_jobs() 
-                                           if job.id.startswith('game_alert_')])
+                                           if any(prefix in job.id for prefix in ['pre_game_', 'game_alert_'])])
         
-        self.logger.info("Game alerts scheduled for today",
+        self.logger.info("Enhanced game alerts scheduled for today",
                         games_found=len(games),
-                        alerts_scheduled=scheduled_count)
+                        games_scheduled=scheduled_games,
+                        total_collection_jobs=total_jobs,
+                        collection_points_per_game=len(collection_points))
         
-        return scheduled_count
+        return scheduled_games
+
+    async def enhanced_game_handler(self, game: MLBGameInfo, context: str, minutes_before: int) -> None:
+        """
+        Enhanced game handler that supports multiple collection points.
+        
+        Args:
+            game: Game information
+            context: Collection context (pre_game_30min, pre_game_15min, game_alert)
+            minutes_before: Minutes before game start
+        """
+        game_desc = f"{game.away_team} @ {game.home_team}"
+        
+        self.logger.info("Triggering enhanced data collection", 
+                        game=game_desc, 
+                        context=context,
+                        minutes_before=minutes_before)
+        
+        # Send appropriate notification based on context
+        if context == "game_alert":
+            # Keep original game alert behavior for 5-minute mark
+            await self.send_notification(
+                f"🏈 GAME ALERT: {game_desc} starts in {minutes_before} minutes! "
+                f"Running final analysis...",
+                context="game_alert"
+            )
+        else:
+            # New pre-game data collection notifications
+            await self.send_notification(
+                f"📊 PRE-GAME DATA: Collecting {minutes_before}-minute data for {game_desc}",
+                context=context
+            )
+        
+        # Run the entrypoint with context
+        result = await self.run_entrypoint(context=context)
+        
+        # Send results notification
+        if result['success']:
+            if context == "game_alert":
+                await self.send_notification(
+                    f"✅ Final analysis complete for {game_desc}! "
+                    f"Check your system for betting opportunities. "
+                    f"Execution time: {result.get('execution_time', 'N/A'):.1f}s",
+                    context="game_alert_success"
+                )
+            else:
+                await self.send_notification(
+                    f"✅ {minutes_before}-min data collection complete for {game_desc} "
+                    f"(Execution: {result.get('execution_time', 'N/A'):.1f}s)",
+                    context=f"{context}_success"
+                )
+        else:
+            error_msg = f"❌ {minutes_before}-min data collection failed for {game_desc}! " \
+                       f"Error: {result.get('error', 'Unknown error')}"
+            await self.send_notification(error_msg, context=f"{context}_error")
 
     async def game_alert_handler(self, game: MLBGameInfo) -> None:
         """
@@ -366,7 +445,7 @@ class MLBBettingScheduler:
                 {
                     'id': job.id,
                     'name': job.name,
-                    'next_run': job.next_run_time,
+                    'next_run': getattr(job, 'next_run_time', None),
                     'trigger': str(job.trigger)
                 }
                 for job in jobs

@@ -861,3 +861,275 @@ Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at:
 2025-06-20 17:00:00 [info     ] Starting entrypoint execution  context=hourly service=scheduler
 2025-06-20 17:00:23 [info     ] Entrypoint executed successfully context=hourly execution_time=23.320111 service=scheduler stdout_lines=38
 2025-06-20 17:00:23 [info     ] Hourly execution completed successfully execution_time=23.320111 service=scheduler
+
+📊 Status Update:
+   • Jobs active: 16
+   • Hourly runs completed: 5
+   • Game alerts sent: 1
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-20 18:00:00-04:00
+     - Game Alert: Texas Rangers @ Pittsburgh Pirates: 2025-06-20 22:35:00+00:00
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 16
+   • Hourly runs completed: 5
+   • Game alerts sent: 1
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-20 18:00:00-04:00
+     - Game Alert: Texas Rangers @ Pittsburgh Pirates: 2025-06-20 22:35:00+00:00
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 16
+   • Hourly runs completed: 5
+   • Game alerts sent: 1
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-20 18:00:00-04:00
+     - Game Alert: Texas Rangers @ Pittsburgh Pirates: 2025-06-20 22:35:00+00:00
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 16
+   • Hourly runs completed: 5
+   • Game alerts sent: 1
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-20 18:00:00-04:00
+     - Game Alert: Texas Rangers @ Pittsburgh Pirates: 2025-06-20 22:35:00+00:00
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 16
+   • Hourly runs completed: 5
+   • Game alerts sent: 1
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-20 18:00:00-04:00
+     - Game Alert: Texas Rangers @ Pittsburgh Pirates: 2025-06-20 22:35:00+00:00
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 16
+   • Hourly runs completed: 5
+   • Game alerts sent: 1
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-20 18:00:00-04:00
+     - Game Alert: Texas Rangers @ Pittsburgh Pirates: 2025-06-20 22:35:00+00:00
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 16
+   • Hourly runs completed: 5
+   • Game alerts sent: 1
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-20 18:00:00-04:00
+     - Game Alert: Texas Rangers @ Pittsburgh Pirates: 2025-06-20 22:35:00+00:00
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 16
+   • Hourly runs completed: 5
+   • Game alerts sent: 1
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-20 18:00:00-04:00
+     - Game Alert: Texas Rangers @ Pittsburgh Pirates: 2025-06-20 22:35:00+00:00
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 16
+   • Hourly runs completed: 5
+   • Game alerts sent: 1
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-20 18:00:00-04:00
+     - Game Alert: Texas Rangers @ Pittsburgh Pirates: 2025-06-20 22:35:00+00:00
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 16
+   • Hourly runs completed: 5
+   • Game alerts sent: 1
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-20 18:00:00-04:00
+     - Game Alert: Texas Rangers @ Pittsburgh Pirates: 2025-06-20 22:35:00+00:00
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 16
+   • Hourly runs completed: 5
+   • Game alerts sent: 1
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-20 18:00:00-04:00
+     - Game Alert: Texas Rangers @ Pittsburgh Pirates: 2025-06-20 22:35:00+00:00
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 16
+   • Hourly runs completed: 5
+   • Game alerts sent: 1
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Hourly Data Collection: 2025-06-20 18:00:00-04:00
+     - Game Alert: Texas Rangers @ Pittsburgh Pirates: 2025-06-20 22:35:00+00:00
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+2025-06-20 18:00:00 [info     ] Executing hourly data collection service=scheduler
+2025-06-20 18:00:00 [info     ] Starting entrypoint execution  context=hourly service=scheduler
+2025-06-20 18:00:15 [info     ] Entrypoint executed successfully context=hourly execution_time=15.180605 service=scheduler stdout_lines=38
+2025-06-20 18:00:15 [info     ] Hourly execution completed successfully execution_time=15.180605 service=scheduler
+
+📊 Status Update:
+   • Jobs active: 16
+   • Hourly runs completed: 6
+   • Game alerts sent: 1
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Game Alert: Texas Rangers @ Pittsburgh Pirates: 2025-06-20 22:35:00+00:00
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+     - Game Alert: Baltimore Orioles @ New York Yankees: 2025-06-20 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 16
+   • Hourly runs completed: 6
+   • Game alerts sent: 1
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Game Alert: Texas Rangers @ Pittsburgh Pirates: 2025-06-20 22:35:00+00:00
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+     - Game Alert: Baltimore Orioles @ New York Yankees: 2025-06-20 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 16
+   • Hourly runs completed: 6
+   • Game alerts sent: 1
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Game Alert: Texas Rangers @ Pittsburgh Pirates: 2025-06-20 22:35:00+00:00
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+     - Game Alert: Baltimore Orioles @ New York Yankees: 2025-06-20 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 16
+   • Hourly runs completed: 6
+   • Game alerts sent: 1
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Game Alert: Texas Rangers @ Pittsburgh Pirates: 2025-06-20 22:35:00+00:00
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+     - Game Alert: Baltimore Orioles @ New York Yankees: 2025-06-20 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 16
+   • Hourly runs completed: 6
+   • Game alerts sent: 1
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Game Alert: Texas Rangers @ Pittsburgh Pirates: 2025-06-20 22:35:00+00:00
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+     - Game Alert: Baltimore Orioles @ New York Yankees: 2025-06-20 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 16
+   • Hourly runs completed: 6
+   • Game alerts sent: 1
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Game Alert: Texas Rangers @ Pittsburgh Pirates: 2025-06-20 22:35:00+00:00
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+     - Game Alert: Baltimore Orioles @ New York Yankees: 2025-06-20 23:00:00+00:00
+
+📊 Status Update:
+   • Jobs active: 16
+   • Hourly runs completed: 6
+   • Game alerts sent: 1
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Game Alert: Texas Rangers @ Pittsburgh Pirates: 2025-06-20 22:35:00+00:00
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+     - Game Alert: Baltimore Orioles @ New York Yankees: 2025-06-20 23:00:00+00:00
+2025-06-20 18:35:00 [info     ] Triggering game alert          game='Texas Rangers @ Pittsburgh Pirates' service=scheduler
+2025-06-20 18:35:00 [info     ] NOTIFICATION                   context=game_alert message='🏈 GAME ALERT: Texas Rangers @ Pittsburgh Pirates starts in 5 minutes! Running analysis...' service=scheduler
+
+🚨 [2025-06-20 18:35:00] GAME_ALERT: 🏈 GAME ALERT: Texas Rangers @ Pittsburgh Pirates starts in 5 minutes! Running analysis...
+
+2025-06-20 18:35:00 [info     ] Starting entrypoint execution  context=game_alert service=scheduler
+2025-06-20 18:35:14 [info     ] Entrypoint executed successfully context=game_alert execution_time=14.285252 service=scheduler stdout_lines=38
+2025-06-20 18:35:14 [info     ] NOTIFICATION                   context=game_alert_success message='✅ Analysis complete for Texas Rangers @ Pittsburgh Pirates! Check your system for betting opportunities. Execution time: 14.3s' service=scheduler
+
+🚨 [2025-06-20 18:35:14] GAME_ALERT_SUCCESS: ✅ Analysis complete for Texas Rangers @ Pittsburgh Pirates! Check your system for betting opportunities. Execution time: 14.3s
+
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 6
+   • Game alerts sent: 2
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+     - Game Alert: Baltimore Orioles @ New York Yankees: 2025-06-20 23:00:00+00:00
+     - Hourly Data Collection: 2025-06-20 19:00:00-04:00
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 6
+   • Game alerts sent: 2
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+     - Game Alert: Baltimore Orioles @ New York Yankees: 2025-06-20 23:00:00+00:00
+     - Hourly Data Collection: 2025-06-20 19:00:00-04:00
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 6
+   • Game alerts sent: 2
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+     - Game Alert: Baltimore Orioles @ New York Yankees: 2025-06-20 23:00:00+00:00
+     - Hourly Data Collection: 2025-06-20 19:00:00-04:00
+
+📊 Status Update:
+   • Jobs active: 15
+   • Hourly runs completed: 6
+   • Game alerts sent: 2
+   • Errors: 0
+   • Games scheduled today: 15
+   • Next jobs:
+     - Game Alert: Detroit Tigers @ Tampa Bay Rays: 2025-06-20 23:00:00+00:00
+     - Game Alert: Baltimore Orioles @ New York Yankees: 2025-06-20 23:00:00+00:00
+     - Hourly Data Collection: 2025-06-20 19:00:00-04:00
+
+🛑 Received signal 15, shutting down gracefully...
+2025-06-20 18:59:12 [info     ] Stopping scheduler             service=scheduler
+✅ Scheduler stopped. Goodbye!

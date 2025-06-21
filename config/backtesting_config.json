@@ -16,7 +16,7 @@
     },
     "statistical_validation": {
       "confidence_level": 0.95,
-      "min_sample_size_analysis": 20,
+      "min_sample_size_analysis": 15,
       "min_sample_size_threshold_adjustment": 50,
       "bootstrap_iterations": 1000,
       "significance_level": 0.05

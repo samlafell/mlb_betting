@@ -1,8 +1,11 @@
 """
 Database Coordinator Service for Multi-Process DuckDB Access
 
-This service provides process-level coordination to handle DuckDB's single-writer limitation
-using file-based locking - a simple, reliable approach proven to work with DuckDB.
+This service provides process-level coordination to handle DuckDB's single-writer limitation.
+
+MIGRATION NOTE: This coordinator now supports both the legacy file-locking approach
+and the new optimized connection pooling approach. Set use_optimized=True to use
+the new high-performance architecture.
 """
 
 import fcntl
@@ -21,18 +24,36 @@ logger = structlog.get_logger(__name__)
 
 class DatabaseCoordinator:
     """
-    Simple file-based database coordinator that eliminates DuckDB concurrency conflicts.
+    Database coordinator that supports both legacy file-locking and optimized approaches.
     
-    Uses proven file locking approach - much more reliable than complex queue systems.
+    MIGRATION: Set use_optimized=True to enable the new high-performance architecture
+    with connection pooling, batched writes, and lock-free reads.
     """
     
-    def __init__(self, lock_timeout: float = 30.0):
+    def __init__(self, lock_timeout: float = 30.0, use_optimized: bool = False):
         self.lock_timeout = lock_timeout
+        self.use_optimized = use_optimized
         self.lock_file_path = Path("data/raw/duckdb_coordinator.lock")
         self.db_manager = None
         
-        # Ensure lock directory exists
-        self.lock_file_path.parent.mkdir(parents=True, exist_ok=True)
+        # Initialize optimized adapter if requested
+        if self.use_optimized:
+            self._init_optimized_adapter()
+        else:
+            # Ensure lock directory exists for legacy mode
+            self.lock_file_path.parent.mkdir(parents=True, exist_ok=True)
+            logger.info("DatabaseCoordinator using legacy file-locking mode")
+    
+    def _init_optimized_adapter(self):
+        """Initialize the optimized database adapter"""
+        try:
+            from .database_service_adapter import get_database_service_adapter
+            self._optimized_adapter = get_database_service_adapter()
+            logger.info("DatabaseCoordinator using optimized connection pooling mode")
+        except ImportError as e:
+            logger.error("Failed to import optimized adapter, falling back to legacy mode", error=str(e))
+            self.use_optimized = False
+            self.lock_file_path.parent.mkdir(parents=True, exist_ok=True)
     
     @contextmanager
     def _get_exclusive_lock(self, timeout: float = None):
@@ -83,7 +104,16 @@ class DatabaseCoordinator:
         parameters: Optional[tuple] = None,
         timeout: float = 30.0
     ) -> Optional[List[tuple]]:
-        """Execute a read operation with file locking"""
+        """Execute a read operation using optimized or legacy approach"""
+        if self.use_optimized:
+            # Use optimized lock-free read
+            try:
+                return self._optimized_adapter.execute_read(query, parameters, timeout)
+            except Exception as e:
+                logger.error("Optimized read failed, falling back to legacy", error=str(e))
+                # Fall through to legacy approach
+        
+        # Legacy file-locking approach
         try:
             # Reads can use shorter timeout since they're less critical
             with self._get_exclusive_lock(timeout=min(timeout, 10.0)):
@@ -103,7 +133,16 @@ class DatabaseCoordinator:
         parameters: Optional[tuple] = None,
         timeout: float = 60.0
     ) -> Any:
-        """Execute a write operation with file locking"""
+        """Execute a write operation using optimized or legacy approach"""
+        if self.use_optimized:
+            # Use optimized batched write
+            try:
+                return self._optimized_adapter.execute_write(query, parameters, timeout)
+            except Exception as e:
+                logger.error("Optimized write failed, falling back to legacy", error=str(e))
+                # Fall through to legacy approach
+        
+        # Legacy file-locking approach
         try:
             with self._get_exclusive_lock(timeout=timeout):
                 db_manager = self._get_db_manager()
@@ -121,7 +160,16 @@ class DatabaseCoordinator:
         parameters_list: List[tuple],
         timeout: float = 300.0
     ) -> str:
-        """Execute a bulk insert operation with file locking"""
+        """Execute a bulk insert operation using optimized or legacy approach"""
+        if self.use_optimized:
+            # Use optimized batch insert
+            try:
+                return self._optimized_adapter.execute_bulk_insert(query, parameters_list, timeout)
+            except Exception as e:
+                logger.error("Optimized bulk insert failed, falling back to legacy", error=str(e))
+                # Fall through to legacy approach
+        
+        # Legacy file-locking approach
         try:
             with self._get_exclusive_lock(timeout=timeout):
                 db_manager = self._get_db_manager()
@@ -157,11 +205,22 @@ class DatabaseCoordinator:
         return None
     
     def start(self):
-        """Start coordinator (no-op for file-based approach)"""
-        logger.info("File-based database coordinator ready")
+        """Start coordinator"""
+        if self.use_optimized:
+            # Optimized adapter starts automatically on first use
+            logger.info("Optimized database coordinator ready")
+        else:
+            logger.info("File-based database coordinator ready")
         
     def stop(self):
         """Stop coordinator and cleanup"""
+        if self.use_optimized and hasattr(self, '_optimized_adapter'):
+            try:
+                self._optimized_adapter.stop()
+                logger.info("Optimized coordinator stopped")
+            except Exception as e:
+                logger.warning("Error stopping optimized adapter", error=str(e))
+        
         if self.lock_file_path.exists():
             try:
                 self.lock_file_path.unlink()
@@ -171,11 +230,26 @@ class DatabaseCoordinator:
     
     def is_healthy(self) -> bool:
         """Check if coordinator is healthy"""
+        if self.use_optimized and hasattr(self, '_optimized_adapter'):
+            return self._optimized_adapter.is_healthy()
         return True  # File-based approach is always healthy
     
     def get_queue_size(self) -> int:
-        """Get queue size (always 0 for file-based approach)"""
-        return 0
+        """Get queue size"""
+        if self.use_optimized and hasattr(self, '_optimized_adapter'):
+            return self._optimized_adapter.get_queue_size()
+        return 0  # File-based approach has no queue
+    
+    def get_performance_stats(self) -> dict:
+        """Get performance statistics"""
+        if self.use_optimized and hasattr(self, '_optimized_adapter'):
+            return self._optimized_adapter.get_performance_stats()
+        return {
+            "mode": "legacy_file_locking",
+            "read_pool_size": 1,
+            "write_queue_size": 0,
+            "status": "active"
+        }
 
 
 # Global coordinator instance

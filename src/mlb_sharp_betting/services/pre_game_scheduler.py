@@ -208,14 +208,22 @@ class PreGameScheduler:
         print("=" * 50)
     
     async def _daily_setup_handler(self) -> None:
-        """Daily setup: schedule workflows for all games today."""
-        self.logger.info("Running daily game setup")
+        """Daily setup: schedule enhanced workflows for all games today."""
+        self.logger.info("Running daily game setup with enhanced collection points")
         
         try:
             today = datetime.now(self.utc).date()
             games = self.mlb_api.get_games_for_date(today)
             
-            scheduled_count = 0
+            scheduled_games = 0
+            total_workflows = 0
+            
+            # Enhanced pre-game workflow schedule - 3 collection points per game
+            workflow_points = [
+                {"minutes": 30, "context": "pre_game_30min", "name": "30-min Data Collection"},
+                {"minutes": 15, "context": "pre_game_15min", "name": "15-min Data Collection"},
+                {"minutes": 5, "context": "pre_game_final", "name": "Final Pre-Game Analysis"}  # Keep 5-min as final
+            ]
             
             for game in games:
                 # Skip completed, postponed, or cancelled games
@@ -226,61 +234,158 @@ class PreGameScheduler:
                 if game.game_pk in self.scheduled_games:
                     continue
                 
-                # Calculate workflow trigger time (5 minutes before game)
                 if game.game_date.tzinfo is None:
                     game_time_utc = self.utc.localize(game.game_date)
                 else:
                     game_time_utc = game.game_date.astimezone(self.utc)
                 
-                trigger_time = game_time_utc - timedelta(minutes=self.alert_minutes)
+                game_scheduled = False
                 
-                # Only schedule if trigger time is in the future
-                now_utc = datetime.now(self.utc)
-                if trigger_time > now_utc:
-                    job_id = f"pregame_workflow_{game.game_pk}"
+                # Schedule multiple workflow points for each game
+                for point in workflow_points:
+                    trigger_time = game_time_utc - timedelta(minutes=point["minutes"])
                     
-                    # Remove existing job if it exists
-                    if self.scheduler.get_job(job_id):
-                        self.scheduler.remove_job(job_id)
-                    
-                    # Schedule the workflow
-                    self.scheduler.add_job(
-                        func=self._game_workflow_handler,
-                        trigger=DateTrigger(run_date=trigger_time),
-                        args=[game],
-                        id=job_id,
-                        name=f"Pre-Game: {game.away_team} @ {game.home_team}",
-                        replace_existing=True
-                    )
-                    
+                    # Only schedule if trigger time is in the future
+                    now_utc = datetime.now(self.utc)
+                    if trigger_time > now_utc:
+                        job_id = f"{point['context']}_{game.game_pk}"
+                        
+                        # Remove existing job if it exists
+                        if self.scheduler.get_job(job_id):
+                            self.scheduler.remove_job(job_id)
+                        
+                        # Schedule the enhanced workflow
+                        self.scheduler.add_job(
+                            func=self._enhanced_game_workflow_handler,
+                            trigger=DateTrigger(run_date=trigger_time),
+                            args=[game, point["context"], point["minutes"]],
+                            id=job_id,
+                            name=f"{point['name']}: {game.away_team} @ {game.home_team}",
+                            replace_existing=True
+                        )
+                        
+                        total_workflows += 1
+                        game_scheduled = True
+                        
+                        # Convert to EST for logging
+                        trigger_time_est = trigger_time.astimezone(self.est)
+                        game_time_est = game_time_utc.astimezone(self.est)
+                        
+                        self.logger.info("Scheduled enhanced pre-game workflow",
+                                       game=f"{game.away_team} @ {game.home_team}",
+                                       workflow_type=point["name"],
+                                       trigger_time=trigger_time_est.strftime("%I:%M %p EST"),
+                                       game_time=game_time_est.strftime("%I:%M %p EST"),
+                                       minutes_before=point["minutes"])
+                
+                if game_scheduled:
                     self.scheduled_games.add(game.game_pk)
-                    scheduled_count += 1
-                    
-                    # Convert to EST for logging
-                    trigger_time_est = trigger_time.astimezone(self.est)
-                    game_time_est = game_time_utc.astimezone(self.est)
-                    
-                    self.logger.info("Scheduled pre-game workflow",
-                                   game=f"{game.away_team} @ {game.home_team}",
-                                   trigger_time=trigger_time_est.strftime("%I:%M %p EST"),
-                                   game_time=game_time_est.strftime("%I:%M %p EST"))
+                    scheduled_games += 1
             
             self.metrics["daily_setups"] += 1
-            self.metrics["games_scheduled"] += scheduled_count
+            self.metrics["games_scheduled"] += scheduled_games
             
-            self.logger.info("Daily setup completed",
+            self.logger.info("Enhanced daily setup completed",
                            games_found=len(games),
-                           games_scheduled=scheduled_count,
-                           total_scheduled_today=len(self.scheduled_games))
+                           games_scheduled=scheduled_games,
+                           total_workflows=total_workflows,
+                           workflow_points_per_game=len(workflow_points))
             
-            # Send daily setup notification
-            await self._send_daily_setup_notification(len(games), scheduled_count)
+            # Send enhanced daily setup notification
+            await self._send_enhanced_daily_setup_notification(len(games), scheduled_games, total_workflows)
             
         except Exception as e:
             self.logger.error("Daily setup failed", error=str(e))
             self.metrics["scheduler_errors"] += 1
             await self._send_error_notification("Daily Setup Failed", str(e))
     
+    async def _enhanced_game_workflow_handler(self, game: MLBGameInfo, context: str, minutes_before: int) -> None:
+        """Enhanced game workflow handler that supports multiple collection points."""
+        game_desc = f"{game.away_team} @ {game.home_team}"
+        
+        # Convert game time to EST for display
+        if game.game_date.tzinfo is None:
+            game_time_est = self.est.localize(game.game_date)
+        else:
+            game_time_est = game.game_date.astimezone(self.est)
+        
+        self.logger.info("Triggering enhanced pre-game workflow",
+                        game=game_desc,
+                        context=context,
+                        minutes_before=minutes_before,
+                        game_time=game_time_est.strftime("%I:%M %p EST"))
+        
+        try:
+            # Only send email on final collection point (5 minutes before)
+            send_email = (minutes_before == 5)
+            
+            # Execute the three-stage workflow with context
+            workflow_result = await self.workflow_service.execute_pre_game_workflow(
+                game, 
+                context=context,
+                minutes_before=minutes_before,
+                send_email=send_email
+            )
+            
+            # Store result with context
+            workflow_key = f"{game.game_pk}_{context}"
+            self.completed_workflows[workflow_key] = workflow_result
+            
+            # Update metrics
+            self.metrics["workflows_triggered"] += 1
+            if workflow_result.overall_status.value == "success":
+                self.metrics["successful_workflows"] += 1
+            else:
+                self.metrics["failed_workflows"] += 1
+            
+            # Log result
+            self.logger.info("Enhanced pre-game workflow completed",
+                           game=game_desc,
+                           context=context,
+                           minutes_before=minutes_before,
+                           workflow_id=workflow_result.workflow_id,
+                           status=workflow_result.overall_status.value,
+                           email_sent=workflow_result.email_sent,
+                           total_time=workflow_result.total_execution_time)
+            
+            # Console notification with context
+            status_emoji = "✅" if workflow_result.overall_status.value == "success" else "❌"
+            if send_email:
+                email_status = "📧 Sent" if workflow_result.email_sent else "📧 Failed"
+            else:
+                email_status = "📧 Skipped (data collection only)"
+            
+            if context == "pre_game_final":
+                # Final analysis gets special treatment
+                print(f"\n🏈 FINAL PRE-GAME ANALYSIS: {game_desc}")
+            else:
+                # Data collection notifications
+                print(f"\n📊 {minutes_before}-MIN DATA COLLECTION: {game_desc}")
+            
+            print(f"   {status_emoji} Time: {datetime.now().strftime('%H:%M:%S')} | Status: {workflow_result.overall_status.value.title()}")
+            print(f"   📧 Email: {email_status} | Duration: {workflow_result.total_execution_time:.1f}s")
+            print(f"   🆔 Workflow ID: {workflow_result.workflow_id}")
+            
+        except Exception as e:
+            self.logger.error("Enhanced pre-game workflow failed unexpectedly",
+                            game=game_desc,
+                            context=context,
+                            minutes_before=minutes_before,
+                            error=str(e))
+            self.metrics["failed_workflows"] += 1
+            self.metrics["scheduler_errors"] += 1
+            
+            # Send error notification
+            await self._send_error_notification(
+                f"Pre-Game Workflow Failed: {game_desc} ({minutes_before}min)",
+                f"Context: {context}\nError: {str(e)}"
+            )
+        
+        finally:
+            # Clean up from scheduled games tracking only after final workflow
+            if context == "pre_game_final" and game.game_pk in self.scheduled_games:
+                self.scheduled_games.remove(game.game_pk)
+
     async def _game_workflow_handler(self, game: MLBGameInfo) -> None:
         """Handle pre-game workflow execution for a specific game."""
         game_desc = f"{game.away_team} @ {game.home_team}"
@@ -392,6 +497,80 @@ General Balls"""
         except Exception as e:
             self.logger.warning("Failed to send daily setup notification", error=str(e))
     
+    async def _send_enhanced_daily_setup_notification(self, total_games: int, scheduled_games: int, total_workflows: int):
+        """Send enhanced daily setup notification with multiple collection points info."""
+        if not self.workflow_service.email_config.is_configured():
+            return
+        
+        try:
+            today_str = datetime.now(self.est).strftime("%A, %B %d, %Y")
+            
+            subject = f"📅 Enhanced MLB Setup Complete - {scheduled_games} Games, {total_workflows} Workflows"
+            
+            plain_text = f"""🏈 ENHANCED DAILY MLB SETUP COMPLETE
+
+Date: {today_str}
+Total Games Found: {total_games}
+Games Scheduled: {scheduled_games}
+Total Workflows: {total_workflows}
+
+Enhanced Collection Schedule:
+• 30-minute data collection before each game (📊 data only, no email)
+• 15-minute data collection before each game (📊 data only, no email)
+• 5-minute final analysis before each game (📊 data + 📧 email notification)
+
+{total_workflows} workflows will automatically trigger throughout the day.
+You'll receive ONE email per game (only from the final 5-minute analysis).
+
+EMAIL NOTIFICATION BEHAVIOR:
+- Only the final 5-minute workflow sends email notifications
+- This prevents email spam while ensuring comprehensive data collection
+- Each email contains complete analysis results from all collection points
+
+---
+Generated by MLB Sharp Betting Analytics Platform
+General Balls"""
+            
+            html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="background: #d4edda; color: #155724; padding: 20px; border-radius: 8px;">
+        <h1>📅 Enhanced Daily MLB Setup Complete</h1>
+        <p><strong>Date:</strong> {today_str}</p>
+        <p><strong>Total Games Found:</strong> {total_games}</p>
+        <p><strong>Games Scheduled:</strong> {scheduled_games}</p>
+        <p><strong>Total Workflows:</strong> {total_workflows}</p>
+        
+        <h3>🚀 Enhanced Collection Schedule:</h3>
+        <ul>
+            <li>📊 30-minute data collection before each game (data only, no email)</li>
+            <li>📊 15-minute data collection before each game (data only, no email)</li>
+            <li>🏈 5-minute final analysis before each game (data + email notification)</li>
+        </ul>
+        
+        <p><strong>{total_workflows} workflows</strong> will automatically trigger throughout the day.</p>
+        <p><strong>You'll receive ONE email per game</strong> (only from the final 5-minute analysis).</p>
+        
+        <h3>📧 Email Notification Behavior:</h3>
+        <ul>
+            <li>Only the final 5-minute workflow sends email notifications</li>
+            <li>This prevents email spam while ensuring comprehensive data collection</li>
+            <li>Each email contains complete analysis results from all collection points</li>
+        </ul>
+    </div>
+</body>
+</html>"""
+            
+            await self.workflow_service._send_email(subject, plain_text, html_content)
+            
+        except Exception as e:
+            self.logger.warning("Failed to send enhanced daily setup notification", error=str(e))
+    
     async def _send_error_notification(self, title: str, error_message: str):
         """Send error notification if email is configured."""
         if not self.workflow_service.email_config.is_configured():
@@ -449,17 +628,13 @@ General Balls"""
             await self.stop()
     
     def get_status(self) -> Dict[str, any]:
-        """Get current scheduler status."""
-        active_jobs = len([job for job in self.scheduler.get_jobs() 
-                          if job.id.startswith('pregame_workflow_')])
-        
+        """Get scheduler status and metrics."""
         return {
-            "running": self.running,
-            "scheduled_games_today": len(self.scheduled_games),
-            "active_workflow_jobs": active_jobs,
-            "completed_workflows": len(self.completed_workflows),
-            "email_configured": self.workflow_service.email_config.is_configured(),
-            "metrics": self.metrics
+            "scheduler_running": self.running,
+            "jobs_count": len(self.scheduler.get_jobs()) if hasattr(self, 'scheduler') else 0,
+            "scheduled_games_count": len(self.scheduled_games),
+            "completed_workflows_count": len(self.completed_workflows),
+            "metrics": self.metrics.copy()
         }
     
     def get_recent_workflows(self, limit: int = 5) -> List[WorkflowResult]:

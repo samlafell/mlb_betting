@@ -453,13 +453,27 @@ async def main():
         dry_run=args.dry_run
     )
     
-    metrics = await pipeline.run(output_file=args.output)
-    
-    # Exit with error code if there were significant issues
-    if metrics["errors"] > 0 and metrics["stored_records"] == 0:
-        sys.exit(1)
-    
-    sys.exit(0)
+    try:
+        metrics = await pipeline.run(output_file=args.output)
+        
+        # Exit with error code if there were significant issues
+        if metrics["errors"] > 0 and metrics["stored_records"] == 0:
+            sys.exit(1)
+        
+        sys.exit(0)
+        
+    finally:
+        # CRITICAL: Explicitly close database connection to prevent locks
+        # This ensures the database lock is released for subsequent workflows
+        try:
+            if hasattr(pipeline, 'db_manager') and pipeline.db_manager:
+                pipeline.db_manager.close()
+                # Use print instead of logger since logger may be closed
+                print("Database connection closed successfully")
+        except Exception as e:
+            print(f"Warning: Error closing database connection: {e}")
+            # Don't fail the entire pipeline for cleanup errors
+            pass
 
 
 if __name__ == "__main__":
