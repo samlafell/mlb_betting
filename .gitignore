@@ -14,9 +14,6 @@ analysis_results/**
 
 # 🚨 CRITICAL: PROTECT ALL DATABASE FILES FROM GIT
 # Never commit database files - they contain valuable data and can be huge
-*.duckdb
-**/*.duckdb
-*.duckdb.wal
 *.db
 *.sqlite
 *.sqlite3
@@ -26,6 +23,7 @@ logs/
 *.log
 *.pid
 *.lock
+**/*.duckdb
 
 # Environment files
 .env
