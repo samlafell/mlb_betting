@@ -383,7 +383,7 @@ export LOG_LEVEL=WARNING
 find workflow_logs/ -name "*.log" -mtime +30 -delete
 
 # Monitor database size
-du -h data/raw/mlb_betting.duckdb
+psql -h localhost -d mlb_betting -c "\dt+"
 ```
 
 ## 🤝 Integration

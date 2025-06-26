@@ -212,7 +212,7 @@ class SharpSignal(IdentifiedModel, ValidatedModel):
         return f"{self.signal_type.value.replace('_', ' ').title()} on {split_desc} for {direction_desc}"
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "signal_type": "reverse_line_movement",
                 "confidence": "high",
@@ -448,7 +448,7 @@ class SharpAction(IdentifiedModel, ValidatedModel):
         return [s for s in self.signals if s.split_type == split_type]
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "game_id": "2024-04-15-LAD-SF-1",
                 "home_team": "SF",

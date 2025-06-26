@@ -38,8 +38,20 @@ class DataCollector:
         self.sbd_parser = SBDParser()
         self.vsin_parser = VSINParser()
         
-        # Initialize persistence service
-        self.persistence_service = DataPersistenceService()
+        # Initialize persistence service with PostgreSQL-compatible manager
+        from ..db.connection import get_db_manager
+        self.persistence_service = DataPersistenceService(get_db_manager())
+        
+        # Initialize cross-market flip detector for automatic detection
+        try:
+            from .cross_market_flip_detector import CrossMarketFlipDetector
+            self.flip_detector = CrossMarketFlipDetector(get_db_manager())
+            self.flip_detection_enabled = True
+            self.logger.info("Cross-market flip detector initialized")
+        except ImportError as e:
+            self.logger.warning("Cross-market flip detector not available", error=str(e))
+            self.flip_detector = None
+            self.flip_detection_enabled = False
         
     async def collect_all(self, sport: str = "mlb") -> List[BettingSplit]:
         """
@@ -237,7 +249,8 @@ class DataCollector:
             return {
                 "collection_time": (datetime.now() - start_time).total_seconds(),
                 "splits_collected": 0,
-                "storage_stats": {}
+                "storage_stats": {},
+                "flip_detection_results": None
             }
         
         # Store in database
@@ -247,6 +260,9 @@ class DataCollector:
             skip_duplicates=True
         )
         
+        # Run automatic flip detection after successful data storage
+        flip_detection_results = await self._run_automatic_flip_detection()
+        
         end_time = datetime.now()
         total_time = (end_time - start_time).total_seconds()
         
@@ -254,7 +270,8 @@ class DataCollector:
             "collection_time": total_time,
             "splits_collected": len(all_splits),
             "storage_stats": storage_stats,
-            "sources_breakdown": self._analyze_sources(all_splits)
+            "sources_breakdown": self._analyze_sources(all_splits),
+            "flip_detection_results": flip_detection_results
         }
         
         self.logger.info("Collect and store completed", 
@@ -275,6 +292,61 @@ class DataCollector:
             breakdown[key] = breakdown.get(key, 0) + 1
         
         return breakdown
+    
+    async def _run_automatic_flip_detection(self) -> Optional[Dict[str, Any]]:
+        """
+        Run automatic flip detection after data collection.
+        
+        Returns:
+            Dictionary with flip detection results or None if disabled/failed
+        """
+        if not self.flip_detection_enabled or not self.flip_detector:
+            self.logger.debug("Flip detection disabled or not available")
+            return None
+        
+        try:
+            self.logger.info("Running automatic cross-market flip detection")
+            
+            # Run today's flip detection with summary
+            flips, summary = await self.flip_detector.detect_todays_flips_with_summary(
+                min_confidence=75.0  # Use high confidence threshold for automatic detection
+            )
+            
+            # Log results
+            if flips:
+                self.logger.info("Automatic flip detection completed",
+                               flips_found=len(flips),
+                               games_evaluated=summary.get("games_evaluated", 0),
+                               avg_confidence=summary.get("avg_confidence", 0))
+                
+                # Log high-confidence flips for immediate attention
+                high_confidence_flips = [f for f in flips if f.confidence_score >= 85.0]
+                if high_confidence_flips:
+                    self.logger.warning("HIGH CONFIDENCE FLIPS DETECTED",
+                                      count=len(high_confidence_flips),
+                                      flips=[{
+                                          "game": f"{f.away_team} @ {f.home_team}",
+                                          "confidence": f.confidence_score,
+                                          "recommendation": f.strategy_recommendation,
+                                          "flip_type": f.flip_type.value
+                                      } for f in high_confidence_flips[:3]])  # Show top 3
+            else:
+                self.logger.info("Automatic flip detection completed - no qualifying flips found",
+                               games_evaluated=summary.get("games_evaluated", 0))
+            
+            return {
+                "flips_found": len(flips),
+                "high_confidence_flips": len([f for f in flips if f.confidence_score >= 85.0]),
+                "summary": summary,
+                "execution_time": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error("Automatic flip detection failed", error=str(e))
+            return {
+                "error": str(e),
+                "execution_time": datetime.now().isoformat()
+            }
     
     async def collect_from_source(self, source: str, sport: str = "mlb", **kwargs: Any) -> List[BettingSplit]:
         """

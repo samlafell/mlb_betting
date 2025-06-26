@@ -1,6 +1,6 @@
 [database]
 # Database file path
-path = "data/raw/mlb_betting.duckdb"
+# path = "data/raw/mlb_betting.duckdb"  # Migrated to PostgreSQL
 
 [schema]
 # Schema name

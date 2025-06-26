@@ -1,26 +1,22 @@
-"""Sharp action detection analyzer."""
+"""
+Backward compatibility module for sharp_detector.
 
-from typing import Any, Dict, List
-from .base import BaseAnalyzer
-from ..models.base import BaseModel
+This module provides backward compatibility for imports from the old location.
+The actual implementation has been moved to analysis/detectors/sharp_detector.py
+as part of Phase 2 refactoring.
+"""
 
+import warnings
 
-class SharpDetector(BaseAnalyzer):
-    """Analyzer for detecting sharp betting action."""
-    
-    def __init__(self, **kwargs: Any) -> None:
-        """Initialize sharp detector."""
-        super().__init__(**kwargs)
-        
-    def analyze(self, data: List[BaseModel]) -> Dict[str, Any]:
-        """Analyze data for sharp betting patterns."""
-        # TODO: Implement sharp detection logic
-        return {"sharp_signals": [], "confidence": 0.0}
-        
-    def validate_input(self, data: List[BaseModel]) -> bool:
-        """Validate input data for sharp detection."""
-        # TODO: Implement validation logic
-        return True
+# Import from new location
+from ..analysis.detectors.sharp_detector import SharpDetector
 
+# Emit deprecation warning
+warnings.warn(
+    "Importing SharpDetector from analyzers.sharp_detector is deprecated. "
+    "Use mlb_sharp_betting.analysis.detectors.sharp_detector instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 __all__ = ["SharpDetector"] 

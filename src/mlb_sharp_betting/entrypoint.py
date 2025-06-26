@@ -5,7 +5,7 @@ MLB Sharp Betting Data Pipeline Entrypoint
 This script demonstrates the complete data pipeline:
 1. Scrape betting splits data from VSIN
 2. Parse and validate the raw data
-3. Store validated data in DuckDB
+3. Store validated data in PostgreSQL
 4. Analyze data for sharp action indicators
 5. Generate summary reports
 
@@ -25,7 +25,7 @@ import argparse
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import structlog
 
@@ -51,6 +51,7 @@ from mlb_sharp_betting.db.connection import get_db_manager
 from mlb_sharp_betting.db.repositories import BettingSplitRepository, GameRepository
 from mlb_sharp_betting.services.data_persistence import DataPersistenceService
 from mlb_sharp_betting.services.data_collector import DataCollector
+from mlb_sharp_betting.services.game_manager import GameManager
 from mlb_sharp_betting.utils.validators import validate_betting_split, assess_data_quality
 from mlb_sharp_betting.utils.team_mapper import normalize_team_name
 from mlb_sharp_betting.models.splits import BettingSplit, SplitType, BookType, DataSource
@@ -79,6 +80,16 @@ class DataPipeline:
         self.betting_split_repo = BettingSplitRepository()
         self.game_repo = GameRepository()
         self.data_collector = DataCollector()
+        self.game_manager = GameManager(self.db_manager)
+        
+        # Initialize cross-market flip detector for pipeline integration
+        try:
+            from mlb_sharp_betting.services.cross_market_flip_detector import CrossMarketFlipDetector
+            self.flip_detector = CrossMarketFlipDetector(self.db_manager)
+            self.flip_detection_enabled = True
+        except ImportError:
+            self.flip_detector = None
+            self.flip_detection_enabled = False
         
         # Metrics
         self.metrics = {
@@ -86,7 +97,12 @@ class DataPipeline:
             "parsed_records": 0,
             "valid_records": 0,
             "stored_records": 0,
+            "games_processed": 0,
+            "games_created": 0,
+            "games_updated": 0,
             "sharp_indicators": 0,
+            "flip_detections": 0,
+            "high_confidence_flips": 0,
             "errors": 0,
             "start_time": None,
             "end_time": None
@@ -224,7 +240,44 @@ class DataPipeline:
                 
         return splits
     
-
+    def process_games_from_splits(self, betting_splits: List[BettingSplit]) -> Dict[str, int]:
+        """
+        Process and store game information discovered from betting splits.
+        
+        Args:
+            betting_splits: List of BettingSplit objects
+            
+        Returns:
+            Dictionary with game processing statistics
+        """
+        logger.info("Processing games from betting splits data")
+        
+        try:
+            # Convert BettingSplit objects to dictionaries for game manager
+            splits_data = []
+            for split in betting_splits:
+                splits_data.append({
+                    "game_id": split.game_id,
+                    "home_team": split.home_team,
+                    "away_team": split.away_team,
+                    "game_datetime": split.game_datetime
+                })
+            
+            # Process games using the game manager
+            game_stats = self.game_manager.process_games_from_betting_splits(splits_data)
+            
+            # Update pipeline metrics
+            self.metrics["games_processed"] = game_stats.get("processed", 0)
+            self.metrics["games_created"] = game_stats.get("created", 0)
+            self.metrics["games_updated"] = game_stats.get("updated", 0)
+            
+            logger.info("Game processing completed", **game_stats)
+            return game_stats
+            
+        except Exception as e:
+            logger.error("Failed to process games from splits", error=str(e))
+            self.metrics["errors"] += 1
+            return {"processed": 0, "created": 0, "updated": 0, "errors": 1}
     
     def validate_and_store_data(self, betting_splits: List[BettingSplit]) -> List[BettingSplit]:
         """Validate and store betting splits in the database using the repository pattern."""
@@ -337,7 +390,66 @@ class DataPipeline:
             self.metrics["errors"] += 1
             return {}
     
-    def generate_report(self, analysis_results: Dict, output_file: Optional[str] = None) -> str:
+    async def _run_flip_detection(self) -> Optional[Dict[str, Any]]:
+        """
+        Run cross-market flip detection as part of the pipeline.
+        
+        Returns:
+            Dictionary with flip detection results or None if disabled/failed
+        """
+        if not self.flip_detection_enabled or not self.flip_detector:
+            logger.debug("Flip detection disabled or not available")
+            return None
+        
+        try:
+            logger.info("Running cross-market flip detection")
+            
+            # Run today's flip detection with summary
+            flips, summary = await self.flip_detector.detect_todays_flips_with_summary(
+                min_confidence=75.0  # Use high confidence threshold for pipeline
+            )
+            
+            # Update metrics
+            self.metrics["flip_detections"] = len(flips)
+            self.metrics["high_confidence_flips"] = len([f for f in flips if f.confidence_score >= 85.0])
+            
+            # Log results
+            if flips:
+                logger.info("Cross-market flip detection completed",
+                           flips_found=len(flips),
+                           games_evaluated=summary.get("games_evaluated", 0),
+                           high_confidence=self.metrics["high_confidence_flips"])
+                
+                # Log high-confidence flips for immediate attention
+                high_confidence_flips = [f for f in flips if f.confidence_score >= 85.0]
+                if high_confidence_flips:
+                    logger.warning("⚠️ HIGH CONFIDENCE FLIPS DETECTED IN PIPELINE",
+                                  count=len(high_confidence_flips))
+                    for flip in high_confidence_flips[:3]:  # Show top 3
+                        logger.warning(f"🔥 FLIP: {flip.away_team} @ {flip.home_team} | "
+                                     f"{flip.confidence_score:.1f}% confidence | "
+                                     f"Recommendation: {flip.strategy_recommendation}")
+            else:
+                logger.info("Cross-market flip detection completed - no qualifying flips found",
+                           games_evaluated=summary.get("games_evaluated", 0))
+            
+            return {
+                "flips_found": len(flips),
+                "high_confidence_flips": self.metrics["high_confidence_flips"],
+                "summary": summary,
+                "flips": flips[:5] if flips else [],  # Include top 5 flips in results
+                "execution_time": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error("Cross-market flip detection failed in pipeline", error=str(e))
+            self.metrics["errors"] += 1
+            return {
+                "error": str(e),
+                "execution_time": datetime.now().isoformat()
+            }
+    
+    def generate_report(self, analysis_results: Dict, output_file: Optional[str] = None, flip_results: Optional[Dict] = None) -> str:
         """Generate a summary report of the pipeline results."""
         
         duration = (self.metrics["end_time"] - self.metrics["start_time"]).total_seconds()
@@ -352,7 +464,12 @@ Records Scraped: {self.metrics['scraped_records']}
 Records Parsed: {self.metrics['parsed_records']}
 Valid Records: {self.metrics['valid_records']}
 Records Stored: {self.metrics['stored_records']}
+Games Processed: {self.metrics['games_processed']}
+Games Created: {self.metrics['games_created']}
+Games Updated: {self.metrics['games_updated']}
 Sharp Indicators Found: {self.metrics['sharp_indicators']}
+Cross-Market Flips Detected: {self.metrics['flip_detections']}
+High Confidence Flips: {self.metrics['high_confidence_flips']}
 Errors: {self.metrics['errors']}
 
 === DATA ANALYSIS ===
@@ -380,6 +497,33 @@ Average Percentages:
             bet_diff = sharp[9]  # bet_money_diff
             report += f"  {sharp[1]} vs {sharp[2]} ({sharp[3]}): {bet_diff:.1f}% difference\n"
         
+        # Add flip detection results if available
+        if flip_results and not flip_results.get('error'):
+            report += f"""
+=== CROSS-MARKET FLIP DETECTION ===
+Total Flips Found: {flip_results.get('flips_found', 0)}
+High Confidence Flips (≥85%): {flip_results.get('high_confidence_flips', 0)}
+Games Evaluated: {flip_results.get('summary', {}).get('games_evaluated', 0)}
+"""
+            
+            # Show top flips
+            top_flips = flip_results.get('flips', [])
+            if top_flips:
+                report += "\nTop Cross-Market Flips:\n"
+                for flip in top_flips:
+                    report += f"  {flip.away_team} @ {flip.home_team}: {flip.confidence_score:.1f}% confidence - {flip.strategy_recommendation}\n"
+                    report += f"    Reasoning: {flip.reasoning[:100]}...\n"
+        elif flip_results and flip_results.get('error'):
+            report += f"""
+=== CROSS-MARKET FLIP DETECTION ===
+Error: {flip_results.get('error')}
+"""
+        else:
+            report += """
+=== CROSS-MARKET FLIP DETECTION ===
+Flip detection disabled or not available
+"""
+        
         if output_file:
             Path(output_file).write_text(report)
             logger.info("Report saved to file", output_file=output_file)
@@ -402,7 +546,10 @@ Average Percentages:
                 logger.error("No data collected, aborting pipeline")
                 return self.metrics
             
-            # 3. Validate and store data
+            # 3. Process games from betting splits
+            game_stats = self.process_games_from_splits(collected_splits)
+            
+            # 4. Validate and store data
             valid_splits = self.validate_and_store_data(collected_splits)
             if not valid_splits:
                 logger.error("No valid data to analyze")
@@ -411,9 +558,12 @@ Average Percentages:
             # 5. Analyze data
             analysis_results = self.analyze_data()
             
-            # 6. Generate report
+            # 6. Run cross-market flip detection (automatic after data collection)
+            flip_results = await self._run_flip_detection()
+            
+            # 7. Generate report
             self.metrics["end_time"] = datetime.now()
-            report = self.generate_report(analysis_results, output_file)
+            report = self.generate_report(analysis_results, output_file, flip_results)
             
             print("\n" + "="*60)
             print(report)

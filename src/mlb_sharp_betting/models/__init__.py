@@ -14,6 +14,15 @@ from mlb_sharp_betting.models.pinnacle import (
     PinnacleMarket, PinnaclePrice, PinnacleLimit, PinnacleOddsSnapshot,
     PinnacleMarketType, PriceDesignation, MarketStatus, LimitType
 )
+from mlb_sharp_betting.models.timing_analysis import (
+    TimingBucket,
+    ConfidenceLevel,
+    TimingPerformanceMetrics,
+    TimingBucketAnalysis,
+    ComprehensiveTimingAnalysis,
+    RealtimeTimingLookup,
+    TimingRecommendation
+)
 
 __all__ = [
     "BaseModel",
@@ -36,4 +45,11 @@ __all__ = [
     "PriceDesignation",
     "MarketStatus",
     "LimitType",
+    "TimingBucket",
+    "ConfidenceLevel",
+    "TimingPerformanceMetrics",
+    "TimingBucketAnalysis",
+    "ComprehensiveTimingAnalysis",
+    "RealtimeTimingLookup",
+    "TimingRecommendation",
 ] 

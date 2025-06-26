@@ -11,7 +11,6 @@ import structlog
 from typing import Dict, Any
 
 from ...services.database_coordinator import DatabaseCoordinator, get_database_coordinator
-from ...db.optimized_connection import ConnectionConfig, OperationPriority
 from ...core.exceptions import DatabaseError
 
 logger = structlog.get_logger(__name__)
@@ -33,7 +32,7 @@ def benchmark(test_size: str, show_stats: bool):
     
     This helps you understand the performance improvements before migration.
     """
-    click.echo("🚀 DuckDB Performance Benchmark")
+    click.echo("🚀 PostgreSQL Performance Benchmark")
     click.echo("=" * 50)
     
     # Configure test size

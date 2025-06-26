@@ -7,7 +7,6 @@ Usage:
     uv run -m mlb_sharp_betting.cli.commands.analysis
 """
 
-import duckdb
 import pandas as pd
 import sys
 from pathlib import Path
@@ -26,16 +25,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class BettingAnalyzer:
-    def __init__(self, db_path: str = "data/raw/mlb_betting.duckdb"):
+    def __init__(self, db_path: str = "PostgreSQL database"):
         """Initialize the betting analyzer with database connection"""
         self.db_path = db_path
         self.conn = None
         self.results = {}
         
     def connect_db(self):
-        """Connect to the DuckDB database"""
+        """Connect to the PostgreSQL database"""
         try:
-            self.conn = duckdb.connect(self.db_path)
+            from ...db.connection import get_db_manager
+        self.db_manager = get_db_manager()
             logger.info(f"Successfully connected to database: {self.db_path}")
             return True
         except Exception as e:

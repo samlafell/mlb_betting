@@ -16,65 +16,71 @@ from pydantic_settings import BaseSettings
 from mlb_sharp_betting.core.exceptions import ConfigurationError
 
 
-class DatabaseSettings(BaseSettings):
-    """Database configuration settings."""
+class PostgreSQLSettings(BaseSettings):
+    """PostgreSQL database configuration settings."""
     
-    db_path: Path = Field(
-        default=Path("data/raw/mlb_betting.duckdb"),
-        description="Path to the DuckDB database file",
-        env="MLB_DATABASE_PATH",
-        alias="path"
+    host: str = Field(
+        default="localhost",
+        description="PostgreSQL host",
+        env="POSTGRES_HOST"
+    )
+    
+    port: int = Field(
+        default=5432,
+        description="PostgreSQL port",
+        env="POSTGRES_PORT"
+    )
+    
+    database: str = Field(
+        default="mlb_betting",
+        description="PostgreSQL database name",
+        env="POSTGRES_DB"
+    )
+    
+    user: str = Field(
+        default="postgres",
+        description="PostgreSQL username",
+        env="POSTGRES_USER"
+    )
+    
+    password: str = Field(
+        default="",
+        description="PostgreSQL password",
+        env="POSTGRES_PASSWORD"
+    )
+    
+    min_connections: int = Field(
+        default=2,
+        description="Minimum connections in pool",
+        env="POSTGRES_MIN_CONN"
+    )
+    
+    max_connections: int = Field(
+        default=20,
+        description="Maximum connections in pool",
+        env="POSTGRES_MAX_CONN"
     )
     
     connection_timeout: int = Field(
         default=30,
         ge=1,
         le=300,
-        description="Database connection timeout in seconds"
-    )
-    
-    max_connections: int = Field(
-        default=1,
-        ge=1,
-        le=1, 
-        description="Maximum number of database connections in pool"
+        description="Database connection timeout in seconds",
+        env="POSTGRES_TIMEOUT"
     )
     
     query_timeout: int = Field(
         default=300,
         ge=1,
         le=3600,
-        description="Query timeout in seconds"
+        description="Query timeout in seconds",
+        env="POSTGRES_QUERY_TIMEOUT"
     )
     
     class Config:
         env_prefix = ""
         case_sensitive = False
         use_enum_values = True
-    
-    @validator("db_path")
-    def validate_db_path(cls, v: Path) -> Path:
-        """Validate database path and ensure it's absolute."""
-        # Convert to absolute path to prevent relative path issues
-        if not v.is_absolute():
-            # Get the project root (4 levels up from this config file)
-            config_file = Path(__file__)
-            project_root = config_file.parent.parent.parent.parent
-            v = project_root / v
-        
-        # Resolve any symlinks and normalize the path
-        v = v.resolve()
-        
-        # Only create directory if path looks reasonable
-        path_str = str(v)
-        if len(path_str) < 1000 and v.suffix == '.duckdb':
-            try:
-                v.parent.mkdir(parents=True, exist_ok=True)
-            except (OSError, Exception):
-                # Directory creation failed, but we'll continue
-                # Database connection will handle this if needed
-                pass
-        return v
 
 
 class SchemaSettings(BaseSettings):
@@ -325,7 +331,7 @@ class Settings(BaseSettings):
     )
     
     # Nested settings
-    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    postgres: PostgreSQLSettings = Field(default_factory=PostgreSQLSettings)
     db_schema: SchemaSettings = Field(default_factory=SchemaSettings)
     data_sources: DataSourceSettings = Field(default_factory=DataSourceSettings)
     api: APISettings = Field(default_factory=APISettings)
@@ -405,7 +411,7 @@ class Settings(BaseSettings):
             split_type: Type of betting split (spread, total, moneyline)
             
         Returns:
-            SQL INSERT query string
+            PostgreSQL-compatible SQL INSERT query string
         """
         table_name = self.db_schema.full_table_name
         
@@ -416,7 +422,7 @@ class Settings(BaseSettings):
                 home_or_over_bets_percentage, home_or_over_stake_percentage,
                 away_or_under_bets, away_or_under_bets_percentage, 
                 away_or_under_stake_percentage, split_value, sharp_action, outcome
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
     
     @property

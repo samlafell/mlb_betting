@@ -16,24 +16,24 @@ WITH line_data AS (
         rmbs.home_or_over_bets_percentage as bet_pct,
         rmbs.home_or_over_stake_percentage - rmbs.home_or_over_bets_percentage as differential,
         
-        -- Extract home odds from moneyline JSON
+        -- Extract home odds from moneyline JSON using PostgreSQL JSONB operators
         CASE 
             WHEN rmbs.split_type = 'moneyline' AND rmbs.split_value LIKE '{%}' THEN
-                CAST(json_extract(rmbs.split_value, '$.home') AS INTEGER)
+                (rmbs.split_value::JSONB->>'home')::INTEGER
             ELSE NULL
         END as home_odds,
         
-        -- Extract away odds from moneyline JSON  
+        -- Extract away odds from moneyline JSON using PostgreSQL JSONB operators
         CASE 
             WHEN rmbs.split_type = 'moneyline' AND rmbs.split_value LIKE '{%}' THEN
-                CAST(json_extract(rmbs.split_value, '$.away') AS INTEGER)
+                (rmbs.split_value::JSONB->>'away')::INTEGER
             ELSE NULL
         END as away_odds,
         
-        -- For spread/total, use split_value directly
+        -- For spread/total, use split_value directly with safe casting
         CASE 
-            WHEN rmbs.split_type IN ('spread', 'total') THEN
-                TRY_CAST(rmbs.split_value AS DOUBLE)
+            WHEN rmbs.split_type IN ('spread', 'total') AND rmbs.split_value ~ '^-?[0-9]+\.?[0-9]*$' THEN
+                rmbs.split_value::DOUBLE PRECISION
             ELSE NULL
         END as line_value,
         
@@ -41,8 +41,8 @@ WITH line_data AS (
         go.home_cover_spread,
         go.over
         
-    FROM mlb_betting.splits.raw_mlb_betting_splits rmbs
-    JOIN mlb_betting.main.game_outcomes go ON rmbs.game_id = go.game_id
+    FROM splits.raw_mlb_betting_splits rmbs
+    JOIN public.game_outcomes go ON rmbs.game_id = go.game_id
     WHERE rmbs.last_updated < rmbs.game_datetime
       AND rmbs.split_value IS NOT NULL
       AND rmbs.game_datetime IS NOT NULL

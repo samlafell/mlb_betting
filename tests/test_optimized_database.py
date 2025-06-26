@@ -311,7 +311,7 @@ class TestOptimizedDatabase:
 
 async def run_performance_benchmark():
     """Run a comprehensive performance benchmark"""
-    logger.info("=== DuckDB Optimization Performance Benchmark ===")
+    logger.info("=== PostgreSQL Performance Benchmark ===")
     
     # Setup coordinators
     legacy = DatabaseCoordinator(use_optimized=False)

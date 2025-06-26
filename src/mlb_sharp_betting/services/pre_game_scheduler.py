@@ -9,6 +9,7 @@ system to avoid conflicts and provide specialized pre-game functionality.
 Features:
 - Automatic game detection and scheduling
 - Pre-game workflow execution 5 minutes before game time
+- Hourly data collection from SBD and VSIN
 - Email notifications for all workflow results
 - Integration with existing MLB API service
 - Comprehensive error handling and logging
@@ -18,6 +19,7 @@ Features:
 
 import asyncio
 import signal
+import subprocess
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -97,7 +99,10 @@ class PreGameScheduler:
             "workflows_triggered": 0,
             "successful_workflows": 0,
             "failed_workflows": 0,
-            "scheduler_errors": 0
+            "scheduler_errors": 0,
+            "hourly_runs": 0,
+            "successful_hourly_runs": 0,
+            "failed_hourly_runs": 0
         }
         
         self.logger = logger.bind(service="pre_game_scheduler")
@@ -119,6 +124,15 @@ class PreGameScheduler:
         self.logger.info("Starting Pre-Game Workflow Scheduler")
         
         try:
+            # Schedule hourly data collection job
+            self.scheduler.add_job(
+                func=self._hourly_data_collection_handler,
+                trigger=CronTrigger(minute=0),  # Run at the top of every hour
+                id='hourly_data_collection',
+                name='Hourly Data Collection',
+                replace_existing=True
+            )
+            
             # Schedule daily setup job
             self.scheduler.add_job(
                 func=self._daily_setup_handler,
@@ -160,6 +174,7 @@ class PreGameScheduler:
         print("🏈 MLB PRE-GAME WORKFLOW SCHEDULER")
         print("=" * 60)
         print(f"⏰ Workflow Trigger: {self.alert_minutes} minutes before each game")
+        print(f"🕐 Hourly Data Collection: Every hour at :00")
         print(f"🌅 Daily Setup: {self.daily_setup_hour:02d}:00 EST")
         print(f"📧 Email Configured: {'✅ Yes' if self.workflow_service.email_config.is_configured() else '❌ No'}")
         
@@ -615,6 +630,92 @@ General Balls"""
         except Exception as e:
             self.logger.warning("Failed to send error notification", error=str(e))
     
+    async def _hourly_data_collection_handler(self) -> None:
+        """Handle hourly data collection by running the entrypoint."""
+        self.logger.info("Starting hourly data collection")
+        
+        start_time = datetime.now(timezone.utc)
+        
+        try:
+            # Run the entrypoint script
+            entrypoint_path = self.project_root / "src" / "mlb_sharp_betting" / "entrypoint.py"
+            
+            cmd = ["uv", "run", str(entrypoint_path), "--verbose"]
+            
+            result = subprocess.run(
+                cmd,
+                cwd=self.project_root,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout
+            )
+            
+            end_time = datetime.now(timezone.utc)
+            execution_time = (end_time - start_time).total_seconds()
+            
+            self.metrics["hourly_runs"] += 1
+            
+            if result.returncode == 0:
+                self.metrics["successful_hourly_runs"] += 1
+                
+                self.logger.info("Hourly data collection completed successfully",
+                                execution_time=execution_time,
+                                stdout_lines=len(result.stdout.splitlines()))
+                
+                # Console notification
+                print(f"\n📊 HOURLY DATA COLLECTION COMPLETE")
+                print(f"   ✅ Time: {datetime.now().strftime('%H:%M:%S')} | Duration: {execution_time:.1f}s")
+                print(f"   📈 Status: Success | Output lines: {len(result.stdout.splitlines())}")
+                
+            else:
+                self.metrics["failed_hourly_runs"] += 1
+                self.metrics["scheduler_errors"] += 1
+                
+                self.logger.error("Hourly data collection failed",
+                                returncode=result.returncode,
+                                stderr=result.stderr,
+                                execution_time=execution_time)
+                
+                # Console notification
+                print(f"\n📊 HOURLY DATA COLLECTION FAILED")
+                print(f"   ❌ Time: {datetime.now().strftime('%H:%M:%S')} | Duration: {execution_time:.1f}s")
+                print(f"   🚨 Error: Exit code {result.returncode}")
+                print(f"   📝 Details: {result.stderr[:200]}...")
+                
+                # Send error notification
+                await self._send_error_notification(
+                    "Hourly Data Collection Failed",
+                    f"Exit code: {result.returncode}\nError: {result.stderr}"
+                )
+                
+        except subprocess.TimeoutExpired:
+            self.metrics["failed_hourly_runs"] += 1
+            self.metrics["scheduler_errors"] += 1
+            
+            self.logger.error("Hourly data collection timed out")
+            
+            print(f"\n📊 HOURLY DATA COLLECTION TIMEOUT")
+            print(f"   ⏰ Time: {datetime.now().strftime('%H:%M:%S')} | Timeout: 5 minutes")
+            
+            await self._send_error_notification(
+                "Hourly Data Collection Timeout",
+                "Data collection exceeded 5 minute timeout limit"
+            )
+            
+        except Exception as e:
+            self.metrics["failed_hourly_runs"] += 1
+            self.metrics["scheduler_errors"] += 1
+            
+            self.logger.error("Hourly data collection failed unexpectedly", error=str(e))
+            
+            print(f"\n📊 HOURLY DATA COLLECTION ERROR")
+            print(f"   ❌ Time: {datetime.now().strftime('%H:%M:%S')} | Error: {str(e)}")
+            
+            await self._send_error_notification(
+                "Hourly Data Collection Error",
+                f"Unexpected error: {str(e)}"
+            )
+
     async def run_forever(self) -> None:
         """Run the scheduler until interrupted."""
         await self.start()

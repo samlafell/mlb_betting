@@ -93,7 +93,7 @@ Today (2025-06-17): 0 games
 
 ### Database Access
 - Close DBeaver or other database tools before running
-- DuckDB requires exclusive access for writes
+- PostgreSQL supports concurrent access
 
 ### Betting Lines Requirement
 - Games without betting lines will be skipped

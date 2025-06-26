@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Set, Tuple
 import structlog
 from pydantic import ValidationError
 
-from ..db.connection import DatabaseManager
+from ..db.connection import DatabaseManager, get_db_manager
 from ..db.repositories import (
     BettingSplitRepository,
     GameRepository,
@@ -37,7 +37,7 @@ class DataPersistenceService:
 
     def __init__(self, db_manager: Optional[DatabaseManager] = None) -> None:
         """Initialize data persistence service."""
-        self.db_manager = db_manager or DatabaseManager()
+        self.db_manager = db_manager or get_db_manager()
         self.schema_manager = SchemaManager(self.db_manager)
         
         # Initialize repositories
@@ -98,7 +98,7 @@ class DataPersistenceService:
         self.logger.info("Starting betting splits storage", total_splits=len(splits))
 
         try:
-            # Process in batches without explicit transaction - let DuckDB handle it
+            # Process in batches without explicit transaction - let PostgreSQL handle it
             for i in range(0, len(splits), batch_size):
                 batch = splits[i:i + batch_size]
                 batch_stats = self._process_batch(
@@ -251,7 +251,7 @@ class DataPersistenceService:
         stats = {"processed": 0, "stored": 0, "updated": 0, "errors": 0}
 
         try:
-            # Process games without explicit transaction - let DuckDB handle it
+            # Process games without explicit transaction - let PostgreSQL handle it
             for game in games:
                 stats["processed"] += 1
                 
@@ -358,8 +358,8 @@ class DataPersistenceService:
             # Delete old betting splits without explicit transaction
             try:
                 with self.db_manager.get_cursor() as cursor:
-                    result = cursor.execute(
-                        f"DELETE FROM {self.betting_split_repo.table_name} WHERE last_updated < ?",
+                    cursor.execute(
+                        "DELETE FROM splits.raw_mlb_betting_splits WHERE last_updated < %s",
                         (cutoff_date,)
                     )
                     stats["deleted_splits"] = cursor.rowcount
@@ -370,8 +370,8 @@ class DataPersistenceService:
             # Delete old games
             try:
                 with self.db_manager.get_cursor() as cursor:
-                    result = cursor.execute(
-                        f"DELETE FROM {self.game_repo.table_name} WHERE game_datetime < ?",
+                    cursor.execute(
+                        "DELETE FROM splits.games WHERE game_datetime < %s",
                         (cutoff_date,)
                     )
                     stats["deleted_games"] = cursor.rowcount
@@ -398,37 +398,42 @@ class DataPersistenceService:
             
             # Betting splits statistics
             with self.db_manager.get_cursor() as cursor:
-                # Total splits
-                result = cursor.execute(f"SELECT COUNT(*) FROM {self.betting_split_repo.table_name}").fetchone()
+                # Total splits - use explicit table name for PostgreSQL
+                cursor.execute("SELECT COUNT(*) FROM splits.raw_mlb_betting_splits")
+                result = cursor.fetchone()
                 stats["total_splits"] = result[0] if result else 0
                 
                 # Splits by source
-                result = cursor.execute(f"""
+                cursor.execute("""
                     SELECT source, COUNT(*) 
-                    FROM {self.betting_split_repo.table_name} 
+                    FROM splits.raw_mlb_betting_splits 
                     GROUP BY source
-                """).fetchall()
+                """)
+                result = cursor.fetchall()
                 stats["splits_by_source"] = {row[0]: row[1] for row in result}
                 
                 # Splits by type
-                result = cursor.execute(f"""
+                cursor.execute("""
                     SELECT split_type, COUNT(*) 
-                    FROM {self.betting_split_repo.table_name} 
+                    FROM splits.raw_mlb_betting_splits 
                     GROUP BY split_type
-                """).fetchall()
+                """)
+                result = cursor.fetchall()
                 stats["splits_by_type"] = {row[0]: row[1] for row in result}
                 
-                # Recent activity (last 24 hours)
+                # Recent activity (last 24 hours) - use PostgreSQL syntax
                 cutoff = datetime.now() - timedelta(hours=24)
-                result = cursor.execute(f"""
+                cursor.execute("""
                     SELECT COUNT(*) 
-                    FROM {self.betting_split_repo.table_name} 
-                    WHERE last_updated >= ?
-                """, (cutoff,)).fetchone()
+                    FROM splits.raw_mlb_betting_splits 
+                    WHERE last_updated >= %s
+                """, (cutoff,))
+                result = cursor.fetchone()
                 stats["recent_splits_24h"] = result[0] if result else 0
                 
                 # Total games
-                result = cursor.execute(f"SELECT COUNT(*) FROM {self.game_repo.table_name}").fetchone()
+                cursor.execute("SELECT COUNT(*) FROM splits.games")
+                result = cursor.fetchone()
                 stats["total_games"] = result[0] if result else 0
 
             stats["last_updated"] = datetime.now().isoformat()
@@ -455,12 +460,13 @@ class DataPersistenceService:
 
             with self.db_manager.get_cursor() as cursor:
                 # Check for orphaned splits (splits without corresponding games)
-                orphan_check = cursor.execute(f"""
+                cursor.execute("""
                     SELECT COUNT(*) 
-                    FROM {self.betting_split_repo.table_name} bs
-                    LEFT JOIN {self.game_repo.table_name} g ON bs.game_id = g.game_id
+                    FROM splits.raw_mlb_betting_splits bs
+                    LEFT JOIN splits.games g ON bs.game_id = g.game_id
                     WHERE g.game_id IS NULL
-                """).fetchone()
+                """)
+                orphan_check = cursor.fetchone()
                 
                 orphaned_splits = orphan_check[0] if orphan_check else 0
                 if orphaned_splits > 0:
@@ -470,12 +476,13 @@ class DataPersistenceService:
                     results["checks_passed"] += 1
 
                 # Check for percentage validation issues
-                invalid_percentages = cursor.execute(f"""
+                cursor.execute("""
                     SELECT COUNT(*) 
-                    FROM {self.betting_split_repo.table_name}
+                    FROM splits.raw_mlb_betting_splits
                     WHERE (home_or_over_bets_percentage < 0 OR home_or_over_bets_percentage > 100)
                     OR (away_or_under_bets_percentage < 0 OR away_or_under_bets_percentage > 100)
-                """).fetchone()
+                """)
+                invalid_percentages = cursor.fetchone()
                 
                 invalid_pct_count = invalid_percentages[0] if invalid_percentages else 0
                 if invalid_pct_count > 0:
@@ -484,12 +491,13 @@ class DataPersistenceService:
                 else:
                     results["checks_passed"] += 1
 
-                # Check for future game dates
-                future_games = cursor.execute(f"""
+                # Check for future game dates - use PostgreSQL syntax
+                cursor.execute("""
                     SELECT COUNT(*) 
-                    FROM {self.betting_split_repo.table_name}
-                    WHERE game_datetime > ?
-                """, (datetime.now() + timedelta(days=30),)).fetchone()
+                    FROM splits.raw_mlb_betting_splits
+                    WHERE game_datetime > %s
+                """, (datetime.now() + timedelta(days=30),))
+                future_games = cursor.fetchone()
                 
                 future_count = future_games[0] if future_games else 0
                 if future_count > 0:

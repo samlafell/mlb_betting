@@ -52,7 +52,7 @@ sports_betting_dime_splits/
 │   └── settings.py                # Configuration loader
 ├── data/
 │   └── raw/
-│       └── mlb_betting.duckdb     # DuckDB database
+│       └── postgresql/            # PostgreSQL data
 ├── sql/
 │   ├── schema.sql                 # Database schema
 │   └── queries/
@@ -74,7 +74,7 @@ All database settings, table names, and API configurations are centralized in `c
 
 ```toml
 [database]
-path = "data/raw/mlb_betting.duckdb"
+# PostgreSQL connection configured in settings
 
 [schema]
 name = "splits"
@@ -133,7 +133,7 @@ The system automatically identifies professional betting patterns using multiple
 uv run scripts/simple_sharp_detection.py
 
 # Query sharp action from database
-duckdb data/raw/mlb_betting.duckdb -c "SELECT * FROM splits.raw_mlb_betting_splits WHERE sharp_action = true;"
+psql -h localhost -d mlb_betting -c "SELECT * FROM splits.raw_mlb_betting_splits WHERE sharp_action = true;"
 ```
 
 See `docs/sharp_action_detection.md` for detailed documentation.
@@ -159,8 +159,8 @@ All timestamps are automatically converted from UTC (API format) to Eastern Time
 
 3. **Verify Data**:
    ```bash
-   # Connect to DuckDB and run verification queries
-   duckdb data/raw/mlb_betting.duckdb < sql/queries/verify_data.sql
+   # Connect to PostgreSQL and run verification queries
+   psql -h localhost -d mlb_betting < sql/queries/verify_data.sql
    ```
 
 4. **View Configuration**:
@@ -175,7 +175,7 @@ All timestamps are automatically converted from UTC (API format) to Eastern Time
 
 ## Development
 
-The project follows DuckDB best practices with:
+The project follows PostgreSQL best practices with:
 - Organized directory structure
 - Centralized configuration management
 - Comprehensive testing framework

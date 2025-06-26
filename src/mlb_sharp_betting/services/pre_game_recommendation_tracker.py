@@ -242,12 +242,17 @@ class PreGameRecommendationTracker:
             with self.db_manager.get_cursor() as cursor:
                 for rec in recommendations:
                     cursor.execute("""
-                        INSERT OR REPLACE INTO mlb_betting.tracking.pre_game_recommendations (
+                        INSERT INTO tracking.pre_game_recommendations (
                             recommendation_id, game_pk, home_team, away_team, game_datetime,
                             recommendation, bet_type, confidence_level, signal_source, signal_strength,
                             recommended_at, email_sent, game_completed, bet_won, actual_outcome, 
                             profit_loss, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (recommendation_id) DO UPDATE SET
+                            bet_won = EXCLUDED.bet_won,
+                            actual_outcome = EXCLUDED.actual_outcome,
+                            profit_loss = EXCLUDED.profit_loss,
+                            updated_at = EXCLUDED.updated_at
                     """, (
                         rec['recommendation_id'], rec['game_pk'], rec['home_team'], rec['away_team'], rec['game_datetime'],
                         rec['recommendation'], rec['bet_type'], rec['confidence_level'], rec['signal_source'], 
@@ -266,11 +271,11 @@ class PreGameRecommendationTracker:
         try:
             with self.db_manager.get_cursor() as cursor:
                 # Create tracking schema first
-                cursor.execute("CREATE SCHEMA IF NOT EXISTS mlb_betting.tracking")
+                cursor.execute("CREATE SCHEMA IF NOT EXISTS tracking")
                 
                 # Recommendations table
                 cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS mlb_betting.tracking.pre_game_recommendations (
+                    CREATE TABLE IF NOT EXISTS tracking.pre_game_recommendations (
                         recommendation_id VARCHAR PRIMARY KEY,
                         game_pk INTEGER NOT NULL,
                         home_team VARCHAR NOT NULL,
@@ -280,7 +285,7 @@ class PreGameRecommendationTracker:
                         bet_type VARCHAR NOT NULL,
                         confidence_level VARCHAR NOT NULL,
                         signal_source VARCHAR NOT NULL,
-                        signal_strength DOUBLE NOT NULL,
+                        signal_strength DOUBLE PRECISION NOT NULL,
                         recommended_at TIMESTAMP NOT NULL,
                         email_sent BOOLEAN DEFAULT TRUE,
                         
@@ -288,7 +293,7 @@ class PreGameRecommendationTracker:
                         game_completed BOOLEAN DEFAULT FALSE,
                         bet_won BOOLEAN,
                         actual_outcome TEXT,
-                        profit_loss DOUBLE,
+                        profit_loss DOUBLE PRECISION,
                         
                         -- Metadata
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -416,12 +421,17 @@ class PreGameRecommendationTracker:
             with self.db_manager.get_cursor() as cursor:
                 for rec in recommendations:
                     cursor.execute("""
-                        INSERT OR REPLACE INTO mlb_betting.tracking.pre_game_recommendations (
+                        INSERT INTO tracking.pre_game_recommendations (
                             recommendation_id, game_pk, home_team, away_team, game_datetime,
                             recommendation, bet_type, confidence_level, signal_source, signal_strength,
                             recommended_at, email_sent, game_completed, bet_won, actual_outcome, 
                             profit_loss, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (recommendation_id) DO UPDATE SET
+                            bet_won = EXCLUDED.bet_won,
+                            actual_outcome = EXCLUDED.actual_outcome,
+                            profit_loss = EXCLUDED.profit_loss,
+                            updated_at = EXCLUDED.updated_at
                     """, (
                         rec.recommendation_id, rec.game_pk, rec.home_team, rec.away_team, rec.game_datetime,
                         rec.recommendation, rec.bet_type, rec.confidence_level, rec.signal_source, 
@@ -443,10 +453,10 @@ class PreGameRecommendationTracker:
                 cursor.execute("""
                     SELECT r.recommendation_id, r.game_pk, r.home_team, r.away_team, 
                            r.recommendation, r.bet_type, r.game_datetime
-                    FROM mlb_betting.tracking.pre_game_recommendations r
-                    JOIN mlb_betting.main.game_outcomes go ON r.game_pk = go.game_id
+                    FROM tracking.pre_game_recommendations r
+                    JOIN game_outcomes go ON r.game_pk = go.game_id
                     WHERE r.game_completed = FALSE 
-                      AND r.game_datetime >= ?
+                      AND r.game_datetime >= %s
                     ORDER BY r.game_datetime DESC
                 """, (datetime.now(timezone.utc) - timedelta(days=lookback_days),))
                 
@@ -459,8 +469,8 @@ class PreGameRecommendationTracker:
                     # Get game outcome
                     cursor.execute("""
                         SELECT home_score, away_score, winning_team, total_runs
-                        FROM mlb_betting.main.game_outcomes 
-                        WHERE game_id = ?
+                        FROM game_outcomes 
+                        WHERE game_id = %s
                     """, (game_pk,))
                     
                     outcome_data = cursor.fetchone()
@@ -482,10 +492,10 @@ class PreGameRecommendationTracker:
                         
                         # Update recommendation
                         cursor.execute("""
-                            UPDATE mlb_betting.tracking.pre_game_recommendations 
-                            SET game_completed = TRUE, bet_won = ?, actual_outcome = ?, 
-                                profit_loss = ?, updated_at = CURRENT_TIMESTAMP
-                            WHERE recommendation_id = ?
+                            UPDATE tracking.pre_game_recommendations 
+                            SET game_completed = TRUE, bet_won = %s, actual_outcome = %s, 
+                                profit_loss = %s, updated_at = CURRENT_TIMESTAMP
+                            WHERE recommendation_id = %s
                         """, (bet_won, actual_outcome, profit_loss, rec_id))
                         
                         updated_count += 1
@@ -539,7 +549,7 @@ class PreGameRecommendationTracker:
             with self.db_manager.get_cursor() as cursor:
                 # Get all recommendations in period
                 cursor.execute("""
-                    SELECT * FROM mlb_betting.tracking.pre_game_recommendations
+                    SELECT * FROM tracking.pre_game_recommendations
                     WHERE recommended_at BETWEEN ? AND ?
                     ORDER BY recommended_at DESC
                 """, (start_date, end_date))
@@ -679,7 +689,7 @@ class PreGameRecommendationTracker:
             with self.db_manager.get_cursor() as cursor:
                 # Get all recommendations in period
                 cursor.execute("""
-                    SELECT * FROM mlb_betting.tracking.pre_game_recommendations
+                    SELECT * FROM tracking.pre_game_recommendations
                     WHERE recommended_at BETWEEN ? AND ?
                     ORDER BY recommended_at DESC
                 """, (start_date, end_date))

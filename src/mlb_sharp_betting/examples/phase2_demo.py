@@ -3,7 +3,7 @@
 Phase 2 Implementation Demo - MLB Sharp Betting Data Layer
 
 This script demonstrates the complete Phase 2 implementation including:
-- Database connection management with DuckDB
+- Database connection management with PostgreSQL
 - Repository pattern for data access  
 - VSIN scraping with rate limiting and retry logic
 - HTML parsing and data validation
@@ -414,7 +414,7 @@ async def main():
         logger.info("=" * 50)
         logger.info("Phase 2 Implementation Demo completed successfully!")
         logger.info("All components are working correctly:")
-        logger.info("✓ Database connection manager with DuckDB")
+        logger.info("✓ Database connection manager with PostgreSQL")
         logger.info("✓ Repository pattern for data access")
         logger.info("✓ Web scraping with rate limiting and retry logic")
         logger.info("✓ HTML parsing and data validation")

@@ -7,7 +7,7 @@ and calculate betting performance metrics.
 
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict, ValidationInfo
 
 from .game import Team
 
@@ -44,43 +44,45 @@ class GameOutcome(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     
-    @validator('home_win', always=True)
-    def validate_home_win(cls, v, values):
+    @field_validator('home_win')
+    @classmethod
+    def validate_home_win(cls, v: bool, info: ValidationInfo) -> bool:
         """Ensure home_win matches the scores."""
-        if 'home_score' in values and 'away_score' in values:
-            expected = values['home_score'] > values['away_score']
+        if info.data and 'home_score' in info.data and 'away_score' in info.data:
+            expected = info.data['home_score'] > info.data['away_score']
             if v != expected:
-                raise ValueError(f"home_win ({v}) doesn't match scores: home {values['home_score']}, away {values['away_score']}")
+                raise ValueError(f"home_win ({v}) doesn't match scores: home {info.data['home_score']}, away {info.data['away_score']}")
         return v
     
-    @validator('over')
-    def validate_over_calculation(cls, v, values):
+    @field_validator('over')
+    @classmethod
+    def validate_over_calculation(cls, v: bool, info: ValidationInfo) -> bool:
         """Validate over calculation if total_line is provided."""
-        if 'total_line' in values and values['total_line'] is not None:
-            if 'home_score' in values and 'away_score' in values:
-                total_score = values['home_score'] + values['away_score']
-                expected = total_score > values['total_line']
+        if info.data and 'total_line' in info.data and info.data['total_line'] is not None:
+            if 'home_score' in info.data and 'away_score' in info.data:
+                total_score = info.data['home_score'] + info.data['away_score']
+                expected = total_score > info.data['total_line']
                 if v != expected:
-                    raise ValueError(f"over ({v}) doesn't match calculation: {total_score} vs {values['total_line']}")
+                    raise ValueError(f"over ({v}) doesn't match calculation: {total_score} vs {info.data['total_line']}")
         return v
     
-    @validator('home_cover_spread')
-    def validate_spread_cover(cls, v, values):
+    @field_validator('home_cover_spread')
+    @classmethod
+    def validate_spread_cover(cls, v: Optional[bool], info: ValidationInfo) -> Optional[bool]:
         """Validate spread cover calculation if home_spread_line is provided."""
-        if v is not None and 'home_spread_line' in values and values['home_spread_line'] is not None:
-            if 'home_score' in values and 'away_score' in values:
-                home_spread_result = values['home_score'] + values['home_spread_line']
-                expected = home_spread_result > values['away_score']
+        if v is not None and info.data and 'home_spread_line' in info.data and info.data['home_spread_line'] is not None:
+            if 'home_score' in info.data and 'away_score' in info.data:
+                home_spread_result = info.data['home_score'] + info.data['home_spread_line']
+                expected = home_spread_result > info.data['away_score']
                 if v != expected:
                     raise ValueError(f"home_cover_spread ({v}) doesn't match calculation")
         return v
     
-    class Config:
-        """Pydantic model configuration."""
-        json_encoders = {
+    model_config = ConfigDict(
+        json_encoders={
             datetime: lambda v: v.isoformat(),
             Team: lambda v: v.value
-        }
-        
-        # Allow updates to updated_at
-        allow_population_by_field_name = True 
+        },
+        # Allow field validation by name
+        populate_by_name=True
+    ) 

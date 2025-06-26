@@ -34,8 +34,10 @@ WITH enhanced_timing_data AS (
             ELSE 'VERY_EARLY'
         END as precise_timing_category,
         
-        -- Line movement tracking
-        LAG(TRY_CAST(rmbs.split_value AS DOUBLE)) OVER (
+        -- Line movement tracking with safe casting
+        LAG(CASE WHEN rmbs.split_value ~ '^-?[0-9]+\.?[0-9]*$' 
+                 THEN rmbs.split_value::DOUBLE PRECISION 
+                 ELSE NULL END) OVER (
             PARTITION BY rmbs.game_id, rmbs.source, rmbs.book, rmbs.split_type 
             ORDER BY rmbs.last_updated
         ) as prev_line,
@@ -85,8 +87,8 @@ WITH enhanced_timing_data AS (
         go.home_cover_spread,
         go.over
         
-    FROM mlb_betting.splits.raw_mlb_betting_splits rmbs
-    JOIN mlb_betting.main.game_outcomes go ON rmbs.game_id = go.game_id
+    FROM splits.raw_mlb_betting_splits rmbs
+    JOIN public.game_outcomes go ON rmbs.game_id = go.game_id
     WHERE rmbs.last_updated < rmbs.game_datetime
       AND rmbs.game_datetime < CURRENT_TIMESTAMP - INTERVAL '6 hours'  -- Only completed games
       AND rmbs.split_value IS NOT NULL
@@ -98,14 +100,22 @@ WITH enhanced_timing_data AS (
 enhanced_movement_analysis AS (
     SELECT 
         *,
-        -- Calculate line movement
-        TRY_CAST(split_value AS DOUBLE) - prev_line as line_movement,
+        -- Calculate line movement with safe casting
+        CASE WHEN split_value ~ '^-?[0-9]+\.?[0-9]*$' 
+             THEN split_value::DOUBLE PRECISION 
+             ELSE NULL END - prev_line as line_movement,
         
-        -- Reverse line movement detection
+        -- Reverse line movement detection with safe casting
         CASE 
-            WHEN differential > 10 AND (TRY_CAST(split_value AS DOUBLE) - prev_line) < 0 THEN 'SHARP_MONEY_VS_LINE_MOVE'
-            WHEN differential < -10 AND (TRY_CAST(split_value AS DOUBLE) - prev_line) > 0 THEN 'SHARP_MONEY_VS_LINE_MOVE'
-            WHEN differential > 15 AND ABS(TRY_CAST(split_value AS DOUBLE) - prev_line) < 0.25 THEN 'SHARP_MONEY_NO_MOVEMENT'
+            WHEN differential > 10 AND (CASE WHEN split_value ~ '^-?[0-9]+\.?[0-9]*$' 
+                                             THEN split_value::DOUBLE PRECISION 
+                                             ELSE NULL END - prev_line) < 0 THEN 'SHARP_MONEY_VS_LINE_MOVE'
+            WHEN differential < -10 AND (CASE WHEN split_value ~ '^-?[0-9]+\.?[0-9]*$' 
+                                              THEN split_value::DOUBLE PRECISION 
+                                              ELSE NULL END - prev_line) > 0 THEN 'SHARP_MONEY_VS_LINE_MOVE'
+            WHEN differential > 15 AND ABS(CASE WHEN split_value ~ '^-?[0-9]+\.?[0-9]*$' 
+                                                THEN split_value::DOUBLE PRECISION 
+                                                ELSE NULL END - prev_line) < 0.25 THEN 'SHARP_MONEY_NO_MOVEMENT'
             ELSE 'NORMAL_CORRELATION'
         END as line_movement_correlation,
         

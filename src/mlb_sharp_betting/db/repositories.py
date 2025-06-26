@@ -70,6 +70,55 @@ class BaseRepository(ABC):
             self._coordinator = get_database_coordinator()
         return self._coordinator
 
+    def _get_table_columns(self, table_name: str) -> List[str]:
+        """
+        Get column names for a table using PostgreSQL information_schema.
+        
+        Args:
+            table_name: Name of the table (can include schema)
+            
+        Returns:
+            List of column names
+        """
+        try:
+            # Parse schema and table name
+            if '.' in table_name:
+                schema_name, table_name_only = table_name.split('.', 1)
+            else:
+                schema_name = 'public'
+                table_name_only = table_name
+            
+            # Using PostgreSQL information_schema
+            columns_query = """
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_schema = %s AND table_name = %s
+                ORDER BY ordinal_position
+            """
+            
+            coordinator = self._get_coordinator()
+            result = coordinator.execute_read(columns_query, (schema_name, table_name_only))
+            
+            if not result or not isinstance(result, list):
+                self.logger.warning("No columns found for table", table=table_name)
+                return []
+                
+            # Handle different row types (RealDictRow, tuple, list)
+            columns = []
+            for row in result:
+                if hasattr(row, 'get') and 'column_name' in row:
+                    # RealDictRow or dict-like object
+                    columns.append(row['column_name'])
+                elif isinstance(row, (tuple, list)) and len(row) > 0:
+                    # Tuple or list
+                    columns.append(row[0])
+            return columns
+            
+        except Exception as e:
+            self.logger.error("Failed to get table columns", table=table_name, error=str(e))
+            # Fallback to common columns if introspection fails
+            return ['id', 'created_at', 'updated_at']
+
     @property
     @abstractmethod
     def table_name(self) -> str:
@@ -87,7 +136,7 @@ class BaseRepository(ABC):
         Convert database row to model instance.
         
         Args:
-            row: Database row tuple
+            row: Database row tuple or RealDictRow
             columns: Column names
             
         Returns:
@@ -97,7 +146,13 @@ class BaseRepository(ABC):
             raise ValueError("Empty row provided")
             
         try:
-            data = dict(zip(columns, row))
+            # Handle RealDictRow objects (PostgreSQL returns these)
+            if hasattr(row, 'keys') and hasattr(row, 'values'):
+                # It's a dict-like object (RealDictRow)
+                data = dict(row)
+            else:
+                # It's a tuple or list
+                data = dict(zip(columns, row))
             return self.model_class(**data)
         except Exception as e:
             self.logger.error("Failed to convert row to model", 
@@ -136,11 +191,12 @@ class BaseRepository(ABC):
             if value is None:
                 conditions.append(f"{column} IS NULL")
             elif isinstance(value, (list, tuple)):
-                placeholders = ",".join("?" * len(value))
+                # Use PostgreSQL parameterized query format
+                placeholders = ",".join(["%s"] * len(value))
                 conditions.append(f"{column} IN ({placeholders})")
                 parameters.extend(value)
             else:
-                conditions.append(f"{column} = ?")
+                conditions.append(f"{column} = %s")
                 parameters.append(value)
         
         where_clause = " AND ".join(conditions)
@@ -160,7 +216,8 @@ class BaseRepository(ABC):
             where_clause, parameters = self._build_where_clause(filters)
             query = f"SELECT 1 FROM {self.table_name} {where_clause} LIMIT 1"
             
-            result = self.db.execute_query(query, parameters)
+            coordinator = self._get_coordinator()
+            result = coordinator.execute_read(query, parameters)
             return len(result) > 0 if result else False
         except Exception as e:
             self.logger.error("Error checking entity existence", 
@@ -181,7 +238,8 @@ class BaseRepository(ABC):
             where_clause, parameters = self._build_where_clause(filters)
             query = f"SELECT COUNT(*) FROM {self.table_name} {where_clause}"
             
-            result = self.db.execute_query(query, parameters)
+            coordinator = self._get_coordinator()
+            result = coordinator.execute_read(query, parameters)
             return result[0][0] if result else 0
         except Exception as e:
             self.logger.error("Error counting entities", 
@@ -207,22 +265,33 @@ class BaseRepository(ABC):
             
             # Build INSERT query
             columns = list(data.keys())
-            placeholders = ",".join("?" * len(columns))
-            query = f"INSERT INTO {self.table_name} ({','.join(columns)}) VALUES ({placeholders})"
+            placeholders = ", ".join(["%s"] * len(columns))
+            column_names = ", ".join(columns)
+            
+            query = f"""
+                INSERT INTO {self.table_name} ({column_names}) 
+                VALUES ({placeholders})
+                RETURNING *
+            """
             
             parameters = tuple(data.values())
             
-            # Use coordinated database access to prevent conflicts
-            self._get_coordinator().execute_write(query, parameters)
-                
-            self.logger.info("Entity created successfully", 
-                           table=self.table_name, model_id=getattr(model, 'id', None))
+            coordinator = self._get_coordinator()
+            # Use execute_write for INSERT...RETURNING and ensure proper transaction handling
+            result = coordinator.execute_write(query, parameters)
             
-            return model
+            if not result:
+                raise DatabaseError("Insert operation returned no results")
+            
+            # Get the created record and convert to model
+            table_columns = self._get_table_columns(self.table_name)
+            return self._row_to_model(result[0], table_columns)
+            
         except Exception as e:
-            self.logger.error("Failed to create entity", 
-                            table=self.table_name, error=str(e))
-            if "UNIQUE constraint failed" in str(e):
+            self.logger.error("Error creating entity", 
+                            model=model.dict() if hasattr(model, 'dict') else str(model), 
+                            error=str(e))
+            if "duplicate" in str(e).lower() or "unique" in str(e).lower():
                 raise DuplicateError(f"Entity already exists: {e}")
             raise DatabaseError(f"Failed to create entity: {e}")
 
@@ -231,32 +300,31 @@ class BaseRepository(ABC):
         Get entity by ID.
         
         Args:
-            entity_id: Entity ID
+            entity_id: Entity identifier
             
         Returns:
-            Model instance or None if not found
+            Model instance if found, None otherwise
         """
         try:
-            query = f"SELECT * FROM {self.table_name} WHERE id = ?"
-            result = self.db.execute_query(query, (entity_id,))
+            query = f"SELECT * FROM {self.table_name} WHERE id = %s"
+            
+            coordinator = self._get_coordinator()
+            result = coordinator.execute_read(query, (entity_id,))
             
             if not result:
                 return None
-                
-            # Get column names
-            columns_query = f"PRAGMA table_info({self.table_name})"
-            columns_result = self.db.execute_query(columns_query)
-            columns = [col[1] for col in columns_result] if columns_result else []
             
-            return self._row_to_model(result[0], columns)
+            table_columns = self._get_table_columns(self.table_name)
+            return self._row_to_model(result[0], table_columns)
+            
         except Exception as e:
-            self.logger.error("Failed to get entity by ID", 
+            self.logger.error("Error getting entity by ID", 
                             entity_id=entity_id, error=str(e))
             raise DatabaseError(f"Failed to get entity: {e}")
 
     def find_all(self, limit: Optional[int] = None, offset: int = 0, **filters: Any) -> List[ModelType]:
         """
-        Find all entities matching filters.
+        Find all entities matching the given filters.
         
         Args:
             limit: Maximum number of results
@@ -275,32 +343,30 @@ class BaseRepository(ABC):
                 query += f" LIMIT {limit}"
             if offset > 0:
                 query += f" OFFSET {offset}"
-                
-            result = self.db.execute_query(query, parameters)
+            
+            coordinator = self._get_coordinator()
+            result = coordinator.execute_read(query, parameters)
             
             if not result:
                 return []
-                
-            # Get column names
-            columns_query = f"PRAGMA table_info({self.table_name})"
-            columns_result = self.db.execute_query(columns_query)
-            columns = [col[1] for col in columns_result] if columns_result else []
             
-            return [self._row_to_model(row, columns) for row in result]
+            table_columns = self._get_table_columns(self.table_name)
+            return [self._row_to_model(row, table_columns) for row in result]
+            
         except Exception as e:
-            self.logger.error("Failed to find entities", 
-                            filters=filters, error=str(e))
+            self.logger.error("Error finding entities", 
+                            filters=filters, limit=limit, offset=offset, error=str(e))
             raise DatabaseError(f"Failed to find entities: {e}")
 
     def find_one(self, **filters: Any) -> Optional[ModelType]:
         """
-        Find one entity matching filters.
+        Find single entity matching the given filters.
         
         Args:
             **filters: Filter conditions
             
         Returns:
-            Model instance or None if not found
+            Model instance if found, None otherwise
         """
         results = self.find_all(limit=1, **filters)
         return results[0] if results else None
@@ -310,32 +376,46 @@ class BaseRepository(ABC):
         Update entity by ID.
         
         Args:
-            entity_id: Entity ID
+            entity_id: Entity identifier
             updates: Dictionary of field updates
             
         Returns:
-            Updated model instance or None if not found
+            Updated model instance if found, None otherwise
         """
         try:
             if not updates:
                 return self.get_by_id(entity_id)
-                
+            
             # Build UPDATE query
-            set_clauses = [f"{col} = ?" for col in updates.keys()]
-            query = f"UPDATE {self.table_name} SET {','.join(set_clauses)} WHERE id = ?"
+            set_clauses = []
+            parameters = []
             
-            parameters = tuple(list(updates.values()) + [entity_id])
+            for column, value in updates.items():
+                set_clauses.append(f"{column} = %s")
+                parameters.append(value)
             
-            # Use coordinated database access to prevent conflicts
-            self._get_coordinator().execute_write(query, parameters)
-                
-            self.logger.info("Entity updated successfully", 
-                           entity_id=entity_id, updates=updates)
+            parameters.append(entity_id)  # For WHERE clause
             
-            return self.get_by_id(entity_id)
+            set_clause = ", ".join(set_clauses)
+            query = f"""
+                UPDATE {self.table_name} 
+                SET {set_clause} 
+                WHERE id = %s
+                RETURNING *
+            """
+            
+            coordinator = self._get_coordinator()
+            result = coordinator.execute_write(query, tuple(parameters))
+            
+            if not result:
+                return None
+            
+            table_columns = self._get_table_columns(self.table_name)
+            return self._row_to_model(result[0], table_columns)
+            
         except Exception as e:
-            self.logger.error("Failed to update entity", 
-                            entity_id=entity_id, error=str(e))
+            self.logger.error("Error updating entity", 
+                            entity_id=entity_id, updates=updates, error=str(e))
             raise DatabaseError(f"Failed to update entity: {e}")
 
     def delete(self, entity_id: str) -> bool:
@@ -343,21 +423,22 @@ class BaseRepository(ABC):
         Delete entity by ID.
         
         Args:
-            entity_id: Entity ID
+            entity_id: Entity identifier
             
         Returns:
-            True if entity was deleted, False if not found
+            True if deleted, False if not found
         """
         try:
-            query = f"DELETE FROM {self.table_name} WHERE id = ?"
+            query = f"DELETE FROM {self.table_name} WHERE id = %s"
             
-            # Use coordinated database access to prevent conflicts
-            self._get_coordinator().execute_write(query, (entity_id,))
-                
-            self.logger.info("Entity deleted successfully", entity_id=entity_id)
-            return True
+            coordinator = self._get_coordinator()
+            coordinator.execute_write(query, (entity_id,))
+            
+            # Check if entity was actually deleted
+            return not self.exists(id=entity_id)
+            
         except Exception as e:
-            self.logger.error("Failed to delete entity", 
+            self.logger.error("Error deleting entity", 
                             entity_id=entity_id, error=str(e))
             raise DatabaseError(f"Failed to delete entity: {e}")
 
@@ -366,47 +447,66 @@ class BaseRepository(ABC):
         Create multiple entities in batches.
         
         Args:
-            models: List of model instances
-            batch_size: Size of each batch
+            models: List of model instances to create
+            batch_size: Number of entities per batch
             
         Returns:
             List of created model instances
         """
         if not models:
             return []
-            
+        
+        created_models = []
+        
         try:
             # Process in batches
-            created_models = []
-            
             for i in range(0, len(models), batch_size):
                 batch = models[i:i + batch_size]
                 
-                # Build batch insert
-                data_list = [self._model_to_insert_data(model) for model in batch]
+                # Convert models to insert data
+                batch_data = [self._model_to_insert_data(model) for model in batch]
                 
-                if not data_list:
+                if not batch_data:
                     continue
-                    
-                # Assume all models have same structure
-                columns = list(data_list[0].keys())
-                placeholders = ",".join("?" * len(columns))
-                query = f"INSERT INTO {self.table_name} ({','.join(columns)}) VALUES ({placeholders})"
                 
-                parameters_list = [tuple(data.values()) for data in data_list]
+                # Build batch INSERT query
+                first_item = batch_data[0]
+                columns = list(first_item.keys())
+                column_names = ", ".join(columns)
                 
-                # Use coordinated database access to prevent conflicts
-                self._get_coordinator().execute_bulk_insert(query, parameters_list)
-                    
-                created_models.extend(batch)
+                # Create parameter placeholders for batch
+                value_groups = []
+                all_parameters = []
                 
-            self.logger.info("Bulk create completed", 
-                           count=len(created_models), table=self.table_name)
+                for item_data in batch_data:
+                    placeholders = ", ".join(["%s"] * len(columns))
+                    value_groups.append(f"({placeholders})")
+                    all_parameters.extend([item_data[col] for col in columns])
+                
+                values_clause = ", ".join(value_groups)
+                
+                query = f"""
+                    INSERT INTO {self.table_name} ({column_names}) 
+                    VALUES {values_clause}
+                    RETURNING *
+                """
+                
+                coordinator = self._get_coordinator()
+                result = coordinator.execute_write(query, tuple(all_parameters))
+                
+                if result:
+                    table_columns = self._get_table_columns(self.table_name)
+                    batch_created = [self._row_to_model(row, table_columns) for row in result]
+                    created_models.extend(batch_created)
+                
+                self.logger.info("Created batch of entities", 
+                               batch_size=len(batch), total_created=len(created_models))
             
             return created_models
+            
         except Exception as e:
-            self.logger.error("Bulk create failed", 
-                            count=len(models), error=str(e))
+            self.logger.error("Error in bulk create", 
+                            model_count=len(models), batch_size=batch_size, error=str(e))
             raise DatabaseError(f"Bulk create failed: {e}")
 
 
@@ -439,11 +539,11 @@ class GameRepository(BaseRepository):
             List of games in the date range
         """
         try:
-            where_conditions = ["game_datetime BETWEEN ? AND ?"]
+            where_conditions = ["game_datetime BETWEEN %s AND %s"]
             parameters = [start_date.isoformat(), end_date.isoformat()]
             
             if status:
-                where_conditions.append("status = ?")
+                where_conditions.append("status = %s")
                 parameters.append(status.value)
             
             where_clause = "WHERE " + " AND ".join(where_conditions)
@@ -579,11 +679,11 @@ class BettingSplitRepository(BaseRepository):
         try:
             cutoff_time = datetime.now() - timedelta(hours=hours)
             
-            where_conditions = ["last_updated >= ?"]
+            where_conditions = ["last_updated >= %s"]
             parameters = [cutoff_time.isoformat()]
             
             if source:
-                where_conditions.append("source = ?")
+                where_conditions.append("source = %s")
                 parameters.append(source.value)
             
             where_clause = "WHERE " + " AND ".join(where_conditions)
@@ -706,7 +806,7 @@ class SharpActionRepository(BaseRepository):
         try:
             query = f"""
             SELECT * FROM {self.table_name} 
-            WHERE total_signals >= ? 
+            WHERE total_signals >= %s 
             AND overall_confidence IN ('high', 'very_high')
             AND recommended_bet IS NOT NULL
             ORDER BY high_confidence_signals DESC, last_updated DESC
@@ -742,7 +842,7 @@ class SharpActionRepository(BaseRepository):
             
             query = f"""
             SELECT * FROM {self.table_name} 
-            WHERE last_updated >= ?
+            WHERE last_updated >= %s
             ORDER BY last_updated DESC
             """
             result = self.db.execute_query(query, (cutoff_time.isoformat(),))

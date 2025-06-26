@@ -25,7 +25,7 @@ WITH base_data AS (
         -- Extract line values
         CASE 
             WHEN rmbs.split_type = 'moneyline' AND rmbs.split_value LIKE '{%}' THEN
-                TRY_CAST(json_extract_string(rmbs.split_value, '$.home') AS DOUBLE)
+                TRY_CAST((rmbs.split_value)::json->>'"$.home"' AS DOUBLE)
             WHEN rmbs.split_type IN ('spread', 'total') THEN
                 TRY_CAST(rmbs.split_value AS DOUBLE)
             ELSE NULL
@@ -38,8 +38,8 @@ WITH base_data AS (
         go.away_score,
         go.total_runs
         
-    FROM mlb_betting.splits.raw_mlb_betting_splits rmbs
-    JOIN mlb_betting.main.game_outcomes go ON rmbs.game_id = go.game_id
+    FROM splits.raw_mlb_betting_splits rmbs
+    JOIN public.game_outcomes go ON rmbs.game_id = go.game_id
     WHERE rmbs.last_updated < rmbs.game_datetime
       AND rmbs.game_datetime < CURRENT_TIMESTAMP - INTERVAL '6 hours'  -- Only completed games
       AND rmbs.split_value IS NOT NULL
@@ -217,7 +217,7 @@ WITH base_data AS (
         
         CASE 
             WHEN rmbs.split_type = 'moneyline' AND rmbs.split_value LIKE '{%}' THEN
-                TRY_CAST(json_extract_string(rmbs.split_value, '$.home') AS DOUBLE)
+                TRY_CAST((rmbs.split_value)::json->>'"$.home"' AS DOUBLE)
             WHEN rmbs.split_type IN ('spread', 'total') THEN
                 TRY_CAST(rmbs.split_value AS DOUBLE)
             ELSE NULL
@@ -230,8 +230,8 @@ WITH base_data AS (
         go.away_score,
         go.total_runs
         
-    FROM mlb_betting.splits.raw_mlb_betting_splits rmbs
-    JOIN mlb_betting.main.game_outcomes go ON rmbs.game_id = go.game_id
+    FROM splits.raw_mlb_betting_splits rmbs
+    JOIN public.game_outcomes go ON rmbs.game_id = go.game_id
     WHERE rmbs.last_updated < rmbs.game_datetime
       AND rmbs.game_datetime < CURRENT_TIMESTAMP - INTERVAL '6 hours'
       AND rmbs.split_value IS NOT NULL
@@ -371,8 +371,8 @@ WITH opposing_markets AS (
         
         ROW_NUMBER() OVER (PARTITION BY rmbs.game_id, rmbs.source, rmbs.book, rmbs.split_type ORDER BY rmbs.last_updated DESC) as rn
         
-    FROM mlb_betting.splits.raw_mlb_betting_splits rmbs
-    JOIN mlb_betting.main.game_outcomes go ON rmbs.game_id = go.game_id
+    FROM splits.raw_mlb_betting_splits rmbs
+    JOIN public.game_outcomes go ON rmbs.game_id = go.game_id
     WHERE rmbs.last_updated < rmbs.game_datetime
       AND rmbs.game_datetime < CURRENT_TIMESTAMP - INTERVAL '6 hours'
       AND rmbs.split_type IN ('moneyline', 'spread')

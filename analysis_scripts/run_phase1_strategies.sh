@@ -14,7 +14,7 @@ echo ""
 mkdir -p analysis_results
 
 # Database path
-DB_PATH="data/raw/mlb_betting.duckdb"
+DB_CONNECTION="postgresql://localhost/mlb_betting"
 
 if [ ! -f "$DB_PATH" ]; then
     echo "❌ Database not found at $DB_PATH"

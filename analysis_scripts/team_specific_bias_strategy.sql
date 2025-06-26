@@ -16,12 +16,14 @@ WITH team_splits_data AS (
         rmbs.home_or_over_bets_percentage as home_bet_pct,
         rmbs.home_or_over_stake_percentage - rmbs.home_or_over_bets_percentage as home_differential,
         
-        -- Extract line values for context
+        -- Extract line values for context with safe casting
         CASE 
             WHEN rmbs.split_type = 'moneyline' AND rmbs.split_value LIKE '{%}' THEN
-                TRY_CAST(json_extract_string(rmbs.split_value, '$.home') AS INTEGER)
-            WHEN rmbs.split_type IN ('spread', 'total') THEN
-                TRY_CAST(rmbs.split_value AS DOUBLE)
+                CASE WHEN (rmbs.split_value::JSONB->>'home') ~ '^-?[0-9]+$' 
+                     THEN (rmbs.split_value::JSONB->>'home')::INTEGER 
+                     ELSE NULL END
+            WHEN rmbs.split_type IN ('spread', 'total') AND rmbs.split_value ~ '^-?[0-9]+\.?[0-9]*$' THEN
+                rmbs.split_value::DOUBLE PRECISION
             ELSE NULL
         END as line_value,
         
@@ -34,8 +36,8 @@ WITH team_splits_data AS (
             ORDER BY rmbs.last_updated DESC
         ) as latest_rank
         
-    FROM mlb_betting.splits.raw_mlb_betting_splits rmbs
-    JOIN mlb_betting.main.game_outcomes go ON rmbs.game_id = go.game_id
+    FROM splits.raw_mlb_betting_splits rmbs
+    JOIN public.game_outcomes go ON rmbs.game_id = go.game_id
     WHERE rmbs.last_updated < rmbs.game_datetime
       AND rmbs.split_value IS NOT NULL
       AND rmbs.home_or_over_stake_percentage IS NOT NULL

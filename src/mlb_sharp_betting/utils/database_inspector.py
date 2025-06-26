@@ -5,7 +5,7 @@ from ..db.repositories import get_betting_split_repository
 async def check_splits():
     # Use the singleton pattern and set database path
     db = get_db_manager()
-    db.database_path = 'data/raw/mlb_betting.duckdb'
+    db.database_path = 'PostgreSQL database'
     
     repo = get_betting_split_repository(db)
     splits = repo.find_all(limit=10)

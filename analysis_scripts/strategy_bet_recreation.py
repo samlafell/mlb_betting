@@ -40,7 +40,7 @@ class StrategyBetRecreator:
         # 4. Generally follow the money (sharp action indicator)
         
         # Get the FINAL recommendation for each game (latest data BEFORE first pitch)
-        # CRITICAL: Only track bets that master_betting_detector.py would have ACTUALLY recommended
+        # CRITICAL: Only track bets that refactored_master_betting_detector.py would have ACTUALLY recommended
         # Master detector only recommends bets within 20 minutes of first pitch (actionable window)
         query = """
         WITH latest_data_per_game AS (
@@ -99,7 +99,7 @@ class StrategyBetRecreator:
             print(f"📊 FOUND {len(results)} ACTUAL STRATEGY BETS")
             print(f"   Criteria: Final VSIN-DK spread data per game with >=10% differential")
             print(f"   🚨 CRITICAL FILTER: Only data within 20 minutes of first pitch")
-            print(f"   💡 This matches master_betting_detector.py's actionable window")
+            print(f"   💡 This matches refactored_master_betting_detector.py's actionable window")
             print(f"   Note: One bet per game (latest actionable data only)")
             print()
             
@@ -171,7 +171,7 @@ class StrategyBetRecreator:
             else:
                 print(f"   ⏳ Pending: {pending} (games not yet finished)")
             print(f"   🚨 ACTIONABLE WINDOW: Only bets within 20 minutes of first pitch")
-            print(f"   💡 This matches master_betting_detector.py behavior exactly")
+            print(f"   💡 This matches refactored_master_betting_detector.py behavior exactly")
             print(f"   📈 These are bets that would have been ACTUALLY recommended")
             
             print(f"\n💡 NOTE: This recreates strategy logic based on available data.")

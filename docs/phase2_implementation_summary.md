@@ -10,9 +10,9 @@ Phase 2 of the MLB Sharp Betting Analysis System refactoring has been successful
 
 #### 1. Database Layer (Priority 1) - **COMPLETE**
 - **Database Connection Manager** (`src/mlb_sharp_betting/db/connection.py`)
-  - ✅ Singleton pattern with thread-safe DuckDB connection management
+  - ✅ Singleton pattern with thread-safe PostgreSQL connection management
   - ✅ Context manager support for proper resource cleanup
-  - ✅ Cursor-based access pattern (appropriate for DuckDB architecture)
+  - ✅ Cursor-based access pattern (appropriate for PostgreSQL architecture)
   - ✅ Connection health checks and error recovery
   - ✅ Transaction management with rollback support
   - ✅ Comprehensive logging and metrics tracking
@@ -111,7 +111,7 @@ MLBSharpBettingError
 
 ### ⚡ Performance Optimizations
 
-1. **Connection Management**: Single DuckDB connection with cursor-based access
+1. **Connection Management**: PostgreSQL connection pooling with cursor-based access
 2. **Caching**: Team name normalization cache for repeated lookups
 3. **Rate Limiting**: Intelligent rate limiting with burst capability
 4. **Batch Operations**: Bulk database operations for improved throughput
@@ -120,8 +120,8 @@ MLBSharpBettingError
 ## Key Technical Decisions
 
 ### Database Architecture
-- **Chose DuckDB over PostgreSQL** for embedded analytics workload
-- **Single connection with cursors** instead of connection pooling (DuckDB-specific)
+- **Using PostgreSQL** for embedded analytics workload
+- **Single connection with cursors** instead of connection pooling (PostgreSQL-specific)
 - **Repository pattern** for clean data access abstraction
 - **Transaction boundaries** managed at repository level
 

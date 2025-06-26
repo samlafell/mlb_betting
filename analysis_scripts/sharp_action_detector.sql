@@ -30,6 +30,19 @@ WITH enhanced_sharp_data AS (
         rmbs.home_or_over_bets_percentage as bet_pct,
         rmbs.home_or_over_stake_percentage - rmbs.home_or_over_bets_percentage as raw_differential,
         
+        -- Extract actual moneyline odds for ROI calculation
+        CASE 
+            WHEN rmbs.split_type = 'moneyline' AND rmbs.split_value::JSONB->>'home' IS NOT NULL THEN
+                (rmbs.split_value::JSONB->>'home')::INTEGER
+            ELSE NULL
+        END as home_ml_odds,
+        
+        CASE 
+            WHEN rmbs.split_type = 'moneyline' AND rmbs.split_value::JSONB->>'away' IS NOT NULL THEN
+                (rmbs.split_value::JSONB->>'away')::INTEGER
+            ELSE NULL
+        END as away_ml_odds,
+        
         -- Enhanced volume context
         COALESCE(rmbs.home_or_over_bets + rmbs.away_or_under_bets, 0) as total_bet_count,
         CASE 
@@ -79,8 +92,8 @@ WITH enhanced_sharp_data AS (
         go.home_cover_spread,
         go.over
         
-    FROM mlb_betting.splits.raw_mlb_betting_splits rmbs
-    JOIN mlb_betting.main.game_outcomes go ON rmbs.game_id = go.game_id
+    FROM splits.raw_mlb_betting_splits rmbs
+    JOIN public.game_outcomes go ON rmbs.game_id = go.game_id
     WHERE rmbs.last_updated < rmbs.game_datetime
       AND rmbs.split_value IS NOT NULL
       AND rmbs.game_datetime IS NOT NULL
@@ -94,7 +107,7 @@ line_movement_analysis AS (
         -- Calculate line movement
         CASE 
             WHEN prev_line IS NOT NULL AND split_value IS NOT NULL THEN
-                TRY_CAST(split_value AS FLOAT) - TRY_CAST(prev_line AS FLOAT)
+                CAST(split_value AS REAL) - CAST(prev_line AS REAL)
             ELSE NULL
         END as line_movement,
         
@@ -227,6 +240,10 @@ closing_enhanced_sharp AS (
         home_cover_spread,
         over,
         
+        -- Pass through odds data for ROI calculation
+        home_ml_odds,
+        away_ml_odds,
+        
         -- RECOMMENDATION-LEVEL DEDUPLICATION:
         -- Select the record closest to 5 minutes before game time for final betting recommendation
         ROW_NUMBER() OVER (
@@ -280,7 +297,10 @@ enhanced_strategy_analysis AS (
         
         -- Validation metrics
         COUNT(CASE WHEN final_validation LIKE 'VALIDATED%' THEN 1 END) as validated_count,
-        COUNT(CASE WHEN final_contrarian IN ('STRONG_CONTRARIAN', 'MODERATE_CONTRARIAN') THEN 1 END) as contrarian_count
+        COUNT(CASE WHEN final_contrarian IN ('STRONG_CONTRARIAN', 'MODERATE_CONTRARIAN') THEN 1 END) as contrarian_count,
+        
+        -- Add odds data for ROI calculation
+        AVG(CASE WHEN final_weighted_differential > 0 THEN home_ml_odds ELSE away_ml_odds END) as avg_recommended_odds
         
     FROM closing_enhanced_sharp
     WHERE rn = 1 
@@ -292,70 +312,37 @@ enhanced_strategy_analysis AS (
 SELECT 
     source_book_type,
     split_type,
-    final_sharp_indicator,
-    timing_category,
-    volume_tier,
-    game_context,
-    final_validation,
-    final_contrarian,
+    final_sharp_indicator as strategy_variant,
     total_bets,
-    sharp_wins,
+    sharp_wins as wins,
     
     -- Win rate
     ROUND(100.0 * sharp_wins / total_bets, 1) as win_rate,
     
-    -- Enhanced ROI calculation with timing adjustments
+    -- Enhanced ROI calculation using actual moneyline odds
     ROUND(CASE 
-        WHEN timing_category = 'CLOSING' THEN 
-            -- Closing sharp money often gets worse odds
-            ((sharp_wins * 91) - ((total_bets - sharp_wins) * 110)) / (total_bets * 110.0) * 100
-        WHEN timing_category = 'EARLY' THEN
-            -- Early sharp money gets better odds  
-            ((sharp_wins * 100) - ((total_bets - sharp_wins) * 105)) / (total_bets * 105.0) * 100
-        ELSE 
-            -- Standard calculation for LATE timing
-            ((sharp_wins * 95) - ((total_bets - sharp_wins) * 110)) / (total_bets * 110.0) * 100
-    END, 1) as adjusted_roi,
-    
-    -- Metrics
-    ROUND(avg_weighted_differential, 1) as avg_weighted_diff,
-    ROUND(avg_raw_differential, 1) as avg_raw_diff,
-    ROUND(avg_consensus, 1) as avg_consensus_books,
-    ROUND(avg_steam_moves, 1) as avg_steam_moves,
-    
-    -- Validation percentages
-    ROUND(100.0 * validated_count / total_bets, 1) as validation_rate,
-    ROUND(100.0 * contrarian_count / total_bets, 1) as contrarian_rate,
-    
-    -- Enhanced strategy classification
-    CASE 
-        WHEN (100.0 * sharp_wins / total_bets) >= 65 AND total_bets >= 15 AND avg_consensus >= 2 THEN '🟢 ELITE SHARP EDGE'
-        WHEN (100.0 * sharp_wins / total_bets) >= 60 AND total_bets >= 10 AND validation_rate >= 70 THEN '🟢 STRONG SHARP EDGE'
-        WHEN (100.0 * sharp_wins / total_bets) >= 57 AND total_bets >= 10 AND contrarian_rate >= 50 THEN '🟡 CONTRARIAN EDGE'
-        WHEN (100.0 * sharp_wins / total_bets) >= 55 AND total_bets >= 10 THEN '🟡 MODERATE SHARP EDGE'
-        WHEN (100.0 * sharp_wins / total_bets) >= 52.4 AND total_bets >= 10 THEN '🟡 SLIGHT EDGE'
-        ELSE '🔴 NO EDGE'
-    END as enhanced_strategy_rating,
-    
-    -- Enhanced confidence level
-    CASE 
-        WHEN total_bets >= 50 AND validation_rate >= 70 THEN 'VERY_HIGH'
-        WHEN total_bets >= 30 AND validation_rate >= 60 THEN 'HIGH'
-        WHEN total_bets >= 20 THEN 'MEDIUM'
-        WHEN total_bets >= 10 THEN 'LOW'
-        ELSE 'VERY_LOW'
-    END as confidence_level
+        WHEN split_type = 'moneyline' AND avg_recommended_odds IS NOT NULL THEN
+            -- Use actual moneyline odds for ROI calculation
+            CASE 
+                WHEN avg_recommended_odds > 0 THEN
+                    -- Positive odds: profit = (odds/100) * bet_amount for wins, -bet_amount for losses
+                    ((sharp_wins * (avg_recommended_odds/100.0) * 100) - ((total_bets - sharp_wins) * 100)) / (total_bets * 100) * 100
+                ELSE
+                    -- Negative odds: profit = (100/ABS(odds)) * bet_amount for wins, -bet_amount for losses
+                    ((sharp_wins * (100.0/ABS(avg_recommended_odds)) * 100) - ((total_bets - sharp_wins) * 100)) / (total_bets * 100) * 100
+            END
+        ELSE
+            -- Fallback to timing-based calculation for non-moneyline bets
+            CASE 
+                WHEN timing_category = 'CLOSING' THEN 
+                    ((sharp_wins * 91) - ((total_bets - sharp_wins) * 110)) / (total_bets * 110.0) * 100
+                WHEN timing_category = 'EARLY' THEN
+                    ((sharp_wins * 100) - ((total_bets - sharp_wins) * 105)) / (total_bets * 105.0) * 100
+                ELSE 
+                    ((sharp_wins * 95) - ((total_bets - sharp_wins) * 110)) / (total_bets * 110.0) * 100
+            END
+    END, 1) as roi_per_100_unit
     
 FROM enhanced_strategy_analysis
 WHERE total_bets >= 5
-ORDER BY 
-    CASE 
-        WHEN enhanced_strategy_rating LIKE '🟢 ELITE%' THEN 1
-        WHEN enhanced_strategy_rating LIKE '🟢 STRONG%' THEN 2
-        WHEN enhanced_strategy_rating LIKE '🟡 CONTRARIAN%' THEN 3
-        WHEN enhanced_strategy_rating LIKE '🟡 MODERATE%' THEN 4
-        WHEN enhanced_strategy_rating LIKE '🟡 SLIGHT%' THEN 5
-        ELSE 6
-    END,
-    (100.0 * sharp_wins / total_bets) DESC,
-    total_bets DESC; 
+ORDER BY roi_per_100_unit DESC, total_bets DESC; 

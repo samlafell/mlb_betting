@@ -34,6 +34,19 @@ WITH game_signals AS (
             ELSE 'SHARP_AWAY_UNDER'
         END as signal_direction,
         
+        -- Extract actual moneyline odds for ROI calculation
+        CASE 
+            WHEN rmbs.split_type = 'moneyline' AND rmbs.split_value::JSONB->>'home' IS NOT NULL THEN
+                (rmbs.split_value::JSONB->>'home')::INTEGER
+            ELSE NULL
+        END as home_ml_odds,
+        
+        CASE 
+            WHEN rmbs.split_type = 'moneyline' AND rmbs.split_value::JSONB->>'away' IS NOT NULL THEN
+                (rmbs.split_value::JSONB->>'away')::INTEGER
+            ELSE NULL
+        END as away_ml_odds,
+        
         go.home_win,
         go.home_cover_spread,
         go.over,
@@ -41,8 +54,8 @@ WITH game_signals AS (
         ROW_NUMBER() OVER (PARTITION BY rmbs.game_id, rmbs.source, rmbs.book, rmbs.split_type 
                           ORDER BY rmbs.last_updated DESC) as latest_rank
         
-    FROM mlb_betting.splits.raw_mlb_betting_splits rmbs
-    JOIN mlb_betting.main.game_outcomes go ON rmbs.game_id = go.game_id
+    FROM splits.raw_mlb_betting_splits rmbs
+    JOIN public.game_outcomes go ON rmbs.game_id = go.game_id
     WHERE rmbs.last_updated < rmbs.game_datetime
       AND rmbs.split_value IS NOT NULL
       AND rmbs.home_or_over_stake_percentage IS NOT NULL
@@ -77,7 +90,11 @@ game_aggregated AS (
         -- Get outcomes
         MAX(home_win) as home_win,
         MAX(home_cover_spread) as home_cover_spread,
-        MAX(over) as over
+        MAX(over) as over,
+        
+        -- Get average moneyline odds for ROI calculation
+        AVG(home_ml_odds) as avg_home_ml_odds,
+        AVG(away_ml_odds) as avg_away_ml_odds
         
     FROM game_signals
     WHERE latest_rank = 1  -- Use only the latest signal for each bet type
@@ -115,7 +132,9 @@ combination_strategies AS (
         consensus_direction,
         home_win,
         home_cover_spread,
-        over
+        over,
+        avg_home_ml_odds,
+        avg_away_ml_odds
         
     FROM game_aggregated
 ),
@@ -164,7 +183,10 @@ strategy_performance AS (
                      WHEN consensus_direction = 'SHARP_AWAY_UNDER' AND home_win = true THEN 1   -- Fade
                      ELSE 0 END
             ELSE 0
-        END) as fade_conflicts_wins
+        END) as fade_conflicts_wins,
+        
+        -- Average odds for ROI calculations
+        AVG(CASE WHEN consensus_direction = 'SHARP_HOME_OVER' THEN avg_home_ml_odds ELSE avg_away_ml_odds END) as avg_recommended_odds
         
     FROM combination_strategies
     GROUP BY source_book_type, split_type
@@ -180,8 +202,13 @@ SELECT
     CASE WHEN multi_consensus_bets > 0 
          THEN ROUND(100.0 * multi_consensus_wins / multi_consensus_bets, 1) 
          ELSE 0 END as win_rate,
-    CASE WHEN multi_consensus_bets > 0 
-         THEN ROUND(((multi_consensus_wins * 100) - ((multi_consensus_bets - multi_consensus_wins) * 110)) / (multi_consensus_bets * 110) * 100, 1)
+    CASE WHEN multi_consensus_bets > 0 AND avg_recommended_odds IS NOT NULL
+         THEN ROUND(CASE 
+             WHEN avg_recommended_odds > 0 THEN
+                 ((multi_consensus_wins * (avg_recommended_odds/100.0) * 100) - ((multi_consensus_bets - multi_consensus_wins) * 100)) / (multi_consensus_bets * 100) * 100
+             ELSE
+                 ((multi_consensus_wins * (100.0/ABS(avg_recommended_odds)) * 100) - ((multi_consensus_bets - multi_consensus_wins) * 100)) / (multi_consensus_bets * 100) * 100
+         END, 1)
          ELSE 0 END as roi_per_100_unit
 FROM strategy_performance
 WHERE multi_consensus_bets >= 3
@@ -197,8 +224,13 @@ SELECT
     CASE WHEN ml_spread_bets > 0 
          THEN ROUND(100.0 * ml_spread_wins / ml_spread_bets, 1) 
          ELSE 0 END as win_rate,
-    CASE WHEN ml_spread_bets > 0 
-         THEN ROUND(((ml_spread_wins * 100) - ((ml_spread_bets - ml_spread_wins) * 110)) / (ml_spread_bets * 110) * 100, 1)
+    CASE WHEN ml_spread_bets > 0 AND avg_recommended_odds IS NOT NULL
+         THEN ROUND(CASE 
+             WHEN avg_recommended_odds > 0 THEN
+                 ((ml_spread_wins * (avg_recommended_odds/100.0) * 100) - ((ml_spread_bets - ml_spread_wins) * 100)) / (ml_spread_bets * 100) * 100
+             ELSE
+                 ((ml_spread_wins * (100.0/ABS(avg_recommended_odds)) * 100) - ((ml_spread_bets - ml_spread_wins) * 100)) / (ml_spread_bets * 100) * 100
+         END, 1)
          ELSE 0 END as roi_per_100_unit
 FROM strategy_performance
 WHERE ml_spread_bets >= 3
@@ -214,8 +246,13 @@ SELECT
     CASE WHEN triple_consensus_bets > 0 
          THEN ROUND(100.0 * triple_consensus_wins / triple_consensus_bets, 1) 
          ELSE 0 END as win_rate,
-    CASE WHEN triple_consensus_bets > 0 
-         THEN ROUND(((triple_consensus_wins * 100) - ((triple_consensus_bets - triple_consensus_wins) * 110)) / (triple_consensus_bets * 110) * 100, 1)
+    CASE WHEN triple_consensus_bets > 0 AND avg_recommended_odds IS NOT NULL
+         THEN ROUND(CASE 
+             WHEN avg_recommended_odds > 0 THEN
+                 ((triple_consensus_wins * (avg_recommended_odds/100.0) * 100) - ((triple_consensus_bets - triple_consensus_wins) * 100)) / (triple_consensus_bets * 100) * 100
+             ELSE
+                 ((triple_consensus_wins * (100.0/ABS(avg_recommended_odds)) * 100) - ((triple_consensus_bets - triple_consensus_wins) * 100)) / (triple_consensus_bets * 100) * 100
+         END, 1)
          ELSE 0 END as roi_per_100_unit
 FROM strategy_performance
 WHERE triple_consensus_bets >= 3
@@ -231,8 +268,13 @@ SELECT
     CASE WHEN fade_conflicts_bets > 0 
          THEN ROUND(100.0 * fade_conflicts_wins / fade_conflicts_bets, 1) 
          ELSE 0 END as win_rate,
-    CASE WHEN fade_conflicts_bets > 0 
-         THEN ROUND(((fade_conflicts_wins * 100) - ((fade_conflicts_bets - fade_conflicts_wins) * 110)) / (fade_conflicts_bets * 110) * 100, 1)
+    CASE WHEN fade_conflicts_bets > 0 AND avg_recommended_odds IS NOT NULL
+         THEN ROUND(CASE 
+             WHEN avg_recommended_odds > 0 THEN
+                 ((fade_conflicts_wins * (avg_recommended_odds/100.0) * 100) - ((fade_conflicts_bets - fade_conflicts_wins) * 100)) / (fade_conflicts_bets * 100) * 100
+             ELSE
+                 ((fade_conflicts_wins * (100.0/ABS(avg_recommended_odds)) * 100) - ((fade_conflicts_bets - fade_conflicts_wins) * 100)) / (fade_conflicts_bets * 100) * 100
+         END, 1)
          ELSE 0 END as roi_per_100_unit
 FROM strategy_performance
 WHERE fade_conflicts_bets >= 3

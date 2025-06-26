@@ -64,7 +64,7 @@ uv sync
 
 ```bash
 # Run the backtesting schema setup
-uv run -c "import duckdb; conn = duckdb.connect('data/raw/mlb_betting.duckdb'); conn.execute(open('sql/backtesting_schema.sql').read())"
+uv run -c "import duckdb; conn = psycopg2.connect(database="mlb_betting"); conn.execute(open('sql/backtesting_schema.sql').read())"
 ```
 
 ### **Step 3: Configure the System**
@@ -298,7 +298,7 @@ uv sync --all-extras
 - **Application Logs:** Console output or `backtesting.log`
 - **Scheduler Logs:** `scheduler.log` 
 - **Reports:** `reports/daily/` and `reports/weekly/`
-- **Database:** `data/raw/mlb_betting.duckdb`
+- **Database:** `PostgreSQL database mlb_betting`
 
 ---
 

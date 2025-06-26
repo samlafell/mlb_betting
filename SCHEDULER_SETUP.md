@@ -2,109 +2,142 @@
 
 ## Overview
 
-I've created an automated scheduler system that will:
+The MLB betting system now uses a **single consolidated scheduler** that handles:
 
-1. **Run your entrypoint every hour** for regular data collection
-2. **Alert you 5 minutes before each game starts** with fresh analysis
-3. **Automatically handle daily setup** (gets today's games at 6 AM EST)
+1. **Hourly data collection** from SBD and VSIN (every hour at :00)
+2. **Multi-stage pre-game workflows** (30min, 15min, 5min before each game)
+3. **Daily game setup** (gets today's games at 6 AM EST)
+4. **Email notifications** for all workflow results
 
 ## Quick Start
 
 ### 1. Install Dependencies
 
-First, install the required scheduler dependency:
-
 ```bash
 uv sync
 ```
 
-### 2. Test the Scheduler
-
-Test that everything works:
+### 2. Test the System
 
 ```bash
-# Test your entrypoint manually first
-uv run src/mlb_sharp_betting/entrypoint.py --verbose
+# Test data collection manually
+source .env && uv run python src/mlb_sharp_betting/entrypoint.py --verbose
 
-# Test the scheduler (will show upcoming games and schedule)
-uv run run_scheduler.py
+# Test the scheduler status
+source .env && uv run python src/mlb_sharp_betting/cli.py pregame status
 ```
 
-### 3. Run the Scheduler Permanently
-
-Choose one of these options:
-
-#### Option A: Background Process (Recommended)
+### 3. Start the Scheduler
 
 ```bash
-# Start in background
-nohup uv run run_scheduler.py > scheduler.log 2>&1 &
-echo $! > scheduler.pid
+# Start the consolidated scheduler
+./start_pregame_scheduler.sh
 
-# To stop later
-kill $(cat scheduler.pid)
-rm scheduler.pid
+# Monitor logs
+tail -f pregame_scheduler.log
 
-# Check logs
-tail -f scheduler.log
-```
-
-#### Option B: Simple Cron Job (Hourly Only)
-
-If you only want hourly runs without game alerts:
-
-```bash
-# Add to crontab
-crontab -e
-
-# Add this line:
-0 * * * * cd /Users/samlafell/Documents/programming_projects/sports_betting_dime_splits && /usr/bin/env uv run src/mlb_sharp_betting/entrypoint.py >> logs/hourly.log 2>&1
-```
-
-#### Option C: System Service (Advanced)
-
-For macOS using launchd:
-
-```bash
-# Create ~/Library/LaunchAgents/com.mlbbetting.scheduler.plist
-# (See detailed instructions below)
+# Stop when needed
+./stop_pregame_scheduler.sh
 ```
 
 ## What the Scheduler Does
 
-### Hourly Execution
-- Runs at the top of every hour (1:00, 2:00, 3:00, etc.)
-- Executes your full entrypoint pipeline
-- Collects betting data from all sources
-- Updates your database
+### Hourly Data Collection
+- **Runs at the top of every hour** (1:00, 2:00, 3:00, etc.)
+- **Collects fresh betting splits** from SBD and VSIN
+- **Updates the database** with new data
+- **Console notifications** for success/failure
 
-### Game Alerts
-- Gets today's MLB schedule at 6 AM EST
-- Schedules alerts 5 minutes before each game
-- Runs fresh analysis before each game
-- Sends notifications (currently to console, easily extensible)
+### Pre-Game Workflows
+- **30 minutes before each game**: Data collection only
+- **15 minutes before each game**: Data collection only  
+- **5 minutes before each game**: Final analysis + email notification
 
-### Monitoring
-- Tracks execution metrics
-- Logs all activities
-- Handles errors gracefully
-- Shows status updates every 5 minutes
+### Daily Setup
+- **Runs at 6:00 AM EST** every day
+- **Fetches today's MLB schedule**
+- **Schedules all workflows** for the day's games
+- **Email confirmation** of scheduled games
+
+## Schedule Example
+
+For a game starting at **7:00 PM EST**:
+- **6:30 PM**: 30-min data collection
+- **6:45 PM**: 15-min data collection
+- **6:55 PM**: Final pre-game analysis (with email)
+
+Plus **hourly collections** at 1:00, 2:00, 3:00, 4:00, 5:00, 6:00 PM, etc.
+
+## Management Commands
+
+### Status and Monitoring
+```bash
+# Check scheduler status
+source .env && uv run python src/mlb_sharp_betting/cli.py pregame status
+
+# View live logs
+tail -f pregame_scheduler.log
+
+# Check if running
+ps aux | grep pregame
+
+# Manual data collection test
+source .env && uv run python src/mlb_sharp_betting/entrypoint.py
+```
+
+### Start/Stop
+```bash
+# Start scheduler
+./start_pregame_scheduler.sh
+
+# Stop scheduler  
+./stop_pregame_scheduler.sh
+
+# Restart (stop then start)
+./stop_pregame_scheduler.sh && sleep 2 && ./start_pregame_scheduler.sh
+```
+
+## Email Configuration
+
+The scheduler sends email notifications for:
+- Daily setup summaries
+- Final pre-game analysis results
+- Error notifications
+
+**Required environment variables:**
+```bash
+# In your .env file
+EMAIL_FROM_ADDRESS=your-email@gmail.com
+EMAIL_APP_PASSWORD=your-gmail-app-password  
+EMAIL_TO_ADDRESSES=["recipient@gmail.com"]
+```
+
+**Gmail App Password Setup:**
+1. Enable 2FA on your Gmail account
+2. Go to Google Account settings → Security → App passwords
+3. Generate an app password for this application
+4. Use that password (not your regular Gmail password)
 
 ## Notifications
 
-Currently notifications appear in the console/logs. You can easily extend this by modifying the `send_notification` method in `src/mlb_sharp_betting/services/scheduler.py` to add:
+### Console Notifications
+Real-time notifications appear in the console:
+- ✅ Successful hourly collections
+- ❌ Failed collections with error details
+- 📊 Data collection progress
+- 🏈 Pre-game workflow triggers
 
-- Slack webhooks
-- Discord messages  
-- Email alerts
-- SMS via Twilio
-- Push notifications
+### Email Notifications
+Automated emails for:
+- **Daily Setup**: Summary of scheduled games
+- **Final Pre-Game Analysis**: Complete betting recommendations
+- **Errors**: Failed collections or workflows
 
 ## Advanced Setup Options
 
-### macOS LaunchAgent (User Service)
+### macOS LaunchAgent (Auto-start on login)
 
-Create `~/Library/LaunchAgents/com.mlbbetting.scheduler.plist`:
+Create `~/Library/LaunchAgents/com.mlbbetting.pregame.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -112,13 +145,11 @@ Create `~/Library/LaunchAgents/com.mlbbetting.scheduler.plist`:
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.mlbbetting.scheduler</string>
+    <string>com.mlbbetting.pregame</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/env</string>
-        <string>uv</string>
-        <string>run</string>
-        <string>run_scheduler.py</string>
+        <string>/bin/bash</string>
+        <string>start_pregame_scheduler.sh</string>
     </array>
     <key>WorkingDirectory</key>
     <string>/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits</string>
@@ -127,32 +158,31 @@ Create `~/Library/LaunchAgents/com.mlbbetting.scheduler.plist`:
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/Users/samlafell/Library/Logs/mlb-betting-scheduler.log</string>
+    <string>/Users/samlafell/Library/Logs/mlb-betting-pregame.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/samlafell/Library/Logs/mlb-betting-scheduler-error.log</string>
+    <string>/Users/samlafell/Library/Logs/mlb-betting-pregame-error.log</string>
 </dict>
 </plist>
 ```
 
-Then load it:
-
+Load it:
 ```bash
-launchctl load ~/Library/LaunchAgents/com.mlbbetting.scheduler.plist
+launchctl load ~/Library/LaunchAgents/com.mlbbetting.pregame.plist
 ```
 
-### Linux Systemd (User Service)
+### Linux Systemd Service
 
-Create `~/.config/systemd/user/mlb-betting-scheduler.service`:
+Create `~/.config/systemd/user/mlb-betting-pregame.service`:
 
 ```ini
 [Unit]
-Description=MLB Betting Analysis Scheduler
+Description=MLB Betting Pre-Game Scheduler
 After=network.target
 
 [Service]
 Type=simple
 WorkingDirectory=/path/to/your/project
-ExecStart=/usr/bin/env uv run run_scheduler.py
+ExecStart=/bin/bash start_pregame_scheduler.sh
 Restart=always
 RestartSec=10
 
@@ -160,123 +190,65 @@ RestartSec=10
 WantedBy=default.target
 ```
 
-Then enable it:
-
+Enable it:
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable mlb-betting-scheduler
-systemctl --user start mlb-betting-scheduler
-```
-
-## Monitoring Commands
-
-### Check Status
-```bash
-# If running in background
-ps aux | grep run_scheduler.py
-
-# Check logs
-tail -f scheduler.log
-
-# Test connection to MLB API
-uv run -c "from src.mlb_sharp_betting.services.mlb_api_service import MLBStatsAPIService; api = MLBStatsAPIService(); games = api.get_games_for_date(datetime.date.today()); print(f'Found {len(games)} games today')"
-```
-
-### Management Commands
-
-```bash
-# Manual run of entrypoint
-uv run src/mlb_sharp_betting/entrypoint.py
-
-# Test scheduler without starting it
-uv run -c "
-from src.mlb_sharp_betting.services.scheduler import MLBBettingScheduler
-import asyncio
-scheduler = MLBBettingScheduler()
-print(scheduler.get_status())
-"
-
-# Check what games are scheduled today
-uv run -c "
-from src.mlb_sharp_betting.services.mlb_api_service import MLBStatsAPIService
-from datetime import date
-api = MLBStatsAPIService()
-games = api.get_games_for_date(date.today())
-for game in games:
-    print(f'{game.away_team} @ {game.home_team} at {game.game_date}')
-"
-```
-
-## Customization
-
-### Timing
-Edit `src/mlb_sharp_betting/services/scheduler.py`:
-- Change `alert_minutes_before_game` (default: 5 minutes)
-- Modify hourly schedule (default: every hour at :00)
-- Adjust daily setup time (default: 6 AM EST)
-
-### Notifications
-Add your preferred notification method in the `send_notification` method:
-
-```python
-async def send_notification(self, message: str, context: str = "alert") -> None:
-    # Add your notification code here
-    # Examples:
-    # - Slack webhook
-    # - Discord webhook  
-    # - Email via SMTP
-    # - SMS via Twilio
-    pass
+systemctl --user enable mlb-betting-pregame
+systemctl --user start mlb-betting-pregame
 ```
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Permission denied**: Make sure UV is installed and accessible
-2. **Import errors**: Run `uv sync` to install all dependencies
-3. **No games found**: Check your internet connection and MLB API access
-4. **Scheduler stops**: Check logs for errors, may need to restart
-
-### Debug Mode
-
-Run with verbose logging:
-
+**Scheduler won't start:**
 ```bash
-uv run run_scheduler.py --verbose
+# Check dependencies
+uv sync
+
+# Check environment
+source .env && env | grep EMAIL
+
+# Check logs
+cat pregame_scheduler.log
 ```
 
-### Manual Testing
+**No hourly collections:**
+- Verify scheduler is running: `ps aux | grep pregame`
+- Check logs: `tail -f pregame_scheduler.log`
+- Wait for next hour mark (collections run at :00)
 
-Test individual components:
+**Email not working:**
+- Verify Gmail app password setup
+- Check EMAIL_* environment variables
+- Test with manual run: `uv run python src/mlb_sharp_betting/entrypoint.py`
 
+**Database locks:**
 ```bash
-# Test MLB API
-uv run -c "from src.mlb_sharp_betting.services.mlb_api_service import MLBStatsAPIService; print('MLB API works!')"
+# Kill stuck processes
+ps aux | grep python | grep mlb
+kill <PID>
 
-# Test entrypoint
-uv run src/mlb_sharp_betting/entrypoint.py --dry-run
-
-# Test scheduler setup
-uv run -c "from src.mlb_sharp_betting.services.scheduler import MLBBettingScheduler; s = MLBBettingScheduler(); print('Scheduler initialized!')"
+# Restart scheduler
+./stop_pregame_scheduler.sh && ./start_pregame_scheduler.sh
 ```
 
-## Summary
+### Log Locations
 
-Your automated betting analysis system is now ready! 🎰
+- **Main log**: `pregame_scheduler.log`
+- **Process ID**: `pregame_scheduler.pid`  
+- **Manual triggers**: `manual_triggers.log`
 
-- **Hourly analysis**: Keeps your data fresh
-- **Game alerts**: Never miss an opportunity  
-- **Automated scheduling**: No manual intervention needed
-- **Easy monitoring**: Simple logs and status checks
+## Migration from Old Scheduler
 
-The system will automatically:
-1. Collect betting data every hour
-2. Alert you before each game with fresh analysis
-3. Handle errors gracefully
-4. Log everything for your review
+If you were using the old dual-scheduler setup:
 
-**Happy betting!** 🏈
+1. **Stop old schedulers**: The old `start_scheduler.sh` files have been removed
+2. **Use new consolidated scheduler**: Only `start_pregame_scheduler.sh` is needed
+3. **All functionality preserved**: Hourly + pre-game workflows in one scheduler
+4. **No configuration changes needed**: Same email and database settings
+
+The new scheduler is more efficient and eliminates conflicts between multiple schedulers trying to collect data at the same time.
 
 ---
 

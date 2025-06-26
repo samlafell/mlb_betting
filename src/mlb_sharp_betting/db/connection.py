@@ -1,8 +1,10 @@
 """
 Database connection management for the MLB Sharp Betting system.
 
-This module provides database connection management with thread-safe cursor access.
-DuckDB uses a single connection per database with multiple cursors for concurrent access.
+This module provides PostgreSQL database connection management with thread-safe cursor access.
+Uses connection pooling for optimal performance in multi-threaded environments.
+
+Consolidated from multiple database managers for improved maintainability.
 """
 
 import logging
@@ -11,30 +13,39 @@ import time
 import random
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Generator, List, Optional
+from typing import Any, Generator, List, Optional, Dict
+from urllib.parse import quote_plus
 
-import duckdb
+import psycopg2
+import psycopg2.pool
+from psycopg2.extras import DictCursor, RealDictCursor
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.pool import QueuePool
 import structlog
 
-# from ..core.config import get_settings  # Not needed with hardcoded path
 from ..core.exceptions import DatabaseConnectionError, DatabaseError
 
 logger = structlog.get_logger(__name__)
 
 
 def retry_on_conflict(max_retries=3, base_delay=0.1):
-    """Decorator to retry operations on DuckDB transaction conflicts"""
+    """Decorator to retry operations on PostgreSQL transaction conflicts"""
     def decorator(func):
         def wrapper(*args, **kwargs):
             for attempt in range(max_retries):
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
-                    if "Transaction conflict" in str(e) or "cannot update a table that has been altered" in str(e):
+                    error_msg = str(e).lower()
+                    if any(conflict in error_msg for conflict in [
+                        "could not serialize", "deadlock", "connection closed",
+                        "connection already closed", "server closed the connection"
+                    ]):
                         if attempt < max_retries - 1:
                             # Exponential backoff with jitter
                             delay = base_delay * (2 ** attempt) + random.uniform(0, 0.1)
-                            logger.warning(f"Transaction conflict, retrying in {delay:.2f}s (attempt {attempt + 1}/{max_retries})")
+                            logger.warning(f"Database conflict, retrying in {delay:.2f}s (attempt {attempt + 1}/{max_retries})")
                             time.sleep(delay)
                             continue
                     raise
@@ -45,11 +56,13 @@ def retry_on_conflict(max_retries=3, base_delay=0.1):
 
 class DatabaseManager:
     """
-    Database connection manager for DuckDB with singleton pattern.
+    PostgreSQL database connection manager with connection pooling.
     
-    DuckDB is an embedded database that uses a single connection per database file.
-    For thread safety, we create separate cursors for each thread rather than 
-    connection pooling.
+    Consolidated implementation that combines the best features from multiple
+    database managers for improved maintainability and functionality.
+    
+    Uses psycopg2 connection pooling for thread-safe database access
+    with automatic connection management and retry logic.
     """
 
     _instance: Optional["DatabaseManager"] = None
@@ -69,93 +82,167 @@ class DatabaseManager:
             logger.info("Database manager already initialized, skipping")
             return
             
-        logger.info("Initializing new database manager instance")
-        self._connection: Optional[duckdb.DuckDBPyConnection] = None
-        self._connection_lock = threading.RLock()
+        logger.info("Initializing new PostgreSQL database manager instance")
+        self._pool: Optional[psycopg2.pool.ThreadedConnectionPool] = None
+        self._pool_lock = threading.RLock()
+        
+        # SQLAlchemy components
+        self.engine = None
+        self.SessionLocal = None
+        
         self._initialized = True
         
-        # Initialize the single connection
-        self._init_connection()
+        # Initialize the connection pool and SQLAlchemy
+        self._init_connection_pool()
+        self._init_sqlalchemy()
         
-        logger.info("Database manager initialized")
+        logger.info("PostgreSQL database manager initialized")
 
-    def _init_connection(self) -> None:
-        """Initialize the DuckDB connection."""
+    def _init_connection_pool(self) -> None:
+        """Initialize the PostgreSQL connection pool."""
         try:
-            logger.info("Initializing DuckDB connection")
+            logger.info("Initializing PostgreSQL connection pool")
             
-            # Hardcoded database path to bypass configuration issues
-            db_path = Path("data/raw/mlb_betting.duckdb")
-            logger.info("Database path being used", path=str(db_path))
+            # Import settings here to avoid circular imports
+            from ..core.config import get_settings
+            settings = get_settings()
             
-            # Ensure database directory exists
-            db_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Create the single connection with same config as optimized manager
-            # This ensures compatibility when both legacy and optimized modes access same DB
+            # Create connection pool
             try:
-                self._connection = duckdb.connect(
-                    database=str(db_path),
-                    config={
-                        'threads': 2,  # Same as optimized read cursors
-                        'preserve_insertion_order': False,
-                        'enable_object_cache': True  # Match optimized configuration
-                    }
+                self._pool = psycopg2.pool.ThreadedConnectionPool(
+                    minconn=settings.postgres.min_connections,
+                    maxconn=settings.postgres.max_connections,
+                    host=settings.postgres.host,
+                    port=settings.postgres.port,
+                    database=settings.postgres.database,
+                    user=settings.postgres.user,
+                    password=settings.postgres.password,
+                    cursor_factory=DictCursor,
+                    # Connection pool settings
+                    options='-c search_path=splits,main,public'
                 )
                 logger.info(
-                    "DuckDB connection established",
-                    database_path=str(db_path)
+                    "PostgreSQL connection pool established",
+                    host=settings.postgres.host,
+                    database=settings.postgres.database,
+                    min_connections=settings.postgres.min_connections,
+                    max_connections=settings.postgres.max_connections
                 )
-            except duckdb.duckdb.IOException as e:
-                if "Conflicting lock" in str(e):
-                    logger.error(
-                        "Database is locked by another process. "
-                        "Check for stuck processes and kill them if necessary.",
-                        error=str(e)
-                    )
-                    # Provide helpful information about finding the process
-                    import os
-                    current_pid = os.getpid()
-                    logger.error(
-                        "Current process PID: %d. "
-                        "Use 'ps aux | grep python | grep mlb' to find conflicting processes.",
-                        current_pid
-                    )
+            except psycopg2.OperationalError as e:
+                logger.error(
+                    "Failed to connect to PostgreSQL database. "
+                    "Check connection settings and ensure database is running.",
+                    error=str(e)
+                )
                 raise DatabaseConnectionError(
-                    f"Database is locked by another process. "
-                    f"Kill any stuck processes and try again: {e}"
+                    f"PostgreSQL connection failed. "
+                    f"Check database settings and connectivity: {e}"
                 )
                 
         except Exception as e:
-            logger.error("Failed to initialize DuckDB connection", error=str(e))
-            raise DatabaseConnectionError(f"Failed to initialize connection: {e}")
+            logger.error("Failed to initialize PostgreSQL connection pool", error=str(e))
+            raise DatabaseConnectionError(f"Failed to initialize connection pool: {e}")
+
+    def _init_sqlalchemy(self) -> None:
+        """Initialize SQLAlchemy engine and session factory."""
+        try:
+            # Import settings here to avoid circular imports
+            from ..core.config import get_settings
+            settings = get_settings()
+            
+            # Build SQLAlchemy URL
+            password_part = f":{quote_plus(settings.postgres.password)}" if settings.postgres.password else ""
+            url = f"postgresql://{settings.postgres.user}{password_part}@{settings.postgres.host}:{settings.postgres.port}/{settings.postgres.database}"
+            
+            # Create engine with connection pooling
+            self.engine = create_engine(
+                url,
+                poolclass=QueuePool,
+                pool_size=10,
+                max_overflow=20,
+                pool_timeout=30,
+                pool_recycle=3600,  # Recycle connections every hour
+                echo=False  # Set to True for SQL debugging
+            )
+            
+            # Create session factory
+            self.SessionLocal = sessionmaker(
+                autocommit=False,
+                autoflush=False,
+                bind=self.engine
+            )
+            
+            # Test connection
+            with self.engine.connect() as conn:
+                result = conn.execute(text("SELECT 1"))
+                result.fetchone()
+            
+            logger.info("SQLAlchemy engine initialized successfully")
+            
+        except Exception as e:
+            logger.error("Failed to initialize SQLAlchemy", error=str(e))
+            raise DatabaseConnectionError(f"Failed to initialize SQLAlchemy: {e}")
+
+    def _convert_parameters(self, query: str, parameters: Optional[tuple]) -> tuple[str, Optional[tuple]]:
+        """
+        Convert legacy ? parameters to psycopg2 %s format for better PostgreSQL compatibility.
+        
+        Args:
+            query: SQL query string
+            parameters: Query parameters
+            
+        Returns:
+            Tuple of (converted_query, parameters)
+        """
+        if parameters and '?' in query:
+            # Simply replace all ? with %s for psycopg2
+            pg_query = query.replace('?', '%s')
+            return pg_query, parameters
+        return query, parameters
 
     @contextmanager
     @retry_on_conflict(max_retries=3, base_delay=0.1)
-    def get_cursor(self) -> Generator[duckdb.DuckDBPyConnection, None, None]:
+    def get_cursor(self) -> Generator[psycopg2.extras.DictCursor, None, None]:
         """
         Context manager for database cursors with retry logic.
         
-        In DuckDB, cursors are created from the main connection and are the
-        recommended way to handle concurrent access from multiple threads.
+        Gets a connection from the pool and provides a cursor.
+        Automatically handles connection return to pool.
         
         Yields:
-            A database cursor
+            A PostgreSQL dictionary cursor
             
         Raises:
             DatabaseConnectionError: If unable to get cursor
         """
-        if self._connection is None:
-            raise DatabaseConnectionError("Database connection not initialized")
+        if self._pool is None:
+            raise DatabaseConnectionError("Database connection pool not initialized")
             
+        connection = None
         cursor = None
         try:
-            # Create a cursor from the main connection
-            # DuckDB cursors are lightweight and thread-safe
-            with self._connection_lock:
-                cursor = self._connection.cursor()
+            # Get connection from pool
+            with self._pool_lock:
+                connection = self._pool.getconn()
+                
+            if connection is None:
+                raise DatabaseConnectionError("Unable to get connection from pool")
+                
+            # Create cursor
+            cursor = connection.cursor(cursor_factory=DictCursor)
             yield cursor
+            
+            # Commit transaction on success
+            connection.commit()
+            
         except Exception as e:
+            # Rollback on error
+            if connection:
+                try:
+                    connection.rollback()
+                except Exception as rollback_error:
+                    logger.warning("Error rolling back transaction", error=str(rollback_error))
+                    
             logger.error("Database cursor operation failed", error=str(e))
             if isinstance(e, (DatabaseConnectionError, DatabaseError)):
                 raise
@@ -166,42 +253,105 @@ class DatabaseManager:
                     cursor.close()
                 except Exception as e:
                     logger.warning("Error closing cursor", error=str(e))
+                    
+            if connection is not None:
+                try:
+                    with self._pool_lock:
+                        self._pool.putconn(connection)
+                except Exception as e:
+                    logger.warning("Error returning connection to pool", error=str(e))
+
+    @contextmanager
+    def get_session(self) -> Generator[Session, None, None]:
+        """
+        Context manager for SQLAlchemy sessions.
+        
+        Use this for ORM operations and complex queries.
+        
+        Yields:
+            A SQLAlchemy session
+            
+        Raises:
+            DatabaseConnectionError: If unable to create session
+        """
+        if self.SessionLocal is None:
+            raise DatabaseConnectionError("SQLAlchemy session factory not initialized")
+            
+        session = self.SessionLocal()
+        try:
+            logger.debug("Created SQLAlchemy session")
+            yield session
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error("Session error, rolled back", error=str(e))
+            if isinstance(e, (DatabaseConnectionError, DatabaseError)):
+                raise
+            raise DatabaseError(f"SQLAlchemy session error: {e}")
+        finally:
+            session.close()
+            logger.debug("Closed SQLAlchemy session")
 
     @contextmanager
     @retry_on_conflict(max_retries=3, base_delay=0.1)
-    def get_connection(self) -> Generator[duckdb.DuckDBPyConnection, None, None]:
+    def get_connection(self) -> Generator[psycopg2.extensions.connection, None, None]:
         """
-        Context manager for the main database connection with retry logic.
+        Context manager for database connections with retry logic.
         
-        Use this sparingly - prefer get_cursor() for most operations.
-        This is provided for compatibility but should be used with caution
-        in multi-threaded environments.
+        Use this when you need direct connection access.
+        Prefer get_cursor() for most operations.
         
         Yields:
-            The main database connection
+            A PostgreSQL database connection
             
         Raises:
             DatabaseConnectionError: If connection not available
         """
-        if self._connection is None:
-            raise DatabaseConnectionError("Database connection not initialized")
+        if self._pool is None:
+            raise DatabaseConnectionError("Database connection pool not initialized")
             
+        connection = None
         try:
-            with self._connection_lock:
-                yield self._connection
+            # Get connection from pool
+            with self._pool_lock:
+                connection = self._pool.getconn()
+                
+            if connection is None:
+                raise DatabaseConnectionError("Unable to get connection from pool")
+                
+            yield connection
+            
+            # Commit on success
+            connection.commit()
+            
         except Exception as e:
+            # Rollback on error
+            if connection:
+                try:
+                    connection.rollback()
+                except Exception as rollback_error:
+                    logger.warning("Error rolling back connection", error=str(rollback_error))
+                    
             logger.error("Database connection operation failed", error=str(e))
             if isinstance(e, (DatabaseConnectionError, DatabaseError)):
                 raise
             raise DatabaseError(f"Database connection operation failed: {e}")
+        finally:
+            if connection is not None:
+                try:
+                    with self._pool_lock:
+                        self._pool.putconn(connection)
+                except Exception as e:
+                    logger.warning("Error returning connection to pool", error=str(e))
 
     @retry_on_conflict(max_retries=3, base_delay=0.1)
     def execute_query(
         self, 
         query: str, 
         parameters: Optional[tuple] = None,
-        fetch: bool = True
-    ) -> Optional[List[tuple]]:
+        fetch: bool = True,
+        dict_cursor: bool = True
+    ) -> Optional[List[Any]]:
         """
         Execute a query with optional parameters and retry logic.
         
@@ -209,6 +359,7 @@ class DatabaseManager:
             query: SQL query to execute
             parameters: Optional parameters for the query
             fetch: Whether to fetch results
+            dict_cursor: Whether to return dict-like results
             
         Returns:
             Query results if fetch=True, None otherwise
@@ -217,17 +368,95 @@ class DatabaseManager:
             DatabaseError: If query execution fails
         """
         try:
+            # Convert parameters for PostgreSQL compatibility
+            pg_query, pg_parameters = self._convert_parameters(query, parameters)
+            
+            # Import SQL operations logger
+            from ..core.logging import log_sql_operation
+            
+            # Log SQL execution start
+            start_operation_data = {
+                'operation_type': 'SINGLE_QUERY',
+                'query_hash': hash(pg_query),
+                'query_length': len(pg_query),
+                'parameter_count': len(pg_parameters) if pg_parameters else 0,
+                'fetch_mode': fetch,
+                'query_preview': pg_query[:100].replace('\n', ' ').replace('\t', ' '),
+                'parameters_preview': str(pg_parameters)[:200] if pg_parameters else "None",
+                'success': True  # Will be updated if error occurs
+            }
+            
             with self.get_cursor() as cursor:
-                if parameters:
-                    cursor.execute(query, parameters)
+                start_time = time.time()
+                
+                if pg_parameters:
+                    cursor.execute(pg_query, pg_parameters)
                 else:
-                    cursor.execute(query)
+                    cursor.execute(pg_query)
+                
+                execution_time = time.time() - start_time
                 
                 if fetch:
-                    return cursor.fetchall()
-                return None
+                    results = cursor.fetchall()
+                    
+                    # Log successful completion
+                    completion_data = start_operation_data.copy()
+                    completion_data.update({
+                        'execution_time_ms': round(execution_time * 1000, 2),
+                        'rows_returned': len(results) if results else 0,
+                        'rows_affected': 0,
+                        'success': True
+                    })
+                    log_sql_operation(completion_data)
+                    
+                    logger.debug("SQL_EXECUTION_COMPLETE", 
+                               operation_type="SINGLE_QUERY",
+                               query_hash=hash(pg_query),
+                               execution_time_ms=round(execution_time * 1000, 2),
+                               rows_returned=len(results) if results else 0,
+                               success=True)
+                    return results
+                else:
+                    rows_affected = cursor.rowcount
+                    
+                    # Log successful completion
+                    completion_data = start_operation_data.copy()
+                    completion_data.update({
+                        'execution_time_ms': round(execution_time * 1000, 2),
+                        'rows_returned': 0,
+                        'rows_affected': rows_affected,
+                        'success': True
+                    })
+                    log_sql_operation(completion_data)
+                    
+                    logger.debug("SQL_EXECUTION_COMPLETE", 
+                               operation_type="SINGLE_QUERY",
+                               query_hash=hash(pg_query),
+                               execution_time_ms=round(execution_time * 1000, 2),
+                               rows_affected=rows_affected,
+                               success=True)
+                    return rows_affected
+                    
         except Exception as e:
-            logger.error("Query execution failed", query=query, error=str(e))
+            # Log error
+            error_data = start_operation_data.copy()
+            error_data.update({
+                'success': False,
+                'error_type': type(e).__name__,
+                'error_message': str(e),
+                'execution_time_ms': 0,
+                'rows_returned': 0,
+                'rows_affected': 0
+            })
+            log_sql_operation(error_data)
+            
+            logger.error("SQL_EXECUTION_ERROR", 
+                        operation_type="SINGLE_QUERY",
+                        query_hash=hash(query),
+                        error_type=type(e).__name__,
+                        error_message=str(e),
+                        query_preview=query[:100].replace('\n', ' ').replace('\t', ' '),
+                        parameters_preview=str(parameters)[:200] if parameters else "None")
             raise DatabaseError(f"Query execution failed: {e}")
 
     @retry_on_conflict(max_retries=3, base_delay=0.1)
@@ -235,7 +464,7 @@ class DatabaseManager:
         self,
         query: str,
         parameters_list: List[tuple]
-    ) -> None:
+    ) -> int:
         """
         Execute a query multiple times with different parameters and retry logic.
         
@@ -243,18 +472,132 @@ class DatabaseManager:
             query: SQL query to execute
             parameters_list: List of parameter tuples
             
+        Returns:
+            Number of rows affected
+            
         Raises:
             DatabaseError: If query execution fails
         """
         try:
+            # Convert parameters for PostgreSQL compatibility
+            pg_query, _ = self._convert_parameters(query, parameters_list[0] if parameters_list else None)
+            
+            # Structured logging for batch SQL execution
+            logger.debug("SQL_EXECUTION_START", 
+                        operation_type="BATCH_QUERY",
+                        query_hash=hash(pg_query),
+                        query_length=len(pg_query),
+                        batch_size=len(parameters_list),
+                        query_preview=pg_query[:100].replace('\n', ' ').replace('\t', ' '),
+                        first_params_preview=str(parameters_list[0])[:200] if parameters_list else "None")
+            
             with self.get_cursor() as cursor:
-                cursor.executemany(query, parameters_list)
-            logger.debug("Batch query executed successfully", 
-                        batch_size=len(parameters_list))
+                start_time = time.time()
+                cursor.executemany(pg_query, parameters_list)
+                execution_time = time.time() - start_time
+                
+                rows_affected = cursor.rowcount
+                logger.debug("SQL_EXECUTION_COMPLETE", 
+                          operation_type="BATCH_QUERY",
+                          query_hash=hash(pg_query),
+                          execution_time_ms=round(execution_time * 1000, 2),
+                          batch_size=len(parameters_list),
+                          rows_affected=rows_affected,
+                          rows_per_second=round(len(parameters_list)/execution_time, 1) if execution_time > 0 else 0,
+                          success=True)
+                return rows_affected
+                
         except Exception as e:
-            logger.error("Batch query execution failed", 
-                        query=query, batch_size=len(parameters_list), error=str(e))
+            logger.error("SQL_EXECUTION_ERROR", 
+                        operation_type="BATCH_QUERY",
+                        query_hash=hash(query),
+                        error_type=type(e).__name__,
+                        error_message=str(e),
+                        batch_size=len(parameters_list),
+                        query_preview=query[:100].replace('\n', ' ').replace('\t', ' '))
             raise DatabaseError(f"Batch query execution failed: {e}")
+
+    @retry_on_conflict(max_retries=3, base_delay=0.1)
+    def execute_transaction(self, operations: List[tuple]) -> List[Any]:
+        """
+        Execute multiple operations in a single transaction.
+        
+        Args:
+            operations: List of (query, parameters) tuples
+            
+        Returns:
+            List of results for each operation
+            
+        Raises:
+            DatabaseError: If transaction fails
+        """
+        results = []
+        try:
+            # Structured logging for transaction start
+            logger.debug("SQL_EXECUTION_START", 
+                        operation_type="TRANSACTION",
+                        transaction_id=id(operations),
+                        operations_count=len(operations),
+                        first_operation_preview=operations[0][0][:100].replace('\n', ' ').replace('\t', ' ') if operations else "None")
+            
+            with self.get_connection() as conn:
+                with conn.cursor(cursor_factory=DictCursor) as cursor:
+                    transaction_start_time = time.time()
+                    
+                    for i, (query, parameters) in enumerate(operations):
+                        # Convert parameters for PostgreSQL compatibility
+                        pg_query, pg_parameters = self._convert_parameters(query, parameters)
+                        
+                        # Log each operation within the transaction
+                        logger.debug("SQL_TRANSACTION_OPERATION", 
+                                   transaction_id=id(operations),
+                                   operation_index=i,
+                                   operation_type="TRANSACTION_STEP",
+                                   query_hash=hash(pg_query),
+                                   query_preview=pg_query[:100].replace('\n', ' ').replace('\t', ' '),
+                                   parameters_preview=str(pg_parameters)[:200] if pg_parameters else "None")
+                        
+                        if pg_parameters:
+                            cursor.execute(pg_query, pg_parameters)
+                        else:
+                            cursor.execute(pg_query)
+                        
+                        # Fetch results if it's a SELECT query
+                        if query.strip().upper().startswith('SELECT'):
+                            result = cursor.fetchall()
+                            results.append(result)
+                            logger.debug("SQL_TRANSACTION_OPERATION_RESULT", 
+                                       transaction_id=id(operations),
+                                       operation_index=i,
+                                       result_type="ROWS_RETURNED",
+                                       rows_count=len(result))
+                        else:
+                            results.append(cursor.rowcount)
+                            logger.debug("SQL_TRANSACTION_OPERATION_RESULT", 
+                                       transaction_id=id(operations),
+                                       operation_index=i,
+                                       result_type="ROWS_AFFECTED",
+                                       rows_count=cursor.rowcount)
+                    
+                    transaction_time = time.time() - transaction_start_time
+                    
+                    # Commit handled by connection context manager
+                    logger.debug("SQL_EXECUTION_COMPLETE", 
+                               operation_type="TRANSACTION",
+                               transaction_id=id(operations),
+                               operations_count=len(operations),
+                               execution_time_ms=round(transaction_time * 1000, 2),
+                               success=True)
+                    return results
+                    
+        except Exception as e:
+            logger.error("SQL_EXECUTION_ERROR", 
+                        operation_type="TRANSACTION",
+                        transaction_id=id(operations),
+                        operations_count=len(operations),
+                        error_type=type(e).__name__,
+                        error_message=str(e))
+            raise DatabaseError(f"Transaction failed: {e}")
 
     @retry_on_conflict(max_retries=3, base_delay=0.1)
     def execute_script(self, script: str) -> None:
@@ -269,11 +612,48 @@ class DatabaseManager:
         """
         try:
             with self.get_cursor() as cursor:
-                cursor.executescript(script)
+                cursor.execute(script)
             logger.info("SQL script executed successfully")
         except Exception as e:
             logger.error("Script execution failed", error=str(e))
             raise DatabaseError(f"Script execution failed: {e}")
+
+    def test_connection(self) -> bool:
+        """
+        Test database connectivity.
+        
+        Returns:
+            True if connection is successful, False otherwise
+        """
+        try:
+            result = self.execute_query("SELECT 1 as test_value")
+            return result is not None and len(result) > 0
+        except Exception as e:
+            logger.error("Connection test failed", error=str(e))
+            return False
+
+    def get_pool_status(self) -> Dict[str, Any]:
+        """
+        Get connection pool status information.
+        
+        Returns:
+            Dictionary with pool status information
+        """
+        try:
+            if self._pool and hasattr(self._pool, '_pool'):
+                pool = self._pool._pool
+                used = getattr(self._pool, '_used', [])
+                return {
+                    "total_connections": len(pool) + len(used),
+                    "available_connections": len(pool),
+                    "used_connections": len(used),
+                    "min_connections": getattr(self._pool, 'minconn', 'unknown'),
+                    "max_connections": getattr(self._pool, 'maxconn', 'unknown')
+                }
+            return {"status": "pool_info_unavailable"}
+        except Exception as e:
+            logger.warning("Error getting pool status", error=str(e))
+            return {"status": "error", "error": str(e)}
 
     def table_exists(self, table_name: str, schema: Optional[str] = None) -> bool:
         """
@@ -290,13 +670,13 @@ class DatabaseManager:
             if schema:
                 query = """
                 SELECT COUNT(*) FROM information_schema.tables 
-                WHERE table_schema = ? AND table_name = ?
+                WHERE table_schema = %s AND table_name = %s
                 """
                 result = self.execute_query(query, (schema, table_name))
             else:
                 query = """
                 SELECT COUNT(*) FROM information_schema.tables 
-                WHERE table_name = ?
+                WHERE table_name = %s
                 """
                 result = self.execute_query(query, (table_name,))
             
@@ -319,22 +699,30 @@ class DatabaseManager:
         """
         try:
             if schema:
-                query = f"DESCRIBE {schema}.{table_name}"
+                query = """
+                SELECT column_name, data_type, is_nullable, column_default
+                FROM information_schema.columns 
+                WHERE table_schema = %s AND table_name = %s
+                ORDER BY ordinal_position
+                """
+                result = self.execute_query(query, (schema, table_name))
             else:
-                query = f"DESCRIBE {table_name}"
+                query = """
+                SELECT column_name, data_type, is_nullable, column_default
+                FROM information_schema.columns 
+                WHERE table_name = %s
+                ORDER BY ordinal_position
+                """
+                result = self.execute_query(query, (table_name,))
             
-            result = self.execute_query(query)
             if result:
-                # Convert to list of dicts for easier handling
                 columns = []
                 for row in result:
                     columns.append({
                         "column_name": row[0],
-                        "column_type": row[1],
-                        "null": row[2],
-                        "key": row[3] if len(row) > 3 else None,
-                        "default": row[4] if len(row) > 4 else None,
-                        "extra": row[5] if len(row) > 5 else None,
+                        "data_type": row[1],
+                        "is_nullable": row[2],
+                        "column_default": row[3]
                     })
                 return columns
             return []
@@ -348,29 +736,21 @@ class DatabaseManager:
         """
         Context manager for database transactions.
         
-        DuckDB handles transactions automatically within connections.
-        This provides a simple interface for batched operations.
+        Provides explicit transaction control with automatic
+        commit/rollback handling.
         """
         try:
-            # DuckDB auto-manages transactions within a connection
-            # We'll use the connection context to ensure consistency
-            with self.get_cursor() as cursor:
-                # Start explicit transaction
-                cursor.execute("BEGIN")
+            with self.get_connection() as connection:
+                # PostgreSQL automatically starts a transaction
                 logger.debug("Transaction started")
                 
                 try:
                     yield
-                    # Commit on success
-                    cursor.execute("COMMIT")
+                    # Commit handled automatically by connection context manager
                     logger.debug("Transaction committed")
                 except Exception:
-                    # Rollback on error
-                    try:
-                        cursor.execute("ROLLBACK")
-                        logger.debug("Transaction rolled back")
-                    except Exception as rollback_error:
-                        logger.warning("Failed to rollback transaction", error=str(rollback_error))
+                    # Rollback handled automatically by connection context manager
+                    logger.debug("Transaction rolled back")
                     raise
                     
         except Exception as e:
@@ -407,15 +787,22 @@ class DatabaseManager:
             raise DatabaseError(f"Failed to analyze database: {e}")
 
     def close(self) -> None:
-        """Close the database connection."""
-        with self._connection_lock:
-            if self._connection is not None:
+        """Close the database connection pool."""
+        with self._pool_lock:
+            if self._pool is not None:
                 try:
-                    self._connection.close()
-                    self._connection = None
-                    logger.info("Database connection closed")
+                    self._pool.closeall()
+                    self._pool = None
+                    logger.info("Database connection pool closed")
                 except Exception as e:
-                    logger.warning("Error closing database connection", error=str(e))
+                    logger.warning("Error closing database connection pool", error=str(e))
+                    
+            if hasattr(self, 'engine') and self.engine:
+                try:
+                    self.engine.dispose()
+                    logger.info("SQLAlchemy engine disposed")
+                except Exception as e:
+                    logger.warning("Error disposing SQLAlchemy engine", error=str(e))
 
     def __del__(self) -> None:
         """Cleanup on deletion."""
@@ -434,15 +821,35 @@ class DatabaseManager:
             logger.info("Database manager singleton reset")
 
 
+# Compatibility aliases for legacy code
+class PostgreSQLManager(DatabaseManager):
+    """Compatibility alias for legacy code that imports PostgreSQLManager."""
+    pass
+
+
+class PostgreSQLDatabaseManager(DatabaseManager):
+    """Compatibility alias for legacy code that imports PostgreSQLDatabaseManager."""
+    pass
+
+
 # Module-level functions for convenience
 def get_db_manager() -> DatabaseManager:
     """
     Get the singleton database manager instance.
     
     Returns:
-        The database manager instance
+        The PostgreSQL database manager instance
     """
-    return DatabaseManager()
+    try:
+        return DatabaseManager()
+    except Exception as e:
+        logger.error("Failed to initialize PostgreSQL database manager", error=str(e))
+        raise DatabaseConnectionError(f"Database initialization failed: {e}")
+
+
+def get_postgres_manager() -> DatabaseManager:
+    """Compatibility function for legacy code."""
+    return get_db_manager()
 
 
 def get_db_connection() -> Any:
@@ -459,8 +866,7 @@ def get_db_cursor() -> Any:
     """
     Get a database cursor context manager.
     
-    This is the recommended way to access the database in multi-threaded
-    environments with DuckDB.
+    This is the recommended way to access the database.
     
     Returns:
         Database cursor context manager

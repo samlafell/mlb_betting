@@ -1,308 +1,444 @@
 """
-Database Coordinator Service for Multi-Process DuckDB Access
+Database Coordinator Service - Consolidated
 
-This service provides process-level coordination to handle DuckDB's single-writer limitation.
+This service provides a unified database coordination layer that uses the consolidated
+PostgreSQL connection manager for all database operations. 
 
-MIGRATION NOTE: This coordinator now supports both the legacy file-locking approach
-and the new optimized connection pooling approach. Set use_optimized=True to use
-the new high-performance architecture.
+Consolidates functionality from both database_coordinator.py and postgres_database_coordinator.py
+as part of the Step 1.2 refactoring to eliminate redundancy.
 """
 
-import fcntl
-import os
 import time
 from contextlib import contextmanager
-from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 import structlog
 
 from ..db.connection import get_db_manager, DatabaseManager
-from ..core.exceptions import DatabaseError
+from ..core.exceptions import DatabaseError, DatabaseConnectionError
 
 logger = structlog.get_logger(__name__)
 
 
 class DatabaseCoordinator:
     """
-    Database coordinator that supports both legacy file-locking and optimized approaches.
+    Unified database coordinator using the consolidated PostgreSQL connection manager.
     
-    MIGRATION: Set use_optimized=True to enable the new high-performance architecture
-    with connection pooling, batched writes, and lock-free reads.
+    This replaces both the legacy file-locking coordinator and the separate PostgreSQL
+    coordinator with a single, simplified implementation that leverages PostgreSQL's
+    native MVCC and connection pooling capabilities.
     """
     
-    def __init__(self, lock_timeout: float = 30.0, use_optimized: bool = False):
-        self.lock_timeout = lock_timeout
-        self.use_optimized = use_optimized
-        self.lock_file_path = Path("data/raw/duckdb_coordinator.lock")
-        self.db_manager = None
-        
-        # Initialize optimized adapter if requested
-        if self.use_optimized:
-            self._init_optimized_adapter()
-        else:
-            # Ensure lock directory exists for legacy mode
-            self.lock_file_path.parent.mkdir(parents=True, exist_ok=True)
-            logger.info("DatabaseCoordinator using legacy file-locking mode")
-    
-    def _init_optimized_adapter(self):
-        """Initialize the optimized database adapter"""
-        try:
-            from .database_service_adapter import get_database_service_adapter
-            self._optimized_adapter = get_database_service_adapter()
-            logger.info("DatabaseCoordinator using optimized connection pooling mode")
-        except ImportError as e:
-            logger.error("Failed to import optimized adapter, falling back to legacy mode", error=str(e))
-            self.use_optimized = False
-            self.lock_file_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    @contextmanager
-    def _get_exclusive_lock(self, timeout: float = None):
-        """Get exclusive file lock for database access"""
-        timeout = timeout or self.lock_timeout
-        lock_file = None
-        
-        try:
-            lock_file = open(self.lock_file_path, 'w')
-            start_time = time.time()
-            
-            while time.time() - start_time < timeout:
-                try:
-                    # Try non-blocking exclusive lock
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    logger.debug("Acquired database lock")
-                    yield lock_file
-                    return
-                except IOError:
-                    # Lock held by another process, wait briefly
-                    time.sleep(0.05)
-                    continue
-            
-            raise DatabaseError(f"Failed to acquire database lock within {timeout}s")
-            
-        except Exception as e:
-            if "Failed to acquire" not in str(e):
-                logger.error("Error acquiring database lock", error=str(e))
-            raise
-        finally:
-            if lock_file:
-                try:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-                    lock_file.close()
-                    logger.debug("Released database lock")
-                except:
-                    pass
-    
-    def _get_db_manager(self) -> DatabaseManager:
-        """Get database manager, creating if needed within lock context"""
-        # Always create a fresh database manager within lock context
-        # to avoid cross-process connection issues
-        return get_db_manager()
+    def __init__(self):
+        """Initialize the database coordinator."""
+        self.db_manager = get_db_manager()
+        self._stats = {
+            'read_operations': 0,
+            'write_operations': 0,
+            'bulk_operations': 0,
+            'transaction_operations': 0,
+            'errors': 0,
+            'start_time': time.time()
+        }
+        logger.info("Database Coordinator initialized with PostgreSQL connection manager")
     
     def execute_read(
         self, 
         query: str, 
-        parameters: Optional[tuple] = None,
+        parameters: Optional[Union[tuple, dict]] = None,
         timeout: float = 30.0
-    ) -> Optional[List[tuple]]:
-        """Execute a read operation using optimized or legacy approach"""
-        if self.use_optimized:
-            # Use optimized lock-free read
-            try:
-                return self._optimized_adapter.execute_read(query, parameters, timeout)
-            except Exception as e:
-                logger.error("Optimized read failed, falling back to legacy", error=str(e))
-                # Fall through to legacy approach
+    ) -> Optional[List[Any]]:
+        """
+        Execute a read operation using the consolidated connection manager.
         
-        # Legacy file-locking approach
+        Args:
+            query: SQL query to execute
+            parameters: Query parameters (tuple or dict)
+            timeout: Query timeout in seconds (for compatibility - not enforced)
+            
+        Returns:
+            Query results as list of rows
+        """
         try:
-            # Reads can use shorter timeout since they're less critical
-            with self._get_exclusive_lock(timeout=min(timeout, 10.0)):
-                db_manager = self._get_db_manager()
-                result = db_manager.execute_query(query, parameters, fetch=True)
-                logger.debug("Read operation completed", query_length=len(query))
-                return result
-                
+            # Structured logging for coordinator read operation
+            logger.debug("COORDINATOR_OPERATION_START", 
+                        operation_type="READ",
+                        coordinator_type="DATABASE_COORDINATOR",
+                        query_hash=hash(query),
+                        timeout_seconds=timeout,
+                        parameter_count=len(parameters) if parameters else 0,
+                        query_preview=query[:100].replace('\n', ' ').replace('\t', ' '),
+                        parameters_preview=str(parameters)[:200] if parameters else "None")
+            
+            start_time = time.time()
+            result = self.db_manager.execute_query(query, parameters, fetch=True)
+            execution_time = time.time() - start_time
+            
+            self._stats['read_operations'] += 1
+            logger.debug("COORDINATOR_OPERATION_COMPLETE", 
+                        operation_type="READ",
+                        coordinator_type="DATABASE_COORDINATOR",
+                        query_hash=hash(query),
+                        execution_time_ms=round(execution_time * 1000, 2),
+                        rows_returned=len(result) if result else 0,
+                        success=True)
+            
+            return result
+            
         except Exception as e:
-            logger.error("Read operation failed", error=str(e), query=query[:100])
-            # For reads, fallback to direct connection with retry
-            return self._fallback_read(query, parameters)
+            self._stats['errors'] += 1
+            logger.error("COORDINATOR_OPERATION_ERROR", 
+                        operation_type="READ",
+                        coordinator_type="DATABASE_COORDINATOR",
+                        query_hash=hash(query),
+                        error_type=type(e).__name__,
+                        error_message=str(e),
+                        query_preview=query[:100].replace('\n', ' ').replace('\t', ' '),
+                        parameters_preview=str(parameters)[:200] if parameters else "None")
+            raise DatabaseError(f"Database read failed: {e}")
     
     def execute_write(
         self, 
         query: str, 
-        parameters: Optional[tuple] = None,
+        parameters: Optional[Union[tuple, dict]] = None,
         timeout: float = 60.0
     ) -> Any:
-        """Execute a write operation using optimized or legacy approach"""
-        if self.use_optimized:
-            # Use optimized batched write
-            try:
-                return self._optimized_adapter.execute_write(query, parameters, timeout)
-            except Exception as e:
-                logger.error("Optimized write failed, falling back to legacy", error=str(e))
-                # Fall through to legacy approach
+        """
+        Execute a write operation using the consolidated connection manager.
         
-        # Legacy file-locking approach
+        Args:
+            query: SQL query to execute
+            parameters: Query parameters (tuple or dict)
+            timeout: Query timeout in seconds (for compatibility - not enforced)
+            
+        Returns:
+            Query result (rowcount for regular writes, row data for RETURNING clauses)
+        """
         try:
-            with self._get_exclusive_lock(timeout=timeout):
-                db_manager = self._get_db_manager()
-                result = db_manager.execute_query(query, parameters, fetch=False)
-                logger.debug("Write operation completed", query_length=len(query))
-                return result
+            # Check if this is a RETURNING query (needs fetch=True to get row data)
+            has_returning = "RETURNING" in query.upper()
+            
+            # Structured logging for coordinator write operation
+            logger.debug("COORDINATOR_OPERATION_START", 
+                        operation_type="WRITE",
+                        coordinator_type="DATABASE_COORDINATOR",
+                        query_hash=hash(query),
+                        timeout_seconds=timeout,
+                        has_returning=has_returning,
+                        parameter_count=len(parameters) if parameters else 0,
+                        query_preview=query[:100].replace('\n', ' ').replace('\t', ' '),
+                        parameters_preview=str(parameters)[:200] if parameters else "None")
+            
+            start_time = time.time()
+            
+            if has_returning:
+                result = self.db_manager.execute_query(query, parameters, fetch=True)
+            else:
+                result = self.db_manager.execute_query(query, parameters, fetch=False)
                 
+            execution_time = time.time() - start_time
+            
+            self._stats['write_operations'] += 1
+            logger.debug("COORDINATOR_OPERATION_COMPLETE", 
+                        operation_type="WRITE",
+                        coordinator_type="DATABASE_COORDINATOR",
+                        query_hash=hash(query),
+                        execution_time_ms=round(execution_time * 1000, 2),
+                        has_returning=has_returning,
+                        rows_returned=len(result) if has_returning and result else None,
+                        rows_affected=result if not has_returning else None,
+                        success=True)
+            
+            return result
+            
         except Exception as e:
-            logger.error("Write operation failed", error=str(e), query=query[:100])
-            raise DatabaseError(f"Coordinated write failed: {e}")
+            self._stats['errors'] += 1
+            logger.error("COORDINATOR_OPERATION_ERROR", 
+                        operation_type="WRITE",
+                        coordinator_type="DATABASE_COORDINATOR",
+                        query_hash=hash(query),
+                        error_type=type(e).__name__,
+                        error_message=str(e),
+                        query_preview=query[:100].replace('\n', ' ').replace('\t', ' '),
+                        parameters_preview=str(parameters)[:200] if parameters else "None")
+            raise DatabaseError(f"Database write failed: {e}")
     
     def execute_bulk_insert(
         self,
         query: str,
-        parameters_list: List[tuple],
+        parameters_list: List[Union[tuple, dict]],
         timeout: float = 300.0
     ) -> str:
-        """Execute a bulk insert operation using optimized or legacy approach"""
-        if self.use_optimized:
-            # Use optimized batch insert
-            try:
-                return self._optimized_adapter.execute_bulk_insert(query, parameters_list, timeout)
-            except Exception as e:
-                logger.error("Optimized bulk insert failed, falling back to legacy", error=str(e))
-                # Fall through to legacy approach
+        """
+        Execute a bulk insert operation using the consolidated connection manager.
         
-        # Legacy file-locking approach
+        Args:
+            query: SQL insert query
+            parameters_list: List of parameter sets for bulk insert
+            timeout: Query timeout in seconds (for compatibility - not enforced)
+            
+        Returns:
+            Success message with row count
+        """
         try:
-            with self._get_exclusive_lock(timeout=timeout):
-                db_manager = self._get_db_manager()
-                db_manager.execute_many(query, parameters_list)
-                logger.info("Bulk insert completed", rows=len(parameters_list))
-                return f"Bulk insert completed: {len(parameters_list)} rows"
-                
+            start_time = time.time()
+            self.db_manager.execute_many(query, parameters_list)
+            execution_time = time.time() - start_time
+            
+            self._stats['bulk_operations'] += 1
+            logger.info("Bulk insert completed", 
+                       rows=len(parameters_list),
+                       execution_time=f"{execution_time:.3f}s",
+                       rows_per_second=f"{len(parameters_list)/execution_time:.1f}")
+            
+            return f"Bulk insert completed: {len(parameters_list)} rows in {execution_time:.3f}s"
+            
         except Exception as e:
+            self._stats['errors'] += 1
             logger.error("Bulk insert failed", error=str(e), rows=len(parameters_list))
-            raise DatabaseError(f"Coordinated bulk insert failed: {e}")
+            raise DatabaseError(f"Database bulk insert failed: {e}")
     
-    def _fallback_read(self, query: str, parameters: Optional[tuple] = None, max_retries: int = 3) -> Optional[List[tuple]]:
-        """Fallback read with exponential backoff for high availability"""
-        for attempt in range(max_retries):
-            try:
-                # Short delay with exponential backoff
-                if attempt > 0:
-                    delay = 0.1 * (2 ** attempt)
-                    time.sleep(delay)
-                
-                # Try direct database connection
-                temp_db = DatabaseManager()
-                result = temp_db.execute_query(query, parameters, fetch=True)
-                logger.warning("Fallback read succeeded", attempt=attempt + 1)
-                return result
-                
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    logger.error("All fallback read attempts failed", error=str(e))
-                    raise DatabaseError(f"Read operation failed after {max_retries} attempts: {e}")
-                continue
+    def execute_transaction(self, operations: List[Dict[str, Any]]) -> List[Any]:
+        """
+        Execute multiple operations in a single transaction using the consolidated connection manager.
         
-        return None
+        Args:
+            operations: List of operation dictionaries with 'query', 'parameters', and 'fetch'
+            
+        Returns:
+            List of results for each operation
+        """
+        try:
+            start_time = time.time()
+            
+            # Convert operations to the format expected by the consolidated manager
+            transaction_ops = []
+            for op in operations:
+                query = op['query']
+                parameters = op.get('parameters')
+                # Convert to tuple format expected by execute_transaction
+                transaction_ops.append((query, parameters))
+            
+            # Use consolidated manager's transaction support
+            results = self.db_manager.execute_transaction(transaction_ops)
+            
+            execution_time = time.time() - start_time
+            self._stats['transaction_operations'] += 1
+            logger.info("Transaction completed", 
+                       operations=len(operations),
+                       execution_time=f"{execution_time:.3f}s")
+            
+            return results
+            
+        except Exception as e:
+            self._stats['errors'] += 1
+            logger.error("Transaction failed", error=str(e), operations=len(operations))
+            raise DatabaseError(f"Database transaction failed: {e}")
     
-    def start(self):
-        """Start coordinator"""
-        if self.use_optimized:
-            # Optimized adapter starts automatically on first use
-            logger.info("Optimized database coordinator ready")
-        else:
-            logger.info("File-based database coordinator ready")
-        
-    def stop(self):
-        """Stop coordinator and cleanup"""
-        if self.use_optimized and hasattr(self, '_optimized_adapter'):
-            try:
-                self._optimized_adapter.stop()
-                logger.info("Optimized coordinator stopped")
-            except Exception as e:
-                logger.warning("Error stopping optimized adapter", error=str(e))
-        
-        if self.lock_file_path.exists():
-            try:
-                self.lock_file_path.unlink()
-                logger.info("Coordinator cleanup completed")
-            except:
-                pass
+    def test_connection(self) -> bool:
+        """Test the database connection."""
+        try:
+            result = self.execute_read("SELECT 1 as test")
+            return result is not None and len(result) > 0
+        except Exception as e:
+            logger.error("Connection test failed", error=str(e))
+            return False
     
     def is_healthy(self) -> bool:
-        """Check if coordinator is healthy"""
-        if self.use_optimized and hasattr(self, '_optimized_adapter'):
-            return self._optimized_adapter.is_healthy()
-        return True  # File-based approach is always healthy
+        """Check if the coordinator is healthy."""
+        try:
+            return self.db_manager.test_connection()
+        except Exception:
+            return False
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics."""
+        uptime = time.time() - self._stats['start_time']
+        total_ops = (self._stats['read_operations'] + 
+                    self._stats['write_operations'] + 
+                    self._stats['bulk_operations'] + 
+                    self._stats['transaction_operations'])
+        
+        # Get additional stats from the connection manager
+        pool_stats = self.db_manager.get_pool_status()
+        
+        return {
+            'mode': 'postgresql_unified',
+            'uptime_seconds': uptime,
+            'total_operations': total_ops,
+            'read_operations': self._stats['read_operations'],
+            'write_operations': self._stats['write_operations'],
+            'bulk_operations': self._stats['bulk_operations'],
+            'transaction_operations': self._stats['transaction_operations'],
+            'errors': self._stats['errors'],
+            'operations_per_second': total_ops / uptime if uptime > 0 else 0,
+            'error_rate': self._stats['errors'] / total_ops if total_ops > 0 else 0,
+            'health': 'healthy' if self.is_healthy() else 'unhealthy',
+            'connection_pool': pool_stats
+        }
     
     def get_queue_size(self) -> int:
-        """Get queue size"""
-        if self.use_optimized and hasattr(self, '_optimized_adapter'):
-            return self._optimized_adapter.get_queue_size()
-        return 0  # File-based approach has no queue
+        """Get queue size (compatibility method - always returns 0 for PostgreSQL)."""
+        return 0
     
-    def get_performance_stats(self) -> dict:
-        """Get performance statistics"""
-        if self.use_optimized and hasattr(self, '_optimized_adapter'):
-            return self._optimized_adapter.get_performance_stats()
-        return {
-            "mode": "legacy_file_locking",
-            "read_pool_size": 1,
-            "write_queue_size": 0,
-            "status": "active"
-        }
+    def start(self):
+        """Start the coordinator (compatibility method - no-op for unified coordinator)."""
+        logger.debug("Database coordinator start called (no-op for unified coordinator)")
+    
+    def stop(self):
+        """Stop the coordinator (compatibility method - no-op for unified coordinator)."""
+        logger.debug("Database coordinator stop called (no-op for unified coordinator)")
+    
+    def close(self):
+        """Close the coordinator and all connections."""
+        try:
+            if hasattr(self.db_manager, 'close'):
+                self.db_manager.close()
+            logger.info("Database Coordinator closed")
+        except Exception as e:
+            logger.error("Error closing coordinator", error=str(e))
 
 
 # Global coordinator instance
-_coordinator: Optional[DatabaseCoordinator] = None
+_coordinator_instance: Optional[DatabaseCoordinator] = None
 
 
 def get_database_coordinator() -> DatabaseCoordinator:
-    """Get the global database coordinator instance"""
-    global _coordinator
+    """
+    Get the global database coordinator instance.
     
-    if _coordinator is None:
-        _coordinator = DatabaseCoordinator()
-        logger.info("File-based database coordinator initialized")
+    Returns:
+        DatabaseCoordinator instance using the consolidated connection manager
+    """
+    global _coordinator_instance
     
-    return _coordinator
+    if _coordinator_instance is None:
+        _coordinator_instance = DatabaseCoordinator()
+        logger.info("Created new unified database coordinator instance")
+    
+    return _coordinator_instance
+
+
+# Backward compatibility aliases
+def get_postgres_database_coordinator() -> DatabaseCoordinator:
+    """
+    Backward compatibility alias for PostgreSQL coordinator.
+    Now returns the unified coordinator.
+    """
+    logger.debug("Using backward compatibility alias - returning unified coordinator")
+    return get_database_coordinator()
 
 
 def shutdown_coordinator():
-    """Shutdown the global coordinator"""
-    global _coordinator
+    """Shutdown the global coordinator instance."""
+    global _coordinator_instance
     
-    if _coordinator:
-        _coordinator.stop()
-        _coordinator = None
+    if _coordinator_instance:
+        _coordinator_instance.close()
+        _coordinator_instance = None
+        logger.info("Database coordinator shutdown")
 
 
-# Context manager for easy use
+# Alias for backward compatibility
+shutdown_postgres_coordinator = shutdown_coordinator
+
+
 @contextmanager
 def coordinated_database_access():
-    """Context manager for coordinated database access"""
+    """
+    Context manager for database access with automatic cleanup.
+    
+    Usage:
+        with coordinated_database_access() as coordinator:
+            result = coordinator.execute_read("SELECT * FROM games")
+    """
     coordinator = get_database_coordinator()
-    yield coordinator
+    try:
+        yield coordinator
+    except Exception as e:
+        logger.error("Database access context error", error=str(e))
+        raise
 
 
-# Convenience functions that match existing DatabaseManager interface
+# Backward compatibility alias
+postgres_database_access = coordinated_database_access
+
+
+# Convenience functions for direct usage
 def execute_coordinated_query(
     query: str, 
-    parameters: Optional[tuple] = None,
+    parameters: Optional[Union[tuple, dict]] = None,
     fetch: bool = True
-) -> Optional[List[tuple]]:
-    """Execute query through coordinator"""
+) -> Optional[List[Any]]:
+    """
+    Execute a query using the unified coordinator.
+    
+    Args:
+        query: SQL query to execute
+        parameters: Query parameters
+        fetch: Whether to fetch results (True for SELECT, False for INSERT/UPDATE/DELETE)
+        
+    Returns:
+        Query results if fetch=True, None otherwise
+    """
     coordinator = get_database_coordinator()
     
     if fetch:
         return coordinator.execute_read(query, parameters)
     else:
-        return coordinator.execute_write(query, parameters)
+        coordinator.execute_write(query, parameters)
+        return None
 
 
 def execute_coordinated_many(
     query: str,
-    parameters_list: List[tuple]
+    parameters_list: List[Union[tuple, dict]]
 ) -> str:
-    """Execute bulk insert through coordinator"""
+    """
+    Execute a bulk operation using the unified coordinator.
+    
+    Args:
+        query: SQL query to execute
+        parameters_list: List of parameter sets for bulk operation
+        
+    Returns:
+        Success message with row count
+    """
     coordinator = get_database_coordinator()
-    return coordinator.execute_bulk_insert(query, parameters_list) 
+    return coordinator.execute_bulk_insert(query, parameters_list)
+
+
+# Backward compatibility aliases
+execute_postgres_query = execute_coordinated_query
+execute_postgres_many = execute_coordinated_many
+
+
+# Legacy compatibility wrapper for the old PostgreSQL wrapper
+class PostgreSQLCompatibilityWrapper:
+    """Compatibility wrapper for existing code that used the separate PostgreSQL coordinator."""
+    
+    def __init__(self, coordinator=None):
+        self.coordinator = coordinator or get_database_coordinator()
+
+    def execute_read(self, query: str, parameters=None, timeout: float = 30.0):
+        return self.coordinator.execute_read(query, parameters, timeout)
+
+    def execute_write(self, query: str, parameters=None, timeout: float = 60.0):
+        return self.coordinator.execute_write(query, parameters, timeout)
+
+    def execute_bulk_insert(self, query: str, parameters_list, timeout: float = 300.0):
+        return self.coordinator.execute_bulk_insert(query, parameters_list, timeout)
+
+    def is_healthy(self):
+        return self.coordinator.is_healthy()
+
+    def get_performance_stats(self):
+        return self.coordinator.get_performance_stats()
+
+    def start(self):
+        return self.coordinator.start()
+
+    def stop(self):
+        return self.coordinator.stop()
+
+    def get_queue_size(self):
+        return self.coordinator.get_queue_size() 

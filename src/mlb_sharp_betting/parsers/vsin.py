@@ -60,8 +60,8 @@ class VSINParser(BaseParser):
             'under_bets_pct': ['under bets %', 'Under Bets %'],
             
             # Spread bet percentage fields
-            'spread_home_bets_pct': ['home spread bets %', 'spread bets %'],
-            'spread_away_bets_pct': ['away spread bets %', 'spread bets away %'],
+            'spread_home_bets_pct': ['home spread bets %', 'Home Spread Bets %', 'spread bets %'],
+            'spread_away_bets_pct': ['away spread bets %', 'Away Spread Bets %', 'spread bets away %'],
             
             # Stake/Handle percentage fields - EXACT match from scraper output
             'home_stake_pct': ['home handle %', 'Home Handle %'],
@@ -70,8 +70,8 @@ class VSINParser(BaseParser):
             'under_stake_pct': ['under handle %', 'Under Handle %'],
             
             # Spread handle fields - EXACT match from scraper output
-            'spread_home_stake_pct': ['home spread handle %', 'spread handle %'],
-            'spread_away_stake_pct': ['away spread handle %', 'spread handle away %'],
+            'spread_home_stake_pct': ['home spread handle %', 'Home Spread Handle %', 'spread handle %'],
+            'spread_away_stake_pct': ['away spread handle %', 'Away Spread Handle %', 'spread handle away %'],
             
             # Count fields (not in current scraper output but keep for future)
             'home_bets_count': ['home bets', 'home count'],
@@ -858,6 +858,15 @@ class VSINParser(BaseParser):
         Returns:
             Field value or None if not found
         """
+        # First try exact matches (case-insensitive)
+        for alias in field_aliases:
+            for field_key in raw_data:
+                if alias.lower() == field_key.lower():
+                    value = raw_data[field_key]
+                    if value is not None and str(value).strip():
+                        return str(value).strip()
+        
+        # If no exact match, try substring matches
         for field_key in raw_data:
             for alias in field_aliases:
                 if alias.lower() in field_key.lower():

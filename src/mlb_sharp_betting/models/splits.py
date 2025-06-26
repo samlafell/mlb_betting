@@ -186,6 +186,41 @@ class BettingSplit(IdentifiedModel, ValidatedModel):
         pattern="^(win|loss|push)$"
     )
     
+    # Analysis and strategy fields (added during migration)
+    hybrid_strategy: Optional[bool] = Field(
+        default=None,
+        description="Whether this record is part of a hybrid strategy analysis"
+    )
+    
+    multi_consensus_bets: Optional[int] = Field(
+        default=None,
+        description="Count of consensus bets for this game/split",
+        ge=0
+    )
+    
+    winning_team: Optional[str] = Field(
+        default=None,
+        description="Team that won the game (redundant with game outcome)",
+        max_length=10
+    )
+    
+    correct_movements: Optional[int] = Field(
+        default=None,
+        description="Number of correct line movements tracked",
+        ge=0
+    )
+    
+    line_movement: Optional[float] = Field(
+        default=None,
+        description="Magnitude or direction of line movement"
+    )
+    
+    strategy_variant: Optional[str] = Field(
+        default=None,
+        description="Variant of the strategy used for this analysis",
+        max_length=50
+    )
+    
     @validator("home_or_over_bets_percentage", "away_or_under_bets_percentage")
     def validate_bet_percentages(cls, v: Optional[float], values: Dict[str, Any]) -> Optional[float]:
         """
@@ -399,7 +434,7 @@ class BettingSplit(IdentifiedModel, ValidatedModel):
     
     class Config:
         # Allow population by field name to handle created_at from parent
-        populate_by_name = True
+        validate_by_name = True
         
         json_schema_extra = {
             "example": {

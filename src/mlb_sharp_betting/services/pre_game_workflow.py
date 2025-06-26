@@ -595,8 +595,8 @@ class PreGameWorkflowService:
         self.logger.info("Executing Stage 2: Betting Analysis")
         
         try:
-            # Build command for master betting detector
-            detector_path = self.project_root / "analysis_scripts" / "master_betting_detector.py"
+            # Build command for refactored master betting detector
+            detector_path = self.project_root / "analysis_scripts" / "refactored_master_betting_detector.py"
             cmd = ["uv", "run", str(detector_path), "--minutes", "15"]
             
             # Execute with timeout
@@ -949,6 +949,15 @@ General Balls"""
                 self.logger.info("Logged betting recommendations for tracking",
                                game=f"{game.away_team} @ {game.home_team}",
                                recommendations_count=len(recommendations))
+                
+                # Update metrics
+                if not hasattr(self, 'recommendation_metrics'):
+                    self.recommendation_metrics = {'recommendations_logged': 0, 'games_with_recommendations': 0}
+                self.recommendation_metrics['recommendations_logged'] += len(recommendations)
+                self.recommendation_metrics['games_with_recommendations'] += 1
+            else:
+                self.logger.info("No betting recommendations found to log",
+                               game=f"{game.away_team} @ {game.home_team}")
             
         except Exception as e:
             self.logger.warning("Failed to log betting recommendations", 
@@ -1129,11 +1138,17 @@ General Balls"""
     
     def get_metrics(self) -> Dict[str, Any]:
         """Get workflow service metrics."""
-        return {
+        metrics = {
             **self.metrics,
             "active_workflows": len(self.active_workflows),
             "workflow_history_count": len(self.workflow_history),
             "email_configured": self.email_config.is_configured(),
             "workflow_queue_available": self._workflow_semaphore._value > 0,  # True if queue available
             "workflow_queue_capacity": 1  # Always 1 for our semaphore
-        } 
+        }
+        
+        # Add recommendation logging metrics if available
+        if hasattr(self, 'recommendation_metrics'):
+            metrics.update(self.recommendation_metrics)
+            
+        return metrics 

@@ -7,6 +7,8 @@ and comprehensive logging throughout the application.
 
 import logging
 import sys
+import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -14,6 +16,115 @@ import structlog
 from structlog.types import FilteringBoundLogger
 
 from mlb_sharp_betting.core.exceptions import ConfigurationError
+
+
+def setup_sql_operations_logger(log_file: Optional[Path] = None) -> logging.Logger:
+    """
+    Set up a dedicated SQL operations logger that writes to a file with 
+    structured format for future PostgreSQL table conversion.
+    
+    Args:
+        log_file: Path for SQL operations log file
+        
+    Returns:
+        Configured SQL operations logger
+    """
+    if log_file is None:
+        log_file = Path("logs/sql_operations.log")
+    
+    # Ensure log directory exists
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Create dedicated SQL logger
+    sql_logger = logging.getLogger("sql_operations")
+    sql_logger.setLevel(logging.DEBUG)
+    
+    # Remove any existing handlers to avoid duplicates
+    sql_logger.handlers.clear()
+    
+    # Create file handler with custom formatter
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.DEBUG)
+    
+    # Custom formatter for SQL operations - pipe-delimited for easy PostgreSQL import
+    class SQLOperationFormatter(logging.Formatter):
+        def format(self, record):
+            # Extract structured data from the log record
+            timestamp = datetime.now().isoformat()
+            level = record.levelname
+            logger_name = record.name
+            
+            # Get extra fields from structlog
+            extra_data = getattr(record, '_record', {})
+            
+            # Core fields for PostgreSQL table
+            operation_type = extra_data.get('operation_type', 'UNKNOWN')
+            query_hash = extra_data.get('query_hash', 0)
+            execution_time_ms = extra_data.get('execution_time_ms', 0)
+            success = extra_data.get('success', False)
+            error_type = extra_data.get('error_type', '')
+            error_message = extra_data.get('error_message', '')
+            rows_affected = extra_data.get('rows_affected', 0)
+            rows_returned = extra_data.get('rows_returned', 0)
+            query_preview = extra_data.get('query_preview', '')
+            parameters_preview = extra_data.get('parameters_preview', '')
+            
+            # Additional context fields
+            coordinator_type = extra_data.get('coordinator_type', '')
+            transaction_id = extra_data.get('transaction_id', '')
+            batch_size = extra_data.get('batch_size', 0)
+            has_returning = extra_data.get('has_returning', False)
+            
+            # Create pipe-delimited record for easy PostgreSQL COPY import
+            # Format: timestamp|level|operation_type|query_hash|execution_time_ms|success|error_type|error_message|rows_affected|rows_returned|query_preview|parameters_preview|coordinator_type|transaction_id|batch_size|has_returning
+            fields = [
+                timestamp,
+                level,
+                operation_type,
+                str(query_hash),
+                str(execution_time_ms),
+                str(success),
+                error_type.replace('|', '_'),  # Escape delimiter
+                error_message.replace('|', '_').replace('\n', ' '),  # Escape delimiter and newlines
+                str(rows_affected),
+                str(rows_returned),
+                query_preview.replace('|', '_'),  # Escape delimiter
+                parameters_preview.replace('|', '_'),  # Escape delimiter
+                coordinator_type,
+                str(transaction_id),
+                str(batch_size),
+                str(has_returning)
+            ]
+            
+            return '|'.join(fields)
+    
+    file_handler.setFormatter(SQLOperationFormatter())
+    sql_logger.addHandler(file_handler)
+    
+    # Prevent propagation to root logger to avoid duplicate console output
+    sql_logger.propagate = False
+    
+    return sql_logger
+
+
+def log_sql_operation(operation_data: Dict[str, Any]) -> None:
+    """
+    Log a SQL operation to the dedicated SQL operations log file.
+    
+    Args:
+        operation_data: Dictionary containing SQL operation details
+    """
+    sql_logger = logging.getLogger("sql_operations")
+    
+    # Create a log record with the operation data
+    if operation_data.get('success', True):
+        sql_logger.debug("SQL operation", extra={'_record': operation_data})
+    else:
+        sql_logger.error("SQL operation failed", extra={'_record': operation_data})
+
+
+# Initialize SQL operations logger on module import
+_sql_logger = setup_sql_operations_logger()
 
 
 def setup_logging(

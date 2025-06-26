@@ -12,22 +12,12 @@ Use Ruff to format Python code
 
 [stack]
 Python
-DuckDB - not SQLite
+Postgres 17
 MLB-StatsAPI is available at [mlb_stats_api_endpoints.mdc](mdc:.cursor/rules/mlb_stats_api_endpoints.mdc) if we need official MLB data for games
 
-[duckdb]
-Concurrency issues are common - Singleton method with a DB Coordinator is the way we handle this.
-
-Use the database coordinator anywhere we need database access:
-
-```python
-from mlb_sharp_betting.services.database_coordinator import get_database_coordinator
-
-coordinator = get_database_coordinator()
-result = coordinator.execute_read(query, parameters)
-```
-
-When you want to filter a column to a value and that value is a VARCHAR, you must use single quotes (col = 'me') and not double quotes (col = "me") because this method of filtering will cause an error.
+[database]
+I went through a Duckdb to Postgres 17 migration. Keep that in mind and remove anything Duckdb related if you find it.
+And make sure that any sql you evaluate works with postgres. You have access to Context7 and indexed Postgres 17 documentation.
 
 
 [logistics]

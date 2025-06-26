@@ -53,8 +53,10 @@ WITH enhanced_latest_splits AS (
             ELSE 'VERY_EARLY_CONFLICT'
         END as conflict_timing,
         
-        -- Line movement tracking
-        LAG(TRY_CAST(split_value AS DOUBLE)) OVER (
+        -- Line movement tracking with safe casting
+        LAG(CASE WHEN split_value ~ '^-?[0-9]+\.?[0-9]*$' 
+                 THEN split_value::DOUBLE PRECISION 
+                 ELSE NULL END) OVER (
             PARTITION BY home_team, away_team, game_datetime, split_type, source, COALESCE(book, 'UNKNOWN')
             ORDER BY last_updated
         ) as prev_line,
@@ -63,7 +65,7 @@ WITH enhanced_latest_splits AS (
             PARTITION BY home_team, away_team, game_datetime, split_type, source, COALESCE(book, 'UNKNOWN')
             ORDER BY last_updated DESC
         ) as rn
-    FROM mlb_betting.splits.raw_mlb_betting_splits
+    FROM splits.raw_mlb_betting_splits
     WHERE home_or_over_stake_percentage IS NOT NULL 
       AND home_or_over_bets_percentage IS NOT NULL
       AND game_datetime IS NOT NULL
@@ -75,10 +77,10 @@ enhanced_book_signals AS (
         home_team, away_team, game_datetime, split_type,
         source, book, money_pct, bet_pct, total_volume, book_credibility, volume_tier, conflict_timing,
         
-        -- Calculate line movement
+        -- Calculate line movement with safe casting
         CASE 
-            WHEN prev_line IS NOT NULL AND TRY_CAST(split_value AS DOUBLE) IS NOT NULL THEN
-                TRY_CAST(split_value AS DOUBLE) - prev_line
+            WHEN prev_line IS NOT NULL AND split_value ~ '^-?[0-9]+\.?[0-9]*$' THEN
+                split_value::DOUBLE PRECISION - prev_line
             ELSE 0.0
         END as line_movement,
         
@@ -334,7 +336,7 @@ conflicts_with_outcomes AS (
         END as contrarian_successful
         
     FROM conflicts_with_enhanced_actions cwea
-    LEFT JOIN mlb_betting.main.game_outcomes go ON cwea.home_team = go.home_team 
+    LEFT JOIN public.game_outcomes go ON cwea.home_team = go.home_team 
         AND cwea.away_team = go.away_team 
         AND DATE(cwea.game_datetime) = DATE(go.game_date)
     WHERE go.game_date IS NOT NULL  -- Only include games with outcomes
@@ -345,127 +347,25 @@ conflicts_with_outcomes AS (
       -- REMOVED: overly restrictive opportunity grade filter
 )
 
--- Enhanced final analysis with detailed performance metrics
+-- Enhanced final analysis with detailed performance metrics formatted for backtesting service
 SELECT 
-    'ENHANCED_BOOK_CONFLICTS' as strategy_name,
+    'enhanced-book-conflicts' as source_book_type,
     split_type,
     enhanced_conflict_type as strategy_variant,
-    enhanced_recommended_action as action_type,
-    COALESCE(opportunity_grade, 'UNKNOWN') as opportunity_grade,
-    COALESCE(primary_conflict_timing, 'UNKNOWN') as timing,
-    'enhanced-book-conflicts' as source_book_type,
     
     COUNT(*) as total_bets,
     COALESCE(SUM(enhanced_action_successful), 0) as wins,
     ROUND(COALESCE(AVG(enhanced_action_successful), 0) * 100, 1) as win_rate,
     
-    -- Enhanced ROI calculation based on opportunity grade with NULL protection
+    -- Simplified ROI calculation using -110 odds (book conflicts don't have specific odds data)
     ROUND(CASE 
-        WHEN COALESCE(opportunity_grade, 'GOOD') = 'PREMIUM_OPPORTUNITY' AND COUNT(*) > 0 THEN
-            -- Premium opportunities likely get better lines
-            ((COALESCE(SUM(enhanced_action_successful), 0) * 105.0) - ((COUNT(*) - COALESCE(SUM(enhanced_action_successful), 0)) * 105.0)) / (COUNT(*) * 105.0) * 100
-        WHEN COALESCE(opportunity_grade, 'GOOD') = 'EXCELLENT_OPPORTUNITY' AND COUNT(*) > 0 THEN
-            -- Excellent opportunities get standard lines
-            ((COALESCE(SUM(enhanced_action_successful), 0) * 100.0) - ((COUNT(*) - COALESCE(SUM(enhanced_action_successful), 0)) * 110.0)) / (COUNT(*) * 110.0) * 100
         WHEN COUNT(*) > 0 THEN
-            -- Good opportunities may get slightly worse lines
-            ((COALESCE(SUM(enhanced_action_successful), 0) * 95.0) - ((COUNT(*) - COALESCE(SUM(enhanced_action_successful), 0)) * 110.0)) / (COUNT(*) * 110.0) * 100
+            ((COALESCE(SUM(enhanced_action_successful), 0) * 100.0) - ((COUNT(*) - COALESCE(SUM(enhanced_action_successful), 0)) * 110.0)) / (COUNT(*) * 110.0) * 100
         ELSE 0
-    END, 1) as enhanced_roi,
-    
-    -- Compare to contrarian approach
-    COALESCE(SUM(contrarian_successful), 0) as contrarian_wins,
-    ROUND(COALESCE(AVG(contrarian_successful), 0) * 100, 1) as contrarian_win_rate_pct,
-    ROUND(CASE 
-        WHEN COUNT(*) > 0 THEN ((COALESCE(SUM(contrarian_successful), 0) * 100.0) - ((COUNT(*) - COALESCE(SUM(contrarian_successful), 0)) * 110.0)) / (COUNT(*) * 110.0) * 100
-        ELSE 0
-    END, 1) as contrarian_roi,
-    
-    -- Enhanced conflict quality metrics with NULL protection
-    ROUND(COALESCE(AVG(num_books), 0), 1) as avg_books_per_conflict,
-    ROUND(COALESCE(AVG(unique_enhanced_signals), 0), 1) as avg_unique_signals,
-    ROUND(COALESCE(AVG(weighted_sharp_variance), 0), 1) as avg_weighted_variance,
-    ROUND(COALESCE(AVG(conflict_strength_score), 0), 1) as avg_strength_score,
-    ROUND(COALESCE(AVG(avg_credibility), 1.0), 2) as avg_book_credibility,
-    ROUND(COALESCE(AVG(min_volume), 0), 0) as avg_min_volume,
-    ROUND(COALESCE(AVG(validated_signals), 0), 1) as avg_validated_signals,
-    
-    -- Performance edge calculation
-    ROUND(COALESCE(AVG(enhanced_action_successful), 0) - COALESCE(AVG(contrarian_successful), 0), 3) as strategy_edge,
-    
-    -- Coverage and quality metrics
-    COUNT(DISTINCT home_team || '-' || away_team || '-' || DATE(game_datetime)) as unique_games,
-    COALESCE((SELECT book_coverage_quality 
-             FROM conflicts_with_outcomes cwo2 
-             WHERE cwo2.enhanced_conflict_type = cwo.enhanced_conflict_type 
-               AND cwo2.enhanced_recommended_action = cwo.enhanced_recommended_action
-               AND cwo2.opportunity_grade = cwo.opportunity_grade
-             GROUP BY book_coverage_quality 
-             ORDER BY COUNT(*) DESC 
-             LIMIT 1), 'MIXED') as typical_coverage,
-    
-    -- Confidence level based on multiple factors
-    CASE 
-        WHEN COUNT(*) >= 20 AND COALESCE(AVG(conflict_strength_score), 0) >= 60 AND COALESCE(AVG(validated_signals), 0) >= 1.0 THEN 'VERY_HIGH'
-        WHEN COUNT(*) >= 10 AND COALESCE(AVG(conflict_strength_score), 0) >= 45 AND COALESCE(AVG(validated_signals), 0) >= 0.5 THEN 'HIGH'
-        WHEN COUNT(*) >= 5 AND COALESCE(AVG(conflict_strength_score), 0) >= 30 THEN 'MEDIUM'
-        WHEN COUNT(*) >= 3 THEN 'LOW'
-        ELSE 'VERY_LOW'
-    END as confidence_level
+    END, 1) as roi_per_100_unit
 
 FROM conflicts_with_outcomes cwo
 WHERE enhanced_action_successful IS NOT NULL
-GROUP BY split_type, enhanced_conflict_type, enhanced_recommended_action, opportunity_grade, primary_conflict_timing
-HAVING COUNT(*) >= 1  -- Very low minimum for initial testing
-
-UNION ALL
-
--- Enhanced summary across all conflict types and grades
-SELECT 
-    'ENHANCED_BOOK_CONFLICTS_SUMMARY' as strategy_name,
-    'ALL' as split_type,
-    'ALL_ENHANCED_CONFLICTS' as strategy_variant,
-    'ALL_ENHANCED_ACTIONS' as action_type,
-    'ALL_GRADES' as opportunity_grade,
-    'ALL_TIMING' as timing,
-    'enhanced-book-conflicts-summary' as source_book_type,
-    
-    COUNT(*) as total_bets,
-    COALESCE(SUM(enhanced_action_successful), 0) as wins,
-    ROUND(COALESCE(AVG(enhanced_action_successful), 0) * 100, 1) as win_rate,
-    ROUND(CASE 
-        WHEN COUNT(*) > 0 THEN ((COALESCE(SUM(enhanced_action_successful), 0) * 100.0) - ((COUNT(*) - COALESCE(SUM(enhanced_action_successful), 0)) * 110.0)) / (COUNT(*) * 110.0) * 100
-        ELSE 0
-    END, 1) as enhanced_roi,
-    
-    COALESCE(SUM(contrarian_successful), 0) as contrarian_wins,
-    ROUND(COALESCE(AVG(contrarian_successful), 0) * 100, 1) as contrarian_win_rate_pct,
-    ROUND(CASE 
-        WHEN COUNT(*) > 0 THEN ((COALESCE(SUM(contrarian_successful), 0) * 100.0) - ((COUNT(*) - COALESCE(SUM(contrarian_successful), 0)) * 110.0)) / (COUNT(*) * 110.0) * 100
-        ELSE 0
-    END, 1) as contrarian_roi,
-    
-    ROUND(COALESCE(AVG(num_books), 0), 1) as avg_books_per_conflict,
-    ROUND(COALESCE(AVG(unique_enhanced_signals), 0), 1) as avg_unique_signals,
-    ROUND(COALESCE(AVG(weighted_sharp_variance), 0), 1) as avg_weighted_variance,
-    ROUND(COALESCE(AVG(conflict_strength_score), 0), 1) as avg_strength_score,
-    ROUND(COALESCE(AVG(avg_credibility), 1.0), 2) as avg_book_credibility,
-    ROUND(COALESCE(AVG(min_volume), 0), 0) as avg_min_volume,
-    ROUND(COALESCE(AVG(validated_signals), 0), 1) as avg_validated_signals,
-    
-    ROUND(COALESCE(AVG(enhanced_action_successful), 0) - COALESCE(AVG(contrarian_successful), 0), 3) as strategy_edge,
-    
-    COUNT(DISTINCT home_team || '-' || away_team || '-' || DATE(game_datetime)) as unique_games,
-    'MIXED' as typical_coverage,
-    
-    CASE 
-        WHEN COUNT(*) >= 30 AND COALESCE(AVG(conflict_strength_score), 0) >= 50 THEN 'VERY_HIGH'
-        WHEN COUNT(*) >= 15 AND COALESCE(AVG(conflict_strength_score), 0) >= 35 THEN 'HIGH'
-        WHEN COUNT(*) >= 5 THEN 'MEDIUM'
-        ELSE 'LOW'
-    END as confidence_level
-
-FROM conflicts_with_outcomes
-WHERE enhanced_action_successful IS NOT NULL
-
-ORDER BY enhanced_roi DESC, total_bets DESC; 
+GROUP BY split_type, enhanced_conflict_type
+HAVING COUNT(*) >= 3  -- Minimum sample size
+ORDER BY roi_per_100_unit DESC, total_bets DESC; 

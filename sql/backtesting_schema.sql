@@ -17,21 +17,21 @@ CREATE TABLE IF NOT EXISTS backtesting.strategy_performance (
     -- Performance Metrics
     total_bets INTEGER NOT NULL,
     wins INTEGER NOT NULL,
-    win_rate DOUBLE NOT NULL,
-    roi_per_100 DOUBLE NOT NULL,
+    win_rate DOUBLE PRECISION NOT NULL,
+    roi_per_100 DOUBLE PRECISION NOT NULL,
     
     -- Statistical Metrics
-    sharpe_ratio DOUBLE,
-    max_drawdown DOUBLE,
-    confidence_interval_lower DOUBLE,
-    confidence_interval_upper DOUBLE,
+    sharpe_ratio DOUBLE PRECISION,
+    max_drawdown DOUBLE PRECISION,
+    confidence_interval_lower DOUBLE PRECISION,
+    confidence_interval_upper DOUBLE PRECISION,
     sample_size_adequate BOOLEAN,
     statistical_significance BOOLEAN,
-    p_value DOUBLE,
+    p_value DOUBLE PRECISION,
     
     -- Trend Analysis
-    seven_day_win_rate DOUBLE,
-    thirty_day_win_rate DOUBLE,
+    seven_day_win_rate DOUBLE PRECISION,
+    thirty_day_win_rate DOUBLE PRECISION,
     trend_direction VARCHAR, -- 'improving', 'declining', 'stable'
     
     -- Risk Metrics
@@ -373,8 +373,8 @@ CREATE INDEX IF NOT EXISTS idx_run_history_date_type
 CREATE INDEX IF NOT EXISTS idx_threshold_history_strategy_date 
     ON backtesting.threshold_history(strategy_name, change_date);
 
--- Trigger to update updated_at timestamps (if supported by DuckDB)
--- Note: DuckDB may not support triggers, so this is optional
+-- Trigger to update updated_at timestamps (PostgreSQL supported)
+-- Note: PostgreSQL supports triggers, so this is optional
 /*
 CREATE OR REPLACE TRIGGER update_strategy_performance_timestamp
     BEFORE UPDATE ON backtesting.strategy_performance

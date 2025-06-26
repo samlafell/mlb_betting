@@ -215,7 +215,7 @@ class ConfidenceScorer:
             SELECT 
                 AVG(win_rate) as avg_win_rate,
                 SUM(total_bets) as total_bets,
-                SUM(wins) as total_wins
+                AVG(roi_per_100) as avg_database_roi
             FROM backtesting.strategy_performance
             WHERE source_book_type LIKE ? 
               AND (split_type = ? OR split_type = 'opposing_markets')
@@ -223,19 +223,13 @@ class ConfidenceScorer:
             """
             
             results = self.coordinator.execute_read(query, (f"%{pattern}%", split_type))
-            if results and results[0][0] is not None:
-                win_rate, total_bets, total_wins = results[0]
+            if results and results[0]['avg_win_rate'] is not None:
+                win_rate = float(results[0]['avg_win_rate'])
+                total_bets = results[0]['total_bets']
+                avg_database_roi = results[0]['avg_database_roi']
                 
-                # Calculate CORRECTED ROI using proper formula
-                if total_bets and total_wins is not None:
-                    total_losses = total_bets - total_wins
-                    win_profit = total_wins * 100  # Win $100 for each win
-                    loss_cost = total_losses * 110  # Lose $110 for each loss (standard -110 juice)
-                    net_profit = win_profit - loss_cost
-                    total_risked = total_bets * 110
-                    roi = (net_profit / total_risked) * 100 if total_risked > 0 else 0
-                else:
-                    roi = 0
+                # Use the more conservative database ROI directly instead of recalculating
+                roi = float(avg_database_roi) if avg_database_roi is not None else 0
                 
                 # Convert to percentage if needed
                 if win_rate <= 1.0:
@@ -285,10 +279,10 @@ class ConfidenceScorer:
             SELECT 
                 win_rate * 100 as win_rate_pct,
                 total_bets,
-                wins
+                roi_per_100 as database_roi
             FROM backtesting.strategy_performance
-            WHERE strategy_name LIKE ?
-              AND (split_type = ? OR split_type = 'opposing_markets')
+            WHERE strategy_name LIKE %s
+              AND (split_type = %s OR split_type = 'opposing_markets')
               AND total_bets >= 5
             ORDER BY total_bets DESC
             LIMIT 1
@@ -296,18 +290,17 @@ class ConfidenceScorer:
             
             results = self.coordinator.execute_read(query, (f"%{pattern}%", split_type))
             if results:
-                win_rate, total_bets, wins = results[0]
+                win_rate = float(results[0]['win_rate_pct'])
+                total_bets = results[0]['total_bets']
+                database_roi = results[0]['database_roi']
                 
-                # Calculate CORRECTED ROI using proper formula
-                if total_bets and wins is not None:
-                    total_losses = total_bets - wins
-                    win_profit = wins * 100  # Win $100 for each win
-                    loss_cost = total_losses * 110  # Lose $110 for each loss (standard -110 juice)
-                    net_profit = win_profit - loss_cost
-                    total_risked = total_bets * 110
-                    roi = (net_profit / total_risked) * 100 if total_risked > 0 else 0
-                else:
-                    roi = 0
+                # Use the more conservative database ROI directly instead of recalculating
+                roi = float(database_roi) if database_roi is not None else 0
+                
+                # Convert decimal values to float for arithmetic
+                roi = float(roi)
+                win_rate = float(win_rate)
+                total_bets = int(total_bets)
                 
                 # Score based on ROI and win rate
                 if roi >= 50:
@@ -479,17 +472,17 @@ class ConfidenceScorer:
                 SELECT AVG(win_rate) as avg_win_rate, COUNT(*) as strategy_count,
                        AVG(total_bets) as avg_sample_size
                 FROM backtesting.strategy_performance 
-                WHERE source_book_type = ? 
-                  AND split_type = ?
+                WHERE source_book_type = %s 
+                  AND split_type = %s
                   AND total_bets >= 10
             """
             
             result = self.coordinator.execute_read(query, (source_book_type, split_type))
             
-            if result and result[0][0] is not None:
-                avg_win_rate = float(result[0][0])
-                strategy_count = int(result[0][1])
-                avg_sample_size = float(result[0][2])
+            if result and result[0]['avg_win_rate'] is not None:
+                avg_win_rate = float(result[0]['avg_win_rate'])
+                strategy_count = int(result[0]['strategy_count'])
+                avg_sample_size = float(result[0]['avg_sample_size'])
                 
                 # Convert win rate to percentage if it's in decimal format
                 if avg_win_rate <= 1.0:
@@ -530,11 +523,11 @@ class ConfidenceScorer:
         try:
             # Get historical performance for this specific strategy
             query = """
-                SELECT total_bets, wins, AVG(total_bets) as avg_bets
+                SELECT total_bets, ROUND(win_rate * total_bets) as wins, AVG(total_bets) as avg_bets
                 FROM backtesting.strategy_performance 
-                WHERE strategy_name LIKE ? 
-                  AND source_book_type = ?
-                  AND split_type = ?
+                WHERE strategy_name LIKE %s 
+                  AND source_book_type = %s
+                  AND split_type = %s
                   AND total_bets >= 5
             """
             
@@ -542,11 +535,11 @@ class ConfidenceScorer:
             strategy_pattern = f"{strategy_name.split('_')[0]}%"
             result = self.coordinator.execute_read(query, (strategy_pattern, source_book_type, split_type))
             
-            if result and result[0][0] is not None:
+            if result and result[0]['total_bets'] is not None:
                 # Calculate ROI correctly from wins and total bets
                 total_strategies = len(result)
-                total_bets_sum = sum(row[0] for row in result)
-                total_wins_sum = sum(row[1] for row in result)
+                total_bets_sum = sum(int(row['total_bets']) for row in result)
+                total_wins_sum = sum(int(row['wins']) for row in result)
                 
                 if total_bets_sum > 0:
                     # Correct ROI calculation: ((wins * 100) - (losses * 110)) / (total_bets * 110) * 100
@@ -556,6 +549,9 @@ class ConfidenceScorer:
                     net_profit = win_profit - loss_cost
                     total_risked = total_bets_sum * 110
                     roi_per_100 = (net_profit / total_risked) * 100
+                    
+                    # Convert to float for arithmetic operations
+                    roi_per_100 = float(roi_per_100)
                     
                     # Calculate score based on ROI
                     if roi_per_100 >= 50:

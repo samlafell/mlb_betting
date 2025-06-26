@@ -41,43 +41,43 @@ class SchemaManager:
         """Create the main betting splits table."""
         try:
             with self.db_manager.get_cursor() as cursor:
-                # Create the main table based on BettingSplit model structure
+                # Create the main table to match the actual schema (raw_mlb_betting_splits)
                 cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS splits.betting_splits (
-                        id VARCHAR PRIMARY KEY,
-                        game_id VARCHAR NOT NULL,
-                        home_team VARCHAR NOT NULL,
-                        away_team VARCHAR NOT NULL,
-                        game_datetime TIMESTAMP NOT NULL,
-                        split_type VARCHAR NOT NULL,
-                        split_value DOUBLE,
-                        source VARCHAR NOT NULL,
-                        book VARCHAR NOT NULL,
-                        last_updated TIMESTAMP NOT NULL,
+                    CREATE TABLE IF NOT EXISTS splits.raw_mlb_betting_splits (
+                        id SERIAL PRIMARY KEY,
+                        game_id TEXT,
+                        home_team TEXT,
+                        away_team TEXT,
+                        game_datetime TIMESTAMP,
+                        split_type TEXT, -- 'Spread', 'Total', 'Moneyline'
+                        last_updated TIMESTAMP,
+                        source TEXT, -- 'SBD' for SportsBettingDime, 'VSIN' for other sources
+                        book TEXT, -- Specific sportsbook for VSIN (like 'DK', 'Circa'), NULL for SBD source
                         
-                        -- Home/Over betting data
+                        -- Long format: home_or_over represents home team (Spread/Moneyline) or over (Total)
                         home_or_over_bets INTEGER,
-                        home_or_over_bets_percentage DOUBLE,
-                        home_or_over_stake_percentage DOUBLE,
+                        home_or_over_bets_percentage DOUBLE PRECISION,
+                        home_or_over_stake_percentage DOUBLE PRECISION,
                         
-                        -- Away/Under betting data
+                        -- Long format: away_or_under represents away team (Spread/Moneyline) or under (Total)
                         away_or_under_bets INTEGER,
-                        away_or_under_bets_percentage DOUBLE,
-                        away_or_under_stake_percentage DOUBLE,
+                        away_or_under_bets_percentage DOUBLE PRECISION,
+                        away_or_under_stake_percentage DOUBLE PRECISION,
                         
-                        -- Analysis results
-                        sharp_action VARCHAR,
-                        outcome VARCHAR,
+                        -- Split-specific value (spread line, total line, or moneyline odds)
+                        split_value TEXT,
                         
                         -- Metadata
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        sharp_action TEXT, -- Detected sharp action direction (if any)
+                        outcome TEXT, -- Outcome of the bet (win/loss/push)
+                        created_at TIMESTAMP,
+                        updated_at TIMESTAMP
                     )
                 """)
-                self.logger.info("Created betting_splits table")
+                self.logger.info("Created raw_mlb_betting_splits table")
         except Exception as e:
-            self.logger.error("Failed to create betting_splits table", error=str(e))
-            raise DatabaseError(f"Failed to create betting_splits table: {e}")
+            self.logger.error("Failed to create raw_mlb_betting_splits table", error=str(e))
+            raise DatabaseError(f"Failed to create raw_mlb_betting_splits table: {e}")
 
     def create_games_table(self) -> None:
         """Create the games table for game metadata."""
@@ -129,13 +129,13 @@ class SchemaManager:
     def create_indexes(self) -> None:
         """Create performance indexes on key fields."""
         indexes = [
-            # Betting splits indexes
-            ("idx_betting_splits_game_id", "splits.betting_splits", "game_id"),
-            ("idx_betting_splits_datetime", "splits.betting_splits", "game_datetime"),
-            ("idx_betting_splits_source_book", "splits.betting_splits", "source, book"),
-            ("idx_betting_splits_split_type", "splits.betting_splits", "split_type"),
-            ("idx_betting_splits_sharp_action", "splits.betting_splits", "sharp_action"),
-            ("idx_betting_splits_last_updated", "splits.betting_splits", "last_updated"),
+            # Raw MLB betting splits indexes
+            ("idx_raw_mlb_betting_splits_game_id", "splits.raw_mlb_betting_splits", "game_id"),
+            ("idx_raw_mlb_betting_splits_datetime", "splits.raw_mlb_betting_splits", "game_datetime"),
+            ("idx_raw_mlb_betting_splits_source_book", "splits.raw_mlb_betting_splits", "source, book"),
+            ("idx_raw_mlb_betting_splits_split_type", "splits.raw_mlb_betting_splits", "split_type"),
+            ("idx_raw_mlb_betting_splits_sharp_action", "splits.raw_mlb_betting_splits", "sharp_action"),
+            ("idx_raw_mlb_betting_splits_last_updated", "splits.raw_mlb_betting_splits", "last_updated"),
             
             # Games indexes
             ("idx_games_game_id", "splits.games", "game_id"),
@@ -167,33 +167,35 @@ class SchemaManager:
         """Create database triggers for maintaining data integrity."""
         try:
             with self.db_manager.get_cursor() as cursor:
-                # Update timestamp trigger for betting_splits
+                # Update timestamp trigger for raw_mlb_betting_splits
                 cursor.execute("""
-                    CREATE OR REPLACE TRIGGER update_betting_splits_timestamp
-                    BEFORE UPDATE ON splits.betting_splits
+                    CREATE OR REPLACE FUNCTION update_timestamp()
+                    RETURNS TRIGGER AS $$
+                    BEGIN
+                        NEW.updated_at = CURRENT_TIMESTAMP;
+                        RETURN NEW;
+                    END;
+                    $$ LANGUAGE plpgsql;
+                    
+                    DROP TRIGGER IF EXISTS update_raw_mlb_betting_splits_timestamp ON splits.raw_mlb_betting_splits;
+                    CREATE TRIGGER update_raw_mlb_betting_splits_timestamp
+                    BEFORE UPDATE ON splits.raw_mlb_betting_splits
                     FOR EACH ROW
-                    EXECUTE (
-                        UPDATE splits.betting_splits 
-                        SET updated_at = CURRENT_TIMESTAMP 
-                        WHERE id = NEW.id
-                    )
+                    EXECUTE FUNCTION update_timestamp();
                 """)
                 
                 # Update timestamp trigger for games
                 cursor.execute("""
-                    CREATE OR REPLACE TRIGGER update_games_timestamp
+                    DROP TRIGGER IF EXISTS update_games_timestamp ON splits.games;
+                    CREATE TRIGGER update_games_timestamp
                     BEFORE UPDATE ON splits.games
                     FOR EACH ROW
-                    EXECUTE (
-                        UPDATE splits.games 
-                        SET updated_at = CURRENT_TIMESTAMP 
-                        WHERE id = NEW.id
-                    )
+                    EXECUTE FUNCTION update_timestamp();
                 """)
                 
                 self.logger.info("Created database triggers")
         except Exception as e:
-            # Triggers might not be supported in all DuckDB versions
+            # PostgreSQL trigger support
             self.logger.warning("Failed to create triggers (may not be supported)", error=str(e))
 
     def setup_complete_schema(self) -> None:
@@ -224,7 +226,7 @@ class SchemaManager:
     def verify_schema(self) -> bool:
         """Verify that the schema is properly set up."""
         required_tables = [
-            "splits.betting_splits",
+            "splits.raw_mlb_betting_splits",
             "splits.games", 
             "splits.sharp_actions"
         ]
@@ -232,11 +234,12 @@ class SchemaManager:
         try:
             with self.db_manager.get_cursor() as cursor:
                 for table in required_tables:
-                    result = cursor.execute(f"""
+                    cursor.execute(f"""
                         SELECT table_name FROM information_schema.tables 
                         WHERE table_schema = 'splits' 
                         AND table_name = '{table.split('.')[1]}'
-                    """).fetchall()
+                    """)
+                    result = cursor.fetchall()
                     
                     if not result:
                         self.logger.error("Missing required table", table=table)
@@ -256,29 +259,33 @@ class SchemaManager:
                 # Get table information
                 tables_info = {}
                 
-                result = cursor.execute("""
+                cursor.execute("""
                     SELECT table_name, table_type 
                     FROM information_schema.tables 
                     WHERE table_schema = 'splits'
-                """).fetchall()
+                """)
+                result = cursor.fetchall()
                 
-                for table_name, table_type in result:
+                for row in result:
+                    table_name = row['table_name']
+                    table_type = row['table_type']
                     # Get column info for each table
-                    columns = cursor.execute(f"""
+                    cursor.execute(f"""
                         SELECT column_name, data_type, is_nullable
                         FROM information_schema.columns
                         WHERE table_schema = 'splits' 
                         AND table_name = '{table_name}'
                         ORDER BY ordinal_position
-                    """).fetchall()
+                    """)
+                    columns = cursor.fetchall()
                     
                     tables_info[table_name] = {
                         "type": table_type,
                         "columns": [
                             {
-                                "name": col[0],
-                                "type": col[1], 
-                                "nullable": col[2]
+                                "name": col['column_name'],
+                                "type": col['data_type'], 
+                                "nullable": col['is_nullable']
                             }
                             for col in columns
                         ]

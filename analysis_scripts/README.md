@@ -1,3 +1,89 @@
+# Analysis Scripts Directory - CONSOLIDATED ARCHITECTURE
+
+## 🎯 NEW ARCHITECTURE (Post-Consolidation)
+
+**SINGLE ENTRY POINT:** All betting analysis now flows through `master_betting_detector.py`
+
+### CLI Commands:
+```bash
+# 🎯 PRIMARY COMMAND - All betting opportunities
+uv run python -m mlb_sharp_betting.cli detect-opportunities --minutes 300
+
+# 🤖 Strategy Management  
+uv run python -m mlb_sharp_betting.cli show-active-strategies
+uv run python -m mlb_sharp_betting.cli auto-integrate-strategies
+
+# 📊 Performance Analysis
+uv run python -m mlb_sharp_betting.cli performance --date 2024-01-15
+```
+
+## 📁 FOLDER CONTENTS
+
+### ✅ SQL Strategy Files (KEEP)
+These files define the mathematical logic for each betting strategy:
+- `*_strategy_postgres.sql` - All strategy SQL files
+- `sharp_action_detector_postgres.sql` - Sharp action detection logic
+- `signal_combinations_postgres.sql` - Signal combination analysis
+
+### 🔥 MASTER CONTROLLER (CONSOLIDATED)
+- `master_betting_detector.py` - **SINGLE SOURCE OF TRUTH** for all betting analysis
+  - ✅ Sharp action detection
+  - ✅ Opposing markets analysis  
+  - ✅ Steam move detection
+  - ✅ High ROI strategy integration (including <50% win rate strategies)
+  - ✅ Dynamic threshold optimization
+  - ✅ Juice filtering
+  - ✅ Confidence scoring
+
+### ❌ DEPRECATED FILES (TO REMOVE)
+These files are now redundant since all logic is in master detector:
+- `opposing_markets_detector.py` - Logic moved to master detector
+- `validated_betting_detector.py` - Logic moved to master detector
+- `demo_betting_finder.py` - Replaced by CLI commands
+- Other standalone Python detection scripts
+
+## 🧹 CLEANUP PLAN
+
+1. **Keep**: All `*.sql` files (strategy definitions)
+2. **Keep**: `master_betting_detector.py` (single controller)
+3. **Remove**: All other `*.py` files (redundant detectors)
+4. **Update**: Master detector to include ALL strategy logic
+
+## 💡 USAGE PHILOSOPHY
+
+- **SQL files** = Strategy mathematical definitions
+- **Master detector** = Single execution engine for all strategies
+- **CLI** = User interface for all betting analysis
+- **No script proliferation** = One controller rules them all
+
+## ⚡ Quick Start
+
+```bash
+# Find all betting opportunities (replaces all other detectors)
+uv run python -m mlb_sharp_betting.cli detect-opportunities
+
+# Show what strategies are currently active
+uv run python -m mlb_sharp_betting.cli show-active-strategies
+
+# Auto-integrate new profitable strategies
+uv run python -m mlb_sharp_betting.cli auto-integrate-strategies
+```
+
+## 🎯 BENEFITS OF CONSOLIDATION
+
+1. **Single Source of Truth** - No confusion about which detector to use
+2. **Unified Strategy Integration** - All strategies flow through one pipeline
+3. **Consistent Confidence Scoring** - Same scoring logic for all strategies
+4. **Centralized Juice Filtering** - No duplicate filtering logic
+5. **Easier Maintenance** - Update logic in one place
+6. **CLI Integration** - Professional command interface
+7. **JSON Output Support** - Structured data export for automation
+
+---
+
+**🚨 MIGRATION STATUS: COMPLETE**
+All detection logic consolidated into `master_betting_detector.py` with CLI integration.
+
 # MLB Sharp Betting Analysis Scripts
 
 This directory contains comprehensive analysis scripts for identifying profitable MLB betting strategies using betting splits data combined with game outcomes.
@@ -126,13 +212,13 @@ uv run analysis_scripts/validated_betting_detector.py --minutes 5
 ### Test the New Strategies
 ```bash
 # Test total line sweet spots
-duckdb data/raw/mlb_betting.duckdb < analysis_scripts/total_line_sweet_spots_strategy.sql
+psql -h localhost -d mlb_betting -f < analysis_scripts/total_line_sweet_spots_strategy.sql
 
 # Test underdog ML value  
-duckdb data/raw/mlb_betting.duckdb < analysis_scripts/underdog_ml_value_strategy.sql
+psql -h localhost -d mlb_betting -f < analysis_scripts/underdog_ml_value_strategy.sql
 
 # Test team-specific bias
-duckdb data/raw/mlb_betting.duckdb < analysis_scripts/team_specific_bias_strategy.sql
+psql -h localhost -d mlb_betting -f < analysis_scripts/team_specific_bias_strategy.sql
 ```
 
 ### Run All Phase 1 Strategies Together
@@ -141,7 +227,7 @@ duckdb data/raw/mlb_betting.duckdb < analysis_scripts/team_specific_bias_strateg
 cat analysis_scripts/total_line_sweet_spots_strategy.sql \
     analysis_scripts/underdog_ml_value_strategy.sql \
     analysis_scripts/team_specific_bias_strategy.sql | \
-    duckdb data/raw/mlb_betting.duckdb
+    psql -h localhost -d mlb_betting -f
 ```
 
 ## 🏦 ROI Calculations
@@ -179,8 +265,8 @@ ROI Percentage = ROI / Total Risk × 100
 
 ### Option 1: Run Individual Scripts
 ```bash
-# Connect to your DuckDB database and execute any script
-duckdb data/raw/mlb_betting.duckdb < analysis_scripts/line_movement_strategy.sql
+# Connect to your PostgreSQL database and execute any script
+psql -h localhost -d mlb_betting -f < analysis_scripts/line_movement_strategy.sql
 ```
 
 ### Option 2: Comprehensive Analysis (Recommended)
@@ -197,7 +283,7 @@ This will:
 
 ## 📋 Required Database Schema
 
-The scripts expect these tables in your DuckDB database:
+The scripts expect these tables in your PostgreSQL database:
 
 ### `mlb_betting.splits.raw_mlb_betting_splits`
 - `game_id`: Unique game identifier

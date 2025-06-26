@@ -28,15 +28,18 @@ WITH enhanced_total_data AS (
         -- Enhanced volume context
         COALESCE(rmbs.home_or_over_bets + rmbs.away_or_under_bets, 0) as total_bet_volume,
         
-        -- Extract total line value
+        -- Extract total line value with safe casting
         CASE 
-            WHEN rmbs.split_type = 'total' AND rmbs.split_value IS NOT NULL THEN
-                TRY_CAST(rmbs.split_value AS DOUBLE)
+            WHEN rmbs.split_type = 'total' AND rmbs.split_value IS NOT NULL 
+                 AND rmbs.split_value ~ '^-?[0-9]+\.?[0-9]*$' THEN
+                rmbs.split_value::DOUBLE PRECISION
             ELSE NULL
         END as total_line,
         
-        -- Line movement tracking
-        LAG(TRY_CAST(rmbs.split_value AS DOUBLE)) OVER (
+        -- Line movement tracking with safe casting
+        LAG(CASE WHEN rmbs.split_value ~ '^-?[0-9]+\.?[0-9]*$' 
+                 THEN rmbs.split_value::DOUBLE PRECISION 
+                 ELSE NULL END) OVER (
             PARTITION BY rmbs.game_id, rmbs.source, rmbs.book 
             ORDER BY rmbs.last_updated
         ) as prev_total_line,
@@ -76,8 +79,8 @@ WITH enhanced_total_data AS (
             ORDER BY rmbs.last_updated DESC
         ) as latest_rank
         
-    FROM mlb_betting.splits.raw_mlb_betting_splits rmbs
-    JOIN mlb_betting.main.game_outcomes go ON rmbs.game_id = go.game_id
+    FROM splits.raw_mlb_betting_splits rmbs
+    JOIN public.game_outcomes go ON rmbs.game_id = go.game_id
     WHERE rmbs.split_type = 'total'
       AND rmbs.last_updated < rmbs.game_datetime
       AND rmbs.split_value IS NOT NULL

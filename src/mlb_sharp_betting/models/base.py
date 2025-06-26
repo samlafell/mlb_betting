@@ -6,7 +6,7 @@ and validation patterns used throughout the application.
 """
 
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from pydantic import BaseModel as PydanticBaseModel, Field, validator
 
@@ -27,10 +27,10 @@ class BaseModel(PydanticBaseModel):
         validate_assignment = True
         
         # Allow population by field name or alias
-        populate_by_name = True
+        validate_by_name = True
         
-        # Forbid extra fields not defined in the model
-        extra = "forbid"
+        # Allow extra fields (changed from forbid to allow for database migration compatibility)
+        extra = "allow"
         
         # Use proper JSON encoders for complex types
         json_encoders = {
@@ -160,19 +160,18 @@ class IdentifiedModel(TimestampedModel):
     a primary key or unique identifier.
     """
     
-    id: Optional[str] = Field(
+    id: Optional[Union[str, int]] = Field(
         default=None,
-        description="Unique identifier for the record",
-        max_length=255
+        description="Unique identifier for the record"
     )
     
     @validator("id")
-    def validate_id(cls, v: Optional[str]) -> Optional[str]:
+    def validate_id(cls, v: Optional[Union[str, int]]) -> Optional[Union[str, int]]:
         """
         Validate ID field format.
         
         Args:
-            v: ID value to validate
+            v: ID value to validate (string or integer)
             
         Returns:
             Validated ID or None
@@ -180,16 +179,27 @@ class IdentifiedModel(TimestampedModel):
         if v is None:
             return None
             
-        # Remove whitespace
-        v = v.strip()
+        # Handle integer IDs (from auto-increment)
+        if isinstance(v, int):
+            return v
+            
+        # Handle string IDs
+        if isinstance(v, str):
+            # Remove whitespace
+            v = v.strip()
+            
+            if not v:
+                return None
+                
+            # Basic validation - no control characters
+            if any(ord(c) < 32 for c in v):
+                raise ValueError("ID cannot contain control characters")
+                
+            return v
         
-        if not v:
-            return None
-            
-        # Basic validation - no control characters
-        if any(ord(c) < 32 for c in v):
-            raise ValueError("ID cannot contain control characters")
-            
+        # Invalid type
+        raise ValueError(f"ID must be string or integer, got {type(v)}")
+        
         return v
 
 

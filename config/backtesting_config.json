@@ -27,7 +27,16 @@
       "strong_performance_threshold": 0.55,
       "excellent_performance_threshold": 0.60,
       "critical_decline_threshold": 0.45,
-      "win_rate_drop_alert": 0.10
+      "win_rate_drop_alert": 0.10,
+      "roi_based_profitability": {
+        "_comment": "ROI-prioritized profitability logic: ROI is primary indicator, not win rate. Win rate can be misleading when betting heavy favorites with poor value.",
+        "min_positive_roi": 0.0,
+        "good_roi_threshold": 5.0,
+        "excellent_roi_threshold": 15.0,
+        "severely_negative_roi_threshold": -10.0,
+        "sample_size_for_roi_priority": 20,
+        "min_sample_size_basic": 10
+      }
     },
     "risk_controls": {
       "max_threshold_change_per_day": 0.25,

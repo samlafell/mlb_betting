@@ -383,7 +383,7 @@ class Game(IdentifiedModel, ValidatedModel):
         self.touch()  # Update timestamp
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "game_id": "2024-04-15-LAD-SF-1",
                 "home_team": "SF",

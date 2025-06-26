@@ -17,12 +17,14 @@ WITH comprehensive_data AS (
         rmbs.home_or_over_bets_percentage as bet_pct,
         rmbs.home_or_over_stake_percentage - rmbs.home_or_over_bets_percentage as differential,
         
-        -- Extract line values from JSON
+        -- Extract line values from JSON using PostgreSQL JSONB operators with safe casting
         CASE 
             WHEN rmbs.split_type = 'moneyline' AND rmbs.split_value LIKE '{%}' THEN
-                TRY_CAST(json_extract_string(rmbs.split_value, '$.home') AS DOUBLE)
-            WHEN rmbs.split_type IN ('spread', 'total') THEN
-                TRY_CAST(rmbs.split_value AS DOUBLE)
+                CASE WHEN (rmbs.split_value::JSONB->>'home') ~ '^-?[0-9]+\.?[0-9]*$' 
+                     THEN (rmbs.split_value::JSONB->>'home')::DOUBLE PRECISION 
+                     ELSE NULL END
+            WHEN rmbs.split_type IN ('spread', 'total') AND rmbs.split_value ~ '^-?[0-9]+\.?[0-9]*$' THEN
+                rmbs.split_value::DOUBLE PRECISION
             ELSE NULL
         END as line_value,
         
@@ -44,8 +46,8 @@ WITH comprehensive_data AS (
         go.home_cover_spread,
         go.over
         
-    FROM mlb_betting.splits.raw_mlb_betting_splits rmbs
-    JOIN mlb_betting.main.game_outcomes go ON rmbs.game_id = go.game_id
+    FROM splits.raw_mlb_betting_splits rmbs
+    JOIN public.game_outcomes go ON rmbs.game_id = go.game_id
     WHERE rmbs.last_updated < rmbs.game_datetime
       AND rmbs.game_datetime < CURRENT_TIMESTAMP - INTERVAL '6 hours'  -- Only completed games
       AND rmbs.split_value IS NOT NULL

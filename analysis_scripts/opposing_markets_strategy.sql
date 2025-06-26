@@ -21,7 +21,7 @@ WITH latest_splits AS (
             PARTITION BY game_id, split_type, source, COALESCE(book, 'UNKNOWN')
             ORDER BY last_updated DESC
         ) as rn
-    FROM mlb_betting.splits.raw_mlb_betting_splits
+    FROM splits.raw_mlb_betting_splits
     WHERE home_or_over_stake_percentage IS NOT NULL 
       AND home_or_over_bets_percentage IS NOT NULL
       AND game_datetime IS NOT NULL
@@ -46,6 +46,11 @@ ml_recommendations AS (
         stake_pct as ml_stake_pct,
         bet_pct as ml_bet_pct,
         split_value as ml_split_value,
+        
+        -- Extract actual moneyline odds from JSON
+        (split_value::JSONB->>'home')::INTEGER as home_ml_odds,
+        (split_value::JSONB->>'away')::INTEGER as away_ml_odds,
+        
         CASE 
             WHEN differential > 0 THEN home_team
             ELSE away_team
@@ -54,6 +59,7 @@ ml_recommendations AS (
         last_updated as ml_last_updated
     FROM clean_splits
     WHERE split_type = 'moneyline'
+      AND split_value LIKE '{%}'  -- Only JSON odds data
 ),
 
 spread_recommendations AS (
@@ -95,6 +101,10 @@ opposing_markets AS (
         ml.ml_bet_pct,
         ml.ml_split_value,
         ml.ml_last_updated,
+        
+        -- Actual moneyline odds
+        ml.home_ml_odds,
+        ml.away_ml_odds,
         
         -- Spread data
         sp.spread_recommended_team,
@@ -148,7 +158,7 @@ game_outcomes AS (
             ELSE away_team
         END as winning_team,
         ABS(home_score - away_score) as run_differential
-    FROM mlb_betting.main.game_outcomes
+    FROM public.game_outcomes
     WHERE home_score IS NOT NULL AND away_score IS NOT NULL
 ),
 
@@ -200,28 +210,48 @@ strategy_performance AS (
         'opposing_markets' as split_type,
         COUNT(winning_team) as total_bets,
         
+        -- Calculate average odds for each strategy (for ROI calculation)
+        AVG(CASE 
+            WHEN ml_recommended_team = home_team THEN home_ml_odds
+            ELSE away_ml_odds
+        END) as avg_ml_odds_stronger_signal,
+        
+        AVG(CASE 
+            WHEN ml_recommended_team = home_team THEN home_ml_odds
+            ELSE away_ml_odds
+        END) as avg_ml_odds_ml_preference,
+        
+        -- For spread preference, we don't have spread odds, so use standard -110
+        -110 as avg_ml_odds_spread_preference,
+        
+        -- For contrarian strategy, mix of ML and spread bets, so we need to be more careful
+        AVG(CASE 
+            WHEN dominant_market = 'SPREAD_STRONGER' AND ml_recommended_team = home_team THEN home_ml_odds
+            WHEN dominant_market = 'SPREAD_STRONGER' AND ml_recommended_team = away_team THEN away_ml_odds
+            WHEN dominant_market = 'ML_STRONGER' THEN -110  -- Following spread recommendation, use -110
+            ELSE NULL
+        END) as avg_ml_odds_contrarian,
+        
         -- Strategy 1: Follow stronger signal
         SUM(stronger_signal_win) as stronger_signal_wins,
         ROUND(AVG(stronger_signal_win) * 100, 2) as stronger_signal_win_rate,
-        ROUND(((SUM(stronger_signal_win) * 100) - ((COUNT(winning_team) - SUM(stronger_signal_win)) * 110)) / (COUNT(winning_team) * 110) * 100, 1) as stronger_signal_roi_per_100,
         
         -- Strategy 2: ML preference
         SUM(ml_preference_win) as ml_preference_wins,
         ROUND(AVG(ml_preference_win) * 100, 2) as ml_preference_win_rate,
-        ROUND(((SUM(ml_preference_win) * 100) - ((COUNT(winning_team) - SUM(ml_preference_win)) * 110)) / (COUNT(winning_team) * 110) * 100, 1) as ml_preference_roi_per_100,
         
         -- Strategy 3: Spread preference
         SUM(spread_preference_win) as spread_preference_wins,
         ROUND(AVG(spread_preference_win) * 100, 2) as spread_preference_win_rate,
-        ROUND(((SUM(spread_preference_win) * 100) - ((COUNT(winning_team) - SUM(spread_preference_win)) * 110)) / (COUNT(winning_team) * 110) * 100, 1) as spread_preference_roi_per_100,
         
         -- Strategy 4: Contrarian
         SUM(contrarian_win) as contrarian_wins,
-        ROUND(AVG(contrarian_win) * 100, 2) as contrarian_win_rate,
-        ROUND(((SUM(contrarian_win) * 100) - ((COUNT(winning_team) - SUM(contrarian_win)) * 110)) / (COUNT(winning_team) * 110) * 100, 1) as contrarian_roi_per_100
+        ROUND(AVG(contrarian_win) * 100, 2) as contrarian_win_rate
         
     FROM strategy_results
     WHERE winning_team IS NOT NULL  -- Only completed games
+      AND home_ml_odds IS NOT NULL  -- Only games with odds data
+      AND away_ml_odds IS NOT NULL
     GROUP BY source, book
     HAVING COUNT(winning_team) >= 10  -- Minimum sample size
 )
@@ -234,7 +264,17 @@ SELECT
     total_bets,
     stronger_signal_wins as wins,
     stronger_signal_win_rate as win_rate,
-    stronger_signal_roi_per_100 as roi_per_100_unit
+    -- Calculate ROI using actual average odds instead of assuming -110
+    ROUND(
+        CASE 
+            WHEN avg_ml_odds_stronger_signal > 0 THEN
+                -- For positive odds: profit = (odds/100) * bet_amount for wins, -bet_amount for losses
+                ((stronger_signal_wins * (avg_ml_odds_stronger_signal/100.0) * 100) - ((total_bets - stronger_signal_wins) * 100)) / (total_bets * 100) * 100
+            ELSE
+                -- For negative odds: profit = (100/abs(odds)) * bet_amount for wins, -bet_amount for losses
+                ((stronger_signal_wins * (100.0/ABS(avg_ml_odds_stronger_signal)) * 100) - ((total_bets - stronger_signal_wins) * 100)) / (total_bets * 100) * 100
+        END, 1
+    ) as roi_per_100_unit
 FROM strategy_performance
 
 UNION ALL
@@ -246,7 +286,15 @@ SELECT
     total_bets,
     ml_preference_wins as wins,
     ml_preference_win_rate as win_rate,
-    ml_preference_roi_per_100 as roi_per_100_unit
+    -- Calculate ROI using actual average odds
+    ROUND(
+        CASE 
+            WHEN avg_ml_odds_ml_preference > 0 THEN
+                ((ml_preference_wins * (avg_ml_odds_ml_preference/100.0) * 100) - ((total_bets - ml_preference_wins) * 100)) / (total_bets * 100) * 100
+            ELSE
+                ((ml_preference_wins * (100.0/ABS(avg_ml_odds_ml_preference)) * 100) - ((total_bets - ml_preference_wins) * 100)) / (total_bets * 100) * 100
+        END, 1
+    ) as roi_per_100_unit
 FROM strategy_performance
 
 UNION ALL
@@ -258,7 +306,15 @@ SELECT
     total_bets,
     spread_preference_wins as wins,
     spread_preference_win_rate as win_rate,
-    spread_preference_roi_per_100 as roi_per_100_unit
+    -- Calculate ROI using actual average odds
+    ROUND(
+        CASE 
+            WHEN avg_ml_odds_spread_preference > 0 THEN
+                ((spread_preference_wins * (avg_ml_odds_spread_preference/100.0) * 100) - ((total_bets - spread_preference_wins) * 100)) / (total_bets * 100) * 100
+            ELSE
+                ((spread_preference_wins * (100.0/ABS(avg_ml_odds_spread_preference)) * 100) - ((total_bets - spread_preference_wins) * 100)) / (total_bets * 100) * 100
+        END, 1
+    ) as roi_per_100_unit
 FROM strategy_performance
 
 UNION ALL
@@ -270,7 +326,15 @@ SELECT
     total_bets,
     contrarian_wins as wins,
     contrarian_win_rate as win_rate,
-    contrarian_roi_per_100 as roi_per_100_unit
+    -- Calculate ROI using actual average odds
+    ROUND(
+        CASE 
+            WHEN avg_ml_odds_contrarian > 0 THEN
+                ((contrarian_wins * (avg_ml_odds_contrarian/100.0) * 100) - ((total_bets - contrarian_wins) * 100)) / (total_bets * 100) * 100
+            ELSE
+                ((contrarian_wins * (100.0/ABS(avg_ml_odds_contrarian)) * 100) - ((total_bets - contrarian_wins) * 100)) / (total_bets * 100) * 100
+        END, 1
+    ) as roi_per_100_unit
 FROM strategy_performance
 
 ORDER BY roi_per_100_unit DESC; 

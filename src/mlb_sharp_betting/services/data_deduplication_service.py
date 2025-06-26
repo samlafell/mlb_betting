@@ -144,7 +144,7 @@ class DataDeduplicationService:
     def apply_database_constraints(self):
         """Apply database constraints to prevent future duplicates."""
         try:
-            # For DuckDB, we'll use a different approach since IF NOT EXISTS isn't supported for constraints
+            # For PostgreSQL, we use the standard approach since IF NOT EXISTS isn't supported for constraints
             # First check if constraint exists, then add if needed
             constraint_sql = """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_game_split_daily 

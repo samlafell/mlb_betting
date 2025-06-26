@@ -497,44 +497,68 @@ class AutomatedBacktestingCLI:
                 # Tie-breakers in order of preference: strategy_name (alphabetical)
                 return (-score, strategy.strategy_name, strategy.source_book_type, strategy.split_type)
             
-            # Categorize strategies by sample size
-            reliable_strategies = [s for s in results.strategy_metrics if s.total_bets >= 50 and s.win_rate > 0.524]
-            basic_strategies = [s for s in results.strategy_metrics if s.total_bets >= 17 and s.win_rate > 0.524]
+            # Categorize strategies by sample size using ROI-prioritized profitability logic
+            def is_profitable_strategy(win_rate: float, roi_per_100: float, total_bets: int) -> bool:
+                """ROI-prioritized profitability logic matching backtesting service."""
+                if roi_per_100 < -10.0:
+                    return False
+                if total_bets >= 20:
+                    return roi_per_100 > 0.0
+                if total_bets >= 10:
+                    return roi_per_100 > 0.0 and win_rate > 0.45
+                return roi_per_100 > 5.0 and win_rate > 0.55
+            
+            reliable_strategies = [s for s in results.strategy_metrics if s.total_bets >= 25 and is_profitable_strategy(s.win_rate, s.roi_per_100, s.total_bets)]
+            basic_strategies = [s for s in results.strategy_metrics if s.total_bets >= 10 and is_profitable_strategy(s.win_rate, s.roi_per_100, s.total_bets)]
             
             # Show reliable strategies if available
             if reliable_strategies:
-                print(f"\n🎯 Reliable Sample Size Strategies (≥50 bets):")
+                print(f"\n🎯 Reliable Sample Size Strategies (≥25 bets):")
                 reliable_sorted = sorted(reliable_strategies, key=deterministic_sort_key)[:10]
                 
                 for i, strategy in enumerate(reliable_sorted, 1):
                     score = calculate_weighted_score(strategy)
-                    profitable_indicator = "🟢" if strategy.win_rate > 0.524 else "🔴"
+                    # Use ROI-prioritized profitability logic
+                    profitable_indicator = "🟢" if is_profitable_strategy(strategy.win_rate, strategy.roi_per_100, strategy.total_bets) else "🔴"
                     formatted_name = self._format_strategy_name(strategy.strategy_name, strategy.source_book_type, strategy.split_type)
                     print(f"   {i:2d}. {profitable_indicator} {formatted_name:<50} | "
                           f"{strategy.total_bets:3d} bets | "
                           f"{strategy.win_rate*100:5.1f}% WR | "
                           f"{strategy.roi_per_100:+6.1f}% ROI | "
                           f"Score: {score:5.1f}")
+                    
+                    # Add specific warnings for misleading strategies
+                    if strategy.win_rate > 0.524 and strategy.roi_per_100 < -10.0:
+                        print(f"       🚨 CRITICAL: High win rate but severely negative ROI - heavy favorites with terrible value")
+                    elif strategy.win_rate > 0.524 and strategy.roi_per_100 < 0:
+                        print(f"       ⚠️  WARNING: Good win rate but negative ROI - likely heavy favorites with poor value")
             else:
-                print(f"\n⚠️  No strategies meet the reliable sample size threshold (≥50 bets)")
-                print(f"     This indicates insufficient historical data for meaningful analysis.")
+                print(f"\n⚠️  No strategies meet the reliable sample size threshold (≥25 bets)")
+                print(f"     This indicates insufficient historical data for high-confidence analysis.")
                 
                 if basic_strategies:
-                    print(f"\n📊 Profitable Strategies (≥17 bets) - USE WITH CAUTION:")
+                    print(f"\n📊 Profitable Strategies (≥10 bets) - ACTIONABLE PER USER REQUEST:")
                     basic_sorted = sorted(basic_strategies, key=deterministic_sort_key)[:10]
                     
                     for i, strategy in enumerate(basic_sorted, 1):
                         score = calculate_weighted_score(strategy)
-                        profitable_indicator = "🟢" if strategy.win_rate > 0.524 else "🔴"
+                        # Use ROI-prioritized profitability logic
+                        profitable_indicator = "🟢" if is_profitable_strategy(strategy.win_rate, strategy.roi_per_100, strategy.total_bets) else "🔴"
                         formatted_name = self._format_strategy_name(strategy.strategy_name, strategy.source_book_type, strategy.split_type)
                         print(f"   {i:2d}. {profitable_indicator} {formatted_name:<50} | "
                               f"{strategy.total_bets:3d} bets | "
                               f"{strategy.win_rate*100:5.1f}% WR | "
                               f"{strategy.roi_per_100:+6.1f}% ROI | "
                               f"Score: {score:5.1f}")
+                        
+                        # Add specific warnings for misleading strategies
+                        if strategy.win_rate > 0.524 and strategy.roi_per_100 < -10.0:
+                            print(f"       🚨 CRITICAL: High win rate but severely negative ROI - heavy favorites with terrible value")
+                        elif strategy.win_rate > 0.524 and strategy.roi_per_100 < 0:
+                            print(f"       ⚠️  WARNING: Good win rate but negative ROI - likely heavy favorites with poor value")
                     
-                    print(f"\n     ⚠️  WARNING: Sample sizes (17-49 bets) have limited statistical reliability")
-                    print(f"         Recommended: Collect more data before making significant decisions")
+                    print(f"\n     ✅ These strategies meet your ≥10 bet threshold and will be used for betting recommendations")
+                    print(f"         Note: Lower sample sizes have higher variance but are actionable as requested")
         
         if results.threshold_recommendations:
             print(f"\n🎯 Detailed Recommendations:")
