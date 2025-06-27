@@ -3,7 +3,7 @@
 ## ✅ WHAT WAS ACCOMPLISHED
 
 ### 1. **Single Source of Truth**
-- ✅ All betting detection logic consolidated into `master_betting_detector.py`
+- ✅ All betting detection logic evolved into Phase 3 Orchestrator system
 - ✅ Eliminated script proliferation and confusion
 - ✅ ONE command for ALL betting opportunities
 
@@ -57,7 +57,7 @@ uv run python -m mlb_sharp_betting.cli auto-integrate-strategies
 ```
 analysis_scripts/
 ├── *.sql                          # ✅ Strategy definitions (KEEP)
-├── master_betting_detector.py     # ✅ Single controller (ENHANCED)
+├── (Phase 3 Orchestrator)         # ✅ Adaptive strategy execution system
 ├── README.md                      # ✅ Updated documentation
 └── [other test/run scripts]       # ✅ Support scripts (KEEP)
 ```

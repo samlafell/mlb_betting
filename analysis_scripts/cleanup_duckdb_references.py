@@ -67,8 +67,7 @@ class DuckDBCleanupManager:
             "PREGAME_WORKFLOW_README.md": self._update_pregame_readme,
             "REFACTORING_PLAN.md": self._update_refactoring_plan,
             
-            # Analysis scripts
-            "analysis_scripts/master_betting_detector.py": self._update_master_detector,
+            # Analysis scripts (master_betting_detector.py removed - replaced by Phase 3 Orchestrator)
             "analysis_scripts/README.md": self._update_analysis_readme,
             "analysis_scripts/run_phase1_strategies.sh": self._update_phase1_strategies,
             

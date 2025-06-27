@@ -229,8 +229,8 @@ SELECT
     split_type,
     strategy_name,
     strategy_variant,
+    total_games_analyzed as total_bets,  -- 🔧 FIX: Use total_games_analyzed as the bet count, not total_teams
     total_teams,
-    total_games_analyzed,
     
     -- Performance metrics
     avg_win_rate_pct as win_rate,

@@ -98,6 +98,27 @@ class DatabaseManager:
         
         logger.info("PostgreSQL database manager initialized")
 
+    def is_initialized(self) -> bool:
+        """Check if the database manager is properly initialized."""
+        return (hasattr(self, '_initialized') and 
+                self._initialized and 
+                self._pool is not None and 
+                self.engine is not None)
+
+    def initialize(self) -> None:
+        """
+        Public method to initialize the database manager.
+        
+        This is a no-op if already initialized since initialization
+        happens in __init__, but provides a consistent interface.
+        """
+        if not self.is_initialized():
+            logger.warning("Database manager not properly initialized, reinitializing...")
+            self._init_connection_pool()
+            self._init_sqlalchemy()
+        else:
+            logger.debug("Database manager already initialized")
+
     def _init_connection_pool(self) -> None:
         """Initialize the PostgreSQL connection pool."""
         try:

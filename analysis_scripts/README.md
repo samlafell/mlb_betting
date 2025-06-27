@@ -25,15 +25,14 @@ These files define the mathematical logic for each betting strategy:
 - `sharp_action_detector_postgres.sql` - Sharp action detection logic
 - `signal_combinations_postgres.sql` - Signal combination analysis
 
-### 🔥 MASTER CONTROLLER (CONSOLIDATED)
-- `master_betting_detector.py` - **SINGLE SOURCE OF TRUTH** for all betting analysis
-  - ✅ Sharp action detection
-  - ✅ Opposing markets analysis  
-  - ✅ Steam move detection
-  - ✅ High ROI strategy integration (including <50% win rate strategies)
-  - ✅ Dynamic threshold optimization
-  - ✅ Juice filtering
-  - ✅ Confidence scoring
+### 🔥 ORCHESTRATOR SYSTEM (PHASE 3)
+- Phase 3 Orchestrator provides **UNIFIED STRATEGY EXECUTION** for all betting analysis
+  - ✅ Strategy performance feedback loop (backtesting → live detection)
+  - ✅ Dynamic threshold adjustment based on ROI
+  - ✅ Unified processor architecture (same logic in backtesting and live)
+  - ✅ Adaptive confidence scoring with performance weighting
+  - ✅ Ensemble conflict resolution for competing signals
+  - ✅ Automatic poor strategy filtering
 
 ### ❌ DEPRECATED FILES (TO REMOVE)
 These files are now redundant since all logic is in master detector:
@@ -45,14 +44,14 @@ These files are now redundant since all logic is in master detector:
 ## 🧹 CLEANUP PLAN
 
 1. **Keep**: All `*.sql` files (strategy definitions)
-2. **Keep**: `master_betting_detector.py` (single controller)
+2. **Keep**: Phase 3 Orchestrator system (unified strategy execution)
 3. **Remove**: All other `*.py` files (redundant detectors)
 4. **Update**: Master detector to include ALL strategy logic
 
 ## 💡 USAGE PHILOSOPHY
 
 - **SQL files** = Strategy mathematical definitions
-- **Master detector** = Single execution engine for all strategies
+- **Orchestrator** = Performance-driven adaptive execution engine for all strategies
 - **CLI** = User interface for all betting analysis
 - **No script proliferation** = One controller rules them all
 
@@ -82,7 +81,7 @@ uv run python -m mlb_sharp_betting.cli auto-integrate-strategies
 ---
 
 **🚨 MIGRATION STATUS: COMPLETE**
-All detection logic consolidated into `master_betting_detector.py` with CLI integration.
+All detection logic evolved into Phase 3 Orchestrator system with performance feedback loops.
 
 # MLB Sharp Betting Analysis Scripts
 

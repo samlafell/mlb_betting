@@ -17,7 +17,7 @@ Successfully completed comprehensive removal of all DuckDB-related concepts from
 - The dependency is preserved as a comment in case rollback is needed
 
 ### 3. Source Code Cleaned
-- **analysis_scripts/master_betting_detector.py**: 
+- **analysis_scripts/master_betting_detector.py** (REMOVED - replaced by Phase 3 Orchestrator): 
   - Commented out `import duckdb`
   - Updated logging message reference from "DuckDB" to "PostgreSQL"
 

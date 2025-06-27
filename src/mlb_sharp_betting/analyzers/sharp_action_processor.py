@@ -1,22 +1,18 @@
 """
-Backward compatibility module for sharp_action_processor.
+DEPRECATED - Use SharpActionProcessor directly
 
-This module provides backward compatibility for imports from the old location.
-The actual implementation has been moved to analysis/processors/real_time_processor.py
-as part of Phase 2 refactoring.
+This module is deprecated. Use the SharpActionProcessor from the processors module instead.
 """
 
 import warnings
+from ..analysis.processors.sharpaction_processor import SharpActionProcessor
 
-# Import from new location with alias for backward compatibility
-from ..analysis.processors.real_time_processor import RealTimeProcessor as SharpActionProcessor
-
-# Emit deprecation warning
 warnings.warn(
-    "Importing SharpActionProcessor from analyzers.sharp_action_processor is deprecated. "
-    "Use mlb_sharp_betting.analysis.processors.real_time_processor.RealTimeProcessor instead.",
+    "mlb_sharp_betting.analyzers.sharp_action_processor is deprecated. "
+    "Use mlb_sharp_betting.analysis.processors.sharpaction_processor.SharpActionProcessor instead.",
     DeprecationWarning,
     stacklevel=2
 )
 
+# For backward compatibility
 __all__ = ["SharpActionProcessor"]

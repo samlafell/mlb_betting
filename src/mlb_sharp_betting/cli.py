@@ -15,6 +15,10 @@ from typing import Optional
 import click
 import structlog
 
+# 🚨 CRITICAL: Initialize universal logger compatibility FIRST
+from mlb_sharp_betting.core.logging import setup_universal_logger_compatibility, get_logger
+setup_universal_logger_compatibility()
+
 from mlb_sharp_betting.entrypoint import DataPipeline
 from mlb_sharp_betting.cli.commands.pre_game import pregame_group
 from mlb_sharp_betting.cli.commands.daily_report import daily_report_group
@@ -23,10 +27,11 @@ from mlb_sharp_betting.cli.commands.data_collection import data_collection_group
 from mlb_sharp_betting.cli.commands.enhanced_detection import detection_group  
 from mlb_sharp_betting.cli.commands.enhanced_backtesting import enhanced_backtesting_group
 from mlb_sharp_betting.cli.commands.system_status import status_group
+from mlb_sharp_betting.cli.commands.orchestrator_demo import orchestrator_demo
 from mlb_sharp_betting.services.game_manager import GameManager
 
-# Configure logging
-logger = structlog.get_logger(__name__)
+# Configure logging with universal compatibility
+logger = get_logger(__name__)
 
 
 @click.group()
@@ -40,6 +45,10 @@ def cli(ctx, verbose):
     if verbose:
         import logging
         logging.getLogger().setLevel(logging.DEBUG)
+        logger.info_console("🔧 Verbose logging enabled")
+    
+    # Ensure logger compatibility is active
+    logger.debug_file_only("🚀 CLI initialized with universal logger compatibility")
 
 
 @cli.command()
@@ -703,9 +712,10 @@ def detect_opportunities(minutes: int, debug: bool, format: str, output: Optiona
     click.echo("   • Structured output formats")
     click.echo("")
     click.echo("📚 Available enhanced commands:")
-    click.echo("   mlb-cli detect opportunities    # Full detection with pipeline")
-    click.echo("   mlb-cli detect smart-pipeline   # Intelligent pipeline execution")
-    click.echo("   mlb-cli detect recommendations  # Get recommendations")
+    click.echo("   mlb-cli detect opportunities        # Full detection with pipeline")
+    click.echo("   mlb-cli detect smart-pipeline       # Intelligent pipeline execution")
+    click.echo("   mlb-cli detect recommendations      # Actual betting recommendations")
+    click.echo("   mlb-cli detect system-recommendations   # System maintenance recommendations")
     click.echo("")
     click.echo("⚠️  This deprecated command will be removed in a future version.")
     click.echo("=" * 50)
@@ -721,12 +731,11 @@ def detect_opportunities(minutes: int, debug: bool, format: str, output: Optiona
         from mlb_sharp_betting.db.connection import get_db_manager
         from mlb_sharp_betting.services.cross_market_flip_detector import CrossMarketFlipDetector
         
-        # Import here to avoid circular imports
-        sys.path.insert(0, 'analysis_scripts')
-        from refactored_master_betting_detector import RefactoredAdaptiveMasterBettingDetector
+        # Import the new orchestrator-based detector
+        from mlb_sharp_betting.services.adaptive_detector import AdaptiveBettingDetector
         
         db_manager = get_db_manager()
-        detector = RefactoredAdaptiveMasterBettingDetector()
+        detector = AdaptiveBettingDetector()
         flip_detector = CrossMarketFlipDetector(db_manager) if include_cross_market else None
         
         try:
@@ -906,9 +915,9 @@ def detect_opportunities(minutes: int, debug: bool, format: str, output: Optiona
             except Exception as cleanup_error:
                 click.echo(f"⚠️  Cleanup warning: {cleanup_error}")
     
-    click.echo("🎯 MASTER BETTING DETECTOR (DEPRECATED)")
+    click.echo("🎯 ADAPTIVE BETTING DETECTOR")
     click.echo("=" * 50)
-    click.echo("🤖 Using AI-optimized strategies from backtesting results")
+    click.echo("🤖 Using orchestrator-powered adaptive strategies")
     if include_cross_market:
         click.echo("🔀 Including cross-market flip detection")
     
@@ -1113,6 +1122,9 @@ cli.add_command(data_collection_group, name='data')
 cli.add_command(detection_group, name='detect')
 cli.add_command(enhanced_backtesting_group, name='backtest')
 cli.add_command(status_group, name='status')
+
+# Add individual commands
+cli.add_command(orchestrator_demo)
 
 if __name__ == '__main__':
     cli() 

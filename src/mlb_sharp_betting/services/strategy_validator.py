@@ -30,6 +30,8 @@ class StrategyValidator:
             'STEAM_MOVES': [],
             'BOOK_CONFLICTS': [],
             'TOTALS': [],
+            'UNDERDOG_VALUE': [],
+            'CONSENSUS_STRATEGIES': [],
             'GENERAL': []
         }
         
@@ -47,11 +49,16 @@ class StrategyValidator:
             return 'BOOK_CONFLICTS'
         elif 'opposing_markets' in strategy_lower:
             return 'OPPOSING_MARKETS'
-        elif 'steam' in strategy_lower or 'timing' in strategy_lower:
+        elif 'steam' in strategy_lower or 'timing' in strategy_lower or 'late_sharp_flip' in strategy_lower:
             return 'STEAM_MOVES'
-        elif 'total' in strategy_lower:
+        elif 'total' in strategy_lower and ('line' in strategy_lower or 'sweet' in strategy_lower):
             return 'TOTALS'
-        elif 'sharp_action' in strategy_lower or 'signal_combinations' in strategy_lower:
+        elif 'underdog_ml' in strategy_lower or 'underdog' in strategy_lower:
+            return 'UNDERDOG_VALUE'
+        elif 'signal_combo' in strategy_lower or 'consensus_moneyline' in strategy_lower or 'public_money_fade' in strategy_lower:
+            return 'CONSENSUS_STRATEGIES'
+        elif ('sharp' in strategy_lower or 'signal_combinations' in strategy_lower or 
+              'line_movement' in strategy_lower or 'hybrid' in strategy_lower):
             return 'SHARP_ACTION'
         else:
             return 'GENERAL'
@@ -66,7 +73,12 @@ class StrategyValidator:
             'TOTAL_SHARP': 'TOTALS',
             'OPPOSING_MARKETS': 'OPPOSING_MARKETS', 
             'STEAM_MOVE': 'STEAM_MOVES',
-            'BOOK_CONFLICT': 'BOOK_CONFLICTS'
+            'LATE_FLIP': 'STEAM_MOVES',
+            'BOOK_CONFLICTS': 'BOOK_CONFLICTS',
+            'PUBLIC_FADE': 'CONSENSUS_STRATEGIES',
+            'CONSENSUS_MONEYLINE': 'CONSENSUS_STRATEGIES',
+            'UNDERDOG_VALUE': 'UNDERDOG_VALUE',
+            'LINE_MOVEMENT': 'SHARP_ACTION'
         }
         
         category = signal_to_category.get(signal_type, 'GENERAL')
@@ -76,7 +88,30 @@ class StrategyValidator:
             # Fallback to general strategies if no specific category matches
             candidate_strategies = self.strategies_by_type.get('GENERAL', [])
         
-        # 1. Try exact matches first (same split_type)
+        # 1. Try book-specific exact matches first (source-book-split_type)
+        if source and book:
+            book_specific_key = f"{source.upper()}-{book.lower()}"
+            exact_book_matches = [s for s in candidate_strategies 
+                                if s.split_type == split_type and 
+                                book_specific_key.lower() in s.source_book.lower()]
+            
+            for strategy in exact_book_matches:
+                threshold = self.get_threshold_for_strategy(strategy, signal_strength)
+                if signal_strength >= threshold:
+                    return strategy
+        
+        # 2. Try source-specific matches (ignore book)
+        if source:
+            source_matches = [s for s in candidate_strategies 
+                            if s.split_type == split_type and 
+                            source.upper() in s.source_book.upper()]
+            
+            for strategy in source_matches:
+                threshold = self.get_threshold_for_strategy(strategy, signal_strength)
+                if signal_strength >= threshold:
+                    return strategy
+        
+        # 3. Try exact split_type matches (ignore source/book)
         exact_matches = [s for s in candidate_strategies if s.split_type == split_type]
         
         for strategy in exact_matches:
@@ -84,15 +119,16 @@ class StrategyValidator:
             if signal_strength >= threshold:
                 return strategy
         
-        # 2. Try compatible fallbacks within the same category
+        # 4. Try compatible fallbacks within the same category
         for strategy in candidate_strategies:
             # Use more conservative thresholds for fallback strategies
             threshold = self.get_threshold_for_strategy(strategy, signal_strength, is_fallback=True)
             if signal_strength >= threshold:
                 # Return a modified strategy indicating it's a fallback
+                fallback_source_book = f"{source}-{book}" if source and book else strategy.source_book
                 return ProfitableStrategy(
                     strategy_name=f"{strategy.strategy_name}_FALLBACK_{split_type}",
-                    source_book=strategy.source_book,
+                    source_book=fallback_source_book,
                     split_type=strategy.split_type,  # Keep original split_type
                     win_rate=strategy.win_rate,
                     roi=strategy.roi,
@@ -126,7 +162,12 @@ class StrategyValidator:
             'TOTAL_SHARP': 'TOTALS',
             'OPPOSING_MARKETS': 'OPPOSING_MARKETS',
             'STEAM_MOVE': 'STEAM_MOVES',
-            'BOOK_CONFLICT': 'BOOK_CONFLICTS'
+            'LATE_FLIP': 'STEAM_MOVES',
+            'BOOK_CONFLICTS': 'BOOK_CONFLICTS',
+            'PUBLIC_FADE': 'CONSENSUS_STRATEGIES',
+            'CONSENSUS_MONEYLINE': 'CONSENSUS_STRATEGIES',
+            'UNDERDOG_VALUE': 'UNDERDOG_VALUE',
+            'LINE_MOVEMENT': 'SHARP_ACTION'
         }
         
         category = signal_to_category.get(signal_type, 'GENERAL')

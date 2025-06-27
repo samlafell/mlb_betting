@@ -265,14 +265,12 @@ class PipelineOrchestrator:
             self.logger.info("🎯 Executing opportunity detection step")
             
             try:
-                # Import here to avoid circular imports
-                import sys
-                sys.path.insert(0, 'analysis_scripts')
-                from refactored_master_betting_detector import RefactoredAdaptiveMasterBettingDetector
+                # Import the new orchestrator-based detector
+                from mlb_sharp_betting.services.adaptive_detector import AdaptiveBettingDetector
                 from mlb_sharp_betting.services.cross_market_flip_detector import CrossMarketFlipDetector
                 
-                # Run main detection
-                detector = RefactoredAdaptiveMasterBettingDetector()
+                # Run main detection using new orchestrator
+                detector = AdaptiveBettingDetector()
                 detection_results = await detector.analyze_opportunities(detection_minutes)
                 execution_results['detection_results'] = detection_results
                 

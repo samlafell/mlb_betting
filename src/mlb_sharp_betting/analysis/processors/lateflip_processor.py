@@ -73,6 +73,7 @@ class LateFlipProcessor(BaseStrategyProcessor):
         
         if not flip_opportunities:
             self.logger.info("No late flip opportunities found")
+            self.logger.debug(f"Analyzed {len(steam_data)} steam records, found 0 flips meeting threshold")
             return []
         
         # Convert to signals
@@ -86,7 +87,8 @@ class LateFlipProcessor(BaseStrategyProcessor):
                 
             # Check if flip strength is significant enough
             flip_strength = flip_data.get('flip_strength', 0)
-            if flip_strength < 20.0:  # Minimum combined flip strength
+            if flip_strength < 8.5:  # Minimum 8.5% flip strength (LOWERED from 12% based on analysis)
+                self.logger.debug(f"Flip strength {flip_strength:.2f}% below threshold 8.5%")
                 continue
             
             # Apply juice filter if needed
@@ -197,7 +199,7 @@ class LateFlipProcessor(BaseStrategyProcessor):
         # Get first significant early reading and final late reading
         early_reading = None
         for reading in early_readings:
-            if abs(reading.get('differential', 0)) >= 8:  # Minimum sharp threshold
+            if abs(reading.get('differential', 0)) >= 6:  # Minimum sharp threshold (LOWERED from 8%)
                 early_reading = reading
                 break
         

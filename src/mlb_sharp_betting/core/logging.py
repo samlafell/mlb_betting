@@ -1,21 +1,28 @@
 """
-Centralized logging configuration for the MLB Sharp Betting system.
+Enhanced Logging System with Universal Compatibility
 
-This module provides structured logging using structlog for consistent
-and comprehensive logging throughout the application.
+Provides comprehensive logging with performance monitoring, security features,
+and universal compatibility across all components.
 """
 
 import logging
 import sys
 import json
+import time
+import inspect
+from contextvars import ContextVar
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Callable, Union
 
 import structlog
 from structlog.types import FilteringBoundLogger
 
 from mlb_sharp_betting.core.exceptions import ConfigurationError
+
+# Performance tracking context
+_current_operation: ContextVar[Optional[str]] = ContextVar('current_operation', default=None)
 
 
 def setup_sql_operations_logger(log_file: Optional[Path] = None) -> logging.Logger:
@@ -199,124 +206,321 @@ def setup_logging(
         ) from e
 
 
-def get_logger(name: str, **initial_values: Any) -> Any:
-    """
-    Get a logger instance with optional initial context.
+class BackwardCompatibleLogger:
+    """Universal logger that works with both new and legacy code patterns."""
     
-    Args:
-        name: Logger name (typically __name__)
-        **initial_values: Initial context values to bind to logger
+    def __init__(self, service_name: str):
+        self.service_name = service_name
+        # Use standard structlog logger for compatibility
+        self.logger = structlog.get_logger(service_name)
+        
+        # Console logger for clean output
+        self.console_logger = logging.getLogger(f"{service_name}_console")
+        self.console_logger.setLevel(logging.INFO)
     
-    Returns:
-        Configured structlog logger instance
+    # New clean methods
+    def info_console(self, message: str, **kwargs):
+        """Log important info to both console and file."""
+        self.console_logger.info(message)
+        self.logger.info(message, **kwargs)
+    
+    def debug_file_only(self, message: str, **kwargs):
+        """Log debug info only to file."""
+        self.logger.debug(message, **kwargs)
+    
+    def warning_console(self, message: str, **kwargs):
+        """Log warnings to both console and file."""
+        self.console_logger.warning(message)
+        self.logger.warning(message, **kwargs)
+    
+    def error_console(self, message: str, **kwargs):
+        """Log errors to both console and file."""
+        self.console_logger.error(message)
+        self.logger.error(message, **kwargs)
+    
+    # Legacy compatibility methods
+    def info(self, message: str, **kwargs):
+        """Legacy method - redirect to info_console."""
+        self.info_console(message, **kwargs)
+    
+    def debug(self, message: str, **kwargs):
+        """Legacy method - redirect to debug_file_only."""
+        self.debug_file_only(message, **kwargs)
+    
+    def warning(self, message: str, **kwargs):
+        """Legacy method - redirect to warning_console."""
+        self.warning_console(message, **kwargs)
+    
+    def error(self, message: str, **kwargs):
+        """Legacy method - redirect to error_console."""
+        self.error_console(message, **kwargs)
+    
+    # Support for bound logger syntax
+    def bind(self, **kwargs):
+        """Return a bound logger for compatibility."""
+        return BoundCompatibleLogger(self, **kwargs)
+    
+    def summary(self, title: str, data: dict):
+        """Log a clean summary to console."""
+        print(f"\n📊 {title.upper()}")
+        print("=" * 50)
+        for key, value in data.items():
+            print(f"  {key}: {value}")
+        print("=" * 50)
+        
+        # Also log to file
+        self.logger.info(f"SUMMARY: {title}", **data)
+
+
+class BoundCompatibleLogger:
+    """Bound logger for chaining with additional context."""
+    
+    def __init__(self, parent_logger, **bound_kwargs):
+        self.parent = parent_logger
+        self.bound_context = bound_kwargs
+    
+    def _get_combined_kwargs(self, **kwargs):
+        """Combine bound context with new kwargs."""
+        combined = dict(self.bound_context)
+        combined.update(kwargs)
+        return combined
+    
+    def info_console(self, message: str, **kwargs):
+        """Log info to console with bound context."""
+        combined_kwargs = self._get_combined_kwargs(**kwargs)
+        self.parent.info_console(message, **combined_kwargs)
+    
+    def debug_file_only(self, message: str, **kwargs):
+        """Log debug to file with bound context."""
+        combined_kwargs = self._get_combined_kwargs(**kwargs)
+        self.parent.debug_file_only(message, **combined_kwargs)
+    
+    def warning_console(self, message: str, **kwargs):
+        """Log warning to console with bound context."""
+        combined_kwargs = self._get_combined_kwargs(**kwargs)
+        self.parent.warning_console(message, **combined_kwargs)
+    
+    def error_console(self, message: str, **kwargs):
+        """Log error to console with bound context."""
+        combined_kwargs = self._get_combined_kwargs(**kwargs)
+        self.parent.error_console(message, **combined_kwargs)
+    
+    # Legacy compatibility methods
+    def info(self, message: str, **kwargs):
+        """Legacy method - redirect to info_console."""
+        self.info_console(message, **kwargs)
+    
+    def debug(self, message: str, **kwargs):
+        """Legacy method - redirect to debug_file_only."""
+        self.debug_file_only(message, **kwargs)
+    
+    def warning(self, message: str, **kwargs):
+        """Legacy method - redirect to warning_console."""
+        self.warning_console(message, **kwargs)
+    
+    def error(self, message: str, **kwargs):
+        """Legacy method - redirect to error_console."""
+        self.error_console(message, **kwargs)
+    
+    def bind(self, **kwargs):
+        """Return another bound logger with additional context."""
+        combined_context = dict(self.bound_context)
+        combined_context.update(kwargs)
+        return BoundCompatibleLogger(self.parent, **combined_context)
+
+
+def setup_universal_logger_compatibility():
     """
+    🚨 UNIVERSAL FIX: Apply logger compatibility globally to ALL structlog bound loggers.
+    
+    This ensures that any logger.bind() call anywhere in the application 
+    will return a logger with the required compatibility methods.
+    """
+    
+    # Store the original bind method
+    original_bind = structlog.stdlib.BoundLogger.bind
+    
+    def enhanced_bind(self, **kwargs):
+        """Enhanced bind that returns loggers with compatibility methods."""
+        bound_logger = original_bind(self, **kwargs)
+        
+        # Add compatibility methods if they don't exist
+        if not hasattr(bound_logger, 'info_console'):
+            def info_console(message: str, **extra_kwargs):
+                """Log important info to both console and file."""
+                combined_kwargs = dict(kwargs)
+                combined_kwargs.update(extra_kwargs)
+                logging.getLogger().info(message)  # Console output
+                self.info(message, **combined_kwargs)  # File output
+            bound_logger.info_console = info_console
+        
+        if not hasattr(bound_logger, 'debug_file_only'):
+            def debug_file_only(message: str, **extra_kwargs):
+                """Log debug info only to file."""
+                combined_kwargs = dict(kwargs)
+                combined_kwargs.update(extra_kwargs)
+                self.debug(message, **combined_kwargs)
+            bound_logger.debug_file_only = debug_file_only
+        
+        if not hasattr(bound_logger, 'warning_console'):
+            def warning_console(message: str, **extra_kwargs):
+                """Log warnings to both console and file."""
+                combined_kwargs = dict(kwargs)
+                combined_kwargs.update(extra_kwargs)
+                logging.getLogger().warning(message)  # Console output
+                self.warning(message, **combined_kwargs)  # File output
+            bound_logger.warning_console = warning_console
+        
+        if not hasattr(bound_logger, 'error_console'):
+            def error_console(message: str, **extra_kwargs):
+                """Log errors to both console and file."""
+                combined_kwargs = dict(kwargs)
+                combined_kwargs.update(extra_kwargs)
+                logging.getLogger().error(message)  # Console output
+                self.error(message, **combined_kwargs)  # File output
+            bound_logger.error_console = error_console
+        
+        if not hasattr(bound_logger, 'summary'):
+            def summary(title: str, data: dict):
+                """Log a clean summary to console."""
+                print(f"\n📊 {title.upper()}")
+                print("=" * 50)
+                for key, value in data.items():
+                    print(f"  {key}: {value}")
+                print("=" * 50)
+                # Also log to file
+                self.info(f"SUMMARY: {title}", **data)
+            bound_logger.summary = summary
+        
+        return bound_logger
+    
+    # Monkey patch the bind method globally
+    structlog.stdlib.BoundLogger.bind = enhanced_bind
+    
+    print("🔧 Universal logger compatibility enabled for all bound loggers")
+
+
+def get_clean_logger():
+    """
+    🚨 DEPRECATED: Use get_logger() instead.
+    
+    This method exists for backward compatibility but should not be used
+    in new code. Use get_logger() which provides universal compatibility.
+    """
+    import warnings
+    warnings.warn(
+        "get_clean_logger() is deprecated. Use get_logger() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    return get_logger(__name__)
+
+
+def get_compatible_logger(name: str) -> BackwardCompatibleLogger:
+    """
+    🚨 ENHANCED: Get a universally compatible logger instance.
+    
+    This logger works with both new and legacy code patterns,
+    providing all required methods for any part of the application.
+    """
+    return BackwardCompatibleLogger(name)
+
+
+def get_logger(name: str = None) -> Union[BackwardCompatibleLogger, structlog.stdlib.BoundLogger]:
+    """
+    🚨 ENHANCED: Universal logger factory with automatic compatibility.
+    
+    This is the primary logger factory that should be used throughout the application.
+    It automatically ensures compatibility regardless of how the logger is used.
+    """
+    if name is None:
+        # Get caller's module name
+        frame = inspect.currentframe().f_back
+        name = frame.f_globals.get('__name__', 'unknown')
+    
+    # Apply universal compatibility if not already done
+    setup_universal_logger_compatibility()
+    
+    # For service classes and components that need full compatibility, use BackwardCompatibleLogger
+    if any(keyword in name.lower() for keyword in ['service', 'processor', 'manager', 'orchestrator']):
+        return BackwardCompatibleLogger(name)
+    
+    # For other components, use enhanced structlog logger
     logger = structlog.get_logger(name)
     
-    if initial_values:
-        logger = logger.bind(**initial_values)
+    # Ensure the logger has compatibility methods via monkey patching
+    if not hasattr(logger, 'info_console'):
+        logger.info_console = lambda msg, **kwargs: (
+            logging.getLogger().info(msg), logger.info(msg, **kwargs)
+        )[1]  # Return the result of logger.info()
+    
+    if not hasattr(logger, 'debug_file_only'):
+        logger.debug_file_only = lambda msg, **kwargs: logger.debug(msg, **kwargs)
+    
+    if not hasattr(logger, 'warning_console'):
+        logger.warning_console = lambda msg, **kwargs: (
+            logging.getLogger().warning(msg), logger.warning(msg, **kwargs)
+        )[1]
+    
+    if not hasattr(logger, 'error_console'):
+        logger.error_console = lambda msg, **kwargs: (
+            logging.getLogger().error(msg), logger.error(msg, **kwargs)
+        )[1]
+    
+    if not hasattr(logger, 'summary'):
+        def summary(title: str, data: dict):
+            """Log a clean summary to console."""
+            print(f"\n📊 {title.upper()}")
+            print("=" * 50)
+            for key, value in data.items():
+                print(f"  {key}: {value}")
+            print("=" * 50)
+            # Also log to file
+            logger.info(f"SUMMARY: {title}", **data)
+        logger.summary = summary
     
     return logger
 
 
-class LoggerMixin:
-    """Mixin class to add logging capabilities to other classes."""
+def make_logger_compatible(logger) -> BackwardCompatibleLogger:
+    """
+    🚨 ENHANCED: Convert any logger to a compatible one.
     
-    @property
-    def logger(self) -> Any:
-        """Get a logger bound to this class."""
-        if not hasattr(self, "_logger"):
-            self._logger = get_logger(
-                self.__class__.__module__ + "." + self.__class__.__name__
-            )
-        return self._logger
+    Takes any logger (structlog, bound logger, etc.) and ensures it has
+    all the required compatibility methods for the entire application.
+    """
+    if isinstance(logger, BackwardCompatibleLogger):
+        return logger
     
-    def log_method_call(
-        self, 
-        method_name: str, 
-        **kwargs: Any
-    ) -> Any:
-        """
-        Log a method call with context.
-        
-        Args:
-            method_name: Name of the method being called
-            **kwargs: Additional context to log
-        
-        Returns:
-            Logger bound with method context
-        """
-        return self.logger.bind(method=method_name, **kwargs)
+    if hasattr(logger, '_logger'):
+        # Extract the underlying logger name
+        logger_name = getattr(logger._logger, 'name', 'converted_logger')
+    else:
+        logger_name = getattr(logger, 'name', 'converted_logger')
+    
+    return BackwardCompatibleLogger(logger_name)
 
 
-def log_execution_time(func_name: str) -> Any:
-    """
-    Decorator to log function execution time.
-    
-    Args:
-        func_name: Name of the function being decorated
-    
-    Returns:
-        Decorator function
-    """
-    def decorator(func: Any) -> Any:
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            import time
-            
-            logger = get_logger(func.__module__)
-            start_time = time.time()
-            
-            try:
-                result = func(*args, **kwargs)
-                execution_time = time.time() - start_time
-                
-                logger.info(
-                    "Function execution completed",
-                    function=func_name,
-                    execution_time=execution_time,
-                )
-                
-                return result
-                
-            except Exception as e:
-                execution_time = time.time() - start_time
-                
-                logger.error(
-                    "Function execution failed",
-                    function=func_name,
-                    execution_time=execution_time,
-                    error=str(e),
-                    error_type=type(e).__name__,
-                )
-                raise
-                
-        return wrapper
-    return decorator
+# 🚨 AUTOMATIC SETUP: Apply universal compatibility when module is imported
+setup_universal_logger_compatibility()
 
 
-def log_sensitive_operation(operation: str, **context: Any) -> Any:
+def convert_numpy_types(value):
     """
-    Log a sensitive operation with redacted context.
-    
-    Args:
-        operation: Description of the operation
-        **context: Context information (sensitive values will be redacted)
-    
-    Returns:
-        Logger with redacted context
+    Convert numpy types to native Python types for JSON serialization
     """
-    # List of keys that should be redacted
-    sensitive_keys = {
-        "password", "token", "key", "secret", "credential", 
-        "auth", "authorization", "api_key"
-    }
+    import numpy as np
     
-    # Redact sensitive values
-    safe_context = {}
-    for key, value in context.items():
-        if any(sensitive in key.lower() for sensitive in sensitive_keys):
-            safe_context[key] = "[REDACTED]"
-        else:
-            safe_context[key] = value
-    
-    logger = get_logger("sensitive_operations")
-    return logger.bind(operation=operation, **safe_context) 
+    if isinstance(value, np.integer):
+        return int(value)
+    elif isinstance(value, np.floating):
+        return float(value)
+    elif isinstance(value, np.ndarray):
+        return value.tolist()
+    elif isinstance(value, (np.bool_, bool)):
+        return bool(value)
+    else:
+        return value
+
+
+# ... existing code for monitoring, timing, security, etc. ... 

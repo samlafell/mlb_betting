@@ -10,12 +10,28 @@ This module provides comprehensive sharp action analysis with layered architectu
 
 from .detectors.sharp_detector import SharpDetector
 from .processors.analytical_processor import AnalyticalProcessor
-from .processors.real_time_processor import RealTimeProcessor
-from .strategies.sharp_action_strategy import SharpActionStrategy
+from .processors.sharpaction_processor import SharpActionProcessor
+from .processors.opposingmarkets_processor import OpposingMarketsProcessor
+from .processors.consensus_processor import ConsensusProcessor
+from .processors.underdogvalue_processor import UnderdogValueProcessor
+from .processors.bookconflict_processor import BookConflictProcessor
+from .processors.publicfade_processor import PublicFadeProcessor
+from .processors.lateflip_processor import LateFlipProcessor
+from .processors.hybridsharp_processor import HybridSharpProcessor
+from .processors.timingbased_processor import TimingBasedProcessor
+from .processors.strategy_processor_factory import StrategyProcessorFactory
 
 __all__ = [
     "SharpDetector",
     "AnalyticalProcessor", 
-    "RealTimeProcessor",
-    "SharpActionStrategy",
+    "SharpActionProcessor",
+    "OpposingMarketsProcessor",
+    "ConsensusProcessor",
+    "UnderdogValueProcessor",
+    "BookConflictProcessor",
+    "PublicFadeProcessor",
+    "LateFlipProcessor",
+    "HybridSharpProcessor",
+    "TimingBasedProcessor",
+    "StrategyProcessorFactory",
 ] 

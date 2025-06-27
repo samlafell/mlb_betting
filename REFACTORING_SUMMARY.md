@@ -33,7 +33,7 @@ AdaptiveMasterBettingDetector (1,737 lines)
 
 ### After: Modular Architecture
 ```
-RefactoredAdaptiveMasterBettingDetector [250 lines]
+Phase 3 Orchestrator System [distributed across multiple services]
 ├── BettingSignalRepository (data access)
 ├── StrategyValidator (unified validation)
 ├── SignalProcessors (strategy pattern)
@@ -200,7 +200,7 @@ class StrategyThresholds:
 4. **Base Processor** (`signal_processor_base.py`)
 5. **Sharp Action Processor** (`sharp_action_processor.py`)
 6. **Analysis Formatter** (`betting_analysis_formatter.py`)
-7. **Refactored Main Detector** (`refactored_master_betting_detector.py`)
+7. **Phase 3 Orchestrator System** (replaces old detectors)
 
 ### 🚧 Remaining Work
 1. **Additional Processors**:
@@ -235,13 +235,13 @@ class StrategyThresholds:
 ### Running the Refactored Detector
 ```bash
 # Standard analysis (60 minutes ahead)
-uv run analysis_scripts/refactored_master_betting_detector.py
+uv run src/mlb_sharp_betting/cli.py orchestrator-demo
 
 # Extended timeframe  
-uv run analysis_scripts/refactored_master_betting_detector.py --minutes 300
+uv run src/mlb_sharp_betting/cli.py orchestrator-demo --minutes 300
 
 # Debug mode
-uv run analysis_scripts/refactored_master_betting_detector.py --debug
+uv run src/mlb_sharp_betting/cli.py orchestrator-demo --debug
 ```
 
 ### Using Components Independently

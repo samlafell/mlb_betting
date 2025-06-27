@@ -940,3 +940,12 @@ Press Ctrl+C to stop the scheduler...
 [[31m[1merror    [0m] [1mPostgreSQL cursor operation failed[0m [[0m[1m[34mmlb_sharp_betting.db.postgres_db_manager[0m][0m [36merror[0m=[35m'Database connection error: syntax error at or near "."\nLINE 1: CREATE SCHEMA IF NOT EXISTS mlb_betting.tracking\n                                               ^\n'[0m
 [[31m[1merror    [0m] [1mFailed to initialize tracking tables[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_recommendation_tracker[0m][0m [36merror[0m=[35m'Database connection error: syntax error at or near "."\nLINE 1: CREATE SCHEMA IF NOT EXISTS mlb_betting.tracking\n                                               ^\n'[0m [36mservice[0m=[35mrecommendation_tracker[0m
 [[33m[1mwarning  [0m] [1mFailed to log betting recommendations[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36merror[0m=[35m'Database connection error: syntax error at or near "."\nLINE 1: CREATE SCHEMA IF NOT EXISTS mlb_betting.tracking\n                                               ^\n'[0m [36mgame[0m=[35m'Miami Marlins @ San Francisco Giants'[0m [36mservice[0m=[35mpre_game_workflow[0m
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-26 10:00:00 EDT)" was missed by 7:06:41.652016
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-26 10:00:00 EDT)" was missed by 6:06:41.655767
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-26 10:00:00 EDT)" was missed by 5:06:41.656136
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-26 10:00:00 EDT)" was missed by 4:06:41.656369
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-26 10:00:00 EDT)" was missed by 3:06:41.656568
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-26 10:00:00 EDT)" was missed by 2:06:41.656740
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-26 10:00:00 EDT)" was missed by 1:06:41.656907
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-26 10:00:00 EDT)" was missed by 0:06:41.657067
+Run time of job "Daily Game Setup (trigger: cron[hour='6', minute='0'], next run at: 2025-06-27 06:00:00 EDT)" was missed by 3:06:41.657270

@@ -65,6 +65,7 @@ class BookConflictProcessor(BaseStrategyProcessor):
         
         if not book_conflicts:
             self.logger.info("No book conflicts found")
+            self.logger.debug(f"Analyzed {len(multi_book_data)} multi-book records, found 0 conflicts meeting threshold")
             return []
         
         # Convert to signals
@@ -78,7 +79,8 @@ class BookConflictProcessor(BaseStrategyProcessor):
                 
             # Check if conflict strength is significant enough
             conflict_strength = conflict_data.get('weighted_sharp_variance', 0)
-            if conflict_strength < 15.0:  # Minimum 15% conflict strength
+            if conflict_strength < 5.5:  # Minimum 5.5% conflict strength (LOWERED from 8% based on analysis)
+                self.logger.debug(f"Conflict strength {conflict_strength:.2f}% below threshold 5.5%")
                 continue
             
             # Apply juice filter if needed

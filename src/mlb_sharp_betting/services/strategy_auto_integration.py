@@ -124,22 +124,22 @@ class StrategyAutoIntegration:
             end_date = datetime.now(timezone.utc)
             start_date = end_date - timedelta(days=lookback_days)
             
-            # Query the latest strategy results
+            # Query the latest strategy results from NEW PROCESSOR SYSTEM
             query = """
             SELECT DISTINCT
-                source_book_type,
+                processor_name as source_book_type,
                 split_type,
-                strategy_variant,
+                strategy_id as strategy_variant,
                 total_bets,
                 wins,
                 win_rate,
                 roi_per_100_unit,
                 last_updated
-            FROM tracking.strategy_performance_cache 
+            FROM backtesting.enhanced_strategy_results 
             WHERE last_updated >= %s
               AND total_bets >= %s
               AND roi_per_100_unit >= %s
-              AND strategy_variant IS NOT NULL
+              AND strategy_id IS NOT NULL
             ORDER BY roi_per_100_unit DESC, total_bets DESC
             """
             
@@ -435,16 +435,29 @@ class StrategyAutoIntegration:
         return results
     
     async def get_active_high_roi_strategies(self) -> List[HighROIStrategy]:
-        """Get all currently active high-ROI strategies."""
+        """Get all currently active high-ROI strategies from NEW PROCESSOR SYSTEM."""
         try:
+            # Query from the new enhanced backtesting results instead of legacy tables
             query = """
-            SELECT * FROM tracking.active_high_roi_strategies 
-            WHERE integration_status = 'ACTIVE'
+            SELECT DISTINCT
+                strategy_id,
+                processor_name as source_book_type,
+                split_type,
+                strategy_id as strategy_variant,
+                total_bets,
+                win_rate,
+                roi_per_100_unit,
+                confidence_score,
+                last_updated as created_at
+            FROM backtesting.enhanced_strategy_results 
+            WHERE roi_per_100_unit >= %s
+              AND total_bets >= %s
+              AND last_updated >= CURRENT_DATE - INTERVAL '30 days'
             ORDER BY roi_per_100_unit DESC
             """
             
             with self.db_manager.get_cursor() as cursor:
-                cursor.execute(query)
+                cursor.execute(query, (self.min_roi_threshold, self.min_bet_count))
                 results = cursor.fetchall()
             
             strategies = []

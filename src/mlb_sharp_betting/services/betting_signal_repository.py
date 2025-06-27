@@ -376,13 +376,11 @@ class BettingSignalRepository:
                differential, source, book, game_datetime, last_updated
         FROM latest_ml_splits
         WHERE rn = 1
-          AND ABS(differential) >= %s
         ORDER BY ABS(differential) DESC
         """
         
         return self.coordinator.execute_read(query, (
-            start_time, end_time, 
-            self.config.minimum_differential
+            start_time, end_time
         ))
     
     async def get_spread_splits(self, start_time: datetime, end_time: datetime) -> List[Dict]:
@@ -445,13 +443,11 @@ class BettingSignalRepository:
                differential, source, book, game_datetime, last_updated
         FROM latest_splits
         WHERE rn = 1
-          AND ABS(differential) >= %s
         ORDER BY game_datetime, split_type, ABS(differential) DESC
         """
         
         return self.coordinator.execute_read(query, (
-            start_time, end_time,
-            self.config.minimum_differential
+            start_time, end_time
         ))
     
     async def get_public_betting_data(self, start_time: datetime, end_time: datetime) -> List[Dict]:
@@ -476,13 +472,13 @@ class BettingSignalRepository:
         SELECT game_id, home_team, away_team, split_type, split_value,
                home_or_over_stake_percentage, home_or_over_bets_percentage,
                differential, source, book, game_datetime, last_updated,
-               -- Public betting indicators
+               -- Public betting indicators (calculated but not filtered)
                CASE 
                    WHEN home_or_over_bets_percentage > 70 THEN 'HEAVY_PUBLIC_HOME_OVER'
                    WHEN home_or_over_bets_percentage < 30 THEN 'HEAVY_PUBLIC_AWAY_UNDER'
                    ELSE 'BALANCED'
                END as public_tendency,
-               -- Fade opportunity strength
+               -- Fade opportunity strength (calculated but not filtered)
                CASE 
                    WHEN home_or_over_bets_percentage > 75 OR home_or_over_bets_percentage < 25 THEN 'HIGH_FADE'
                    WHEN home_or_over_bets_percentage > 70 OR home_or_over_bets_percentage < 30 THEN 'MODERATE_FADE'
@@ -490,16 +486,77 @@ class BettingSignalRepository:
                END as fade_strength
         FROM latest_splits
         WHERE rn = 1
-          AND (home_or_over_bets_percentage > 70 OR home_or_over_bets_percentage < 30)  -- Only heavy public betting
-        ORDER BY 
-            CASE 
-                WHEN home_or_over_bets_percentage > 75 OR home_or_over_bets_percentage < 25 THEN 1
-                WHEN home_or_over_bets_percentage > 70 OR home_or_over_bets_percentage < 30 THEN 2
-                ELSE 3
-            END,
-            ABS(differential) DESC
+        ORDER BY ABS(differential) DESC
         """
         
         return self.coordinator.execute_read(query, (
             start_time, end_time
-        )) 
+        ))
+
+    async def get_consensus_signal_data(self, start_time: datetime, end_time: datetime) -> List[Dict]:
+        """Get consensus signal data for consensus processor"""  
+        query = """
+        WITH latest_moneyline AS (
+            SELECT 
+                home_team, away_team, split_type, split_value,
+                home_or_over_stake_percentage as money_pct,
+                home_or_over_bets_percentage as bet_pct,
+                (home_or_over_stake_percentage - home_or_over_bets_percentage) as differential,
+                source, book, game_datetime, last_updated,
+                ROW_NUMBER() OVER (
+                    PARTITION BY home_team, away_team, game_datetime, source, COALESCE(book, 'UNKNOWN')
+                    ORDER BY last_updated DESC
+                ) as rn
+            FROM splits.raw_mlb_betting_splits
+            WHERE game_datetime BETWEEN %s AND %s
+              AND split_type = 'moneyline'
+              AND home_or_over_stake_percentage IS NOT NULL 
+              AND home_or_over_bets_percentage IS NOT NULL
+              AND game_datetime IS NOT NULL
+              AND NOT (home_or_over_stake_percentage = 0 AND home_or_over_bets_percentage = 0)
+              AND last_updated >= NOW() - INTERVAL '24 hours'
+        )
+        SELECT home_team, away_team, split_type, split_value,
+               money_pct, bet_pct, differential, source, book, 
+               game_datetime, last_updated
+        FROM latest_moneyline
+        WHERE rn = 1
+        ORDER BY ABS(differential) DESC
+        """
+        
+        return self.coordinator.execute_read(query, (start_time, end_time))
+
+    async def get_underdog_value_data(self, start_time: datetime, end_time: datetime) -> List[Dict]:
+        """Get underdog value data for underdog value processor"""
+        query = """
+        WITH latest_moneyline AS (
+            SELECT 
+                home_team, away_team, split_type, split_value,
+                home_or_over_stake_percentage as home_stake_pct,
+                home_or_over_bets_percentage as home_bet_pct,
+                (home_or_over_stake_percentage - home_or_over_bets_percentage) as differential,
+                source, book, game_datetime, last_updated,
+                ROW_NUMBER() OVER (
+                    PARTITION BY home_team, away_team, game_datetime, source, COALESCE(book, 'UNKNOWN')
+                    ORDER BY last_updated DESC
+                ) as rn
+            FROM splits.raw_mlb_betting_splits
+            WHERE game_datetime BETWEEN %s AND %s
+              AND split_type = 'moneyline' 
+              AND home_or_over_stake_percentage IS NOT NULL 
+              AND home_or_over_bets_percentage IS NOT NULL
+              AND game_datetime IS NOT NULL
+              AND split_value IS NOT NULL
+              AND split_value != '{}'
+              AND NOT (home_or_over_stake_percentage = 0 AND home_or_over_bets_percentage = 0)
+              AND last_updated >= NOW() - INTERVAL '24 hours'
+        )
+        SELECT home_team, away_team, split_type, split_value,
+               home_stake_pct, home_bet_pct, differential, source, book,
+               game_datetime, last_updated
+        FROM latest_moneyline
+        WHERE rn = 1
+        ORDER BY ABS(differential) DESC
+        """
+        
+        return self.coordinator.execute_read(query, (start_time, end_time)) 

@@ -72,6 +72,7 @@ class PublicFadeProcessor(BaseStrategyProcessor):
         
         if not fade_opportunities:
             self.logger.info("No public fade opportunities found")
+            self.logger.debug(f"Analyzed {len(public_data)} public betting records, found 0 opportunities meeting threshold")
             return []
         
         # Convert to signals
@@ -85,7 +86,8 @@ class PublicFadeProcessor(BaseStrategyProcessor):
                 
             # Check if public consensus is strong enough
             consensus_strength = fade_data.get('public_consensus_strength', 0)
-            if consensus_strength < 75.0:  # Minimum 75% public consensus
+            if consensus_strength < 58.0:  # Minimum 58% public consensus (LOWERED from 65% based on analysis)
+                self.logger.debug(f"Public consensus {consensus_strength:.1f}% below threshold 58.0%")
                 continue
             
             # Apply juice filter if needed
@@ -192,12 +194,15 @@ class PublicFadeProcessor(BaseStrategyProcessor):
         
         num_books = len(money_percentages)
         
-        # Heavy public consensus (85%+ average with 2+ books)
-        if avg_money_pct >= 85 and num_books >= 2:
+        # Heavy public consensus (80%+ average OR any book 85%+)
+        max_money_pct = max(money_percentages)
+        min_money_pct = min(money_percentages)
+        
+        if (avg_money_pct >= 80 or max_money_pct >= 85) and num_books >= 1:
             consensus_type = 'HEAVY_PUBLIC_HOME'
             fade_recommendation = book_data[0]['away_team']
             fade_confidence = 'HIGH'
-        elif avg_money_pct <= 15 and num_books >= 2:
+        elif (avg_money_pct <= 20 or min_money_pct <= 15) and num_books >= 1:
             consensus_type = 'HEAVY_PUBLIC_AWAY'
             fade_recommendation = book_data[0]['home_team']
             fade_confidence = 'HIGH'
@@ -279,9 +284,9 @@ class PublicFadeProcessor(BaseStrategyProcessor):
         if consensus_analysis['num_books'] < 2:
             return False
         
-        # Must have strong enough consensus
+        # Must have strong enough consensus (lowered threshold)
         consensus_strength = consensus_analysis['public_consensus_strength']
-        if consensus_strength < 75.0:
+        if consensus_strength < 65.0:
             return False
         
         # Heavy consensus needs 2+ books, moderate needs 3+
@@ -317,8 +322,8 @@ class PublicFadeProcessor(BaseStrategyProcessor):
         if not fade_data.get('fade_recommendation'):
             return False
         
-        # Minimum consensus strength
-        if fade_data.get('public_consensus_strength', 0) < 70.0:
+        # Minimum consensus strength (lowered)
+        if fade_data.get('public_consensus_strength', 0) < 65.0:
             return False
         
         return True

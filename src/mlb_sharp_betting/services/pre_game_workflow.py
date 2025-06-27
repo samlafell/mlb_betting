@@ -595,9 +595,8 @@ class PreGameWorkflowService:
         self.logger.info("Executing Stage 2: Betting Analysis")
         
         try:
-            # Build command for refactored master betting detector
-            detector_path = self.project_root / "analysis_scripts" / "refactored_master_betting_detector.py"
-            cmd = ["uv", "run", str(detector_path), "--minutes", "15"]
+            # Build command for orchestrator demo (replaces old master betting detector)
+            cmd = ["uv", "run", "src/mlb_sharp_betting/cli.py", "orchestrator-demo", "--minutes", "15"]
             
             # Execute with timeout
             result = await asyncio.wait_for(

@@ -218,7 +218,7 @@ uv run python -m mlb_sharp_betting.entrypoint
 
 #### Stage 2: Betting Analysis (3 retries, exponential backoff)
 ```bash
-uv run analysis_scripts/master_betting_detector.py --minutes 5
+uv run src/mlb_sharp_betting/cli.py orchestrator-demo --minutes 5
 ```
 - Executes adaptive sharp action detection
 - Analyzes recent betting line movements
@@ -344,7 +344,7 @@ DISABLE_EMAIL_NOTIFICATIONS=true uv run python src/mlb_sharp_betting/cli.py preg
 uv run python -m mlb_sharp_betting.entrypoint
 
 # Test analysis
-uv run analysis_scripts/master_betting_detector.py --minutes 5
+uv run src/mlb_sharp_betting/cli.py orchestrator-demo --minutes 5
 
 # Test email configuration
 python -c "

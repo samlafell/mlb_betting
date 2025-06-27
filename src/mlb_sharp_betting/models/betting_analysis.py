@@ -20,6 +20,12 @@ class SignalType(Enum):
     TOTAL_SHARP = "TOTAL_SHARP"
     PUBLIC_FADE = "PUBLIC_FADE"
     LATE_FLIP = "LATE_FLIP"
+    CONSENSUS_MONEYLINE = "CONSENSUS_MONEYLINE"  # New - consensus strategies
+    UNDERDOG_VALUE = "UNDERDOG_VALUE"  # New - underdog value strategies
+    LINE_MOVEMENT = "LINE_MOVEMENT"  # New - line movement strategies  
+    TIMING_BASED = "TIMING_BASED"  # New - timing-based strategies
+    HYBRID_SHARP = "HYBRID_SHARP"  # New - hybrid sharp + line movement
+    SIGNAL_COMBINATIONS = "SIGNAL_COMBINATIONS"  # New - multi-signal strategies
 
 
 @dataclass

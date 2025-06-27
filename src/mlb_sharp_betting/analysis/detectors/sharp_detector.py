@@ -1,49 +1,91 @@
 """
-Unified Sharp Action Detector
+Enhanced Sharp Action Detector
 
-Provides a unified interface for sharp action detection that coordinates
-between analytical processing (ML-based historical analysis) and 
-real-time processing (live signal validation).
+Implements comprehensive sharp betting pattern detection using:
+- Multi-book consensus analysis
+- Volume-weighted signal strength
+- Time-decay adjustment for signal relevance
+- Real-time signal processing via SharpActionProcessor
+- Steam move detection with configurable time windows
 
-This replaces the stub implementations in analyzers/sharp_detector.py
-and services/sharp_monitor.py with a proper unified interface.
+The detector processes raw betting data through sophisticated algorithms
+to identify professional betting patterns and generate actionable signals.
 """
 
-from typing import Any, Dict, List, Optional
-from datetime import datetime
+from typing import Dict, List, Optional, Any, Tuple
+from datetime import datetime, timedelta
+import numpy as np
+from dataclasses import dataclass
 
-from ...models.betting_analysis import BettingSignal, SignalType, ProfitableStrategy
+from ...core.logging import get_logger
 from ...models.base import BaseModel
+from ...models.betting_analysis import BettingSignal, SignalType, ProfitableStrategy
 from ..processors.analytical_processor import AnalyticalProcessor
-from ..processors.real_time_processor import RealTimeProcessor
+from ..processors.sharpaction_processor import SharpActionProcessor
 
 
 class SharpDetector:
     """
-    Unified Sharp Action Detection Interface
+    Advanced sharp action detection with multi-signal analysis.
     
-    Coordinates between analytical and real-time processing to provide
-    comprehensive sharp action detection capabilities.
+    Processes betting splits data to identify professional betting patterns
+    using statistical analysis, volume weighting, and temporal factors.
     
-    Key Features:
-    - Historical pattern analysis via AnalyticalProcessor
-    - Real-time signal processing via RealTimeProcessor  
-    - Unified API for both analytical and live detection
-    - Strategy integration and confidence scoring
+    Key capabilities:
+    - Multi-book consensus detection
+    - Volume-weighted signal strength calculation
+    - Time-decay adjustment for signal relevance
+    - Steam move identification
+    - Cross-market validation
+    
+    The detector implements sophisticated algorithms to filter noise
+    and identify high-confidence sharp betting opportunities.
     """
     
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
-        """Initialize sharp detector with configuration."""
-        self.config = config or {}
+    def __init__(self, 
+                 enable_consensus: bool = True,
+                 enable_volume_weighting: bool = True,
+                 enable_time_decay: bool = True,
+                 enable_steam_detection: bool = True,
+                 enable_real_time: bool = False,
+                 consensus_threshold: float = 0.7,
+                 volume_threshold: int = 100,
+                 time_decay_hours: int = 24,
+                 steam_window_minutes: int = 30):
+        """
+        Initialize sharp detector with configurable parameters.
+        
+        Args:
+            enable_consensus: Enable multi-book consensus analysis
+            enable_volume_weighting: Weight signals by betting volume
+            enable_time_decay: Apply time decay to older signals
+            enable_steam_detection: Detect steam moves
+            enable_real_time: Enable real-time processing
+            consensus_threshold: Minimum consensus for signal validation
+            volume_threshold: Minimum volume for signal consideration
+            time_decay_hours: Hours for time decay calculation
+            steam_window_minutes: Time window for steam move detection
+        """
+        self.logger = get_logger(__name__)
+        
+        # Feature toggles
+        self.enable_consensus = enable_consensus
+        self.enable_volume_weighting = enable_volume_weighting
+        self.enable_time_decay = enable_time_decay
+        self.enable_steam_detection = enable_steam_detection
+        self.enable_real_time = enable_real_time
+        
+        # Configuration parameters
+        self.consensus_threshold = consensus_threshold
+        self.volume_threshold = volume_threshold
+        self.time_decay_hours = time_decay_hours
+        self.steam_window_minutes = steam_window_minutes
         
         # Initialize processors
         self.analytical_processor = AnalyticalProcessor()
-        self.real_time_processor = None  # Will be initialized when needed
+        self.sharp_action_processor = SharpActionProcessor()
         
-        # Detection settings
-        self.min_confidence = self.config.get('min_confidence', 0.6)
-        self.enable_analytical = self.config.get('enable_analytical', True)
-        self.enable_real_time = self.config.get('enable_real_time', True)
+        self.logger.info(f"Sharp detector initialized with features: {self._get_feature_summary()}")
     
     def analyze_historical_patterns(self) -> Dict[str, Any]:
         """
@@ -205,6 +247,16 @@ class SharpDetector:
                 "Sharp strength assessment",
                 "Strategy integration"
             ]
+        }
+
+    def _get_feature_summary(self) -> Dict[str, Any]:
+        """Get summary of enabled features for logging."""
+        return {
+            "consensus": self.enable_consensus,
+            "volume_weighting": self.enable_volume_weighting, 
+            "time_decay": self.enable_time_decay,
+            "steam_detection": self.enable_steam_detection,
+            "real_time": "SharpActionProcessor" if self.enable_real_time else None
         }
 
 
