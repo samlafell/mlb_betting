@@ -1,11 +1,22 @@
 """
-Database Coordinator Service - Consolidated
+DEPRECATED: Database Coordinator Service
 
-This service provides a unified database coordination layer that uses the consolidated
-PostgreSQL connection manager for all database operations. 
+⚠️  DEPRECATION NOTICE: This service has been consolidated into DataService.
+Please update imports to use:
+    from ..services.data_service import get_data_service
 
-Consolidates functionality from both database_coordinator.py and postgres_database_coordinator.py
-as part of the Step 1.2 refactoring to eliminate redundancy.
+This wrapper is provided for backward compatibility during the transition.
+It will be removed in a future version.
+
+MIGRATION GUIDE:
+- Replace `get_database_coordinator()` with `get_data_service()`
+- Use `service.execute_read()` instead of `coordinator.execute_read()`
+- Use `service.execute_write()` instead of `coordinator.execute_write()`
+- The DataService provides all coordinator functionality plus:
+  - Data collection (from DataCollector)
+  - Data persistence (from DataPersistenceService)
+  - Data deduplication (from DataDeduplicationService)
+  - Unified interface for all data operations
 """
 
 import time
@@ -251,7 +262,7 @@ class DatabaseCoordinator:
             return False
     
     def get_performance_stats(self) -> Dict[str, Any]:
-        """Get performance statistics."""
+        """Get performance statistics including timing validation metrics."""
         uptime = time.time() - self._stats['start_time']
         total_ops = (self._stats['read_operations'] + 
                     self._stats['write_operations'] + 
@@ -261,7 +272,10 @@ class DatabaseCoordinator:
         # Get additional stats from the connection manager
         pool_stats = self.db_manager.get_pool_status()
         
-        return {
+        # Get timing validation metrics
+        timing_metrics = self._get_timing_validation_metrics()
+        
+        base_stats = {
             'mode': 'postgresql_unified',
             'uptime_seconds': uptime,
             'total_operations': total_ops,
@@ -275,6 +289,45 @@ class DatabaseCoordinator:
             'health': 'healthy' if self.is_healthy() else 'unhealthy',
             'connection_pool': pool_stats
         }
+        
+        # Add timing validation metrics if available
+        if timing_metrics:
+            base_stats['timing_validation'] = timing_metrics
+            
+        return base_stats
+    
+    def _get_timing_validation_metrics(self) -> Optional[Dict[str, Any]]:
+        """Get timing validation metrics from the database."""
+        try:
+            # Query current timing validation status
+            query = """
+            SELECT 
+                COUNT(*) as total_splits,
+                COUNT(*) FILTER (WHERE is_within_grace_period(game_datetime)) as valid_splits,
+                COUNT(*) FILTER (WHERE NOT is_within_grace_period(game_datetime)) as expired_splits,
+                ROUND(
+                    COUNT(*) FILTER (WHERE NOT is_within_grace_period(game_datetime))::NUMERIC / 
+                    NULLIF(COUNT(*)::NUMERIC, 0) * 100, 2
+                ) as rejection_rate_percent
+            FROM splits.raw_mlb_betting_splits 
+            WHERE last_updated >= CURRENT_DATE - INTERVAL '24 hours'
+            """
+            
+            result = self.execute_read(query)
+            if result and len(result) > 0:
+                row = result[0]
+                return {
+                    'total_splits_24h': row['total_splits'] if isinstance(row, dict) else row[0],
+                    'valid_splits_24h': row['valid_splits'] if isinstance(row, dict) else row[1],
+                    'expired_splits_24h': row['expired_splits'] if isinstance(row, dict) else row[2],
+                    'rejection_rate_percent_24h': float(row['rejection_rate_percent'] or 0) if isinstance(row, dict) else float(row[3] or 0),
+                    'last_checked': time.time()
+                }
+                
+        except Exception as e:
+            logger.debug("Could not fetch timing validation metrics", error=str(e))
+            
+        return None
     
     def get_queue_size(self) -> int:
         """Get queue size (compatibility method - always returns 0 for PostgreSQL)."""
@@ -288,6 +341,141 @@ class DatabaseCoordinator:
         """Stop the coordinator (compatibility method - no-op for unified coordinator)."""
         logger.debug("Database coordinator stop called (no-op for unified coordinator)")
     
+    def get_timing_validation_status(self) -> Dict[str, Any]:
+        """
+        Get detailed timing validation status for monitoring.
+        
+        Returns:
+            Dictionary with current timing validation metrics
+        """
+        try:
+            query = """
+            SELECT 
+                DATE(game_datetime) as game_date,
+                COUNT(*) as total_splits,
+                COUNT(*) FILTER (WHERE is_within_grace_period(game_datetime)) as valid_splits,
+                COUNT(*) FILTER (WHERE NOT is_within_grace_period(game_datetime)) as expired_splits,
+                ROUND(
+                    COUNT(*) FILTER (WHERE NOT is_within_grace_period(game_datetime))::NUMERIC / 
+                    NULLIF(COUNT(*)::NUMERIC, 0) * 100, 2
+                ) as rejection_rate_percent
+            FROM splits.raw_mlb_betting_splits 
+            WHERE last_updated >= CURRENT_DATE - INTERVAL '7 days'
+            GROUP BY DATE(game_datetime)
+            ORDER BY game_date DESC
+            LIMIT 7
+            """
+            
+            results = self.execute_read(query)
+            
+            return {
+                'daily_metrics': results or [],
+                'query_time': time.time(),
+                'status': 'healthy' if results else 'no_data'
+            }
+            
+        except Exception as e:
+            logger.error("Failed to get timing validation status", error=str(e))
+            return {
+                'daily_metrics': [],
+                'query_time': time.time(),
+                'status': 'error',
+                'error': str(e)
+            }
+    
+    def check_expired_splits(self, hours_back: int = 24) -> Dict[str, Any]:
+        """
+        Check for splits that were stored for games that had already started.
+        
+        Args:
+            hours_back: Number of hours to look back
+            
+        Returns:
+            Dictionary with expired splits information
+        """
+        try:
+            query = """
+            SELECT 
+                game_id,
+                home_team,
+                away_team,
+                game_datetime,
+                last_updated,
+                EXTRACT(EPOCH FROM (last_updated - game_datetime))/60 as minutes_after_start
+            FROM splits.raw_mlb_betting_splits 
+            WHERE last_updated >= CURRENT_TIMESTAMP - INTERVAL '%s hours'
+              AND NOT is_within_grace_period(game_datetime)
+            ORDER BY minutes_after_start DESC
+            LIMIT 20
+            """
+            
+            results = self.execute_read(query, (hours_back,))
+            
+            return {
+                'expired_splits': results or [],
+                'count': len(results) if results else 0,
+                'hours_checked': hours_back,
+                'query_time': time.time()
+            }
+            
+        except Exception as e:
+            logger.error("Failed to check expired splits", error=str(e))
+            return {
+                'expired_splits': [],
+                'count': 0,
+                'hours_checked': hours_back,
+                'query_time': time.time(),
+                'error': str(e)
+            }
+    
+    def get_current_games_status(self) -> Dict[str, Any]:
+        """
+        Get status of current/upcoming games for timing validation.
+        
+        Returns:
+            Dictionary with current games timing status
+        """
+        try:
+            query = """
+            SELECT 
+                game_id,
+                home_team,
+                away_team,
+                game_datetime,
+                status,
+                get_grace_period_status(game_datetime) as timing_status,
+                EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - game_datetime))/60 as minutes_since_start
+            FROM splits.games
+            WHERE game_datetime >= CURRENT_DATE - INTERVAL '6 hours'
+              AND game_datetime <= CURRENT_DATE + INTERVAL '18 hours'
+            ORDER BY game_datetime
+            """
+            
+            results = self.execute_read(query)
+            
+            # Categorize games by timing status
+            status_counts = {}
+            for row in results or []:
+                timing_status = row['timing_status'] if isinstance(row, dict) else row[5]
+                status_counts[timing_status] = status_counts.get(timing_status, 0) + 1
+            
+            return {
+                'games': results or [],
+                'total_games': len(results) if results else 0,
+                'status_breakdown': status_counts,
+                'query_time': time.time()
+            }
+            
+        except Exception as e:
+            logger.error("Failed to get current games status", error=str(e))
+            return {
+                'games': [],
+                'total_games': 0,
+                'status_breakdown': {},
+                'query_time': time.time(),
+                'error': str(e)
+            }
+
     def close(self):
         """Close the coordinator and all connections."""
         try:
@@ -304,16 +492,25 @@ _coordinator_instance: Optional[DatabaseCoordinator] = None
 
 def get_database_coordinator() -> DatabaseCoordinator:
     """
-    Get the global database coordinator instance.
+    DEPRECATED: Get the global database coordinator instance.
     
-    Returns:
-        DatabaseCoordinator instance using the consolidated connection manager
+    ⚠️  DEPRECATION WARNING: This function is deprecated.
+    Please use get_data_service() from data_service.py instead.
+    
+    This wrapper provides backward compatibility during transition.
     """
+    import warnings
+    warnings.warn(
+        "get_database_coordinator() is deprecated. Use get_data_service() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    
     global _coordinator_instance
     
     if _coordinator_instance is None:
         _coordinator_instance = DatabaseCoordinator()
-        logger.info("Created new unified database coordinator instance")
+        logger.info("Created new unified database coordinator instance (DEPRECATED)")
     
     return _coordinator_instance
 

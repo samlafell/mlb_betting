@@ -12,7 +12,7 @@ import structlog
 from mlb_sharp_betting.utils.timezone_utils import hours_since
 
 from ..db.connection import DatabaseManager, get_db_manager
-from .enhanced_backtesting_service import EnhancedBacktestingService
+from .backtesting_engine import get_backtesting_engine
 from ..entrypoint import DataPipeline
 
 logger = structlog.get_logger(__name__)
@@ -34,11 +34,9 @@ class PipelineOrchestrator:
         self.db_manager = db_manager or get_db_manager()
         self.logger = logger.bind(service="pipeline_orchestrator")
         
-        # Initialize enhanced backtesting service
-        self.enhanced_backtesting = EnhancedBacktestingService(
-            db_manager=self.db_manager,
-            auto_collect_data=False  # We'll handle data collection decisions
-        )
+        # Initialize backtesting engine
+        self.backtesting_engine = get_backtesting_engine()
+        self.backtesting_engine.db_manager = self.db_manager
     
     async def analyze_system_state(self) -> Dict[str, Any]:
         """
@@ -245,14 +243,14 @@ class PipelineOrchestrator:
                 self.logger.info("🔬 Executing backtesting step")
                 
                 try:
-                    backtest_results = await self.enhanced_backtesting.run_daily_backtesting_pipeline()
+                    await self.backtesting_engine.initialize()
+                    backtest_results = await self.backtesting_engine.run_daily_pipeline()
                     execution_results['backtesting_results'] = backtest_results
                     execution_results['steps_executed'].append('backtesting')
                     
                     self.logger.info(
                         "✅ Backtesting completed",
-                        strategies_analyzed=backtest_results.total_strategies_analyzed,
-                        profitable_strategies=backtest_results.profitable_strategies
+                        backtest_results=str(backtest_results)
                     )
                     
                 except Exception as e:

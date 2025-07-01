@@ -2,13 +2,14 @@
 """
 Automated MLB Betting Backtesting System
 
+Updated to use the new BacktestingEngine from Phase 3 consolidation.
 This script runs the complete automated backtesting and strategy validation system.
 
 Features:
-- Daily backtesting pipeline with statistical validation
-- Performance monitoring and alerting
-- Automated threshold recommendations
-- Risk management and circuit breakers
+- Unified backtesting engine with integrated modules
+- Enhanced diagnostics with 5-checkpoint system
+- Automated scheduling with circuit breakers
+- Real-time accuracy monitoring
 - Comprehensive reporting
 
 Usage:
@@ -42,15 +43,15 @@ import argparse
 import json
 import sys
 import signal
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
 import structlog
 import click
 
-from ...services.automated_backtesting_scheduler import AutomatedBacktestingScheduler
-from ...services.backtesting_service import BacktestingService
+# 🔄 UPDATED: Use new BacktestingEngine instead of deprecated services
+from ...services.backtesting_engine import get_backtesting_engine
 from ...services.alert_service import AlertService
 from ...core.logging import get_logger
 
@@ -74,18 +75,17 @@ logger = get_logger(__name__)
 
 
 class AutomatedBacktestingCLI:
-    """Command-line interface for the automated backtesting system."""
+    """Command-line interface for the automated backtesting system using BacktestingEngine."""
     
     def __init__(self, config_path: Optional[Path] = None):
         """Initialize the CLI."""
         self.project_root = Path(__file__).parent.parent.parent.parent.parent
         self.config_path = config_path or self.project_root / "config" / "backtesting_config.json"
-        self.config = self._load_config()
         self.logger = logger.bind(component="cli")
+        self.config = self._load_config()
         
-        # Services
-        self.scheduler: Optional[AutomatedBacktestingScheduler] = None
-        self.backtesting_service: Optional[BacktestingService] = None
+        # 🔄 UPDATED: Use new BacktestingEngine
+        self.backtesting_engine = None
         self.alert_service: Optional[AlertService] = None
     
     def _load_config(self) -> dict:
@@ -102,68 +102,75 @@ class AutomatedBacktestingCLI:
             return {}
     
     async def run_scheduler_mode(self, debug: bool = False, no_alerts: bool = False) -> None:
-        """Run the full automated scheduler."""
-        self.logger.info("Starting automated backtesting scheduler")
+        """Run the automated backtesting scheduler using BacktestingEngine."""
+        self.logger.info("Starting automated backtesting scheduler (Phase 3 Engine)")
         
         try:
-            # Initialize scheduler
-            self.scheduler = AutomatedBacktestingScheduler(
-                project_root=self.project_root,
-                notifications_enabled=not no_alerts,
-                backtesting_enabled=self.config.get("backtesting", {}).get("enabled", True)
-            )
+            # 🔄 UPDATED: Initialize BacktestingEngine
+            self.backtesting_engine = get_backtesting_engine()
+            await self.backtesting_engine.initialize()
             
             # Set up signal handlers for graceful shutdown
             def signal_handler(signum, frame):
                 self.logger.info(f"Received signal {signum}, shutting down gracefully...")
-                if self.scheduler:
-                    self.scheduler.stop()
+                if self.backtesting_engine:
+                    self.backtesting_engine.stop_automated_scheduling()
                 sys.exit(0)
             
             signal.signal(signal.SIGINT, signal_handler)
             signal.signal(signal.SIGTERM, signal_handler)
             
-            # Start scheduler
-            self.scheduler.start()
+            # Start automated scheduling
+            notifications_enabled = not no_alerts
+            self.backtesting_engine.start_automated_scheduling(notifications_enabled=notifications_enabled)
             
             # Print startup information
             self._print_scheduler_info()
             
             # Keep running
-            self.logger.info("Scheduler is running. Press Ctrl+C to stop.")
+            self.logger.info("BacktestingEngine scheduler is running. Press Ctrl+C to stop.")
             while True:
                 await asyncio.sleep(60)
                 
                 # Periodic status update
                 if debug:
-                    status = self.scheduler.get_enhanced_status()
-                    self.logger.debug("Scheduler status", **status)
+                    status = self.backtesting_engine.get_comprehensive_status()
+                    self.logger.debug("BacktestingEngine status", **status)
                 
         except KeyboardInterrupt:
             self.logger.info("Received keyboard interrupt, shutting down...")
         except Exception as e:
-            self.logger.error("Scheduler failed", error=str(e))
+            self.logger.error("BacktestingEngine scheduler failed", error=str(e))
             raise
         finally:
-            if self.scheduler:
-                self.scheduler.stop()
-                self.logger.info("Scheduler stopped")
+            if self.backtesting_engine:
+                self.backtesting_engine.stop_automated_scheduling()
+                self.logger.info("BacktestingEngine scheduler stopped")
     
     async def run_single_analysis(self, force: bool = False, detailed: bool = False) -> None:
-        """Run a single backtesting analysis."""
-        self.logger.info("Running single backtesting analysis")
+        """Run a single backtesting analysis using BacktestingEngine."""
+        self.logger.info("Running single backtesting analysis (Phase 3 Engine)")
         
         try:
-            # Initialize services
-            self.backtesting_service = BacktestingService()
+            # 🔄 UPDATED: Initialize BacktestingEngine
+            self.backtesting_engine = get_backtesting_engine()
+            await self.backtesting_engine.initialize()
+            
             self.alert_service = AlertService()
             
-            # Run backtesting pipeline
+            # Run daily pipeline
             start_time = datetime.now(timezone.utc)
-            results = await self.backtesting_service.run_daily_backtesting_pipeline()
+            results = await self.backtesting_engine.run_daily_pipeline()
             
-            # Process alerts
-            alerts = await self.alert_service.process_backtesting_results(results)
+            # Process alerts if available
+            alerts = []
+            if self.alert_service and 'backtest_results' in results:
+                try:
+                    # Note: Alert service may need updating to work with new result format
+                    alerts = await self.alert_service.process_backtesting_results(results['backtest_results'])
+                except Exception as e:
+                    self.logger.warning("Failed to process alerts", error=str(e))
+                    alerts = []
             
             execution_time = (datetime.now(timezone.utc) - start_time).total_seconds()
             
@@ -175,116 +182,82 @@ class AutomatedBacktestingCLI:
             raise
     
     async def show_status(self) -> None:
-        """Show system status and health."""
-        self.logger.info("Checking system status")
+        """Show system status and health using BacktestingEngine."""
+        self.logger.info("Checking system status (Phase 3 Engine)")
         
         try:
-            # Initialize services for status check
-            self.backtesting_service = BacktestingService()
+            # 🔄 UPDATED: Initialize BacktestingEngine
+            self.backtesting_engine = get_backtesting_engine()
+            await self.backtesting_engine.initialize()
+            
             self.alert_service = AlertService()
             
-            # Validate data quality
-            data_quality = await self.backtesting_service._validate_data_quality()
+            # Get comprehensive status from BacktestingEngine
+            status_info = self.backtesting_engine.get_comprehensive_status()
+            
+            # Run diagnostics
+            diagnostics_results = await self.backtesting_engine.diagnostics.run_full_diagnostic()
             
             # Get active alerts
-            active_alerts = await self.alert_service.get_active_alerts()
+            active_alerts = []
+            try:
+                active_alerts = await self.alert_service.get_active_alerts()
+            except Exception as e:
+                self.logger.warning("Failed to get active alerts", error=str(e))
             
             # Print status information
-            self._print_system_status(data_quality, active_alerts)
+            self._print_system_status(status_info, diagnostics_results, active_alerts)
             
         except Exception as e:
             self.logger.error("Status check failed", error=str(e))
             raise
     
     async def run_test_mode(self) -> None:
-        """Run system tests with sample data."""
-        self.logger.info("Running system tests")
+        """Run system tests using BacktestingEngine."""
+        self.logger.info("Running system tests (Phase 3 Engine)")
         
         try:
-            # Initialize services
-            self.alert_service = AlertService()
+            # 🔄 UPDATED: Initialize BacktestingEngine
+            self.backtesting_engine = get_backtesting_engine()
+            await self.backtesting_engine.initialize()
             
-            # Import the alert types
-            from mlb_sharp_betting.services.alert_service import AlertType, AlertSeverity
+            # Run diagnostics as system test
+            self.logger.info("Running comprehensive diagnostics...")
+            diagnostics_results = await self.backtesting_engine.diagnostics.run_full_diagnostic()
             
-            # Create test alerts
-            test_alerts = [
-                self.alert_service._create_alert(
-                    alert_type=AlertType.HIGH_PERFORMANCE,
-                    severity=AlertSeverity.MEDIUM,
-                    title="Test High Performance Alert",
-                    message="This is a test alert for high-performing strategy",
-                    data={"win_rate": 0.58, "roi": 12.5, "sample_size": 45},
-                    strategy_name="test_vsin_strong"
-                ),
-                self.alert_service._create_alert(
-                    alert_type=AlertType.PERFORMANCE_DECLINE,
-                    severity=AlertSeverity.HIGH,
-                    title="Test Performance Decline Alert",
-                    message="This is a test alert for declining strategy performance",
-                    data={"current_win_rate": 0.47, "previous_win_rate": 0.54},
-                    strategy_name="test_sbd_moderate"
-                )
-            ]
+            # Run a quick backtest (last 3 days)
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=3)).strftime('%Y-%m-%d')
             
-            # Process test alerts
-            for alert in test_alerts:
-                await self.alert_service._process_alert(alert)
+            self.logger.info(f"Running test backtest ({start_date} to {end_date})...")
+            backtest_results = await self.backtesting_engine.run_backtest(
+                start_date=start_date,
+                end_date=end_date,
+                include_diagnostics=True,
+                include_alignment=True
+            )
             
-            # Show test results
-            active_alerts = await self.alert_service.get_active_alerts()
-            
-            print("\n🧪 TEST MODE RESULTS")
-            print("=" * 50)
-            print(f"✅ Alert service initialized successfully")
-            print(f"✅ Created {len(test_alerts)} test alerts")
-            print(f"✅ Active alerts: {len(active_alerts)}")
-            print(f"✅ Notifications working: {self.alert_service.metrics['notifications_sent'] > 0}")
-            print("\n🎯 Test completed successfully!")
+            # Print test results
+            self._print_test_results(diagnostics_results, backtest_results)
             
         except Exception as e:
-            self.logger.error("Test mode failed", error=str(e))
+            self.logger.error("System test failed", error=str(e))
             raise
     
     async def generate_report_only(self) -> None:
-        """Generate and display daily report without running full analysis."""
-        self.logger.info("Generating daily report")
+        """Generate daily report using BacktestingEngine."""
+        self.logger.info("Generating daily report (Phase 3 Engine)")
         
         try:
-            # Initialize services
-            self.backtesting_service = BacktestingService()
+            # 🔄 UPDATED: Initialize BacktestingEngine
+            self.backtesting_engine = get_backtesting_engine()
+            await self.backtesting_engine.initialize()
             
-            # Execute SQL scripts only (no full pipeline)
-            backtest_results = await self.backtesting_service._execute_backtest_scripts()
+            # Run daily pipeline for report generation
+            results = await self.backtesting_engine.run_daily_pipeline()
             
-            # Analyze results
-            strategy_metrics = await self.backtesting_service._analyze_strategy_performance(backtest_results)
-            
-            # Create minimal results object for report
-            from mlb_sharp_betting.services.backtesting_service import BacktestingResults
-            
-            results = BacktestingResults(
-                backtest_date=datetime.now(timezone.utc),
-                total_strategies_analyzed=len(strategy_metrics),
-                strategies_with_adequate_data=len([m for m in strategy_metrics if m.sample_size_adequate]),
-                profitable_strategies=len([m for m in strategy_metrics if m.win_rate > 0.524]),
-                declining_strategies=0,  # Would need historical comparison
-                stable_strategies=0,
-                threshold_recommendations=[],
-                strategy_alerts=[],
-                strategy_metrics=strategy_metrics,
-                data_completeness_pct=100.0,  # Assume complete for report
-                game_outcome_freshness_hours=0.0,
-                execution_time_seconds=0.0,
-                created_at=datetime.now(timezone.utc)
-            )
-            
-            # Generate and display report
-            report = await self.backtesting_service.generate_daily_report(results)
-            print("\n" + "=" * 70)
-            print("📊 DAILY BACKTESTING REPORT")
-            print("=" * 70)
-            print(report)
+            # Print report
+            self._print_daily_report(results)
             
         except Exception as e:
             self.logger.error("Report generation failed", error=str(e))
@@ -292,343 +265,219 @@ class AutomatedBacktestingCLI:
     
     def _print_scheduler_info(self) -> None:
         """Print scheduler startup information."""
-        if not self.scheduler:
-            return
-        
-        status = self.scheduler.get_enhanced_status()
-        
-        print("\n" + "🚀 AUTOMATED BACKTESTING SCHEDULER STARTED" + "\n")
+        print("🔬 AUTOMATED BACKTESTING SCHEDULER (Phase 3 Engine)")
         print("=" * 70)
-        
-        print(f"📅 Configuration:")
-        print(f"   • Daily backtesting: 2:00 AM EST")
-        print(f"   • Mid-day check: 2:00 PM EST") 
-        print(f"   • Weekly analysis: Monday 6:00 AM EST")
-        print(f"   • Alert summary: Daily 8:00 AM EST")
-        
-        print(f"\n🎯 Features Enabled:")
-        print(f"   • Backtesting: {status['backtesting']['enabled']}")
-        print(f"   • Notifications: {self.scheduler.notifications_enabled}")
-        print(f"   • Circuit breaker: {self.config.get('circuit_breaker', {}).get('enabled', True)}")
-        print(f"   • Risk controls: ✅")
-        
-        print(f"\n📊 Current Status:")
-        print(f"   • Active jobs: {status['jobs_count']}")
-        print(f"   • Circuit breaker: {'OPEN' if status['circuit_breaker']['open'] else 'CLOSED'}")
-        print(f"   • Active alerts: {status['alerts']['active_count']}")
-        
-        print(f"\n📋 Scheduled Jobs:")
-        for job in self.scheduler.scheduler.get_jobs():
-            print(f"   • {job.name}: {job.next_run_time}")
-        
-        print("\n💡 To check status: uv run run_automated_backtesting.py --mode status")
-        print("   To stop: Press Ctrl+C")
+        print("🚀 BacktestingEngine Features:")
+        print("   ✅ Unified backtesting execution")
+        print("   ✅ 5-checkpoint diagnostic system")
+        print("   ✅ Automated scheduling with circuit breakers")
+        print("   ✅ Real-time accuracy monitoring")
+        print("   ✅ Enhanced live alignment validation")
+        print()
+        print("🔧 Configuration:")
+        print(f"   📁 Project Root: {self.project_root}")
+        print(f"   ⚙️  Config Path: {self.config_path}")
+        print()
+        print("📊 The scheduler will:")
+        print("   🕐 Run daily backtesting at configured intervals")
+        print("   📈 Monitor strategy performance continuously")
+        print("   🚨 Generate alerts for significant changes")
+        print("   📋 Update strategy configurations automatically")
+        print("   🔍 Perform comprehensive diagnostics")
+        print()
+        print("🛑 To stop: Press Ctrl+C")
         print("=" * 70)
     
-    def _format_strategy_name(self, strategy_name: str, source_book: str, split_type: str) -> str:
-        """Format strategy name into human-readable description."""
-        
-        # Strategy name mapping for better readability
-        strategy_descriptions = {
-            "strategy_comparison_roi": "ROI Strategy",
-            "sharp_action_detector": "Sharp Action",
-            "timing_based_strategy": "Timing-Based",
-            "hybrid_line_sharp_strategy": "Hybrid Line/Sharp",
-            "line_movement_strategy": "Line Movement",
-            "signal_combinations": "Signal Combo",
-            "opposing_markets_strategy": "Opposing Markets",
-            "consensus_heavy_strategy": "Consensus Heavy",
-            "consensus_moneyline_strategy": "Consensus ML",
-            "consensus_signals_current": "Consensus Signals",
-            "mixed_consensus_strategy": "Mixed Consensus",
-            "executive_summary_report": "Executive Summary",
-            # Phase 1 Expert-Recommended Strategies
-            "total_line_sweet_spots_strategy": "Total Sweet Spots",
-            "underdog_ml_value_strategy": "Underdog ML Value",
-            "team_specific_bias_strategy": "Team Bias"
-        }
-        
-        # Extract base strategy name
-        base_strategy = strategy_name.split('_')[0] + '_' + strategy_name.split('_')[1] + '_' + strategy_name.split('_')[2] if len(strategy_name.split('_')) >= 3 else strategy_name
-        
-        # Get clean strategy name
-        clean_name = strategy_descriptions.get(base_strategy, base_strategy.replace('_', ' ').title())
-        
-        # Extract variant from strategy name
-        parts = strategy_name.split('_')
-        if len(parts) > 3:
-            variant = '_'.join(parts[3:])
-            
-            # Variant descriptions
-            variant_descriptions = {
-                "FOLLOW_STRONG_SHARP": "Follow Strong Sharp",
-                "FOLLOW_STRONG_SH": "Follow Strong Sharp",  # Truncated version
-                "STEAM_PLAYS": "Steam Plays",
-                "HYBRID_CONFIRMATION": "Hybrid Confirmation", 
-                "FOLLOW_BIG_LINE_MOVEMENT": "Follow Big Line Movement",
-                "WEAK_SHARP_AWAY_UNDER": "Weak Sharp Away/Under",
-                "STRONG_SHARP_AWAY_UNDER": "Strong Sharp Away/Under",
-                "STRONG_SHARP_HOME_OVER": "Strong Sharp Home/Over",
-                "spread_preference": "Spread Preference",
-                "spread_prefere": "Spread Preference",  # Truncated version
-                "follow_stronger": "Follow Stronger",
-                "follow_stronge": "Follow Stronger",  # Truncated version
-                "ml_preference": "ML Preference",
-                "contrarian": "Contrarian",
-                "cross_book_consensus": "Cross Book Consensus",
-                "line_movement_confirmation": "Line Movement Confirmation",
-                # Phase 1 Strategy Variants
-                "VALUE_OVER_SWEET_SPOT": "Value Over Sweet Spot",
-                "VALUE_UNDER_SWEET_SPOT": "Value Under Sweet Spot", 
-                "SHARP_SWEET_SPOT_OVER": "Sharp Sweet Spot Over",
-                "SHARP_SWEET_SPOT_UNDER": "Sharp Sweet Spot Under",
-                "VALUE_AWAY_DOG": "Value Away Dog",
-                "VALUE_HOME_DOG": "Value Home Dog",
-                "SHARP_AWAY_DOG": "Sharp Away Dog",
-                "SHARP_HOME_DOG": "Sharp Home Dog",
-                "FADE_BIG_MARKET_HOME": "Fade Big Market Home",
-                "FADE_BIG_MARKET_AWAY": "Fade Big Market Away",
-                "BACK_SMALL_MARKET_HOME": "Back Small Market Home",
-                "BACK_SMALL_MARKET_AWAY": "Back Small Market Away"
-            }
-            
-            clean_variant = variant_descriptions.get(variant, variant.replace('_', ' ').title())
-        else:
-            clean_variant = ""
-        
-        # Clean up book names
-        book_mapping = {
-            "VSIN-draftkings": "VSIN-DK",
-            "VSIN-circa": "VSIN-Circa", 
-            "SBD-UNKNOWN": "SBD",
-            "SBD--": "SBD"
-        }
-        
-        clean_book = book_mapping.get(source_book, source_book)
-        
-        # Format market type
-        market_mapping = {
-            "moneyline": "ML",
-            "spread": "Spread", 
-            "total": "Total",
-            "": ""
-        }
-        
-        clean_market = market_mapping.get(split_type, split_type)
-        
-        # Build final description
-        if clean_variant and clean_market:
-            return f"{clean_book} {clean_market} • {clean_variant}"
-        elif clean_variant:
-            return f"{clean_book} • {clean_variant}"
-        elif clean_market:
-            return f"{clean_book} {clean_market} • {clean_name}"
-        else:
-            return f"{clean_book} • {clean_name}"
-    
-    def _format_strategy_name_simple(self, strategy_name: str) -> str:
-        """Format strategy name into a simple format."""
-        
-        # Strategy name mapping for better readability
-        strategy_descriptions = {
-            "strategy_comparison_roi": "ROI Strategy",
-            "sharp_action_detector": "Sharp Action",
-            "timing_based_strategy": "Timing-Based",
-            "hybrid_line_sharp_strategy": "Hybrid Line/Sharp",
-            "line_movement_strategy": "Line Movement",
-            "signal_combinations": "Signal Combo",
-            "opposing_markets_strategy": "Opposing Markets",
-            "consensus_heavy_strategy": "Consensus Heavy",
-            "consensus_moneyline_strategy": "Consensus ML",
-            "consensus_signals_current": "Consensus Signals",
-            "mixed_consensus_strategy": "Mixed Consensus",
-            "executive_summary_report": "Executive Summary",
-            # Phase 1 Expert-Recommended Strategies
-            "total_line_sweet_spots_strategy": "Total Sweet Spots",
-            "underdog_ml_value_strategy": "Underdog ML Value",
-            "team_specific_bias_strategy": "Team Bias"
-        }
-        
-        # Extract base strategy name
-        base_strategy = strategy_name.split('_')[0] + '_' + strategy_name.split('_')[1] + '_' + strategy_name.split('_')[2] if len(strategy_name.split('_')) >= 3 else strategy_name
-        
-        # Get clean strategy name
-        clean_name = strategy_descriptions.get(base_strategy, base_strategy.replace('_', ' ').title())
-        
-        return clean_name
-    
-    def _print_analysis_results(self, results, alerts, execution_time: float, detailed: bool = False) -> None:
-        """Print single analysis results."""
-        print("\n" + "📊 BACKTESTING ANALYSIS RESULTS" + "\n")
+    def _print_analysis_results(self, results: dict, alerts: list, execution_time: float, detailed: bool = False) -> None:
+        """Print backtesting analysis results."""
+        print("\n🔬 BACKTESTING ANALYSIS RESULTS (Phase 3)")
         print("=" * 60)
+        print(f"⏱️  Execution Time: {execution_time:.2f} seconds")
         
-        print(f"⏱️  Execution time: {execution_time:.1f} seconds")
-        print(f"📈 Strategies analyzed: {results.total_strategies_analyzed}")
-        print(f"✅ Adequate sample size: {results.strategies_with_adequate_data}")
-        print(f"💰 Profitable strategies: {results.profitable_strategies}")
-        print(f"📉 Declining strategies: {results.declining_strategies}")
-        print(f"🎯 Recommendations: {len(results.threshold_recommendations)}")
-        print(f"🚨 Alerts generated: {len(alerts)}")
+        # Handle new BacktestingEngine result format
+        if 'backtest_results' in results:
+            backtest = results['backtest_results']
+            
+            if isinstance(backtest, dict):
+                print(f"📊 Strategies Analyzed: {backtest.get('total_strategies', 0)}")
+                print(f"💰 Profitable Strategies: {backtest.get('profitable_strategies', 0)}")
+                print(f"📈 Total Bets: {backtest.get('total_bets', 0)}")
+                print(f"📊 Average ROI: {backtest.get('average_roi', 0):.1f}%")
+                
+                if detailed and 'strategy_results' in backtest:
+                    self._print_detailed_strategy_results(backtest['strategy_results'])
         
-        print(f"\n📊 Data Quality:")
-        print(f"   • Completeness: {results.data_completeness_pct:.1f}%")
-        print(f"   • Freshness: {results.game_outcome_freshness_hours:.1f} hours")
+        # Show data collection metrics if available
+        if 'data_collection_metrics' in results:
+            metrics = results['data_collection_metrics']
+            print(f"\n📡 DATA COLLECTION:")
+            print(f"   📥 Records Processed: {metrics.get('parsed_records', 0)}")
+            print(f"   💾 Records Stored: {metrics.get('stored_records', 0)}")
+            print(f"   🎯 Sharp Indicators: {metrics.get('sharp_indicators', 0)}")
         
-        if results.threshold_recommendations:
-            print(f"\n🎯 Threshold Recommendations:")
-            for rec in results.threshold_recommendations[:3]:  # Show first 3
-                print(f"   • {self._format_strategy_name_simple(rec.strategy_name)}")
+        # Show diagnostics if available
+        if 'diagnostics_results' in results:
+            diagnostics = results['diagnostics_results']
+            print(f"\n🔍 DIAGNOSTICS:")
+            if isinstance(diagnostics, dict):
+                for checkpoint, result in diagnostics.items():
+                    if checkpoint.startswith('_'):
+                        continue
+                    status = result.get('status', 'UNKNOWN') if isinstance(result, dict) else str(result)
+                    status_emoji = "✅" if status == 'PASS' else "❌" if status == 'FAIL' else "⚠️"
+                    print(f"   {status_emoji} {checkpoint.replace('_', ' ').title()}: {status}")
         
+        # Show alerts
         if alerts:
-            print(f"\n🚨 Alerts ({len(alerts)}):")
-            for alert in alerts[:3]:  # Show first 3
-                severity = alert.severity.value if hasattr(alert.severity, 'value') else str(alert.severity)
-                severity_emoji = {"CRITICAL": "🔥", "HIGH": "🟠", "MEDIUM": "🟡"}.get(severity, "ℹ️")
+            print(f"\n🚨 ALERTS ({len(alerts)}):")
+            for alert in alerts[:5]:  # Show top 5
+                severity_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(alert.severity.lower(), "⚪")
                 print(f"   {severity_emoji} {alert.message}")
-        
-        # Strategy performance summary
-        if results.strategy_metrics:
-            def calculate_weighted_score(strategy):
-                return (strategy.win_rate * 100) + (strategy.roi_per_100 * 0.5) + (strategy.total_bets * 0.1)
-            
-            def deterministic_sort_key(strategy):
-                """Create a deterministic sort key with tie-breakers for consistent ordering."""
-                score = calculate_weighted_score(strategy)
-                # Tie-breakers in order of preference: strategy_name (alphabetical)
-                return (-score, strategy.strategy_name, strategy.source_book_type, strategy.split_type)
-            
-            # Categorize strategies by sample size using ROI-prioritized profitability logic
-            def is_profitable_strategy(win_rate: float, roi_per_100: float, total_bets: int) -> bool:
-                """ROI-prioritized profitability logic matching backtesting service."""
-                if roi_per_100 < -10.0:
-                    return False
-                if total_bets >= 20:
-                    return roi_per_100 > 0.0
-                if total_bets >= 10:
-                    return roi_per_100 > 0.0 and win_rate > 0.45
-                return roi_per_100 > 5.0 and win_rate > 0.55
-            
-            reliable_strategies = [s for s in results.strategy_metrics if s.total_bets >= 25 and is_profitable_strategy(s.win_rate, s.roi_per_100, s.total_bets)]
-            basic_strategies = [s for s in results.strategy_metrics if s.total_bets >= 10 and is_profitable_strategy(s.win_rate, s.roi_per_100, s.total_bets)]
-            
-            # Show reliable strategies if available
-            if reliable_strategies:
-                print(f"\n🎯 Reliable Sample Size Strategies (≥25 bets):")
-                reliable_sorted = sorted(reliable_strategies, key=deterministic_sort_key)[:10]
-                
-                for i, strategy in enumerate(reliable_sorted, 1):
-                    score = calculate_weighted_score(strategy)
-                    # Use ROI-prioritized profitability logic
-                    profitable_indicator = "🟢" if is_profitable_strategy(strategy.win_rate, strategy.roi_per_100, strategy.total_bets) else "🔴"
-                    formatted_name = self._format_strategy_name(strategy.strategy_name, strategy.source_book_type, strategy.split_type)
-                    print(f"   {i:2d}. {profitable_indicator} {formatted_name:<50} | "
-                          f"{strategy.total_bets:3d} bets | "
-                          f"{strategy.win_rate*100:5.1f}% WR | "
-                          f"{strategy.roi_per_100:+6.1f}% ROI | "
-                          f"Score: {score:5.1f}")
-                    
-                    # Add specific warnings for misleading strategies
-                    if strategy.win_rate > 0.524 and strategy.roi_per_100 < -10.0:
-                        print(f"       🚨 CRITICAL: High win rate but severely negative ROI - heavy favorites with terrible value")
-                    elif strategy.win_rate > 0.524 and strategy.roi_per_100 < 0:
-                        print(f"       ⚠️  WARNING: Good win rate but negative ROI - likely heavy favorites with poor value")
-            else:
-                print(f"\n⚠️  No strategies meet the reliable sample size threshold (≥25 bets)")
-                print(f"     This indicates insufficient historical data for high-confidence analysis.")
-                
-                if basic_strategies:
-                    print(f"\n📊 Profitable Strategies (≥10 bets) - ACTIONABLE PER USER REQUEST:")
-                    basic_sorted = sorted(basic_strategies, key=deterministic_sort_key)[:10]
-                    
-                    for i, strategy in enumerate(basic_sorted, 1):
-                        score = calculate_weighted_score(strategy)
-                        # Use ROI-prioritized profitability logic
-                        profitable_indicator = "🟢" if is_profitable_strategy(strategy.win_rate, strategy.roi_per_100, strategy.total_bets) else "🔴"
-                        formatted_name = self._format_strategy_name(strategy.strategy_name, strategy.source_book_type, strategy.split_type)
-                        print(f"   {i:2d}. {profitable_indicator} {formatted_name:<50} | "
-                              f"{strategy.total_bets:3d} bets | "
-                              f"{strategy.win_rate*100:5.1f}% WR | "
-                              f"{strategy.roi_per_100:+6.1f}% ROI | "
-                              f"Score: {score:5.1f}")
-                        
-                        # Add specific warnings for misleading strategies
-                        if strategy.win_rate > 0.524 and strategy.roi_per_100 < -10.0:
-                            print(f"       🚨 CRITICAL: High win rate but severely negative ROI - heavy favorites with terrible value")
-                        elif strategy.win_rate > 0.524 and strategy.roi_per_100 < 0:
-                            print(f"       ⚠️  WARNING: Good win rate but negative ROI - likely heavy favorites with poor value")
-                    
-                    print(f"\n     ✅ These strategies meet your ≥10 bet threshold and will be used for betting recommendations")
-                    print(f"         Note: Lower sample sizes have higher variance but are actionable as requested")
-        
-        if results.threshold_recommendations:
-            print(f"\n🎯 Detailed Recommendations:")
-            for rec in results.threshold_recommendations:
-                print(f"   • {self._format_strategy_name(rec.strategy_name, rec.source_book, rec.split_type)}")
-                print(f"     Current: {rec.current_threshold} → Recommended: {rec.recommended_threshold}")
-                print(f"     Confidence: {rec.confidence_level}")
-                print(f"     Expected Improvement: +{rec.expected_improvement:.1f}%")
+        else:
+            print(f"\n✅ No critical alerts generated")
         
         print("=" * 60)
     
-    def _print_system_status(self, data_quality: dict, active_alerts: list) -> None:
-        """Print system status information."""
-        print("\n" + "🔍 SYSTEM STATUS CHECK" + "\n")
-        print("=" * 50)
+    def _print_detailed_strategy_results(self, strategy_results):
+        """Print detailed strategy performance results."""
+        print(f"\n📈 DETAILED STRATEGY PERFORMANCE:")
         
-        # Data quality status
-        completeness = data_quality.get('completeness_pct', 0)
-        freshness = data_quality.get('freshness_hours', 999)
-        
-        print(f"📊 Data Quality:")
-        print(f"   • Completeness: {completeness:.1f}% {'✅' if completeness >= 95 else '⚠️'}")
-        print(f"   • Freshness: {freshness:.1f}h {'✅' if freshness <= 6 else '⚠️'}")
-        
-        # Alert status
-        critical_alerts = []
-        high_alerts = []
-        
-        for a in active_alerts:
-            if hasattr(a, 'severity'):
-                severity = a.severity.value if hasattr(a.severity, 'value') else str(a.severity)
-            elif isinstance(a, dict):
-                severity = a.get('severity', 'UNKNOWN')
-            else:
-                severity = 'UNKNOWN'
-            
-            if severity == "CRITICAL":
-                critical_alerts.append(a)
-            elif severity == "HIGH":
-                high_alerts.append(a)
-        
-        print(f"\n🚨 Active Alerts:")
-        print(f"   • Total: {len(active_alerts)}")
-        print(f"   • Critical: {len(critical_alerts)} {'🔴' if critical_alerts else '✅'}")
-        print(f"   • High: {len(high_alerts)} {'🟠' if high_alerts else '✅'}")
-        
-        # Overall health
-        health_issues = []
-        if completeness < 95:
-            health_issues.append("Data completeness low")
-        if freshness > 6:
-            health_issues.append("Data freshness poor") 
-        if critical_alerts:
-            health_issues.append("Critical alerts active")
-        
-        print(f"\n🏥 Overall Health:")
-        if not health_issues:
-            print("   ✅ System healthy - no issues detected")
+        if isinstance(strategy_results, list):
+            # Sort by ROI
+            sorted_results = sorted(
+                strategy_results, 
+                key=lambda x: x.get('roi_per_100', 0), 
+                reverse=True
+            )
         else:
-            print("   ⚠️  Issues detected:")
-            for issue in health_issues:
-                print(f"      • {issue}")
+            sorted_results = list(strategy_results.values())
         
-        print("=" * 50)
+        for i, result in enumerate(sorted_results[:10], 1):  # Top 10
+            if isinstance(result, dict):
+                strategy_name = result.get('strategy_name', 'Unknown')
+                roi = result.get('roi_per_100', 0)
+                win_rate = result.get('win_rate', 0)
+                total_bets = result.get('total_bets', 0)
+                
+                profitability = "💰" if roi > 0 else "📉"
+                
+                print(f"\n   {i}. {profitability} {strategy_name}")
+                print(f"      📊 ROI: {roi:.1f}% | WR: {win_rate:.1f}%")
+                print(f"      🎲 Bets: {total_bets}")
+    
+    def _print_system_status(self, status_info: dict, diagnostics_results: dict, active_alerts: list) -> None:
+        """Print comprehensive system status."""
+        print("\n🔧 SYSTEM STATUS (Phase 3 BacktestingEngine)")
+        print("=" * 60)
+        
+        # BacktestingEngine status
+        print("🔬 BACKTESTING ENGINE STATUS:")
+        if status_info:
+            modules_loaded = status_info.get('modules_loaded', [])
+            print(f"   📦 Modules Loaded: {', '.join(modules_loaded) if modules_loaded else 'None'}")
+            print(f"   ⚡ Initialized: {'✅ Yes' if status_info.get('initialized', False) else '❌ No'}")
+            
+            if 'metrics' in status_info:
+                metrics = status_info['metrics']
+                print(f"   📊 Cache Status: {metrics.get('cache_status', 'Unknown')}")
+        
+        # Diagnostics results
+        print("\n🔍 DIAGNOSTICS STATUS:")
+        if isinstance(diagnostics_results, dict):
+            overall_status = "✅ PASS"
+            
+            for checkpoint, result in diagnostics_results.items():
+                if checkpoint.startswith('_'):
+                    continue
+                
+                status = result.get('status', 'UNKNOWN') if isinstance(result, dict) else str(result)
+                status_emoji = "✅" if status == 'PASS' else "❌" if status == 'FAIL' else "⚠️"
+                
+                print(f"   {status_emoji} {checkpoint.replace('_', ' ').title()}: {status}")
+                
+                if status == 'FAIL':
+                    overall_status = "❌ FAIL"
+                elif status == 'WARN' and overall_status != "❌ FAIL":
+                    overall_status = "⚠️ WARN"
+            
+            print(f"\n   🎯 Overall Diagnostics: {overall_status}")
+        
+        # Active alerts
+        print(f"\n🚨 ACTIVE ALERTS ({len(active_alerts)}):")
+        if active_alerts:
+            for alert in active_alerts[:5]:  # Show top 5
+                severity_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(alert.severity.lower(), "⚪")
+                print(f"   {severity_emoji} {alert.message}")
+        else:
+            print("   ✅ No active alerts")
+        
+        print("=" * 60)
+    
+    def _print_test_results(self, diagnostics_results: dict, backtest_results: dict) -> None:
+        """Print system test results."""
+        print("\n🧪 SYSTEM TEST RESULTS (Phase 3 Engine)")
+        print("=" * 60)
+        
+        # Diagnostics test results
+        print("🔍 DIAGNOSTICS TEST:")
+        if isinstance(diagnostics_results, dict):
+            all_passed = True
+            for checkpoint, result in diagnostics_results.items():
+                if checkpoint.startswith('_'):
+                    continue
+                
+                status = result.get('status', 'UNKNOWN') if isinstance(result, dict) else str(result)
+                status_emoji = "✅" if status == 'PASS' else "❌"
+                
+                print(f"   {status_emoji} {checkpoint.replace('_', ' ').title()}")
+                
+                if status != 'PASS':
+                    all_passed = False
+            
+            print(f"\n   🎯 Diagnostics: {'✅ ALL PASSED' if all_passed else '❌ SOME FAILED'}")
+        
+        # Backtest test results
+        print("\n🔬 BACKTEST TEST:")
+        if isinstance(backtest_results, dict) and 'backtest_results' in backtest_results:
+            backtest = backtest_results['backtest_results']
+            if isinstance(backtest, dict):
+                total_strategies = backtest.get('total_strategies', 0)
+                total_bets = backtest.get('total_bets', 0)
+                
+                print(f"   📊 Strategies Tested: {total_strategies}")
+                print(f"   🎲 Total Bets: {total_bets}")
+                
+                test_passed = total_strategies > 0
+                print(f"   🎯 Backtest: {'✅ PASSED' if test_passed else '❌ FAILED'}")
+        
+        print("=" * 60)
+    
+    def _print_daily_report(self, results: dict) -> None:
+        """Print daily report."""
+        print("\n📋 DAILY BACKTESTING REPORT (Phase 3 Engine)")
+        print("=" * 60)
+        print(f"📅 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        if 'backtest_results' in results:
+            backtest = results['backtest_results']
+            if isinstance(backtest, dict):
+                print(f"\n📊 SUMMARY:")
+                print(f"   🎯 Strategies Analyzed: {backtest.get('total_strategies', 0)}")
+                print(f"   💰 Profitable Strategies: {backtest.get('profitable_strategies', 0)}")
+                print(f"   📈 Average ROI: {backtest.get('average_roi', 0):.1f}%")
+                print(f"   🎲 Total Bets: {backtest.get('total_bets', 0)}")
+        
+        if 'execution_time_seconds' in results:
+            print(f"\n⏱️  Execution Time: {results['execution_time_seconds']:.2f} seconds")
+        
+        print("=" * 60)
 
 
+# 🔄 UPDATED: Click command group with BacktestingEngine
 @click.group(name="backtesting")
 @click.pass_context
 def backtesting_group(ctx):
-    """Automated backtesting and strategy validation commands."""
+    """🔬 Automated backtesting system using BacktestingEngine (Phase 3)."""
     pass
 
 @backtesting_group.command("run")

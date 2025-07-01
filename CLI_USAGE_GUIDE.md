@@ -75,9 +75,9 @@ uv run src/mlb_sharp_betting/cli.py data status --detailed
 uv run src/mlb_sharp_betting/cli.py database --stats
 ```
 
-### Collect Fresh Data
+### Collect Fresh Data (with Timing Validation)
 ```bash
-# Collect from all sources (VSIN, SBD, Pinnacle)
+# Collect from all sources (VSIN, SBD) with 5-minute grace period validation
 uv run src/mlb_sharp_betting/cli.py data collect
 
 # Force collection even if data is fresh
@@ -86,14 +86,59 @@ uv run src/mlb_sharp_betting/cli.py data collect --force
 # Test with mock data (safe for testing)
 uv run src/mlb_sharp_betting/cli.py data collect --dry-run
 
-# Collect specific source only
-uv run src/mlb_sharp_betting/cli.py data collect --source vsin
+# Validate existing data freshness only
+uv run src/mlb_sharp_betting/cli.py data collect --validate-only
+```
+
+**Enhanced Output with Timing Validation:**
+```
+✅ DATA COLLECTION COMPLETED
+   📥 Records Scraped: 1,245
+   🔄 Records Parsed: 1,245
+   💾 Records Stored: 1,198
+   🎯 Sharp Indicators: 89
+   ⏰ Timing Rejections: 47 (3.8%)  # NEW: Shows expired game data rejected
+```
+
+### ⏰ Timing Validation Monitoring
+```bash
+# Check timing validation status and 5-minute grace period metrics
+uv run src/mlb_sharp_betting/cli.py data timing-status
+
+# Detailed timing metrics and game status
+uv run src/mlb_sharp_betting/cli.py data timing-status --detailed
+
+# Check for recently expired splits (data quality audit)
+uv run src/mlb_sharp_betting/cli.py data timing-status --check-expired
+```
+
+**Timing Status Output Example:**
+```
+⏰ TIMING VALIDATION STATUS
+==================================================
+📊 Recent Daily Metrics (7 days):
+Date         Total    Valid    Expired  Rejection %
+--------------------------------------------------
+2024-01-15   1,245    1,198    47       🟡 3.8%
+2024-01-14   1,156    1,134    22       🟢 1.9%
+
+🔍 Validator Statistics:
+   Total Validations: 8,456
+   Valid Splits: 8,123
+   Rejected Splits: 333
+   Delayed Games: 12
+   Postponed Games: 5
+
+✅ No validation alerts
 ```
 
 ### Data Cleanup
 ```bash
 # Clean up data older than 30 days
 uv run src/mlb_sharp_betting/cli.py data cleanup --days 30
+
+# See what would be deleted (dry run)
+uv run src/mlb_sharp_betting/cli.py data cleanup --days 30 --dry-run
 
 # See cleanup options
 uv run src/mlb_sharp_betting/cli.py data cleanup --help

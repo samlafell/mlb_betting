@@ -1,0 +1,60 @@
+{
+  "flags": {
+    "use_config_service": {
+      "current_value": true,
+      "enabled": true,
+      "updated_at": "2025-06-30T19:44:36.878567"
+    },
+    "use_unified_retry": {
+      "current_value": true,
+      "enabled": true,
+      "updated_at": "2025-06-30T19:44:36.879591"
+    },
+    "use_unified_rate_limiting": {
+      "current_value": false,
+      "enabled": true,
+      "updated_at": "2025-06-30T19:44:36.880027"
+    },
+    "use_base_service": {
+      "current_value": false,
+      "enabled": true,
+      "updated_at": "2025-06-30T19:40:55.745244"
+    },
+    "enhanced_monitoring": {
+      "current_value": false,
+      "enabled": true,
+      "updated_at": "2025-06-30T19:40:55.745246"
+    },
+    "use_scheduler_orchestrator": {
+      "current_value": false,
+      "enabled": true,
+      "updated_at": "2025-06-30T19:40:55.745247"
+    },
+    "enable_new_processors": {
+      "current_value": true,
+      "enabled": true,
+      "updated_at": "2025-06-30T19:40:55.745248"
+    },
+    "processor_parallel_execution": {
+      "current_value": true,
+      "enabled": true,
+      "updated_at": "2025-06-30T19:40:55.745250"
+    },
+    "aggressive_caching": {
+      "current_value": false,
+      "enabled": true,
+      "updated_at": "2025-06-30T19:40:55.745251"
+    },
+    "database_optimization": {
+      "current_value": false,
+      "enabled": true,
+      "updated_at": "2025-06-30T19:40:55.745252"
+    },
+    "odds_api_v2": {
+      "current_value": false,
+      "enabled": true,
+      "updated_at": "2025-06-30T19:40:55.745254"
+    }
+  },
+  "last_updated": "2025-06-30T19:44:36.880040"
+}

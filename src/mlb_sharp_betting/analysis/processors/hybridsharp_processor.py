@@ -59,48 +59,104 @@ class HybridSharpProcessor(BaseStrategyProcessor):
     async def process(self, minutes_ahead: int, 
                      profitable_strategies: List[ProfitableStrategy]) -> List[BettingSignal]:
         """Process hybrid sharp + line movement signals"""
-        # Placeholder implementation
-        self.logger.info("Processing hybrid sharp signals...")
-        return []
-    
-    def _calculate_hybrid_metrics(self, row: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Calculate comprehensive hybrid metrics from the data.
+        start_time, end_time = self._create_time_window(minutes_ahead)
         
-        Returns dictionary with line movement and sharp action metrics.
+        # ✅ FIX: Extract proper source_book and split_type from strategy names
+        fixed_strategies = self._fix_strategy_components(profitable_strategies)
+        
+        # Get hybrid sharp data with line movement calculations
+        hybrid_data = await self.repository.get_hybrid_sharp_data(start_time, end_time)
+        
+        if not hybrid_data:
+            self.logger.info("No hybrid sharp data found for analysis")
+            return []
+        
+        # Filter for significant hybrid strategies only
+        significant_hybrid_data = [
+            row for row in hybrid_data 
+            if row.get('hybrid_strategy_type') in [
+                'STRONG_CONFIRMATION', 'MODERATE_CONFIRMATION', 'STEAM_PLAY', 'REVERSE_LINE_MOVEMENT'
+            ]
+        ]
+        
+        if not significant_hybrid_data:
+            self.logger.info(f"No significant hybrid strategies found in {len(hybrid_data)} records")
+            return []
+        
+        # Convert to signals
+        signals = []
+        now_est = datetime.now(self.est)
+        
+        for row in significant_hybrid_data:
+            # Apply basic filters
+            if not self._is_valid_hybrid_data(row, now_est, minutes_ahead):
+                continue
+                
+            # Apply juice filter if needed
+            if self._should_apply_juice_filter(row):
+                continue
+            
+            # Calculate hybrid metrics from database results
+            hybrid_metrics = self._extract_hybrid_metrics_from_db(row)
+            
+            # Find matching profitable strategies
+            matching_strategies = self._find_matching_strategies(fixed_strategies, row)
+            if not matching_strategies:
+                continue
+            
+            matching_strategy = matching_strategies[0]  # Use best matching strategy
+            
+            # Calculate confidence with hybrid-specific adjustments
+            strategy_classification = row.get('hybrid_strategy_type', 'NO_CLEAR_SIGNAL')
+            confidence_data = self._calculate_hybrid_confidence(
+                row, hybrid_metrics, strategy_classification, matching_strategy
+            )
+            
+            # Create the hybrid signal
+            signal = self._create_hybrid_signal(
+                row, matching_strategy, confidence_data, hybrid_metrics, strategy_classification
+            )
+            signals.append(signal)
+        
+        self._log_hybrid_summary(signals, fixed_strategies, len(hybrid_data))
+        return signals
+    
+    def _extract_hybrid_metrics_from_db(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Extract hybrid metrics from database query results.
+        
+        The database query already calculated line movement and classifications,
+        so we extract those values directly instead of recalculating.
         """
         try:
-            # Extract core values
-            differential = float(row.get('differential', 0))
-            stake_pct = float(row.get('stake_pct', 50))
-            bet_pct = float(row.get('bet_pct', 50))
+            # Extract values calculated by database query
+            line_movement = row.get('line_movement', 0) or 0
+            differential = row.get('differential', 0) or 0
+            movement_significance = row.get('movement_significance', 'NONE')
             
-            # Calculate line movement from split_value if available
-            line_movement = self._calculate_line_movement(row)
-            
-            # Classify sharp action strength
-            sharp_strength = self._classify_sharp_strength(differential)
-            
-            # Determine sharp direction
+            # Determine directions
             sharp_direction = self._determine_sharp_direction(differential, row['split_type'])
             
-            # Calculate line movement significance
-            line_significance = self._classify_line_movement(line_movement, row['split_type'])
+            # Classify sharp strength from differential
+            sharp_strength = self._classify_sharp_strength(differential)
             
             return {
                 'differential': differential,
-                'stake_pct': stake_pct,
-                'bet_pct': bet_pct,
+                'stake_pct': row.get('stake_pct', 50),
+                'bet_pct': row.get('bet_pct', 50),
                 'line_movement': line_movement,
                 'sharp_strength': sharp_strength,
                 'sharp_direction': sharp_direction,
-                'line_significance': line_significance,
+                'line_significance': movement_significance,
                 'abs_differential': abs(differential),
-                'abs_line_movement': abs(line_movement) if line_movement else 0
+                'abs_line_movement': abs(line_movement),
+                'opening_line': row.get('opening_line'),
+                'closing_line': row.get('closing_line'),
+                'sharp_indicator': row.get('closing_sharp_indicator', 'NO_SHARP_ACTION')
             }
             
         except (ValueError, TypeError, KeyError) as e:
-            self.logger.warning(f"Failed to calculate hybrid metrics: {e}")
+            self.logger.warning(f"Failed to extract hybrid metrics from database: {e}")
             return {
                 'differential': 0,
                 'line_movement': 0,
@@ -112,26 +168,24 @@ class HybridSharpProcessor(BaseStrategyProcessor):
             }
     
     def _calculate_line_movement(self, row: Dict[str, Any]) -> Optional[float]:
-        """Calculate line movement from available data."""
+        """
+        Extract line movement from database query results.
+        
+        The database query already calculated line movement using window functions,
+        so we just extract the calculated value.
+        """
         try:
-            # Try to extract from metadata if available
-            if row.get('line_movement') is not None:
-                return float(row['line_movement'])
+            # Extract pre-calculated line movement from database
+            line_movement = row.get('line_movement')
+            if line_movement is not None:
+                return float(line_movement)
             
-            # Calculate from split_value changes if historical data available
-            split_value = row.get('split_value')
-            if split_value and isinstance(split_value, str):
-                try:
-                    if split_value.startswith('{'):
-                        # JSON format for moneyline
-                        value_data = json.loads(split_value)
-                        # This would need historical comparison - simplified for now
-                        return 0.0
-                    else:
-                        # Numeric format for spread/total
-                        return 0.0  # Would need historical comparison
-                except json.JSONDecodeError:
-                    return 0.0
+            # Fallback: calculate from opening/closing if available
+            opening_line = row.get('opening_line')
+            closing_line = row.get('closing_line')
+            
+            if opening_line is not None and closing_line is not None:
+                return float(closing_line) - float(opening_line)
             
             return 0.0
             
@@ -400,4 +454,82 @@ class HybridSharpProcessor(BaseStrategyProcessor):
                 'hybrid_strategies': len(hybrid_strategies),
                 'classifications': classification_counts
             }
-        ) 
+        )
+    
+    def _fix_strategy_components(self, profitable_strategies: List[ProfitableStrategy]) -> List[ProfitableStrategy]:
+        """
+        Fix ProfitableStrategy objects by extracting real source_book and split_type from strategy names.
+        
+        This solves the strategy matching issue where strategies have synthetic values like:
+        - source_book="ORCHESTRATOR" (wrong)
+        - split_type="DYNAMIC" (wrong)
+        
+        Instead of real extracted values from strategy names.
+        """
+        fixed_strategies = []
+        
+        for strategy in profitable_strategies:
+            # Extract real values from strategy name
+            source_book, split_type = self._extract_strategy_components(strategy.strategy_name)
+            
+            # Create new strategy with fixed values
+            fixed_strategy = ProfitableStrategy(
+                strategy_name=strategy.strategy_name,
+                source_book=source_book,  # ✅ FIXED: Use extracted source_book
+                split_type=split_type,    # ✅ FIXED: Use extracted split_type
+                win_rate=strategy.win_rate,
+                roi=strategy.roi,
+                total_bets=strategy.total_bets,
+                confidence=strategy.confidence,
+                ci_lower=getattr(strategy, 'ci_lower', 0.0),
+                ci_upper=getattr(strategy, 'ci_upper', 100.0),
+                confidence_score=getattr(strategy, 'confidence_score', 0.5)
+            )
+            fixed_strategies.append(fixed_strategy)
+        
+        return fixed_strategies
+    
+    def _extract_strategy_components(self, strategy_name: str) -> tuple[str, str]:
+        """
+        Extract source_book and split_type from strategy name.
+        
+        Examples:
+        - "VSIN-circa-moneyline" -> ("VSIN-circa", "moneyline") 
+        - "VSIN-draftkings-total" -> ("VSIN-draftkings", "total")
+        - "SBD-unknown-spread" -> ("SBD-unknown", "spread")
+        - "hybrid_line_sharp_strategy_confirmation" -> ("VSIN-unknown", "hybrid_sharp")
+        """
+        strategy_name_lower = strategy_name.lower()
+        
+        # Handle direct format: "SOURCE-BOOK-SPLITTYPE"
+        if strategy_name.count('-') >= 2 and len(strategy_name.split('-')) == 3:
+            parts = strategy_name.split('-')
+            source_book = f"{parts[0]}-{parts[1]}"
+            split_type = parts[2]
+            return source_book, split_type
+        
+        # Handle hybrid sharp strategy format
+        source_book = "VSIN-unknown"  # Default for hybrid sharp
+        split_type = "hybrid_sharp"  # Default
+        
+        # Extract book information
+        if 'vsin-dra' in strategy_name_lower or 'vsin-draftkings' in strategy_name_lower:
+            source_book = "VSIN-draftkings"
+        elif 'vsin-cir' in strategy_name_lower or 'vsin-circa' in strategy_name_lower:
+            source_book = "VSIN-circa"
+        elif 'sbd' in strategy_name_lower:
+            source_book = "SBD-unknown"
+        elif 'vsin' in strategy_name_lower:
+            source_book = "VSIN-unknown"
+        
+        # Extract split type information for hybrid sharp
+        if 'moneyline' in strategy_name_lower or '_ml_' in strategy_name_lower or 'mone' in strategy_name_lower:
+            split_type = "moneyline"
+        elif 'spread' in strategy_name_lower or '_sprd_' in strategy_name_lower or 'spre' in strategy_name_lower:
+            split_type = "spread"
+        elif 'total' in strategy_name_lower or '_tot_' in strategy_name_lower or 'tota' in strategy_name_lower:
+            split_type = "total"
+        elif 'hybrid' in strategy_name_lower or 'sharp' in strategy_name_lower:
+            split_type = "hybrid_sharp"
+        
+        return source_book, split_type 

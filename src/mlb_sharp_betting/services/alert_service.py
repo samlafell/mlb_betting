@@ -22,10 +22,38 @@ from enum import Enum
 import structlog
 
 from ..core.logging import get_logger
-from .backtesting_service import BacktestingResults, StrategyMetrics, ThresholdRecommendation
 
 
 logger = get_logger(__name__)
+
+
+# Dataclasses for compatibility with deprecated enhanced_backtesting_service
+@dataclass
+class BacktestingResults:
+    """Legacy BacktestingResults class for compatibility."""
+    backtest_date: datetime
+    total_strategies_analyzed: int
+    strategies_with_adequate_data: int
+    profitable_strategies: int
+    declining_strategies: int = 0
+    stable_strategies: int = 0
+    threshold_recommendations: List[Dict[str, Any]] = None
+    strategy_alerts: List[Dict[str, Any]] = None
+    strategy_metrics: List = None
+    data_completeness_pct: float = 100.0
+    game_outcome_freshness_hours: float = 0.0
+    execution_time_seconds: float = 0.0
+    created_at: datetime = None
+    
+    def __post_init__(self):
+        if self.threshold_recommendations is None:
+            self.threshold_recommendations = []
+        if self.strategy_alerts is None:
+            self.strategy_alerts = []
+        if self.strategy_metrics is None:
+            self.strategy_metrics = []
+        if self.created_at is None:
+            self.created_at = datetime.now(timezone.utc)
 
 
 class AlertSeverity(Enum):

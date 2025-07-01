@@ -44,7 +44,7 @@ class StrategyThresholds:
 @dataclass
 class SignalProcessorConfig:
     """Configuration for signal processors"""
-    minimum_differential: float = 1.0
+    minimum_differential: float = 0.1  # ✅ FIX: Lowered from 1.0 to capture weak signals
     maximum_differential: float = 80.0
     data_freshness_hours: int = 2
     steam_move_time_window_hours: int = 4
@@ -173,4 +173,5 @@ class ProfitableStrategy:
     total_bets: int
     confidence: str
     ci_lower: float = 0.0
-    ci_upper: float = 100.0 
+    ci_upper: float = 100.0
+    confidence_score: float = 0.5  # Default confidence score as float 

@@ -1,0 +1,37 @@
+{
+  "service_name": "odds_api",
+  "max_quota": 480,
+  "time_window": "monthly",
+  "used": 3,
+  "window_start": "2025-06-30T19:40:58.779514",
+  "last_updated": "2025-06-30T19:44:36.771621",
+  "history": [
+    {
+      "timestamp": "2025-06-30T19:40:58.779710",
+      "cost": 1,
+      "endpoint": "test_endpoint",
+      "usage_after": 1,
+      "metadata": {
+        "test": "metadata"
+      }
+    },
+    {
+      "timestamp": "2025-06-30T19:42:26.451802",
+      "cost": 1,
+      "endpoint": "test_endpoint",
+      "usage_after": 2,
+      "metadata": {
+        "test": "metadata"
+      }
+    },
+    {
+      "timestamp": "2025-06-30T19:44:36.771613",
+      "cost": 1,
+      "endpoint": "test_endpoint",
+      "usage_after": 3,
+      "metadata": {
+        "test": "metadata"
+      }
+    }
+  ]
+}

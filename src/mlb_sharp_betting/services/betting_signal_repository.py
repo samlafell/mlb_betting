@@ -3,12 +3,19 @@ Betting Signal Repository - Centralized Data Access Layer
 
 Extracts all database query logic from the main detector class
 for better separation of concerns and testability.
+
+🚀 ENHANCED: Added intelligent caching and batch data retrieval to eliminate
+redundant database calls when multiple processors need similar data.
 """
 
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Set
 import pytz
 from dataclasses import asdict
+import asyncio
+from functools import lru_cache
+import hashlib
+import json
 
 from ..models.betting_analysis import SignalProcessorConfig, ProfitableStrategy
 from ..services.database_coordinator import get_database_coordinator
@@ -16,16 +23,82 @@ from ..core.logging import get_logger
 
 
 class BettingSignalRepository:
-    """Centralized repository for all betting signal database queries"""
+    """
+    Centralized repository for all betting signal database queries
+    
+    🚀 ENHANCED: Added intelligent caching and batch data retrieval
+    """
     
     def __init__(self, config: SignalProcessorConfig):
         self.coordinator = get_database_coordinator()
         self.config = config
         self.logger = get_logger(__name__)
         self.est = pytz.timezone('US/Eastern')
+        
+        # 🚀 PERFORMANCE: Add intelligent caching to reduce database calls
+        self._data_cache = {}
+        self._cache_timestamps = {}
+        self._cache_ttl = 300  # 5 minutes cache TTL
+        self._batch_requests = set()  # Track what's been requested in current batch
+        
+        # Track repository usage for optimization
+        self._call_stats = {
+            'cache_hits': 0,
+            'cache_misses': 0,
+            'database_calls': 0,
+            'batch_optimizations': 0
+        }
+    
+    def _get_cache_key(self, method_name: str, *args) -> str:
+        """Generate cache key for method call with parameters"""
+        # Create deterministic cache key from method name and arguments
+        key_data = {
+            'method': method_name,
+            'args': [str(arg) for arg in args],
+            'config_hash': hash(str(self.config))
+        }
+        return hashlib.md5(json.dumps(key_data, sort_keys=True).encode()).hexdigest()
+    
+    def _is_cache_valid(self, cache_key: str) -> bool:
+        """Check if cached data is still valid"""
+        if cache_key not in self._cache_timestamps:
+            return False
+        
+        cache_time = self._cache_timestamps[cache_key]
+        return (datetime.now() - cache_time).total_seconds() < self._cache_ttl
+    
+    def _get_from_cache(self, cache_key: str) -> Optional[List[Dict]]:
+        """Get data from cache if valid"""
+        if self._is_cache_valid(cache_key) and cache_key in self._data_cache:
+            self._call_stats['cache_hits'] += 1
+            self.logger.debug(f"📋 Cache HIT for key: {cache_key[:8]}...")
+            return self._data_cache[cache_key]
+        
+        self._call_stats['cache_misses'] += 1
+        return None
+    
+    def _store_in_cache(self, cache_key: str, data: List[Dict]) -> None:
+        """Store data in cache"""
+        self._data_cache[cache_key] = data
+        self._cache_timestamps[cache_key] = datetime.now()
+        self.logger.debug(f"💾 Cached {len(data)} records for key: {cache_key[:8]}...")
     
     async def get_sharp_signal_data(self, start_time: datetime, end_time: datetime) -> List[Dict]:
-        """Get raw sharp signal data for analysis"""
+        """
+        Get raw sharp signal data for analysis
+        
+        🚀 ENHANCED: Added intelligent caching to reduce database calls
+        """
+        # Check cache first
+        cache_key = self._get_cache_key('get_sharp_signal_data', start_time, end_time)
+        cached_data = self._get_from_cache(cache_key)
+        if cached_data is not None:
+            return cached_data
+        
+        # 🚀 PERFORMANCE LOG: Track database calls
+        self._call_stats['database_calls'] += 1
+        self.logger.info(f"🗄️  Fetching sharp signal data from database (time window: {start_time.strftime('%H:%M')} to {end_time.strftime('%H:%M')})")
+        
         query = """
         WITH valid_splits AS (
             SELECT 
@@ -61,10 +134,182 @@ class BettingSignalRepository:
         ORDER BY ABS(differential) DESC
         """
         
-        return self.coordinator.execute_read(query, (
+        data = self.coordinator.execute_read(query, (
             start_time, end_time, 
             self.config.minimum_differential
         ))
+        
+        # Store in cache and return
+        self._store_in_cache(cache_key, data)
+        self.logger.info(f"📊 Retrieved {len(data)} sharp signal records from database")
+        return data
+    
+    async def get_batch_signal_data(self, start_time: datetime, end_time: datetime, 
+                                  signal_types: Set[str] = None) -> Dict[str, List[Dict]]:
+        """
+        🚀 NEW: Batch data retrieval to reduce database round trips
+        
+        Retrieves multiple signal types in a single optimized query when possible.
+        This eliminates redundant database calls when multiple processors need data.
+        """
+        if signal_types is None:
+            signal_types = {'sharp_action', 'opposing_markets', 'book_conflicts', 'steam_moves'}
+        
+        # Check if we can serve any requests from cache
+        batch_cache_key = self._get_cache_key('get_batch_signal_data', start_time, end_time, sorted(signal_types))
+        cached_batch = self._get_from_cache(batch_cache_key)
+        if cached_batch is not None:
+            self._call_stats['batch_optimizations'] += 1
+            self.logger.info(f"🚀 Serving {len(signal_types)} signal types from batch cache")
+            return cached_batch
+        
+        self.logger.info(f"🔄 Fetching batch data for {len(signal_types)} signal types: {signal_types}")
+        self._call_stats['database_calls'] += 1
+        self._call_stats['batch_optimizations'] += 1
+        
+        # Single optimized query for all signal types
+        query = """
+        WITH valid_splits AS (
+            SELECT 
+                home_team, away_team, split_type, split_value,
+                home_or_over_stake_percentage, home_or_over_bets_percentage,
+                (home_or_over_stake_percentage - home_or_over_bets_percentage) as differential,
+                source, book, game_datetime, last_updated
+            FROM splits.raw_mlb_betting_splits
+            WHERE game_datetime BETWEEN %s AND %s
+              AND home_or_over_stake_percentage IS NOT NULL 
+              AND home_or_over_bets_percentage IS NOT NULL
+              AND game_datetime IS NOT NULL
+              AND NOT (home_or_over_stake_percentage = 0 AND home_or_over_bets_percentage = 0)
+              AND last_updated >= NOW() - INTERVAL '24 hours'
+        ),
+        latest_splits AS (
+            SELECT 
+                home_team, away_team, split_type, split_value,
+                home_or_over_stake_percentage, home_or_over_bets_percentage,
+                differential, source, book, game_datetime, last_updated,
+                ROW_NUMBER() OVER (
+                    PARTITION BY home_team, away_team, game_datetime, split_type, source, COALESCE(book, 'UNKNOWN')
+                    ORDER BY last_updated DESC
+                ) as rn
+            FROM valid_splits
+        ),
+        clean_data AS (
+            SELECT * FROM latest_splits WHERE rn = 1
+        )
+        SELECT 
+            home_team, away_team, split_type, split_value,
+            home_or_over_stake_percentage, home_or_over_bets_percentage,
+            differential, source, book, game_datetime, last_updated,
+            ABS(differential) as abs_differential,
+            CASE WHEN differential > 0 THEN home_team ELSE away_team END as recommended_team
+        FROM clean_data
+        WHERE ABS(differential) >= %s
+        ORDER BY split_type, ABS(differential) DESC
+        """
+        
+        all_data = self.coordinator.execute_read(query, (
+            start_time, end_time, self.config.minimum_differential
+        ))
+        
+        # Organize data by signal type
+        batch_result = {}
+        
+        # Sharp action data (all signals with sufficient differential)
+        if 'sharp_action' in signal_types:
+            batch_result['sharp_action'] = [
+                row for row in all_data 
+                if abs(row['differential']) >= self.config.minimum_differential
+            ]
+        
+        # Book conflicts (where we have multiple books for same game/market)
+        if 'book_conflicts' in signal_types:
+            book_groups = {}
+            for row in all_data:
+                if row['book']:  # Only process rows with book information
+                    key = f"{row['home_team']}-{row['away_team']}-{row['split_type']}-{row['game_datetime']}"
+                    if key not in book_groups:
+                        book_groups[key] = []
+                    book_groups[key].append(row)
+            
+            # Find conflicts (opposing signals from different books)
+            conflicts = []
+            for key, group in book_groups.items():
+                if len(group) >= 2:
+                    # Check for opposing recommendations
+                    rec_teams = set(row['recommended_team'] for row in group)
+                    if len(rec_teams) > 1:  # Conflicting recommendations
+                        conflicts.extend(group)
+            
+            batch_result['book_conflicts'] = conflicts
+        
+        # Opposing markets (ML vs Spread conflicts)
+        if 'opposing_markets' in signal_types:
+            game_groups = {}
+            for row in all_data:
+                if row['split_type'] in ['moneyline', 'spread']:
+                    key = f"{row['home_team']}-{row['away_team']}-{row['game_datetime']}-{row['source']}-{row['book']}"
+                    if key not in game_groups:
+                        game_groups[key] = {}
+                    game_groups[key][row['split_type']] = row
+            
+            opposing_markets = []
+            for key, markets in game_groups.items():
+                if 'moneyline' in markets and 'spread' in markets:
+                    ml_rec = markets['moneyline']['recommended_team']
+                    sp_rec = markets['spread']['recommended_team'] 
+                    if ml_rec != sp_rec:  # Opposing recommendations
+                        opposing_markets.extend([markets['moneyline'], markets['spread']])
+            
+            batch_result['opposing_markets'] = opposing_markets
+        
+        # Steam moves (rapid line movement indicators)
+        if 'steam_moves' in signal_types:
+            batch_result['steam_moves'] = [
+                row for row in all_data 
+                if abs(row['differential']) >= 15  # Higher threshold for steam moves
+            ]
+        
+        # Cache the batch result
+        self._store_in_cache(batch_cache_key, batch_result)
+        
+        total_records = sum(len(data) for data in batch_result.values())
+        self.logger.info(f"📊 Batch retrieval complete: {total_records} total records across {len(signal_types)} signal types")
+        
+        return batch_result
+    
+    def get_repository_stats(self) -> Dict[str, any]:
+        """
+        🚀 NEW: Get repository performance statistics
+        """
+        cache_hit_rate = (
+            self._call_stats['cache_hits'] / 
+            (self._call_stats['cache_hits'] + self._call_stats['cache_misses'])
+        ) if (self._call_stats['cache_hits'] + self._call_stats['cache_misses']) > 0 else 0
+        
+        return {
+            **self._call_stats,
+            'cache_hit_rate_pct': round(cache_hit_rate * 100, 1),
+            'cached_items': len(self._data_cache),
+            'cache_ttl_seconds': self._cache_ttl,
+            'efficiency_rating': 'HIGH' if cache_hit_rate > 0.7 else 'MEDIUM' if cache_hit_rate > 0.4 else 'LOW'
+        }
+    
+    def clear_cache(self) -> None:
+        """Clear repository cache (useful for testing or forced refresh)"""
+        cleared_items = len(self._data_cache)
+        self._data_cache.clear()
+        self._cache_timestamps.clear()
+        self.logger.info(f"🧹 Cleared repository cache ({cleared_items} items)")
+    
+    def reset_stats(self) -> None:
+        """Reset repository statistics"""
+        self._call_stats = {
+            'cache_hits': 0,
+            'cache_misses': 0,
+            'database_calls': 0,
+            'batch_optimizations': 0
+        }
     
     async def get_opposing_markets_data(self, start_time: datetime, end_time: datetime) -> List[Dict]:
         """Get opposing markets data where ML and spread signals conflict"""
@@ -467,7 +712,7 @@ class BettingSignalRepository:
             WHERE game_datetime BETWEEN %s AND %s
               AND home_or_over_stake_percentage IS NOT NULL 
               AND home_or_over_bets_percentage IS NOT NULL
-              AND last_updated >= NOW() - INTERVAL '24 hours'
+              AND EXTRACT('epoch' FROM (game_datetime - last_updated)) / 60 BETWEEN -5 AND 45
         )
         SELECT game_id, home_team, away_team, split_type, split_value,
                home_or_over_stake_percentage, home_or_over_bets_percentage,
@@ -559,4 +804,230 @@ class BettingSignalRepository:
         ORDER BY ABS(differential) DESC
         """
         
-        return self.coordinator.execute_read(query, (start_time, end_time)) 
+        return self.coordinator.execute_read(query, (start_time, end_time))
+
+    async def get_line_movement_data(self, start_time: datetime, end_time: datetime) -> List[Dict]:
+        """Get line movement data for movement analysis"""
+        query = """
+        SELECT 
+            home_team, away_team, split_type, split_value,
+            home_or_over_stake_percentage as stake_pct,
+            home_or_over_bets_percentage as bet_pct,
+            (home_or_over_stake_percentage - home_or_over_bets_percentage) as differential,
+            source, book, game_datetime, last_updated,
+            -- Add movement indicators
+            CASE 
+                WHEN split_type = 'spread' AND split_value IS NOT NULL THEN split_value
+                ELSE NULL
+            END as line_value
+        FROM splits.raw_mlb_betting_splits
+        WHERE game_datetime BETWEEN %s AND %s
+          AND home_or_over_stake_percentage IS NOT NULL 
+          AND home_or_over_bets_percentage IS NOT NULL
+          AND game_datetime IS NOT NULL
+          AND last_updated >= NOW() - INTERVAL '48 hours'  -- Longer window for movement tracking
+        ORDER BY home_team, away_team, game_datetime, split_type, source, book, last_updated ASC
+        """
+        
+        return self.coordinator.execute_read(query, (start_time, end_time))
+
+    async def get_hybrid_sharp_data(self, start_time: datetime, end_time: datetime) -> List[Dict]:
+        """Get hybrid sharp data with line movement calculations"""
+        query = """
+        WITH comprehensive_data AS (
+            SELECT 
+                rmbs.game_id,
+                rmbs.source,
+                COALESCE(rmbs.book, 'UNKNOWN') as book,
+                rmbs.split_type,
+                rmbs.home_team,
+                rmbs.away_team,
+                rmbs.game_datetime,
+                rmbs.last_updated,
+                rmbs.split_value,
+                rmbs.home_or_over_stake_percentage as stake_pct,
+                rmbs.home_or_over_bets_percentage as bet_pct,
+                rmbs.home_or_over_stake_percentage - rmbs.home_or_over_bets_percentage as differential,
+                
+                -- Extract line values from JSON using PostgreSQL JSONB operators with safe casting
+                CASE 
+                    WHEN rmbs.split_type = 'moneyline' AND rmbs.split_value LIKE '{%}' THEN
+                        CASE WHEN (rmbs.split_value::JSONB->>'home') ~ '^-?[0-9]+\.?[0-9]*$' 
+                             THEN (rmbs.split_value::JSONB->>'home')::DOUBLE PRECISION 
+                             ELSE NULL END
+                    WHEN rmbs.split_type IN ('spread', 'total') AND rmbs.split_value ~ '^-?[0-9]+\.?[0-9]*$' THEN
+                        rmbs.split_value::DOUBLE PRECISION
+                    ELSE NULL
+                END as line_value,
+                
+                -- Calculate hours before game
+                EXTRACT('epoch' FROM (rmbs.game_datetime - rmbs.last_updated)) / 3600 AS hours_before_game,
+                
+                -- Sharp action indicators
+                CASE 
+                    WHEN ABS(rmbs.home_or_over_stake_percentage - rmbs.home_or_over_bets_percentage) >= 20 THEN 'PREMIUM_SHARP'
+                    WHEN ABS(rmbs.home_or_over_stake_percentage - rmbs.home_or_over_bets_percentage) >= 15 THEN 'STRONG_SHARP'
+                    WHEN ABS(rmbs.home_or_over_stake_percentage - rmbs.home_or_over_bets_percentage) >= 10 THEN 'MODERATE_SHARP'
+                    WHEN ABS(rmbs.home_or_over_stake_percentage - rmbs.home_or_over_bets_percentage) >= 5 THEN 'WEAK_SHARP'
+                    ELSE 'NO_SHARP_ACTION'
+                END || 
+                CASE 
+                    WHEN rmbs.home_or_over_stake_percentage - rmbs.home_or_over_bets_percentage > 5 THEN '_HOME_OVER'
+                    WHEN rmbs.home_or_over_stake_percentage - rmbs.home_or_over_bets_percentage < -5 THEN '_AWAY_UNDER'
+                    ELSE ''
+                END as sharp_indicator
+                
+            FROM splits.raw_mlb_betting_splits rmbs
+            JOIN public.game_outcomes go ON rmbs.game_id = go.game_id
+            WHERE rmbs.game_datetime BETWEEN %s AND %s
+              AND rmbs.last_updated < rmbs.game_datetime
+              AND rmbs.split_value IS NOT NULL
+              AND rmbs.game_datetime IS NOT NULL
+              AND rmbs.home_or_over_stake_percentage IS NOT NULL
+              AND rmbs.home_or_over_bets_percentage IS NOT NULL
+              AND go.home_score IS NOT NULL
+              AND go.away_score IS NOT NULL
+        ),
+        
+        opening_closing_with_sharp AS (
+            SELECT 
+                game_id,
+                source,
+                book,
+                split_type,
+                home_team,
+                away_team,
+                game_datetime,
+                
+                -- Opening metrics
+                FIRST_VALUE(line_value) OVER (
+                    PARTITION BY game_id, source, book, split_type 
+                    ORDER BY last_updated ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                ) as opening_line,
+                
+                FIRST_VALUE(differential) OVER (
+                    PARTITION BY game_id, source, book, split_type 
+                    ORDER BY last_updated ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                ) as opening_differential,
+                
+                -- Closing metrics
+                LAST_VALUE(line_value) OVER (
+                    PARTITION BY game_id, source, book, split_type 
+                    ORDER BY last_updated ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                ) as closing_line,
+                
+                LAST_VALUE(differential) OVER (
+                    PARTITION BY game_id, source, book, split_type 
+                    ORDER BY last_updated ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                ) as closing_differential,
+                
+                LAST_VALUE(sharp_indicator) OVER (
+                    PARTITION BY game_id, source, book, split_type 
+                    ORDER BY last_updated ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                ) as closing_sharp_indicator,
+                
+                LAST_VALUE(stake_pct) OVER (
+                    PARTITION BY game_id, source, book, split_type 
+                    ORDER BY last_updated ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                ) as closing_stake_pct,
+                
+                LAST_VALUE(bet_pct) OVER (
+                    PARTITION BY game_id, source, book, split_type 
+                    ORDER BY last_updated ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                ) as closing_bet_pct,
+                
+                LAST_VALUE(last_updated) OVER (
+                    PARTITION BY game_id, source, book, split_type 
+                    ORDER BY last_updated ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                ) as last_updated,
+                
+                -- Calculate line movement
+                LAST_VALUE(line_value) OVER (
+                    PARTITION BY game_id, source, book, split_type 
+                    ORDER BY last_updated ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                ) - FIRST_VALUE(line_value) OVER (
+                    PARTITION BY game_id, source, book, split_type 
+                    ORDER BY last_updated ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                ) as line_movement,
+                
+                ROW_NUMBER() OVER (PARTITION BY game_id, source, book, split_type ORDER BY last_updated DESC) as rn
+                
+            FROM comprehensive_data
+            WHERE line_value IS NOT NULL
+        )
+        
+        SELECT 
+            game_id, source, book, split_type, home_team, away_team, game_datetime,
+            opening_line, closing_line, line_movement,
+            opening_differential, closing_differential, closing_sharp_indicator,
+            closing_stake_pct as stake_pct, closing_bet_pct as bet_pct,
+            closing_differential as differential, last_updated,
+            
+            -- Movement classification
+            CASE 
+                WHEN split_type = 'moneyline' THEN
+                    CASE WHEN ABS(COALESCE(line_movement, 0)) >= 20 THEN 'SIGNIFICANT'
+                         WHEN ABS(COALESCE(line_movement, 0)) >= 10 THEN 'MODERATE'
+                         WHEN ABS(COALESCE(line_movement, 0)) > 0 THEN 'MINOR'
+                         ELSE 'NONE' END
+                ELSE
+                    CASE WHEN ABS(COALESCE(line_movement, 0)) >= 1.0 THEN 'SIGNIFICANT'
+                         WHEN ABS(COALESCE(line_movement, 0)) >= 0.5 THEN 'MODERATE'
+                         WHEN ABS(COALESCE(line_movement, 0)) > 0 THEN 'MINOR'
+                         ELSE 'NONE' END
+            END as movement_significance,
+            
+            -- Hybrid strategy classification
+            CASE 
+                -- Strong confirmation strategies (line movement + strong sharp action in same direction)
+                WHEN ABS(COALESCE(line_movement, 0)) >= 10 AND closing_sharp_indicator LIKE 'STRONG_SHARP_%' THEN
+                    CASE 
+                        WHEN (line_movement > 0 AND closing_sharp_indicator LIKE '%AWAY_UNDER') OR 
+                             (line_movement < 0 AND closing_sharp_indicator LIKE '%HOME_OVER') THEN 'STRONG_CONFIRMATION'
+                        ELSE 'STRONG_CONFLICT'
+                    END
+                
+                -- Moderate confirmation strategies
+                WHEN ABS(COALESCE(line_movement, 0)) >= 5 AND closing_sharp_indicator LIKE 'MODERATE_SHARP_%' THEN
+                    CASE 
+                        WHEN (line_movement > 0 AND closing_sharp_indicator LIKE '%AWAY_UNDER') OR 
+                             (line_movement < 0 AND closing_sharp_indicator LIKE '%HOME_OVER') THEN 'MODERATE_CONFIRMATION'
+                        ELSE 'MODERATE_CONFLICT'
+                    END
+                
+                -- Steam play: strong sharp action without significant line movement
+                WHEN ABS(COALESCE(line_movement, 0)) < 5 AND closing_sharp_indicator LIKE 'STRONG_SHARP_%' THEN 'STEAM_PLAY'
+                
+                -- Public move: line movement without sharp confirmation
+                WHEN ABS(COALESCE(line_movement, 0)) >= 10 AND closing_sharp_indicator = 'NO_SHARP_ACTION' THEN 'PUBLIC_MOVE'
+                
+                -- Reverse line movement: line moves opposite to public
+                WHEN ABS(COALESCE(line_movement, 0)) >= 5 AND 
+                     ((line_movement > 0 AND closing_stake_pct < 40) OR 
+                      (line_movement < 0 AND closing_stake_pct > 60)) THEN 'REVERSE_LINE_MOVEMENT'
+                
+                ELSE 'NO_CLEAR_SIGNAL'
+            END as hybrid_strategy_type
+            
+        FROM opening_closing_with_sharp
+        WHERE rn = 1 
+          AND opening_line IS NOT NULL 
+          AND closing_line IS NOT NULL
+          AND ABS(closing_differential) >= %s
+        ORDER BY ABS(closing_differential) DESC, ABS(COALESCE(line_movement, 0)) DESC
+        """
+        
+        return self.coordinator.execute_read(query, (
+            start_time, end_time, 
+            self.config.minimum_differential
+        )) 

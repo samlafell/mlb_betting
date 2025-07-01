@@ -56,7 +56,7 @@ async def evaluate_steam_plays_strategy():
         END as strategy_won
         
     FROM mlb_betting.splits.raw_mlb_betting_splits rmbs
-    JOIN mlb_betting.main.game_outcomes go ON rmbs.game_id = go.game_id
+    JOIN mlb_betting.public.game_outcomes go ON rmbs.game_id = go.game_id
     WHERE rmbs.last_updated < rmbs.game_datetime
       AND rmbs.game_datetime < CURRENT_TIMESTAMP - INTERVAL '6 hours'
       AND rmbs.source = 'VSIN'
@@ -130,7 +130,7 @@ async def evaluate_follow_strong_sharp_strategy():
         END as strategy_won
         
     FROM mlb_betting.splits.raw_mlb_betting_splits rmbs
-    JOIN mlb_betting.main.game_outcomes go ON rmbs.game_id = go.game_id
+    JOIN mlb_betting.public.game_outcomes go ON rmbs.game_id = go.game_id
     WHERE rmbs.last_updated < rmbs.game_datetime
       AND rmbs.game_datetime < CURRENT_TIMESTAMP - INTERVAL '6 hours'
       AND rmbs.source = 'VSIN'
@@ -189,7 +189,7 @@ async def evaluate_opposing_markets_strategy():
             ROW_NUMBER() OVER (PARTITION BY rmbs.game_id, rmbs.source, rmbs.book, rmbs.split_type ORDER BY rmbs.last_updated DESC) as rn
             
         FROM mlb_betting.splits.raw_mlb_betting_splits rmbs
-        JOIN mlb_betting.main.game_outcomes go ON rmbs.game_id = go.game_id
+        JOIN mlb_betting.public.game_outcomes go ON rmbs.game_id = go.game_id
         WHERE rmbs.last_updated < rmbs.game_datetime
           AND rmbs.game_datetime < CURRENT_TIMESTAMP - INTERVAL '6 hours'
           AND rmbs.split_type IN ('moneyline', 'spread')

@@ -16,7 +16,7 @@ from typing import Dict, List, Optional, Any
 import pytz
 
 from ..core.logging import get_logger
-from ..services.strategy_orchestrator import get_strategy_orchestrator
+from ..services.strategy_manager import get_strategy_manager
 from ..services.juice_filter_service import get_juice_filter_service
 from ..models.betting_analysis import BettingSignal, GameAnalysis, BettingAnalysisResult
 
@@ -38,10 +38,10 @@ class AdaptiveBettingDetector:
         self.est = pytz.timezone('US/Eastern')
         
     async def initialize(self):
-        """Initialize the detector with orchestrator"""
+        """Initialize the detector with strategy manager"""
         try:
-            self.orchestrator = await get_strategy_orchestrator()
-            self.logger.info("Adaptive betting detector initialized with orchestrator")
+            self.orchestrator = await get_strategy_manager()
+            self.logger.info("Adaptive betting detector initialized with strategy manager")
             
         except Exception as e:
             self.logger.error(f"Failed to initialize adaptive detector: {e}")
@@ -301,10 +301,13 @@ class AdaptiveBettingDetector:
             print(f"🕐 Minutes to Game: {game_analysis.minutes_to_game}")
             print(f"🎯 Total Opportunities: {game_analysis.total_opportunities}")
             
-            # Show each signal
+            # Show each signal with clear betting instructions
             for signal in game_analysis.all_signals:
                 confidence_emoji = self._get_confidence_emoji(signal.confidence_score)
-                print(f"  {confidence_emoji} {signal.signal_type.value.upper()}: {signal.recommendation}")
+                bet_details = self._parse_clear_bet_instructions(signal)
+                
+                print(f"  {confidence_emoji} {signal.signal_type.value.upper()}: {bet_details['clear_bet_instruction']}")
+                print(f"    🎰 Bet Type: {bet_details['bet_type']} | 💰 Odds: {bet_details['odds_display']} | 🏪 Book: {bet_details['recommended_book']}")
                 print(f"    💪 Strength: {signal.signal_strength:.1f} | Confidence: {signal.confidence_score:.2f}")
                 print(f"    📊 Strategy: {signal.strategy_name} | ROI: {signal.roi:+.1f}%")
                 if hasattr(signal, 'metadata') and signal.metadata:
@@ -333,11 +336,16 @@ class AdaptiveBettingDetector:
             print(f"⏰ Starts in {game_analysis.minutes_to_game} minutes ({game_time.strftime('%H:%M')})")
             print("-" * 50)
             
-            # Show highest confidence signal
+            # Show highest confidence signal with clear betting instructions
             highest_signal = game_analysis.highest_confidence_signal
             if highest_signal:
                 confidence_emoji = self._get_confidence_emoji(highest_signal.confidence_score)
-                print(f"{confidence_emoji} BEST OPPORTUNITY: {highest_signal.recommendation}")
+                bet_details = self._parse_clear_bet_instructions(highest_signal)
+                
+                print(f"{confidence_emoji} BEST OPPORTUNITY: {bet_details['clear_bet_instruction']}")
+                print(f"  🎰 Bet Type: {bet_details['bet_type']}")
+                print(f"  💰 Odds: {bet_details['odds_display']}")
+                print(f"  🏪 Book: {bet_details['recommended_book']}")
                 print(f"  📊 Strategy: {highest_signal.strategy_name} (Recent ROI: {highest_signal.roi:+.1f}%)")
                 print(f"  💪 Signal Strength: {highest_signal.signal_strength:.1f}")
                 print(f"  🎯 Confidence: {highest_signal.confidence_score:.2f}")
@@ -355,6 +363,105 @@ class AdaptiveBettingDetector:
             if other_signals:
                 print(f"  📋 Additional opportunities: {len(other_signals)}")
     
+    def _parse_clear_bet_instructions(self, signal: BettingSignal) -> Dict[str, str]:
+        """Parse signal into clear betting instructions with bet type, odds, and book"""
+        import json
+        
+        try:
+            # Extract bet type from strategy name
+            strategy_name = signal.strategy_name.lower()
+            if 'moneyline' in strategy_name or '_ml_' in strategy_name:
+                bet_type = "MONEYLINE"
+            elif 'spread' in strategy_name or '_sprd_' in strategy_name:
+                bet_type = "SPREAD"
+            elif 'total' in strategy_name or '_tot_' in strategy_name:
+                bet_type = "TOTAL"
+            else:
+                bet_type = "UNKNOWN"
+            
+            # Extract book from strategy name or signal
+            book = "UNKNOWN"
+            if 'draftkings' in strategy_name or 'dk' in strategy_name:
+                book = "DraftKings"
+            elif 'circa' in strategy_name:
+                book = "Circa"
+            elif signal.book:
+                book = signal.book
+            elif signal.source:
+                book = signal.source
+            
+            # Parse split_value to get odds
+            odds_display = "TBD"
+            if signal.split_value:
+                try:
+                    split_data = json.loads(signal.split_value)
+                    
+                    # Extract team being recommended
+                    recommended_team = None
+                    if signal.recommendation:
+                        rec_upper = signal.recommendation.upper()
+                        if signal.home_team.upper() in rec_upper:
+                            recommended_team = "home"
+                        elif signal.away_team.upper() in rec_upper:
+                            recommended_team = "away"
+                    
+                    # Get odds based on bet type and recommended team
+                    if bet_type == "MONEYLINE" and recommended_team:
+                        odds = split_data.get(recommended_team)
+                        if odds:
+                            odds_display = f"{odds:+d}"
+                    elif bet_type == "SPREAD":
+                        # For spread, show line and odds
+                        if recommended_team == "home" and "home" in split_data:
+                            line = split_data.get("home")
+                            odds_display = f"{line:+.1f}"
+                        elif recommended_team == "away" and "away" in split_data:
+                            line = split_data.get("away")
+                            odds_display = f"{line:+.1f}"
+                    elif bet_type == "TOTAL":
+                        # For totals, show O/U line
+                        total_line = split_data.get("total")
+                        if total_line and signal.recommendation:
+                            if "OVER" in signal.recommendation.upper():
+                                odds_display = f"Over {total_line}"
+                            elif "UNDER" in signal.recommendation.upper():
+                                odds_display = f"Under {total_line}"
+                except:
+                    pass
+            
+            # Create clear bet instruction
+            if signal.recommendation:
+                # Clean up the recommendation
+                clean_rec = signal.recommendation.replace("BET ", "").strip()
+                
+                # Add bet type clarity if not already clear
+                if bet_type == "MONEYLINE" and "ML" not in clean_rec and "MONEYLINE" not in clean_rec.upper():
+                    clear_instruction = f"{clean_rec} MONEYLINE"
+                elif bet_type == "SPREAD" and "SPREAD" not in clean_rec.upper():
+                    clear_instruction = f"{clean_rec} SPREAD"
+                elif bet_type == "TOTAL" and "TOTAL" not in clean_rec.upper():
+                    clear_instruction = clean_rec  # Already says OVER/UNDER
+                else:
+                    clear_instruction = clean_rec
+            else:
+                clear_instruction = f"{bet_type} BET"
+            
+            return {
+                'clear_bet_instruction': clear_instruction,
+                'bet_type': bet_type,
+                'odds_display': odds_display,
+                'recommended_book': book
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to parse bet instructions: {e}")
+            return {
+                'clear_bet_instruction': signal.recommendation or "BET RECOMMENDATION",
+                'bet_type': "UNKNOWN",
+                'odds_display': "TBD",
+                'recommended_book': "UNKNOWN"
+            }
+
     def _get_confidence_emoji(self, confidence_score: float) -> str:
         """Get emoji for confidence score"""
         if confidence_score >= 0.90:

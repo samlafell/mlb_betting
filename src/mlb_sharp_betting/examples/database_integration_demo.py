@@ -16,7 +16,7 @@ import structlog
 
 from ..db.connection import DatabaseManager
 from ..db.schema import SchemaManager, setup_database_schema
-from ..services.data_persistence import DataPersistenceService
+from ..services.data_service import get_data_service
 from ..scrapers.sbd import SBDScraper
 from ..scrapers.vsin import VSINScraper
 from ..parsers.sbd import SBDParser
@@ -37,7 +37,7 @@ class DatabaseIntegrationDemo:
         self.settings = get_settings()
         self.db_manager = DatabaseManager()
         self.schema_manager = SchemaManager(self.db_manager)
-        self.persistence_service = DataPersistenceService(self.db_manager)
+        self.data_service = get_data_service(self.db_manager)
         
         # Initialize scrapers and parsers
         self.sbd_scraper = SBDScraper()
@@ -159,7 +159,7 @@ class DatabaseIntegrationDemo:
         try:
             # Store splits with validation
             self.logger.info("Storing betting splits with validation")
-            storage_stats = self.persistence_service.store_betting_splits(
+            storage_stats = self.data_service.persistence.store_betting_splits(
                 splits=splits,
                 batch_size=50,
                 validate=True,
@@ -183,7 +183,7 @@ class DatabaseIntegrationDemo:
         
         try:
             # Get recent splits
-            recent_splits = self.persistence_service.get_recent_splits(hours=24)
+            recent_splits = self.data_service.persistence.get_recent_splits(hours=24)
             self.logger.info("Recent splits retrieved", count=len(recent_splits))
             
             if recent_splits:
@@ -204,7 +204,7 @@ class DatabaseIntegrationDemo:
                 
                 # Get splits for a specific game
                 first_split = recent_splits[0]
-                game_splits = self.persistence_service.get_splits_by_game(first_split.game_id)
+                game_splits = self.data_service.persistence.get_splits_by_game(first_split.game_id)
                 self.logger.info("Example game splits", 
                                game_id=first_split.game_id,
                                splits_count=len(game_splits))
@@ -221,11 +221,11 @@ class DatabaseIntegrationDemo:
         
         try:
             # Get storage statistics
-            stats = self.persistence_service.get_storage_statistics()
+            stats = self.data_service.persistence.get_storage_statistics()
             self.logger.info("Storage statistics", stats=stats)
             
             # Verify data integrity
-            integrity_results = self.persistence_service.verify_data_integrity()
+            integrity_results = self.data_service.persistence.verify_data_integrity()
             self.logger.info("Data integrity check", results=integrity_results)
             
             if integrity_results["overall_health"] == "healthy":
@@ -319,7 +319,7 @@ class DatabaseIntegrationDemo:
         
         try:
             # Clean up old data
-            cleanup_stats = self.persistence_service.cleanup_old_data(days_to_keep=7)
+            cleanup_stats = self.data_service.persistence.cleanup_old_data(days_to_keep=7)
             self.logger.info("Cleanup completed", stats=cleanup_stats)
             
         except Exception as e:

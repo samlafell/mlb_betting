@@ -4,6 +4,7 @@ CLI commands for the pre-game workflow system.
 
 This module provides command-line interface commands for managing the 
 three-stage pre-game workflow system that triggers before each MLB game.
+Updated to use the new SchedulerEngine from Phase 4 consolidation.
 """
 
 import asyncio
@@ -14,7 +15,8 @@ from typing import Optional
 import click
 import structlog
 
-from ...services.pre_game_scheduler import PreGameScheduler
+# 🔄 UPDATED: Use new SchedulerEngine instead of deprecated PreGameScheduler
+from ...services.scheduler_engine import get_scheduler_engine
 from ...services.pre_game_workflow import PreGameWorkflowService
 from ...services.mlb_api_service import MLBStatsAPIService
 from ...core.logging import get_logger
@@ -24,7 +26,7 @@ logger = get_logger(__name__)
 
 @click.group(name="pregame")
 def pregame_group():
-    """Manage the pre-game workflow system."""
+    """Manage the pre-game workflow system using SchedulerEngine."""
     pass
 
 
@@ -35,19 +37,27 @@ def pregame_group():
               help="Hour (EST) to run daily game setup")
 @click.option("--project-root", "-r", type=click.Path(exists=True, path_type=Path),
               help="Project root directory (defaults to auto-detection)")
-def start_scheduler(alert_minutes: int, daily_setup_hour: int, project_root: Optional[Path]):
-    """Start the pre-game workflow scheduler."""
-    click.echo("🏈 Starting MLB Pre-Game Workflow Scheduler...")
+@click.option("--notifications/--no-notifications", default=True,
+              help="Enable/disable email notifications")
+def start_scheduler(alert_minutes: int, daily_setup_hour: int, project_root: Optional[Path], notifications: bool):
+    """Start the pre-game workflow scheduler using SchedulerEngine."""
+    click.echo("🏈 Starting MLB Pre-Game Workflow Scheduler (Phase 4 Engine)...")
+    click.echo(f"⚙️  Alert Minutes: {alert_minutes}")
+    click.echo(f"🕕 Daily Setup Hour: {daily_setup_hour} EST")
+    click.echo(f"📧 Notifications: {'ENABLED' if notifications else 'DISABLED'}")
     
     try:
-        scheduler = PreGameScheduler(
-            project_root=project_root,
-            alert_minutes_before_game=alert_minutes,
-            daily_setup_hour=daily_setup_hour
-        )
+        # 🔄 UPDATED: Use new SchedulerEngine
+        scheduler_engine = get_scheduler_engine()
+        scheduler_engine.alert_minutes = alert_minutes
+        scheduler_engine.daily_setup_hour = daily_setup_hour
+        scheduler_engine.notifications_enabled = notifications
         
-        # Run the scheduler
-        asyncio.run(scheduler.run_forever())
+        if project_root:
+            scheduler_engine.project_root = project_root
+        
+        # Initialize and start in pregame mode
+        asyncio.run(_start_pregame_scheduler(scheduler_engine))
         
     except KeyboardInterrupt:
         click.echo("\n👋 Scheduler stopped by user")
@@ -57,42 +67,74 @@ def start_scheduler(alert_minutes: int, daily_setup_hour: int, project_root: Opt
         sys.exit(1)
 
 
+async def _start_pregame_scheduler(scheduler_engine):
+    """Helper function to start the scheduler in pregame mode."""
+    try:
+        await scheduler_engine.initialize()
+        click.echo("✅ SchedulerEngine initialized successfully")
+        
+        # Start in pregame mode
+        click.echo("🚀 Starting scheduler in PRE-GAME mode...")
+        await scheduler_engine.start(mode="pregame")
+        
+        # Run forever
+        await scheduler_engine.run_forever()
+        
+    except Exception as e:
+        logger.error("Failed to start pregame scheduler", error=str(e))
+        raise
+
+
 @pregame_group.command("status")
 @click.option("--project-root", "-r", type=click.Path(exists=True, path_type=Path),
               help="Project root directory")
 def status(project_root: Optional[Path]):
-    """Show pre-game scheduler status and recent workflows."""
-    click.echo("📊 Pre-Game Workflow Status")
+    """Show pre-game scheduler status using SchedulerEngine."""
+    click.echo("📊 Pre-Game Workflow Status (Phase 4 Engine)")
     click.echo("=" * 40)
     
     try:
-        # Create a scheduler instance to check status
-        scheduler = PreGameScheduler(project_root=project_root)
-        status_info = scheduler.get_status()
+        # 🔄 UPDATED: Use new SchedulerEngine
+        scheduler_engine = get_scheduler_engine()
+        if project_root:
+            scheduler_engine.project_root = project_root
         
-        click.echo(f"Running: {'✅ Yes' if status_info['running'] else '❌ No'}")
-        click.echo(f"Email Configured: {'✅ Yes' if status_info['email_configured'] else '❌ No'}")
-        click.echo(f"Scheduled Games Today: {status_info['scheduled_games_today']}")
-        click.echo(f"Active Workflow Jobs: {status_info['active_workflow_jobs']}")
-        click.echo(f"Completed Workflows: {status_info['completed_workflows']}")
+        # Get status from unified engine
+        status_info = scheduler_engine.get_status()
         
-        click.echo("\n📈 Metrics:")
-        for key, value in status_info['metrics'].items():
-            formatted_key = key.replace('_', ' ').title()
-            click.echo(f"  {formatted_key}: {value}")
+        click.echo(f"Running: {'✅ Yes' if status_info.get('running', False) else '❌ No'}")
+        click.echo(f"Mode: {status_info.get('mode', 'Unknown')}")
+        click.echo(f"Notifications: {'✅ Enabled' if status_info.get('notifications_enabled', False) else '❌ Disabled'}")
+        click.echo(f"Scheduled Games: {status_info.get('scheduled_games_count', 0)}")
+        click.echo(f"Active Jobs: {status_info.get('active_jobs', 0)}")
         
-        # Show recent workflows
-        recent_workflows = scheduler.get_recent_workflows(limit=5)
-        if recent_workflows:
-            click.echo("\n🕒 Recent Workflows:")
-            for workflow in recent_workflows:
-                status_emoji = "✅" if workflow.overall_status.value == "success" else "❌"
-                game_desc = f"{workflow.game.away_team} @ {workflow.game.home_team}"
-                time_str = workflow.start_time.strftime("%Y-%m-%d %H:%M")
-                click.echo(f"  {status_emoji} {game_desc} - {time_str}")
+        # Show metrics from unified metrics
+        if 'metrics' in status_info:
+            metrics = status_info['metrics']
+            click.echo("\n📈 Scheduler Metrics:")
+            click.echo(f"  Workflows Triggered: {metrics.get('workflows_triggered', 0)}")
+            click.echo(f"  Successful Workflows: {metrics.get('successful_workflows', 0)}")
+            click.echo(f"  Failed Workflows: {metrics.get('failed_workflows', 0)}")
+            click.echo(f"  Game Alerts: {metrics.get('game_alerts', 0)}")
+            click.echo(f"  Total Jobs Executed: {metrics.get('total_jobs_executed', 0)}")
+            
+            # Show last run times
+            if metrics.get('last_hourly_run'):
+                click.echo(f"  Last Hourly Run: {metrics['last_hourly_run']}")
+            if metrics.get('last_game_alert'):
+                click.echo(f"  Last Game Alert: {metrics['last_game_alert']}")
+        
+        # Show module status
+        if 'modules' in status_info:
+            modules = status_info['modules']
+            click.echo("\n🔧 Module Status:")
+            for module_name, module_info in modules.items():
+                status_emoji = "✅" if module_info.get('loaded', False) else "❌"
+                click.echo(f"  {status_emoji} {module_name.title()}: {'Loaded' if module_info.get('loaded', False) else 'Not loaded'}")
         
     except Exception as e:
         click.echo(f"❌ Failed to get status: {str(e)}", err=True)
+        logger.error("Failed to get scheduler status", error=str(e))
         sys.exit(1)
 
 
@@ -104,9 +146,17 @@ def test_workflow(game_pk: Optional[int], project_root: Optional[Path]):
     """Test the pre-game workflow with a specific game or today's first game."""
     
     async def run_test():
-        click.echo("🧪 Testing Pre-Game Workflow...")
+        click.echo("🧪 Testing Pre-Game Workflow (Phase 4 Engine)...")
         
         try:
+            # 🔄 UPDATED: Use SchedulerEngine's pregame module
+            scheduler_engine = get_scheduler_engine()
+            if project_root:
+                scheduler_engine.project_root = project_root
+            
+            await scheduler_engine.initialize()
+            
+            # Use the workflow service directly (still exists)
             workflow_service = PreGameWorkflowService(project_root=project_root)
             mlb_api = MLBStatsAPIService()
             
@@ -177,6 +227,64 @@ def test_workflow(game_pk: Optional[int], project_root: Optional[Path]):
             logger.error("Workflow test failed", error=str(e))
     
     asyncio.run(run_test())
+
+
+@pregame_group.command("start-full")
+@click.option("--project-root", "-r", type=click.Path(exists=True, path_type=Path),
+              help="Project root directory")
+@click.option("--notifications/--no-notifications", default=True,
+              help="Enable/disable notifications")
+def start_full_scheduler(project_root: Optional[Path], notifications: bool):
+    """Start the full scheduler (all modes: core, pregame, backtesting)."""
+    click.echo("🚀 Starting FULL SchedulerEngine (All Modes)")
+    click.echo("=" * 50)
+    click.echo("📡 Core MLB scheduling")
+    click.echo("🏈 Pre-game workflows")  
+    click.echo("🔬 Backtesting automation")
+    click.echo(f"📧 Notifications: {'ENABLED' if notifications else 'DISABLED'}")
+    
+    try:
+        # 🔄 UPDATED: Use new SchedulerEngine in full mode
+        scheduler_engine = get_scheduler_engine()
+        scheduler_engine.notifications_enabled = notifications
+        
+        if project_root:
+            scheduler_engine.project_root = project_root
+        
+        # Start in full mode
+        asyncio.run(_start_full_scheduler(scheduler_engine))
+        
+    except KeyboardInterrupt:
+        click.echo("\n👋 Full scheduler stopped by user")
+    except Exception as e:
+        click.echo(f"❌ Full scheduler failed: {str(e)}", err=True)
+        logger.error("Full scheduler startup failed", error=str(e))
+        sys.exit(1)
+
+
+async def _start_full_scheduler(scheduler_engine):
+    """Helper function to start the scheduler in full mode."""
+    try:
+        await scheduler_engine.initialize()
+        click.echo("✅ SchedulerEngine initialized successfully")
+        
+        # Start in full mode (all modules)
+        click.echo("🚀 Starting scheduler in FULL mode...")
+        await scheduler_engine.start(mode="full")
+        
+        # Display startup summary
+        status = scheduler_engine.get_status()
+        click.echo(f"\n📊 Scheduler Status:")
+        click.echo(f"   Running: {'✅ Yes' if status.get('running', False) else '❌ No'}")
+        click.echo(f"   Mode: {status.get('mode', 'Unknown')}")
+        click.echo(f"   Active Jobs: {status.get('active_jobs', 0)}")
+        
+        # Run forever
+        await scheduler_engine.run_forever()
+        
+    except Exception as e:
+        logger.error("Failed to start full scheduler", error=str(e))
+        raise
 
 
 @pregame_group.command("configure-email")

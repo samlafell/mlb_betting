@@ -80,7 +80,7 @@ async def test_database_prerequisites() -> bool:
     # Check for required tables
     required_tables = [
         "mlb_betting.splits.raw_mlb_betting_splits",
-        "mlb_betting.main.game_outcomes"
+        "mlb_betting.public.game_outcomes"
     ]
     
     for table in required_tables:

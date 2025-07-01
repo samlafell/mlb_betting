@@ -49,8 +49,7 @@ logger = structlog.get_logger(__name__)
 # Import our components
 from mlb_sharp_betting.db.connection import get_db_manager
 from mlb_sharp_betting.db.repositories import BettingSplitRepository, GameRepository
-from mlb_sharp_betting.services.data_persistence import DataPersistenceService
-from mlb_sharp_betting.services.data_collector import DataCollector
+from mlb_sharp_betting.services.data_service import get_data_service
 from mlb_sharp_betting.services.game_manager import GameManager
 from mlb_sharp_betting.utils.validators import validate_betting_split, assess_data_quality
 from mlb_sharp_betting.utils.team_mapper import normalize_team_name
@@ -74,12 +73,11 @@ class DataPipeline:
         self.sportsbook = sportsbook
         self.dry_run = dry_run
         
-        # Initialize components
+        # Initialize components using new consolidated services
         self.db_manager = get_db_manager()
-        self.data_persistence_service = DataPersistenceService(self.db_manager)
+        self.data_service = get_data_service(self.db_manager)
         self.betting_split_repo = BettingSplitRepository()
         self.game_repo = GameRepository()
-        self.data_collector = DataCollector()
         self.game_manager = GameManager(self.db_manager)
         
         # Initialize cross-market flip detector for pipeline integration
@@ -132,11 +130,17 @@ class DataPipeline:
             logger.info("Dry run mode - using mock data")
             mock_data = self._get_mock_data()
             # Convert mock data to BettingSplit objects for consistency
-            return self._convert_mock_to_splits(mock_data)
+            splits = self._convert_mock_to_splits(mock_data)
+            
+            self.metrics["scraped_records"] = len(splits)
+            self.metrics["parsed_records"] = len(splits)  # Already parsed
+            logger.info("Mock data collection completed successfully", 
+                       splits_collected=len(splits))
+            return splits
         
         try:
-            # Collect from all sources (SBD + VSIN)
-            splits = await self.data_collector.collect_all(sport=self.sport)
+            # Collect from all sources (SBD + VSIN) - real data
+            splits = await self.data_service.collect_all_sources(sport=self.sport)
             
             self.metrics["scraped_records"] = len(splits)
             self.metrics["parsed_records"] = len(splits)  # Already parsed by data collector
@@ -283,28 +287,50 @@ class DataPipeline:
         """Validate and store betting splits in the database using the repository pattern."""
         logger.info("Starting data validation and storage", records_to_validate=len(betting_splits))
         
+        if not betting_splits:
+            logger.warning("No betting splits provided for validation and storage")
+            return []
+        
+        # Debug: Log first split to see if data is valid
+        logger.info("Sample split data", 
+                   first_split=f"ID: {betting_splits[0].game_id}, Teams: {betting_splits[0].home_team} vs {betting_splits[0].away_team}")
+        
         try:
-            # Use the data persistence service for proper validation and storage
-            storage_stats = self.data_persistence_service.store_betting_splits(
+            # Use the data service for proper validation and storage
+            storage_stats = self.data_service.store_splits(
                 splits=betting_splits,
                 batch_size=100,
                 validate=True,
                 skip_duplicates=True
             )
             
+            # Debug: Log detailed storage stats
+            logger.info("Storage stats details", 
+                       processed=storage_stats.get("processed", 0),
+                       stored=storage_stats.get("stored", 0),
+                       skipped=storage_stats.get("skipped", 0),
+                       validation_errors=storage_stats.get("validation_errors", 0),
+                       timing_rejections=storage_stats.get("timing_rejections", 0))
+            
             # Update metrics based on storage results
             self.metrics["stored_records"] = storage_stats["stored"]
             self.metrics["valid_records"] = storage_stats["stored"] + storage_stats["skipped"]
-            self.metrics["errors"] += storage_stats["errors"] + storage_stats["validation_errors"]
+            self.metrics["errors"] += storage_stats["validation_errors"]
             
             logger.info("Data validation and storage completed using repository pattern",
                        storage_stats=storage_stats)
             
             # Return the splits that were successfully processed
-            return betting_splits[:storage_stats["stored"]]
+            stored_count = storage_stats["stored"]
+            if stored_count > 0:
+                logger.info("Returning successfully stored splits", count=stored_count)
+                return betting_splits[:stored_count]
+            else:
+                logger.warning("No splits were stored successfully - returning empty list")
+                return []
             
         except Exception as e:
-            logger.error("Failed to store betting splits via repository", error=str(e))
+            logger.error("Failed to store betting splits via repository", error=str(e), traceback=True)
             self.metrics["errors"] += len(betting_splits)
             return []
     
@@ -544,6 +570,7 @@ Flip detection disabled or not available
             collected_splits = await self.collect_data()
             if not collected_splits:
                 logger.error("No data collected, aborting pipeline")
+                self.metrics["end_time"] = datetime.now()
                 return self.metrics
             
             # 3. Process games from betting splits
@@ -553,6 +580,7 @@ Flip detection disabled or not available
             valid_splits = self.validate_and_store_data(collected_splits)
             if not valid_splits:
                 logger.error("No valid data to analyze")
+                self.metrics["end_time"] = datetime.now()
                 return self.metrics
             
             # 5. Analyze data
@@ -577,6 +605,7 @@ Flip detection disabled or not available
         except Exception as e:
             logger.error("Data pipeline failed", error=str(e))
             self.metrics["errors"] += 1
+            self.metrics["end_time"] = datetime.now()
             return self.metrics
 
 

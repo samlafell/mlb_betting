@@ -1,12 +1,12 @@
 """
 Examples showing how to use the new integrated pipeline.
 
-These examples demonstrate the enhanced CLI commands and pipeline orchestration.
+These examples demonstrate the enhanced CLI commands and pipeline orchestration using Phase 3/4 engines.
 """
 
 import asyncio
 from mlb_sharp_betting.services.pipeline_orchestrator import PipelineOrchestrator
-from mlb_sharp_betting.services.enhanced_backtesting_service import EnhancedBacktestingService
+from mlb_sharp_betting.services.backtesting_engine import get_backtesting_engine
 from mlb_sharp_betting.db.connection import get_db_manager
 
 
@@ -95,16 +95,21 @@ async def example_forced_fresh_pipeline():
 
 
 async def example_data_freshness_check():
-    """Example: Check data freshness and conditional pipeline."""
+    """Example: Check data freshness and conditional pipeline using BacktestingEngine."""
     
-    print("📡 DATA FRESHNESS CHECK EXAMPLE")
+    print("📡 DATA FRESHNESS CHECK EXAMPLE (Phase 3 Engine)")
     print("=" * 50)
     
-    enhanced_service = EnhancedBacktestingService()
+    backtesting_engine = get_backtesting_engine()
     
     try:
+        await backtesting_engine.initialize()
+        
         # Check data freshness
-        freshness_check = await enhanced_service.check_data_freshness()
+        from mlb_sharp_betting.services.data_service import get_data_service
+        from mlb_sharp_betting.db.connection import get_db_manager
+        data_service = get_data_service(get_db_manager())
+        freshness_check = await data_service.check_data_freshness()
         
         print(f"📅 Data age: {freshness_check.get('data_age_hours', 0):.1f} hours")
         print(f"✅ Is fresh: {freshness_check['is_fresh']}")
@@ -114,29 +119,31 @@ async def example_data_freshness_check():
         # Run conditional pipeline
         if freshness_check['needs_collection']:
             print(f"\n🔄 Data is stale, running full pipeline...")
-            results = await enhanced_service.run_daily_backtesting_pipeline_with_fresh_data()
+            results = await backtesting_engine.run_daily_pipeline()
         else:
             print(f"\n✅ Data is fresh, running backtesting only...")
-            results = await enhanced_service.run_conditional_pipeline()
+            results = await backtesting_engine.core_engine.run_strategies_only()
         
-        print(f"🔧 Steps executed: {', '.join(results['steps_executed'])}")
-        print(f"📝 Reason: {results.get('reason', 'Standard pipeline')}")
+        print(f"🔧 Pipeline execution completed")
+        print(f"📝 Results: {results}")
         
     except Exception as e:
         print(f"❌ Example failed: {e}")
 
 
 async def example_pipeline_validation():
-    """Example: Validate pipeline requirements."""
+    """Example: Validate pipeline requirements using BacktestingEngine."""
     
-    print("✅ PIPELINE VALIDATION EXAMPLE")
+    print("✅ PIPELINE VALIDATION EXAMPLE (Phase 3 Engine)")
     print("=" * 50)
     
-    enhanced_service = EnhancedBacktestingService()
+    backtesting_engine = get_backtesting_engine()
     
     try:
+        await backtesting_engine.initialize()
+        
         # Validate all requirements
-        validations = await enhanced_service.validate_pipeline_requirements()
+        validations = await backtesting_engine.validate_pipeline_requirements()
         
         print("🔍 Pipeline Requirements:")
         for requirement, is_valid in validations.items():
@@ -155,120 +162,129 @@ async def example_pipeline_validation():
         print(f"❌ Validation failed: {e}")
 
 
-def show_cli_examples():
-    """Show examples of using the new CLI commands."""
+async def example_backtesting_engine_features():
+    """Example: Demonstrate BacktestingEngine specific features."""
     
-    print("🖥️  CLI USAGE EXAMPLES")
+    print("🔬 BACKTESTING ENGINE FEATURES EXAMPLE")
+    print("=" * 50)
+    
+    backtesting_engine = get_backtesting_engine()
+    
+    try:
+        await backtesting_engine.initialize()
+        
+        print("🏥 Running comprehensive diagnostics...")
+        diagnostics = await backtesting_engine.diagnostics.run_full_diagnostic()
+        print(f"   Overall health: {diagnostics.get('overall_health', 'unknown')}")
+        print(f"   Issues found: {len(diagnostics.get('issues', []))}")
+        
+        print("\n📊 Getting comprehensive status...")
+        status = backtesting_engine.get_comprehensive_status()
+        print(f"   Engine status: {status}")
+        
+        print("\n🎯 Running quick strategy test...")
+        test_results = await backtesting_engine.core_engine.run_quick_test()
+        print(f"   Test results: {test_results}")
+        
+        print("\n⚡ Running performance benchmark...")
+        import time
+        start_time = time.time()
+        await backtesting_engine.run_daily_pipeline()
+        benchmark_time = time.time() - start_time
+        print(f"   Benchmark time: {benchmark_time:.2f} seconds")
+        
+    except Exception as e:
+        print(f"❌ BacktestingEngine features example failed: {e}")
+
+
+def show_cli_examples():
+    """Show examples of using the new CLI commands with Phase 3/4 engines."""
+    
+    print("🖥️  CLI USAGE EXAMPLES (Phase 3/4 Engines)")
     print("=" * 50)
     
     print("""
 🧠 SMART PIPELINE (Recommended):
    # Automatically decides what needs to be run
-   mlb-cli detect smart-pipeline
+   uv run -m mlb_sharp_betting.cli detect smart-pipeline
    
    # Force fresh data collection
-   mlb-cli detect smart-pipeline --force-fresh
+   uv run -m mlb_sharp_betting.cli detect smart-pipeline --force-fresh
    
    # Get recommendations without running
-   mlb-cli detect recommendations
+   uv run -m mlb_sharp_betting.cli detect recommendations
 
-📡 DATA MANAGEMENT:
+📡 DATA MANAGEMENT (Phase 3 Engine):
    # Collect fresh data
-   mlb-cli data collect
+   uv run -m mlb_sharp_betting.cli data collect
    
    # Check data status
-   mlb-cli data status --detailed
+   uv run -m mlb_sharp_betting.cli data status --detailed
    
    # Validate data freshness only
-   mlb-cli data collect --validate-only
+   uv run -m mlb_sharp_betting.cli data collect --validate-only
    
    # Force collection even if data is fresh
-   mlb-cli data collect --force
+   uv run -m mlb_sharp_betting.cli data collect --force
 
-🎯 ENHANCED DETECTION:
+🎯 ENHANCED DETECTION (Phase 3 Engine):
    # Full pipeline with fresh data and backtesting
-   mlb-cli detect opportunities
+   uv run -m mlb_sharp_betting.cli detect opportunities
    
    # Use existing data only
-   mlb-cli detect opportunities --use-existing --skip-backtesting
+   uv run -m mlb_sharp_betting.cli detect opportunities --use-existing --skip-backtesting
    
    # Save results to JSON
-   mlb-cli detect opportunities --format json --output results.json
+   uv run -m mlb_sharp_betting.cli detect opportunities --format json --output results.json
 
-🔬 ENHANCED BACKTESTING:
+🔬 ENHANCED BACKTESTING (Phase 3 Engine):
    # Full backtesting with fresh data
-   mlb-cli backtest run
+   uv run -m mlb_sharp_betting.cli backtesting run
    
-   # Quick analysis of top strategies
-   mlb-cli backtest quick --strategy-count 10
+   # Run specific mode (scheduler, single-run, status, test)
+   uv run -m mlb_sharp_betting.cli backtesting run --mode scheduler
+   uv run -m mlb_sharp_betting.cli backtesting run --mode single-run
+   uv run -m mlb_sharp_betting.cli backtesting run --mode status
+   uv run -m mlb_sharp_betting.cli backtesting run --mode test
    
-   # Validate strategies against criteria
-   mlb-cli backtest validate --min-sample-size 20 --min-roi 10.0
-   
-   # Compare two strategies
-   mlb-cli backtest compare --strategy1 "sharp_action" --strategy2 "public_fade"
+   # Enhanced backtesting with diagnostics
+   uv run -m mlb_sharp_betting.cli enhanced-backtesting run --mode full --diagnostics
+   uv run -m mlb_sharp_betting.cli enhanced-backtesting diagnostics --save-report /tmp/report.json
 
-🔧 SYSTEM STATUS:
-   # Complete system overview
-   mlb-cli status overview
+🗓️  PRE-GAME SCHEDULER (Phase 4 Engine):
+   # Start pre-game scheduler
+   uv run -m mlb_sharp_betting.cli pre-game start
    
-   # Detailed health check
-   mlb-cli status health --detailed
+   # Start full scheduler (all modes)
+   uv run -m mlb_sharp_betting.cli pre-game start-full
    
-   # Performance metrics
-   mlb-cli status performance
+   # Check scheduler status
+   uv run -m mlb_sharp_betting.cli pre-game status
    
-   # Auto-fix common issues
-   mlb-cli status fix --auto-approve
+   # Stop scheduler
+   uv run -m mlb_sharp_betting.cli pre-game stop
 
-🔀 CROSS-MARKET ANALYSIS:
-   # Still available as before
-   mlb-cli cross-market-flips --min-confidence 70 --hours-back 24
-
-📊 LEGACY COMMANDS (Still Available):
-   # Original commands remain unchanged
-   mlb-cli run --mock
-   mlb-cli query --table splits.raw_mlb_betting_splits
-   mlb-cli analyze
-   mlb-cli demo
+🏥 SYSTEM HEALTH (Phase 3/4 Engines):
+   # Check overall system health
+   uv run -m mlb_sharp_betting.cli system-status health --detailed
+   
+   # Check data pipeline health
+   uv run -m mlb_sharp_betting.cli system-status pipeline --detailed
+   
+   # Run comprehensive diagnostics
+   uv run -m mlb_sharp_betting.cli system-status diagnostics --save-report /tmp/diagnostics.json
 """)
 
 
 async def main():
     """Run all examples."""
-    
-    print("🚀 ENHANCED PIPELINE EXAMPLES")
-    print("=" * 60)
-    
-    try:
-        # Show CLI examples first
-        show_cli_examples()
-        
-        print("\n" + "="*60)
-        print("🔧 PROGRAMMATIC EXAMPLES")
-        print("="*60)
-        
-        # Run programmatic examples
-        await example_pipeline_validation()
-        print("\n" + "-"*50)
-        
-        await example_data_freshness_check()
-        print("\n" + "-"*50)
-        
-        await example_smart_pipeline()
-        print("\n" + "-"*50)
-        
-        # Note: Skipping forced fresh pipeline to avoid unnecessary data collection
-        print("📝 Skipping forced fresh pipeline example to avoid unnecessary data collection")
-        print("💡 Run example_forced_fresh_pipeline() manually if needed")
-        
-        print(f"\n🎉 Examples completed successfully!")
-        print(f"💡 Try the CLI commands shown above to use the enhanced pipeline")
-        
-    except Exception as e:
-        print(f"❌ Examples failed: {e}")
+    await example_smart_pipeline()
+    await example_forced_fresh_pipeline()
+    await example_data_freshness_check()
+    await example_pipeline_validation()
+    await example_backtesting_engine_features()
+    show_cli_examples()
 
 
 if __name__ == "__main__":
-    # Run examples
     asyncio.run(main()) 

@@ -228,11 +228,13 @@ class DailyBettingReportService:
         
         # Configuration
         self.config = {
-            "max_opportunities_per_day": 5,
+            "max_opportunities_per_day": 3,  # Focus on top 3 strongest bets
             "min_confidence_score": 0.60,
             "min_roi_threshold": 5.0,  # 5% minimum ROI
             "stake_normalization_base": 100,  # $100 baseline
-            "detection_cutoff_minutes": 1,  # No bets within 1 min of game start
+            "detection_cutoff_minutes": 15,  # No bets within 15 min of game start
+            "max_hours_before_game": 4,  # Only bets detected within 4 hours of first pitch
+            "min_signal_strength": 15,  # Only strongest signals (raised from 10)
         }
         
         # Ensure reports directory exists
@@ -419,7 +421,7 @@ class DailyBettingReportService:
                     WHERE home_or_over_stake_percentage IS NOT NULL 
                       AND home_or_over_bets_percentage IS NOT NULL
                       AND game_datetime IS NOT NULL
-                      AND DATE(game_datetime) = ?
+                      AND DATE(game_datetime) = %s
                       AND split_type IN ('moneyline', 'spread')
                 ),
                 
@@ -473,17 +475,25 @@ class DailyBettingReportService:
                     AND ml.source = sp.source 
                     AND ml.book = sp.book
                 WHERE ml.ml_recommended_team != sp.spread_recommended_team  -- Only opposing markets
-                  AND ml.source = 'VSIN'  -- Test with VSIN only first
-                  AND ml.ml_signal_strength >= 15
-                  -- CRITICAL: Only include signals detected within 15 minutes of game start (sharp action)
-                  AND EXTRACT('epoch' FROM (ml.game_datetime - ml.last_updated)) / 60 <= 30  -- Temporarily increased to see available data
-                  -- TODO: Re-enable for live betting - only recommend bets that can be placed within 5 minutes of game start
-                  -- AND EXTRACT('epoch' FROM (ml.game_datetime - CURRENT_TIMESTAMP)) / 60 >= 0  -- Future games only
+                  AND ml.source IN ('VSIN', 'SBD')  -- Include both major sources
+                  -- FOCUS ON STRONGEST SIGNALS: Only the most confident opportunities
+                  AND ml.ml_signal_strength >= %s  -- Strong signals only (configurable)
+                  -- PRACTICAL TIMING WINDOW: Detected within reasonable time before game
+                  AND EXTRACT('epoch' FROM (ml.game_datetime - ml.last_updated)) / 60 <= %s  -- Within X hours of game time
+                  AND EXTRACT('epoch' FROM (ml.game_datetime - ml.last_updated)) / 60 >= %s   -- At least X minutes before game
+                  AND ml.game_datetime > ml.last_updated  -- Only signals detected BEFORE game start
                 
                 ORDER BY ml.ml_signal_strength DESC
+                LIMIT %s  -- Focus on top strongest opportunities
                 """
                 
-                cursor.execute(opposing_markets_query, [target_date])
+                cursor.execute(opposing_markets_query, [
+                    target_date,
+                    self.config["min_signal_strength"],
+                    self.config["max_hours_before_game"] * 60,  # Convert hours to minutes
+                    self.config["detection_cutoff_minutes"],
+                    self.config["max_opportunities_per_day"] * 2  # Get extra for filtering, will limit later
+                ])
                 results = cursor.fetchall()
                 
                 for row in results:
@@ -725,7 +735,7 @@ class DailyBettingReportService:
             
             # Query game outcomes from database
             with self.db_manager.get_cursor() as cursor:
-                placeholders = ','.join(['?' for _ in game_ids])
+                placeholders = ','.join(['%s' for _ in game_ids])
                 query = f"""
                 SELECT 
                     game_id,
@@ -736,7 +746,7 @@ class DailyBettingReportService:
                     home_cover_spread,
                     over,
                     'completed' as game_status
-                FROM mlb_betting.main.game_outcomes 
+                FROM mlb_betting.public.game_outcomes 
                 WHERE game_id IN ({placeholders})
                   AND home_score IS NOT NULL 
                   AND away_score IS NOT NULL

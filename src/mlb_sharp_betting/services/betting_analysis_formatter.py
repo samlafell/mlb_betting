@@ -204,10 +204,16 @@ class BettingAnalysisFormatter:
         return f"ML: {ml_rec_team} vs Spread: {spread_rec_team} → Follow {stronger_signal} ({bet_type})"
     
     def _format_recommendation(self, index: int, rec: Dict[str, Any]) -> List[str]:
-        """Format a single recommendation"""
+        """Format a single recommendation with clear betting instructions"""
+        
+        # Parse clear betting instructions from the original bet recommendation
+        bet_details = self._parse_clear_bet_details(rec)
+        
         lines = [
             f"  {index}. {rec['type']}",
-            f"     💰 {rec['bet']}",
+            f"     🎰 Bet Type: {bet_details['bet_type']}",
+            f"     💰 {bet_details['clear_bet_instruction']}",
+            f"     🏪 Book: {bet_details['recommended_book']}",
             f"     📊 {rec['reason']}",
             f"     📈 {rec['win_rate']:.1f}% win rate, {rec['roi']:+.1f}% ROI"
         ]
@@ -236,6 +242,74 @@ class BettingAnalysisFormatter:
         lines.append("")  # Empty line between recommendations
         
         return lines
+    
+    def _parse_clear_bet_details(self, rec: Dict[str, Any]) -> Dict[str, str]:
+        """Parse recommendation into clear betting instructions with bet type, odds, and book"""
+        
+        try:
+            # Extract bet type from strategy name or signal type
+            strategy_name = rec.get('strategy_name', '').lower()
+            bet_recommendation = rec.get('bet', '').upper()
+            
+            if 'moneyline' in strategy_name or '_ml_' in strategy_name or 'ML' in bet_recommendation:
+                bet_type = "MONEYLINE"
+            elif 'spread' in strategy_name or '_sprd_' in strategy_name or 'SPREAD' in bet_recommendation:
+                bet_type = "SPREAD"
+            elif 'total' in strategy_name or '_tot_' in strategy_name or 'TOTAL' in bet_recommendation or 'OVER' in bet_recommendation or 'UNDER' in bet_recommendation:
+                bet_type = "TOTAL"
+            else:
+                bet_type = "UNKNOWN"
+            
+            # Extract book from strategy name or source details
+            book = "UNKNOWN"
+            source_details = rec.get('source_details', '').lower()
+            if 'draftkings' in strategy_name or 'dk' in strategy_name or 'draftkings' in source_details:
+                book = "DraftKings"
+            elif 'circa' in strategy_name or 'circa' in source_details:
+                book = "Circa"
+            elif 'fanduel' in strategy_name or 'fanduel' in source_details:
+                book = "FanDuel"
+            elif 'betmgm' in strategy_name or 'betmgm' in source_details:
+                book = "BetMGM"
+            else:
+                # Try to extract from source details
+                if 'VSIN-' in source_details:
+                    if 'draftkings' in source_details or 'dk' in source_details:
+                        book = "DraftKings"
+                    elif 'circa' in source_details:
+                        book = "Circa"
+            
+            # Clean up the bet recommendation for clear instruction
+            original_bet = rec.get('bet', '')
+            if original_bet:
+                # Clean up the recommendation
+                clean_instruction = original_bet.replace("BET ", "").strip()
+                
+                # Add bet type clarity if not already clear
+                if bet_type == "MONEYLINE" and "ML" not in clean_instruction and "MONEYLINE" not in clean_instruction.upper():
+                    clear_instruction = f"{clean_instruction} MONEYLINE"
+                elif bet_type == "SPREAD" and "SPREAD" not in clean_instruction.upper():
+                    clear_instruction = f"{clean_instruction} SPREAD"
+                elif bet_type == "TOTAL" and "TOTAL" not in clean_instruction.upper() and "OVER" not in clean_instruction.upper() and "UNDER" not in clean_instruction.upper():
+                    clear_instruction = f"{clean_instruction} TOTAL"
+                else:
+                    clear_instruction = clean_instruction
+            else:
+                clear_instruction = f"{bet_type} BET"
+            
+            return {
+                'clear_bet_instruction': clear_instruction,
+                'bet_type': bet_type,
+                'recommended_book': book
+            }
+            
+        except Exception as e:
+            # Fallback to original bet recommendation
+            return {
+                'clear_bet_instruction': rec.get('bet', 'BET RECOMMENDATION'),
+                'bet_type': "UNKNOWN",
+                'recommended_book': "UNKNOWN"
+            }
     
     def _format_summary(self, analysis_result: BettingAnalysisResult) -> str:
         """Format analysis summary"""

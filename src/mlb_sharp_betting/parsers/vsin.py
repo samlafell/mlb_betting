@@ -468,6 +468,38 @@ class VSINParser(BaseParser):
         
         # Enhanced mappings for common nicknames and variations
         nickname_mappings = {
+            # Full team names (most specific first)
+            "ST LOUIS CARDINALS": "STL",
+            "CLEVELAND GUARDIANS": "CLE",
+            "NEW YORK YANKEES": "NYY",
+            "NEW YORK METS": "NYM",
+            "LOS ANGELES DODGERS": "LAD",
+            "LOS ANGELES ANGELS": "LAA",
+            "SAN FRANCISCO GIANTS": "SF",
+            "SAN DIEGO PADRES": "SD",
+            "CHICAGO CUBS": "CHC",
+            "CHICAGO WHITE SOX": "CWS",
+            "BOSTON RED SOX": "BOS",
+            "TAMPA BAY RAYS": "TB",
+            "TORONTO BLUE JAYS": "TOR",
+            "KANSAS CITY ROYALS": "KC",
+            "MINNESOTA TWINS": "MIN",
+            "DETROIT TIGERS": "DET",
+            "BALTIMORE ORIOLES": "BAL",
+            "SEATTLE MARINERS": "SEA",
+            "TEXAS RANGERS": "TEX",
+            "OAKLAND ATHLETICS": "OAK",
+            "PHILADELPHIA PHILLIES": "PHI",
+            "ATLANTA BRAVES": "ATL",
+            "HOUSTON ASTROS": "HOU",
+            "MILWAUKEE BREWERS": "MIL",
+            "PITTSBURGH PIRATES": "PIT",
+            "CINCINNATI REDS": "CIN",
+            "COLORADO ROCKIES": "COL",
+            "ARIZONA DIAMONDBACKS": "ARI",
+            "MIAMI MARLINS": "MIA",
+            "WASHINGTON NATIONALS": "WSH",
+            
             # Common nicknames
             "YANKEES": "NYY",
             "RED SOX": "BOS",
@@ -496,9 +528,12 @@ class VSINParser(BaseParser):
             "REDS": "CIN",
             "ROCKIES": "COL",
             "DIAMONDBACKS": "ARI",
+            "D-BACKS": "ARI",
             "MARLINS": "MIA",
             "METS": "NYM",
             "NATIONALS": "WSH",
+            "NATS": "WSH",
+            "BLUE JAYS": "TOR",
             
             # City-based nicknames
             "BOSTON": "BOS",
@@ -532,9 +567,26 @@ class VSINParser(BaseParser):
             "TORONTO": "TOR",
         }
         
-        return nickname_mappings.get(name)
-    
-
+        # Direct mapping lookup first
+        normalized = nickname_mappings.get(name)
+        if normalized:
+            return normalized
+        
+        # Fallback: try partial matching for compound names
+        # Split by common separators and check each part
+        parts = name.replace('-', ' ').split()
+        for part in parts:
+            if len(part) > 2:  # Ignore short words like "OF", "THE", etc.
+                normalized = nickname_mappings.get(part)
+                if normalized:
+                    return normalized
+        
+        # Another fallback: check if any key in mappings is contained in the name
+        for key, value in nickname_mappings.items():
+            if len(key) > 3 and key in name:  # Avoid false matches with short keys
+                return value
+        
+        return None
     
     def _generate_game_id(self, away_team: Team, home_team: Team, game_datetime: Optional[datetime]) -> str:
         """

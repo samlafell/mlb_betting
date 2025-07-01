@@ -53,6 +53,9 @@ class OpposingMarketsProcessor(BaseStrategyProcessor):
         """Process opposing markets signals using profitable strategies"""
         start_time, end_time = self._create_time_window(minutes_ahead)
         
+        # ✅ FIX: Extract proper source_book and split_type from strategy names
+        fixed_strategies = self._fix_strategy_components(profitable_strategies)
+        
         # Get moneyline and spread data
         ml_data = await self.repository.get_moneyline_splits(start_time, end_time)
         spread_data = await self.repository.get_spread_splits(start_time, end_time)
@@ -87,7 +90,7 @@ class OpposingMarketsProcessor(BaseStrategyProcessor):
                 continue
             
             # Find matching profitable strategies
-            matching_strategies = self._find_matching_strategies(profitable_strategies, market_data)
+            matching_strategies = self._find_matching_strategies(fixed_strategies, market_data)
             if not matching_strategies:
                 continue
             
@@ -100,7 +103,7 @@ class OpposingMarketsProcessor(BaseStrategyProcessor):
             signal = self._create_betting_signal(market_data, matching_strategy, confidence_data)
             signals.append(signal)
         
-        self._log_processing_summary(len(signals), len(profitable_strategies), len(opposing_markets))
+        self._log_processing_summary(len(signals), len(fixed_strategies), len(opposing_markets))
         return signals
     
     def _find_opposing_markets(self, ml_data: List[Dict], spread_data: List[Dict]) -> List[Dict]:
@@ -295,4 +298,82 @@ class OpposingMarketsProcessor(BaseStrategyProcessor):
             roi=strategy.roi,
             total_bets=strategy.total_bets,
             metadata=enhanced_metadata
-        ) 
+        )
+    
+    def _fix_strategy_components(self, profitable_strategies: List[ProfitableStrategy]) -> List[ProfitableStrategy]:
+        """
+        Fix ProfitableStrategy objects by extracting real source_book and split_type from strategy names.
+        
+        This solves the strategy matching issue where strategies have synthetic values like:
+        - source_book="ORCHESTRATOR" (wrong)
+        - split_type="DYNAMIC" (wrong)
+        
+        Instead of real extracted values from strategy names.
+        """
+        fixed_strategies = []
+        
+        for strategy in profitable_strategies:
+            # Extract real values from strategy name
+            source_book, split_type = self._extract_strategy_components(strategy.strategy_name)
+            
+            # Create new strategy with fixed values
+            fixed_strategy = ProfitableStrategy(
+                strategy_name=strategy.strategy_name,
+                source_book=source_book,  # ✅ FIXED: Use extracted source_book
+                split_type=split_type,    # ✅ FIXED: Use extracted split_type
+                win_rate=strategy.win_rate,
+                roi=strategy.roi,
+                total_bets=strategy.total_bets,
+                confidence=strategy.confidence,
+                ci_lower=getattr(strategy, 'ci_lower', 0.0),
+                ci_upper=getattr(strategy, 'ci_upper', 100.0),
+                confidence_score=getattr(strategy, 'confidence_score', 0.5)
+            )
+            fixed_strategies.append(fixed_strategy)
+        
+        return fixed_strategies
+    
+    def _extract_strategy_components(self, strategy_name: str) -> tuple[str, str]:
+        """
+        Extract source_book and split_type from strategy name.
+        
+        Examples:
+        - "VSIN-circa-moneyline" -> ("VSIN-circa", "moneyline") 
+        - "VSIN-draftkings-total" -> ("VSIN-draftkings", "total")
+        - "SBD-unknown-spread" -> ("SBD-unknown", "spread")
+        - "opposing_markets_strategy_ml_preference" -> ("VSIN-unknown", "moneyline")
+        """
+        strategy_name_lower = strategy_name.lower()
+        
+        # Handle direct format: "SOURCE-BOOK-SPLITTYPE"
+        if strategy_name.count('-') >= 2 and len(strategy_name.split('-')) == 3:
+            parts = strategy_name.split('-')
+            source_book = f"{parts[0]}-{parts[1]}"
+            split_type = parts[2]
+            return source_book, split_type
+        
+        # Handle opposing markets strategy format
+        source_book = "VSIN-unknown"  # Default for opposing markets
+        split_type = "opposing_markets"  # Default
+        
+        # Extract book information
+        if 'vsin-dra' in strategy_name_lower or 'vsin-draftkings' in strategy_name_lower:
+            source_book = "VSIN-draftkings"
+        elif 'vsin-cir' in strategy_name_lower or 'vsin-circa' in strategy_name_lower:
+            source_book = "VSIN-circa"
+        elif 'sbd' in strategy_name_lower:
+            source_book = "SBD-unknown"
+        elif 'vsin' in strategy_name_lower:
+            source_book = "VSIN-unknown"
+        
+        # Extract split type information for opposing markets
+        if 'moneyline' in strategy_name_lower or '_ml_' in strategy_name_lower or 'mone' in strategy_name_lower:
+            split_type = "moneyline"
+        elif 'spread' in strategy_name_lower or '_sprd_' in strategy_name_lower or 'spre' in strategy_name_lower:
+            split_type = "spread"
+        elif 'total' in strategy_name_lower or '_tot_' in strategy_name_lower or 'tota' in strategy_name_lower:
+            split_type = "total"
+        elif 'opposing' in strategy_name_lower or 'market' in strategy_name_lower:
+            split_type = "opposing_markets"
+        
+        return source_book, split_type 

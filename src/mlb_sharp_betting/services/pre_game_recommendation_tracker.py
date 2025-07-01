@@ -128,7 +128,7 @@ class PreGameRecommendationTracker:
         # Initialize database tables
         self._initialize_tables()
     
-    def parse_pre_game_email_content(self, email_content: str, game_info: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def parse_pre_game_email_content(self, email_content: str, game_info: Dict[str, Any]) -> List[PreGameRecommendation]:
         """
         Parse betting recommendations from pre-game email content.
         
@@ -137,35 +137,35 @@ class PreGameRecommendationTracker:
             game_info: Dictionary with game_pk, home_team, away_team, game_datetime
             
         Returns:
-            List of recommendation dictionaries
+            List of PreGameRecommendation objects
         """
         recommendations = []
         
         try:
-            # Look for betting recommendations in the email content
+            # Improved betting recommendation patterns
             recommendation_patterns = [
-                r'💰\s+(BET\s+[A-Z\s]+)',  # Pattern: 💰 BET YANKEES
-                r'💰\s+(BET\s+OVER)',      # Pattern: 💰 BET OVER  
-                r'💰\s+(BET\s+UNDER)',     # Pattern: 💰 BET UNDER
-                r'Recommendation:\s*([^\\n]+)',  # Pattern: Recommendation: BET TEAM
-                r'💰\s*([^\\n]+?(?:BET|bet)[^\\n]*)',  # General betting pattern
+                r'💰\s+(BET\s+[A-Z\s\-\+\.0-9]+(?:ML|MONEYLINE)?)',  # 💰 BET YANKEES ML
+                r'💰\s+(BET\s+[A-Z\s]+(?:\+|\-)[0-9\.]+)',           # 💰 BET TEAM +1.5 or -1.5
+                r'💰\s+(BET\s+(?:OVER|UNDER)(?:\s+[0-9\.]+)?)',     # 💰 BET OVER 8.5
+                r'Recommendation:\s*([^\\n]+)',                      # Recommendation: BET TEAM
+                r'🎯\s*([^\\n]*BET[^\\n]*)',                       # 🎯 BET pattern
             ]
             
             # Extract confidence levels
             confidence_patterns = [
-                (r'HIGH CONFIDENCE', 'HIGH'),
-                (r'MODERATE CONFIDENCE', 'MODERATE'), 
+                (r'HIGH CONFIDENCE|STEAM_MOVE', 'HIGH'),
+                (r'MODERATE CONFIDENCE|OPPOSING_MARKETS', 'MODERATE'), 
                 (r'LOW CONFIDENCE', 'LOW'),
-                (r'STEAM_MOVE', 'HIGH'),  # Steam moves are high confidence
-                (r'OPPOSING_MARKETS', 'MODERATE'),  # Opposing markets are moderate
             ]
             
             # Extract signal sources
             source_patterns = [
-                (r'STEAM_MOVE|⚡.*STEAM|STEAM.*MOVES', 'STEAM_MOVE'),
-                (r'OPPOSING_MARKETS|🔄.*OPPOSING|OPPOSING.*MARKETS', 'OPPOSING_MARKETS'),
+                (r'STEAM_MOVE|⚡.*STEAM|STEAM.*MOVE', 'STEAM_MOVE'),
+                (r'OPPOSING_MARKETS|🔄.*OPPOSING|OPPOSING.*MARKET', 'OPPOSING_MARKETS'),
                 (r'SHARP_ACTION|🔥.*SHARP|SHARP.*ACTION', 'SHARP_ACTION'),
-                (r'VALIDATED.*SHARP', 'SHARP_ACTION'),
+                (r'BOOK_CONFLICTS?|CONFLICT', 'BOOK_CONFLICTS'),
+                (r'PUBLIC_FADE|FADE', 'PUBLIC_FADE'),
+                (r'LATE_FLIP|FLIP', 'LATE_FLIP'),
             ]
             
             # Parse each line looking for recommendations
@@ -174,7 +174,7 @@ class PreGameRecommendationTracker:
             current_source = 'SHARP_ACTION'  # Default
             current_signal_strength = 0.0
             
-            for line in lines:
+            for line_num, line in enumerate(lines):
                 # Update context based on section headers
                 for pattern, confidence in confidence_patterns:
                     if re.search(pattern, line, re.IGNORECASE):
@@ -187,7 +187,7 @@ class PreGameRecommendationTracker:
                         break
                 
                 # Extract signal strength if present
-                strength_match = re.search(r'(\d+\.?\d*)%.*differential', line)
+                strength_match = re.search(r'(\d+\.?\d*)%', line)
                 if strength_match:
                     current_signal_strength = float(strength_match.group(1))
                 
@@ -197,30 +197,34 @@ class PreGameRecommendationTracker:
                     for match in matches:
                         recommendation_text = match.strip().upper()
                         
+                        # Skip if too short or doesn't contain "BET"
+                        if len(recommendation_text) < 4 or 'BET' not in recommendation_text:
+                            continue
+                        
                         # Determine bet type
                         if 'OVER' in recommendation_text or 'UNDER' in recommendation_text:
                             bet_type = 'total'
-                        elif 'SPREAD' in recommendation_text:
+                        elif any(x in recommendation_text for x in ['+', '-1.5', '-2.5', '+1.5', '+2.5']):
                             bet_type = 'spread'
                         else:
-                            bet_type = 'moneyline'  # Default
+                            bet_type = 'moneyline'
                         
-                        # Create recommendation
-                        rec_id = f"{game_info['game_pk']}_{current_source}_{bet_type}_{len(recommendations)}"
+                        # Create unique recommendation ID
+                        rec_id = f"{game_info['game_pk']}_{current_source}_{bet_type}_{len(recommendations)}_{line_num}"
                         
-                        recommendation = {
-                            'recommendation_id': rec_id,
-                            'game_pk': game_info['game_pk'],
-                            'home_team': game_info['home_team'],
-                            'away_team': game_info['away_team'],
-                            'game_datetime': game_info['game_datetime'],
-                            'recommendation': recommendation_text,
-                            'bet_type': bet_type,
-                            'confidence_level': current_confidence,
-                            'signal_source': current_source,
-                            'signal_strength': current_signal_strength,
-                            'recommended_at': datetime.now(timezone.utc)
-                        }
+                        recommendation = PreGameRecommendation(
+                            recommendation_id=rec_id,
+                            game_pk=int(game_info['game_pk']),
+                            home_team=game_info['home_team'],
+                            away_team=game_info['away_team'],
+                            game_datetime=game_info['game_datetime'],
+                            recommendation=recommendation_text,
+                            bet_type=bet_type,
+                            confidence_level=current_confidence,
+                            signal_source=current_source,
+                            signal_strength=current_signal_strength,
+                            recommended_at=datetime.now(timezone.utc)
+                        )
                         
                         recommendations.append(recommendation)
             
@@ -233,32 +237,35 @@ class PreGameRecommendationTracker:
         
         return recommendations
     
-    async def log_pre_game_recommendations(self, recommendations: List[Dict[str, Any]]) -> None:
+    async def log_pre_game_recommendations(self, recommendations: List[PreGameRecommendation]) -> None:
         """Log pre-game recommendations to database."""
         if not recommendations:
             return
         
         try:
-            with self.db_manager.get_cursor() as cursor:
-                for rec in recommendations:
-                    cursor.execute("""
-                        INSERT INTO tracking.pre_game_recommendations (
-                            recommendation_id, game_pk, home_team, away_team, game_datetime,
-                            recommendation, bet_type, confidence_level, signal_source, signal_strength,
-                            recommended_at, email_sent, game_completed, bet_won, actual_outcome, 
-                            profit_loss, created_at, updated_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (recommendation_id) DO UPDATE SET
-                            bet_won = EXCLUDED.bet_won,
-                            actual_outcome = EXCLUDED.actual_outcome,
-                            profit_loss = EXCLUDED.profit_loss,
-                            updated_at = EXCLUDED.updated_at
-                    """, (
-                        rec['recommendation_id'], rec['game_pk'], rec['home_team'], rec['away_team'], rec['game_datetime'],
-                        rec['recommendation'], rec['bet_type'], rec['confidence_level'], rec['signal_source'], 
-                        rec['signal_strength'], rec['recommended_at'], True, False,
-                        None, None, None, datetime.now(timezone.utc), datetime.now(timezone.utc)
-                    ))
+            with self.db_manager.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    for rec in recommendations:
+                        cursor.execute("""
+                            INSERT INTO tracking.pre_game_recommendations (
+                                recommendation_id, game_pk, home_team, away_team, game_datetime,
+                                recommendation, bet_type, confidence_level, signal_source, signal_strength,
+                                recommended_at, email_sent, game_completed, bet_won, actual_outcome, 
+                                profit_loss, created_at, updated_at
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (recommendation_id) DO UPDATE SET
+                                bet_won = EXCLUDED.bet_won,
+                                actual_outcome = EXCLUDED.actual_outcome,
+                                profit_loss = EXCLUDED.profit_loss,
+                                updated_at = EXCLUDED.updated_at
+                        """, (
+                            rec.recommendation_id, rec.game_pk, rec.home_team, rec.away_team, rec.game_datetime,
+                            rec.recommendation, rec.bet_type, rec.confidence_level, rec.signal_source, 
+                            rec.signal_strength, rec.recommended_at, rec.email_sent, rec.game_completed,
+                            rec.bet_won, rec.actual_outcome, rec.profit_loss, rec.created_at, rec.updated_at
+                        ))
+                    
+                    conn.commit()
                 
                 self.logger.info("Logged pre-game recommendations", count=len(recommendations))
                 
@@ -307,198 +314,65 @@ class PreGameRecommendationTracker:
             self.logger.error("Failed to initialize tracking tables", error=str(e))
             raise
     
-    def parse_pre_game_email_content(self, email_content: str, game_info: Dict[str, Any]) -> List[PreGameRecommendation]:
-        """
-        Parse betting recommendations from pre-game email content.
-        
-        Args:
-            email_content: The text content of the pre-game email
-            game_info: Dictionary with game_pk, home_team, away_team, game_datetime
-            
-        Returns:
-            List of PreGameRecommendation objects
-        """
-        recommendations = []
-        
-        try:
-            # Look for betting recommendations in the email content
-            recommendation_patterns = [
-                r'💰\s+(BET\s+[A-Z\s]+)',  # Pattern: 💰 BET YANKEES
-                r'💰\s+(BET\s+OVER)',      # Pattern: 💰 BET OVER  
-                r'💰\s+(BET\s+UNDER)',     # Pattern: 💰 BET UNDER
-                r'Recommendation:\s*([^\\n]+)',  # Pattern: Recommendation: BET TEAM
-                r'💰\s*([^\\n]+?(?:BET|bet)[^\\n]*)',  # General betting pattern
-            ]
-            
-            # Extract confidence levels
-            confidence_patterns = [
-                (r'HIGH CONFIDENCE', 'HIGH'),
-                (r'MODERATE CONFIDENCE', 'MODERATE'), 
-                (r'LOW CONFIDENCE', 'LOW'),
-                (r'STEAM_MOVE', 'HIGH'),  # Steam moves are high confidence
-                (r'OPPOSING_MARKETS', 'MODERATE'),  # Opposing markets are moderate
-            ]
-            
-            # Extract signal sources
-            source_patterns = [
-                (r'STEAM_MOVE|⚡.*STEAM|STEAM.*MOVES', 'STEAM_MOVE'),
-                (r'OPPOSING_MARKETS|🔄.*OPPOSING|OPPOSING.*MARKETS', 'OPPOSING_MARKETS'),
-                (r'SHARP_ACTION|🔥.*SHARP|SHARP.*ACTION', 'SHARP_ACTION'),
-                (r'VALIDATED.*SHARP', 'SHARP_ACTION'),
-            ]
-            
-            # Parse each line looking for recommendations
-            lines = email_content.split('\n')
-            current_confidence = 'MODERATE'  # Default
-            current_source = 'SHARP_ACTION'  # Default
-            current_signal_strength = 0.0
-            
-            for line in lines:
-                # Update context based on section headers
-                for pattern, confidence in confidence_patterns:
-                    if re.search(pattern, line, re.IGNORECASE):
-                        current_confidence = confidence
-                        break
-                
-                for pattern, source in source_patterns:
-                    if re.search(pattern, line, re.IGNORECASE):
-                        current_source = source
-                        break
-                
-                # Extract signal strength if present
-                strength_match = re.search(r'(\d+\.?\d*)%.*differential', line)
-                if strength_match:
-                    current_signal_strength = float(strength_match.group(1))
-                
-                # Look for betting recommendations
-                for pattern in recommendation_patterns:
-                    matches = re.findall(pattern, line, re.IGNORECASE)
-                    for match in matches:
-                        recommendation_text = match.strip().upper()
-                        
-                        # Determine bet type
-                        if 'OVER' in recommendation_text or 'UNDER' in recommendation_text:
-                            bet_type = 'total'
-                        elif 'SPREAD' in recommendation_text:
-                            bet_type = 'spread'
-                        else:
-                            bet_type = 'moneyline'  # Default
-                        
-                        # Create recommendation
-                        rec_id = f"{game_info['game_pk']}_{current_source}_{bet_type}_{len(recommendations)}"
-                        
-                        recommendation = PreGameRecommendation(
-                            recommendation_id=rec_id,
-                            game_pk=game_info['game_pk'],
-                            home_team=game_info['home_team'],
-                            away_team=game_info['away_team'],
-                            game_datetime=game_info['game_datetime'],
-                            recommendation=recommendation_text,
-                            bet_type=bet_type,
-                            confidence_level=current_confidence,
-                            signal_source=current_source,
-                            signal_strength=current_signal_strength,
-                            recommended_at=datetime.now(timezone.utc)
-                        )
-                        
-                        recommendations.append(recommendation)
-            
-            self.logger.info("Parsed pre-game email", 
-                           game=f"{game_info['away_team']} @ {game_info['home_team']}",
-                           recommendations_found=len(recommendations))
-            
-        except Exception as e:
-            self.logger.error("Failed to parse pre-game email", error=str(e))
-        
-        return recommendations
-    
-    async def log_pre_game_recommendations(self, recommendations: List[PreGameRecommendation]) -> None:
-        """Log pre-game recommendations to database."""
-        if not recommendations:
-            return
-        
-        try:
-            with self.db_manager.get_cursor() as cursor:
-                for rec in recommendations:
-                    cursor.execute("""
-                        INSERT INTO tracking.pre_game_recommendations (
-                            recommendation_id, game_pk, home_team, away_team, game_datetime,
-                            recommendation, bet_type, confidence_level, signal_source, signal_strength,
-                            recommended_at, email_sent, game_completed, bet_won, actual_outcome, 
-                            profit_loss, created_at, updated_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (recommendation_id) DO UPDATE SET
-                            bet_won = EXCLUDED.bet_won,
-                            actual_outcome = EXCLUDED.actual_outcome,
-                            profit_loss = EXCLUDED.profit_loss,
-                            updated_at = EXCLUDED.updated_at
-                    """, (
-                        rec.recommendation_id, rec.game_pk, rec.home_team, rec.away_team, rec.game_datetime,
-                        rec.recommendation, rec.bet_type, rec.confidence_level, rec.signal_source, 
-                        rec.signal_strength, rec.recommended_at, rec.email_sent, rec.game_completed,
-                        rec.bet_won, rec.actual_outcome, rec.profit_loss, rec.created_at, rec.updated_at
-                    ))
-                
-                self.logger.info("Logged pre-game recommendations", count=len(recommendations))
-                
-        except Exception as e:
-            self.logger.error("Failed to log recommendations", error=str(e))
-            raise
-    
     async def update_recommendation_outcomes(self, lookback_days: int = 7) -> None:
         """Update outcomes for recommendations from completed games."""
         try:
-            with self.db_manager.get_cursor() as cursor:
-                # Get recommendations from completed games that haven't been updated
-                cursor.execute("""
-                    SELECT r.recommendation_id, r.game_pk, r.home_team, r.away_team, 
-                           r.recommendation, r.bet_type, r.game_datetime
-                    FROM tracking.pre_game_recommendations r
-                    JOIN game_outcomes go ON r.game_pk = go.game_id
-                    WHERE r.game_completed = FALSE 
-                      AND r.game_datetime >= %s
-                    ORDER BY r.game_datetime DESC
-                """, (datetime.now(timezone.utc) - timedelta(days=lookback_days),))
-                
-                recommendations = cursor.fetchall()
-                updated_count = 0
-                
-                for rec_data in recommendations:
-                    rec_id, game_pk, home_team, away_team, recommendation, bet_type, game_datetime = rec_data
-                    
-                    # Get game outcome
+            with self.db_manager.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    # Get recommendations from completed games that haven't been updated
                     cursor.execute("""
-                        SELECT home_score, away_score, winning_team, total_runs
-                        FROM game_outcomes 
-                        WHERE game_id = %s
-                    """, (game_pk,))
+                        SELECT r.recommendation_id, r.game_pk, r.home_team, r.away_team, 
+                               r.recommendation, r.bet_type, r.game_datetime
+                        FROM tracking.pre_game_recommendations r
+                        JOIN public.game_outcomes go ON CAST(r.game_pk AS VARCHAR) = go.game_id
+                        WHERE r.game_completed = FALSE 
+                          AND r.game_datetime >= %s
+                        ORDER BY r.game_datetime DESC
+                    """, (datetime.now(timezone.utc) - timedelta(days=lookback_days),))
                     
-                    outcome_data = cursor.fetchone()
-                    if not outcome_data:
-                        continue
+                    recommendations = cursor.fetchall()
+                    updated_count = 0
                     
-                    home_score, away_score, winning_team, total_runs = outcome_data
-                    
-                    # Determine if bet won
-                    bet_won = self._evaluate_bet_outcome(
-                        recommendation, bet_type, home_team, away_team,
-                        home_score, away_score, winning_team, total_runs
-                    )
-                    
-                    # Calculate profit/loss (assuming $100 units at -110 odds)
-                    if bet_won is not None:
-                        profit_loss = 90.91 if bet_won else -100.0  # -110 odds
-                        actual_outcome = f"{winning_team} won {home_score}-{away_score}, total: {total_runs}"
+                    for rec_data in recommendations:
+                        rec_id, game_pk, home_team, away_team, recommendation, bet_type, game_datetime = rec_data
                         
-                        # Update recommendation
+                        # Get game outcome
                         cursor.execute("""
-                            UPDATE tracking.pre_game_recommendations 
-                            SET game_completed = TRUE, bet_won = %s, actual_outcome = %s, 
-                                profit_loss = %s, updated_at = CURRENT_TIMESTAMP
-                            WHERE recommendation_id = %s
-                        """, (bet_won, actual_outcome, profit_loss, rec_id))
+                            SELECT home_score, away_score, home_win, over
+                            FROM public.game_outcomes 
+                            WHERE game_id = %s
+                        """, (str(game_pk),))
                         
-                        updated_count += 1
+                        outcome_data = cursor.fetchone()
+                        if not outcome_data:
+                            continue
+                        
+                        home_score, away_score, home_win, over = outcome_data
+                        total_runs = home_score + away_score
+                        winning_team = home_team if home_win else away_team
+                        
+                        # Determine if bet won
+                        bet_won = self._evaluate_bet_outcome(
+                            recommendation, bet_type, home_team, away_team,
+                            home_score, away_score, winning_team, total_runs
+                        )
+                        
+                        # Calculate profit/loss (assuming $100 units at -110 odds)
+                        if bet_won is not None:
+                            profit_loss = 90.91 if bet_won else -100.0  # -110 odds
+                            actual_outcome = f"{winning_team} won {home_score}-{away_score}, total: {total_runs}"
+                            
+                            # Update recommendation
+                            cursor.execute("""
+                                UPDATE tracking.pre_game_recommendations 
+                                SET game_completed = TRUE, bet_won = %s, actual_outcome = %s, 
+                                    profit_loss = %s, updated_at = CURRENT_TIMESTAMP
+                                WHERE recommendation_id = %s
+                            """, (bet_won, actual_outcome, profit_loss, rec_id))
+                            
+                            updated_count += 1
+                    
+                    conn.commit()
                 
                 self.logger.info("Updated recommendation outcomes", updated_count=updated_count)
                 
@@ -546,82 +420,83 @@ class PreGameRecommendationTracker:
         start_date = end_date - timedelta(days=days_back)
         
         try:
-            with self.db_manager.get_cursor() as cursor:
-                # Get all recommendations in period
-                cursor.execute("""
-                    SELECT * FROM tracking.pre_game_recommendations
-                    WHERE recommended_at BETWEEN ? AND ?
-                    ORDER BY recommended_at DESC
-                """, (start_date, end_date))
-                
-                rows = cursor.fetchall()
-                columns = [desc[0] for desc in cursor.description]
-                
-                if not rows:
+            with self.db_manager.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    # Get all recommendations in period
+                    cursor.execute("""
+                        SELECT * FROM tracking.pre_game_recommendations
+                        WHERE recommended_at BETWEEN %s AND %s
+                        ORDER BY recommended_at DESC
+                    """, (start_date, end_date))
+                    
+                    rows = cursor.fetchall()
+                    columns = [desc[0] for desc in cursor.description]
+                    
+                    if not rows:
+                        return PerformanceReport(
+                            report_date=end_date,
+                            period_start=start_date,
+                            period_end=end_date,
+                            total_recommendations=0,
+                            completed_games=0,
+                            wins=0,
+                            losses=0,
+                            pending_games=0,
+                            win_rate=0.0,
+                            total_profit_loss=0.0,
+                            roi_per_100_units=0.0,
+                            average_bet_profit=0.0,
+                            by_bet_type={},
+                            by_signal_source={},
+                            by_confidence={}
+                        )
+                    
+                    # Convert to list of dicts
+                    recommendations = [dict(zip(columns, row)) for row in rows]
+                    
+                    # Calculate basic metrics
+                    total_recs = len(recommendations)
+                    completed = [r for r in recommendations if r['game_completed']]
+                    completed_count = len(completed)
+                    wins = [r for r in completed if r['bet_won']]
+                    losses = [r for r in completed if r['bet_won'] == False]
+                    pending = total_recs - completed_count
+                    
+                    win_rate = len(wins) / completed_count if completed_count > 0 else 0.0
+                    total_pnl = sum(r['profit_loss'] or 0 for r in completed)
+                    # Calculate ROI as percentage: (Net Profit / Total Wagered) * 100
+                    # Assuming $110 wagered per bet at -110 odds
+                    roi_per_100 = (total_pnl / (completed_count * 110) * 100) if completed_count > 0 else 0.0
+                    avg_bet_profit = total_pnl / completed_count if completed_count > 0 else 0.0
+                    
+                    # Breakdowns
+                    by_bet_type = self._calculate_breakdown(completed, 'bet_type')
+                    by_signal_source = self._calculate_breakdown(completed, 'signal_source')
+                    by_confidence = self._calculate_breakdown(completed, 'confidence_level')
+                    
+                    # Recent trends
+                    last_7_days = self._calculate_recent_performance(recommendations, 7)
+                    last_30_days = self._calculate_recent_performance(recommendations, 30)
+                    
                     return PerformanceReport(
                         report_date=end_date,
                         period_start=start_date,
                         period_end=end_date,
-                        total_recommendations=0,
-                        completed_games=0,
-                        wins=0,
-                        losses=0,
-                        pending_games=0,
-                        win_rate=0.0,
-                        total_profit_loss=0.0,
-                        roi_per_100_units=0.0,
-                        average_bet_profit=0.0,
-                        by_bet_type={},
-                        by_signal_source={},
-                        by_confidence={}
+                        total_recommendations=total_recs,
+                        completed_games=completed_count,
+                        wins=len(wins),
+                        losses=len(losses),
+                        pending_games=pending,
+                        win_rate=win_rate,
+                        total_profit_loss=total_pnl,
+                        roi_per_100_units=roi_per_100,
+                        average_bet_profit=avg_bet_profit,
+                        by_bet_type=by_bet_type,
+                        by_signal_source=by_signal_source,
+                        by_confidence=by_confidence,
+                        last_7_days=last_7_days,
+                        last_30_days=last_30_days
                     )
-                
-                # Convert to list of dicts
-                recommendations = [dict(zip(columns, row)) for row in rows]
-                
-                # Calculate basic metrics
-                total_recs = len(recommendations)
-                completed = [r for r in recommendations if r['game_completed']]
-                completed_count = len(completed)
-                wins = [r for r in completed if r['bet_won']]
-                losses = [r for r in completed if r['bet_won'] == False]
-                pending = total_recs - completed_count
-                
-                win_rate = len(wins) / completed_count if completed_count > 0 else 0.0
-                total_pnl = sum(r['profit_loss'] or 0 for r in completed)
-                # Calculate ROI as percentage: (Net Profit / Total Wagered) * 100
-                # Assuming $110 wagered per bet at -110 odds
-                roi_per_100 = (total_pnl / (completed_count * 110) * 100) if completed_count > 0 else 0.0
-                avg_bet_profit = total_pnl / completed_count if completed_count > 0 else 0.0
-                
-                # Breakdowns
-                by_bet_type = self._calculate_breakdown(completed, 'bet_type')
-                by_signal_source = self._calculate_breakdown(completed, 'signal_source')
-                by_confidence = self._calculate_breakdown(completed, 'confidence_level')
-                
-                # Recent trends
-                last_7_days = self._calculate_recent_performance(recommendations, 7)
-                last_30_days = self._calculate_recent_performance(recommendations, 30)
-                
-                return PerformanceReport(
-                    report_date=end_date,
-                    period_start=start_date,
-                    period_end=end_date,
-                    total_recommendations=total_recs,
-                    completed_games=completed_count,
-                    wins=len(wins),
-                    losses=len(losses),
-                    pending_games=pending,
-                    win_rate=win_rate,
-                    total_profit_loss=total_pnl,
-                    roi_per_100_units=roi_per_100,
-                    average_bet_profit=avg_bet_profit,
-                    by_bet_type=by_bet_type,
-                    by_signal_source=by_signal_source,
-                    by_confidence=by_confidence,
-                    last_7_days=last_7_days,
-                    last_30_days=last_30_days
-                )
                 
         except Exception as e:
             self.logger.error("Failed to generate performance report", error=str(e))
@@ -660,7 +535,23 @@ class PreGameRecommendationTracker:
     def _calculate_recent_performance(self, recommendations: List[Dict], days: int) -> Dict[str, Any]:
         """Calculate performance for recent period."""
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        recent = [r for r in recommendations if r['recommended_at'] >= cutoff and r['game_completed']]
+        
+        # Handle timezone-aware/naive datetime comparison
+        recent = []
+        for r in recommendations:
+            rec_time = r['recommended_at']
+            # Convert to timezone-aware if needed
+            if rec_time and hasattr(rec_time, 'tzinfo') and rec_time.tzinfo is None:
+                rec_time = rec_time.replace(tzinfo=timezone.utc)
+            elif rec_time and not hasattr(rec_time, 'tzinfo'):
+                # Handle case where it might be a string
+                if isinstance(rec_time, str):
+                    rec_time = datetime.fromisoformat(rec_time.replace('Z', '+00:00'))
+                else:
+                    rec_time = rec_time.replace(tzinfo=timezone.utc)
+            
+            if rec_time and rec_time >= cutoff and r['game_completed']:
+                recent.append(r)
         
         if not recent:
             return {'total': 0, 'wins': 0, 'win_rate': 0.0, 'total_pnl': 0.0}
@@ -686,13 +577,14 @@ class PreGameRecommendationTracker:
         start_date = end_date - timedelta(days=days_back)
         
         try:
-            with self.db_manager.get_cursor() as cursor:
-                # Get all recommendations in period
-                cursor.execute("""
-                    SELECT * FROM tracking.pre_game_recommendations
-                    WHERE recommended_at BETWEEN ? AND ?
-                    ORDER BY recommended_at DESC
-                """, (start_date, end_date))
+            with self.db_manager.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    # Get all recommendations in period
+                    cursor.execute("""
+                        SELECT * FROM tracking.pre_game_recommendations
+                        WHERE recommended_at BETWEEN %s AND %s
+                        ORDER BY recommended_at DESC
+                    """, (start_date, end_date))
                 
                 rows = cursor.fetchall()
                 columns = [desc[0] for desc in cursor.description]

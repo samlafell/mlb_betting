@@ -1,8 +1,20 @@
 """
-Strategy Validator - Unified Strategy Matching Logic
+DEPRECATED: Strategy Validator - Unified Strategy Matching Logic
 
-Centralizes all strategy validation and threshold logic to eliminate
-duplication across different signal processors.
+⚠️  DEPRECATION NOTICE: This service has been consolidated into StrategyValidation.
+Please update imports to use:
+    from ..services.strategy_validation import StrategyValidation
+
+This file is provided for backward compatibility during the transition.
+It will be removed in a future version.
+
+MIGRATION GUIDE:
+- Replace `StrategyValidator` with `StrategyValidation` 
+- The StrategyValidation provides all validator functionality plus:
+  - Registry management (from StrategyValidationRegistry)
+  - Gate validation (from ValidationGateService)
+  - Daily validation (from DailyStrategyValidationService)
+  - Unified interface for all validation operations
 """
 
 from typing import List, Optional, Dict
@@ -135,7 +147,8 @@ class StrategyValidator:
                     total_bets=strategy.total_bets,
                     confidence=strategy.confidence,
                     ci_lower=strategy.ci_lower,
-                    ci_upper=strategy.ci_upper
+                    ci_upper=strategy.ci_upper,
+                    confidence_score=getattr(strategy, 'confidence_score', 0.5)  # ✅ FIX: Added missing confidence_score
                 )
         
         return None

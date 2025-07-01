@@ -18,7 +18,7 @@ import inspect
 from mlb_sharp_betting.analysis.processors.base_strategy_processor import BaseStrategyProcessor
 from mlb_sharp_betting.analysis.processors.sharpaction_processor import SharpActionProcessor
 from mlb_sharp_betting.services.betting_signal_repository import BettingSignalRepository
-from mlb_sharp_betting.services.strategy_validator import StrategyValidator
+from mlb_sharp_betting.services.strategy_validation import StrategyValidation
 from mlb_sharp_betting.models.betting_analysis import SignalProcessorConfig
 from mlb_sharp_betting.core.logging import get_logger
 
@@ -136,7 +136,7 @@ class StrategyProcessorFactory:
     }
     
     def __init__(self, repository: BettingSignalRepository, 
-                 validator: StrategyValidator, config: SignalProcessorConfig):
+                 validator: StrategyValidation, config: SignalProcessorConfig):
         """Initialize factory with required dependencies"""
         self.repository = repository
         self.validator = validator
@@ -452,6 +452,13 @@ class StrategyProcessorFactory:
         """Get dict of successfully loaded processors"""
         return self._processor_registry.copy()
     
+    def get_all_processors(self) -> Dict[str, BaseStrategyProcessor]:
+        """Get all processors (loaded and attempt to load any missing ones)"""
+        # First ensure we have all processors loaded
+        if not self._processor_registry:
+            self.create_all_processors()
+        return self._processor_registry.copy()
+    
     def get_processor_info(self) -> List[Dict]:
         """Get information about all loaded processors"""
         return [
@@ -550,55 +557,47 @@ class StrategyProcessorFactory:
     
     def get_processors_by_type(self, signal_type: str) -> List[BaseStrategyProcessor]:
         """
-        Get processors that can handle a specific signal type
+        Get all processors that can handle the specified signal type.
         
         Args:
             signal_type: The type of signal to process (e.g., 'SHARP_ACTION', 'BOOK_CONFLICTS')
             
         Returns:
-            List of processors that can handle the signal type
+            List of processors capable of handling the signal type
         """
-        compatible_processors = []
+        matching_processors = []
         
-        # Get all loaded processors
-        all_processors = self.get_loaded_processors()
+        # 🚀 PERFORMANCE FIX: Add early logging to track processor requests
+        self.logger.info(f"🔍 Requesting processors for signal type: {signal_type}")
         
-        for processor_name, processor in all_processors.items():
+        for strategy_name, processor in self._processor_registry.items():
             try:
-                # Primary method: check get_signal_type() method
-                if hasattr(processor, 'get_signal_type'):
-                    processor_signal_type = processor.get_signal_type()
-                    if processor_signal_type and processor_signal_type.value == signal_type:
-                        compatible_processors.append(processor)
-                        continue
-                
-                # Fallback: check for supported_signal_types list attribute
-                if hasattr(processor, 'supported_signal_types'):
-                    if signal_type in processor.supported_signal_types:
-                        compatible_processors.append(processor)
-                        continue
-                
-                # Fallback: check for can_process_signal_type method
-                if hasattr(processor, 'can_process_signal_type'):
-                    if processor.can_process_signal_type(signal_type):
-                        compatible_processors.append(processor)
-                        continue
-                
-                # Final fallback: try to match based on processor name/type
-                if self._processor_matches_signal_type(processor_name, signal_type):
-                    compatible_processors.append(processor)
-                        
+                if self._processor_matches_signal_type(strategy_name, signal_type):
+                    matching_processors.append(processor)
+                    self.logger.debug(f"✅ Found matching processor: {strategy_name} for {signal_type}")
             except Exception as e:
-                self.logger.warning(
-                    f"Error checking signal type compatibility for {processor_name}: {e}"
-                )
+                self.logger.warning(f"Error checking processor {strategy_name} for signal type {signal_type}: {e}")
                 continue
         
-        self.logger.info(
-            f"Found {len(compatible_processors)} processors for signal type '{signal_type}'"
-        )
+        # 🚀 CONSOLIDATION FIX: Prevent duplicate processors for the same signal type
+        unique_processors = []
+        processor_classes_seen = set()
         
-        return compatible_processors
+        for processor in matching_processors:
+            processor_class = processor.__class__.__name__
+            if processor_class not in processor_classes_seen:
+                unique_processors.append(processor)
+                processor_classes_seen.add(processor_class)
+            else:
+                self.logger.debug(f"🔄 Skipping duplicate processor: {processor_class}")
+        
+        self.logger.info(f"🎯 Found {len(unique_processors)} unique processors for {signal_type} (filtered from {len(matching_processors)} total matches)")
+        
+        if not unique_processors:
+            self.logger.warning(f"⚠️  No processors found for signal type: {signal_type}")
+            self.logger.info(f"📊 Available signal types: {list(set(self._processor_matches_signal_type(name, '') for name in self._processor_registry.keys()))}")
+            
+        return unique_processors
     
     def _processor_matches_signal_type(self, processor_name: str, signal_type: str) -> bool:
         """

@@ -50,7 +50,9 @@ CREATE TABLE IF NOT EXISTS backtesting.strategy_performance (
     kelly_criterion DECIMAL(8,4) DEFAULT NULL,
     confidence_level VARCHAR(20) NOT NULL DEFAULT 'LOW',
     last_updated TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    wins INTEGER,
+    CONSTRAINT strategy_performance_unique_key UNIQUE (strategy_name, source_book_type, split_type, backtest_date)
 );
 
 -- Indexes for performance queries

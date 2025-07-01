@@ -296,7 +296,7 @@ The scripts expect these tables in your PostgreSQL database:
 - `home_or_over_stake_percentage`: % of money on home/over
 - `home_or_over_bets_percentage`: % of bets on home/over
 
-### `mlb_betting.main.game_outcomes`
+### `mlb_betting.public.game_outcomes`
 - `game_id`: Links to splits table
 - `home_win`: Boolean, did home team win
 - `home_cover_spread`: Boolean, did home team cover spread

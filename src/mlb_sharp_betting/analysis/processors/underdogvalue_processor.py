@@ -406,7 +406,9 @@ class UnderdogValueProcessor(BaseStrategyProcessor):
             return 0.0
         
         # Expected value calculation
-        win_probability = win_rate / 100.0
+        # Convert win_rate to float if it's a Decimal from database
+        win_rate_float = float(win_rate) if hasattr(win_rate, '__float__') else win_rate
+        win_probability = win_rate_float / 100.0
         lose_probability = 1 - win_probability
         
         # For positive odds: profit = (odds/100) * bet for wins, -bet for losses

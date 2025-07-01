@@ -949,3 +949,702 @@ Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at:
 Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-26 10:00:00 EDT)" was missed by 1:06:41.656907
 Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-26 10:00:00 EDT)" was missed by 0:06:41.657067
 Run time of job "Daily Game Setup (trigger: cron[hour='6', minute='0'], next run at: 2025-06-27 06:00:00 EDT)" was missed by 3:06:41.657270
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-27 16:00:00 EDT)" was missed by 4:19:37.280117
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-27 16:00:00 EDT)" was missed by 3:19:37.283900
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-27 16:00:00 EDT)" was missed by 2:19:37.285903
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-27 16:00:00 EDT)" was missed by 1:19:37.286146
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-27 16:00:00 EDT)" was missed by 0:19:37.286311
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-27 17:00:00 EDT)" was missed by 0:22:55.634991
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-27 20:00:00 EDT)" was missed by 1:37:32.468746
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-27 20:00:00 EDT)" was missed by 0:37:32.470704
+Run time of job "30-min Data Collection: New York Mets @ Pittsburgh Pirates (trigger: date[2025-06-27 22:10:00 UTC], next run at: 2025-06-27 22:10:00 UTC)" was missed by 1:27:32.471483
+Run time of job "15-min Data Collection: New York Mets @ Pittsburgh Pirates (trigger: date[2025-06-27 22:25:00 UTC], next run at: 2025-06-27 22:25:00 UTC)" was missed by 1:12:32.472033
+Run time of job "30-min Data Collection: Athletics @ New York Yankees (trigger: date[2025-06-27 22:35:00 UTC], next run at: 2025-06-27 22:35:00 UTC)" was missed by 1:02:32.472145
+Run time of job "30-min Data Collection: Tampa Bay Rays @ Baltimore Orioles (trigger: date[2025-06-27 22:35:00 UTC], next run at: 2025-06-27 22:35:00 UTC)" was missed by 1:02:32.472231
+Run time of job "Final Pre-Game Analysis: New York Mets @ Pittsburgh Pirates (trigger: date[2025-06-27 22:35:00 UTC], next run at: 2025-06-27 22:35:00 UTC)" was missed by 1:02:32.472308
+Run time of job "30-min Data Collection: Minnesota Twins @ Detroit Tigers (trigger: date[2025-06-27 22:40:00 UTC], next run at: 2025-06-27 22:40:00 UTC)" was missed by 0:57:32.472384
+Run time of job "30-min Data Collection: Toronto Blue Jays @ Boston Red Sox (trigger: date[2025-06-27 22:40:00 UTC], next run at: 2025-06-27 22:40:00 UTC)" was missed by 0:57:32.472477
+Run time of job "30-min Data Collection: San Diego Padres @ Cincinnati Reds (trigger: date[2025-06-27 22:40:00 UTC], next run at: 2025-06-27 22:40:00 UTC)" was missed by 0:57:32.472549
+Run time of job "30-min Data Collection: St. Louis Cardinals @ Cleveland Guardians (trigger: date[2025-06-27 22:40:00 UTC], next run at: 2025-06-27 22:40:00 UTC)" was missed by 0:57:32.472617
+Run time of job "30-min Data Collection: Philadelphia Phillies @ Atlanta Braves (trigger: date[2025-06-27 22:45:00 UTC], next run at: 2025-06-27 22:45:00 UTC)" was missed by 0:52:32.472687
+Run time of job "15-min Data Collection: Athletics @ New York Yankees (trigger: date[2025-06-27 22:50:00 UTC], next run at: 2025-06-27 22:50:00 UTC)" was missed by 0:47:32.472753
+Run time of job "15-min Data Collection: Tampa Bay Rays @ Baltimore Orioles (trigger: date[2025-06-27 22:50:00 UTC], next run at: 2025-06-27 22:50:00 UTC)" was missed by 0:47:32.472833
+Run time of job "15-min Data Collection: Minnesota Twins @ Detroit Tigers (trigger: date[2025-06-27 22:55:00 UTC], next run at: 2025-06-27 22:55:00 UTC)" was missed by 0:42:32.472904
+Run time of job "15-min Data Collection: Toronto Blue Jays @ Boston Red Sox (trigger: date[2025-06-27 22:55:00 UTC], next run at: 2025-06-27 22:55:00 UTC)" was missed by 0:42:32.472971
+Run time of job "15-min Data Collection: San Diego Padres @ Cincinnati Reds (trigger: date[2025-06-27 22:55:00 UTC], next run at: 2025-06-27 22:55:00 UTC)" was missed by 0:42:32.473041
+Run time of job "15-min Data Collection: St. Louis Cardinals @ Cleveland Guardians (trigger: date[2025-06-27 22:55:00 UTC], next run at: 2025-06-27 22:55:00 UTC)" was missed by 0:42:32.473108
+Run time of job "15-min Data Collection: Philadelphia Phillies @ Atlanta Braves (trigger: date[2025-06-27 23:00:00 UTC], next run at: 2025-06-27 23:00:00 UTC)" was missed by 0:37:32.473177
+Run time of job "Final Pre-Game Analysis: Athletics @ New York Yankees (trigger: date[2025-06-27 23:00:00 UTC], next run at: 2025-06-27 23:00:00 UTC)" was missed by 0:37:32.473246
+Run time of job "Final Pre-Game Analysis: Tampa Bay Rays @ Baltimore Orioles (trigger: date[2025-06-27 23:00:00 UTC], next run at: 2025-06-27 23:00:00 UTC)" was missed by 0:37:32.473313
+Run time of job "Final Pre-Game Analysis: Minnesota Twins @ Detroit Tigers (trigger: date[2025-06-27 23:05:00 UTC], next run at: 2025-06-27 23:05:00 UTC)" was missed by 0:32:32.473380
+Run time of job "Final Pre-Game Analysis: Toronto Blue Jays @ Boston Red Sox (trigger: date[2025-06-27 23:05:00 UTC], next run at: 2025-06-27 23:05:00 UTC)" was missed by 0:32:32.473449
+Run time of job "Final Pre-Game Analysis: San Diego Padres @ Cincinnati Reds (trigger: date[2025-06-27 23:05:00 UTC], next run at: 2025-06-27 23:05:00 UTC)" was missed by 0:32:32.473516
+Run time of job "Final Pre-Game Analysis: St. Louis Cardinals @ Cleveland Guardians (trigger: date[2025-06-27 23:05:00 UTC], next run at: 2025-06-27 23:05:00 UTC)" was missed by 0:32:32.473583
+Run time of job "30-min Data Collection: San Francisco Giants @ Chicago White Sox (trigger: date[2025-06-27 23:10:00 UTC], next run at: 2025-06-27 23:10:00 UTC)" was missed by 0:27:32.473651
+Run time of job "Final Pre-Game Analysis: Philadelphia Phillies @ Atlanta Braves (trigger: date[2025-06-27 23:10:00 UTC], next run at: 2025-06-27 23:10:00 UTC)" was missed by 0:27:32.473717
+Run time of job "15-min Data Collection: San Francisco Giants @ Chicago White Sox (trigger: date[2025-06-27 23:25:00 UTC], next run at: 2025-06-27 23:25:00 UTC)" was missed by 0:12:32.473798
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Seattle Mariners @ Texas Rangers'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'San Francisco Giants @ Chicago White Sox'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Los Angeles Dodgers @ Kansas City Royals'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Chicago Cubs @ Houston Astros'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Colorado Rockies @ Milwaukee Brewers'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Seattle Mariners @ Texas Rangers'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Los Angeles Dodgers @ Kansas City Royals'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Chicago Cubs @ Houston Astros'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Colorado Rockies @ Milwaukee Brewers'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Seattle Mariners @ Texas Rangers'[0m [36mservice[0m=[35mpre_game_workflow[0m
+Run time of job "Final Pre-Game Analysis: Los Angeles Dodgers @ Kansas City Royals (trigger: date[2025-06-28 00:05:00 UTC], next run at: 2025-06-28 00:05:00 UTC)" was missed by 0:34:49.198108
+Run time of job "Final Pre-Game Analysis: Chicago Cubs @ Houston Astros (trigger: date[2025-06-28 00:05:00 UTC], next run at: 2025-06-28 00:05:00 UTC)" was missed by 0:34:49.201260
+Run time of job "Final Pre-Game Analysis: Colorado Rockies @ Milwaukee Brewers (trigger: date[2025-06-28 00:05:00 UTC], next run at: 2025-06-28 00:05:00 UTC)" was missed by 0:34:49.201830
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-27 23:00:00 EDT)" was missed by 1:11:21.243468
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-27 23:00:00 EDT)" was missed by 0:11:21.246650
+Run time of job "30-min Data Collection: Washington Nationals @ Los Angeles Angels (trigger: date[2025-06-28 01:08:00 UTC], next run at: 2025-06-28 01:08:00 UTC)" was missed by 1:03:21.247327
+Run time of job "30-min Data Collection: Miami Marlins @ Arizona Diamondbacks (trigger: date[2025-06-28 01:10:00 UTC], next run at: 2025-06-28 01:10:00 UTC)" was missed by 1:01:21.247711
+Run time of job "15-min Data Collection: Washington Nationals @ Los Angeles Angels (trigger: date[2025-06-28 01:23:00 UTC], next run at: 2025-06-28 01:23:00 UTC)" was missed by 0:48:21.247980
+Run time of job "15-min Data Collection: Miami Marlins @ Arizona Diamondbacks (trigger: date[2025-06-28 01:25:00 UTC], next run at: 2025-06-28 01:25:00 UTC)" was missed by 0:46:21.248193
+Run time of job "Final Pre-Game Analysis: Washington Nationals @ Los Angeles Angels (trigger: date[2025-06-28 01:33:00 UTC], next run at: 2025-06-28 01:33:00 UTC)" was missed by 0:38:21.248394
+Run time of job "Final Pre-Game Analysis: Miami Marlins @ Arizona Diamondbacks (trigger: date[2025-06-28 01:35:00 UTC], next run at: 2025-06-28 01:35:00 UTC)" was missed by 0:36:21.248607
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-28 01:00:00 EDT)" was missed by 0:53:59.140658
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-28 04:00:00 EDT)" was missed by 1:01:17.860937
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-28 10:00:00 EDT)" was missed by 5:27:38.290607
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-28 10:00:00 EDT)" was missed by 4:27:38.292671
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-28 10:00:00 EDT)" was missed by 3:27:38.293800
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-28 10:00:00 EDT)" was missed by 2:27:38.293934
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-28 10:00:00 EDT)" was missed by 1:27:38.295247
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-28 10:00:00 EDT)" was missed by 0:27:38.295417
+Run time of job "Daily Game Setup (trigger: cron[hour='6', minute='0'], next run at: 2025-06-29 06:00:00 EDT)" was missed by 3:27:38.295522
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-28 12:00:00 EDT)" was missed by 0:28:59.906938
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-28 14:00:00 EDT)" was missed by 1:17:19.939059
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-28 14:00:00 EDT)" was missed by 0:17:19.943826
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-28 16:00:00 EDT)" was missed by 0:26:17.713727
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-28 17:00:00 EDT)" was missed by 0:07:25.943749
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-28 18:00:00 EDT)" was missed by 0:15:27.282297
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-28 19:00:00 EDT)" was missed by 0:10:12.908254
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-28 20:00:00 EDT)" was missed by 0:07:21.683629
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-28 21:00:00 EDT)" was missed by 0:09:59.384608
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-28 22:00:00 EDT)" was missed by 0:13:03.239345
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-29 00:00:00 EDT)" was missed by 0:14:50.913025
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-29 01:00:00 EDT)" was missed by 0:33:00.384043
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-29 03:00:00 EDT)" was missed by 0:23:37.632532
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-29 04:00:00 EDT)" was missed by 0:15:01.378841
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-29 05:00:00 EDT)" was missed by 0:15:06.846433
+Run time of job "Daily Game Setup (trigger: cron[hour='6', minute='0'], next run at: 2025-06-30 06:00:00 EDT)" was missed by 0:15:33.116579
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-29 07:00:00 EDT)" was missed by 0:15:33.118241
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-29 09:00:00 EDT)" was missed by 0:23:20.771802
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-29 10:00:00 EDT)" was missed by 0:24:01.263739
+   🆔 Workflow ID: pregame_777358_pre_game_final_1750898100.007053
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 21:00:19 | Duration: 19.6s
+   📈 Status: Success | Output lines: 53
+
+📊 30-MIN DATA COLLECTION: Miami Marlins @ San Francisco Giants
+   ✅ Time: 21:15:27 | Status: Success
+   📧 Email: 📧 Skipped (data collection only) | Duration: 27.8s
+   🆔 Workflow ID: pregame_777355_pre_game_30min_1750900500.007862
+
+📊 15-MIN DATA COLLECTION: Miami Marlins @ San Francisco Giants
+   ✅ Time: 21:30:21 | Status: Success
+   📧 Email: 📧 Skipped (data collection only) | Duration: 21.3s
+   🆔 Workflow ID: pregame_777355_pre_game_15min_1750901400.001202
+
+🏈 FINAL PRE-GAME ANALYSIS: Miami Marlins @ San Francisco Giants
+   ✅ Time: 21:40:52 | Status: Success
+   📧 Email: 📧 Sent | Duration: 23.8s
+   🆔 Workflow ID: pregame_777355_pre_game_final_1750902028.571338
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 22:00:19 | Duration: 19.1s
+   📈 Status: Success | Output lines: 53
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 23:00:17 | Duration: 17.3s
+   📈 Status: Success | Output lines: 53
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 00:00:22 | Duration: 22.9s
+   📈 Status: Success | Output lines: 53
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 01:00:33 | Duration: 15.7s
+   📈 Status: Success | Output lines: 53
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 10:00:09 | Duration: 9.2s
+   📈 Status: Success | Output lines: 53
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 11:00:09 | Duration: 9.7s
+   📈 Status: Success | Output lines: 53
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 12:00:12 | Duration: 11.9s
+   📈 Status: Success | Output lines: 53
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 13:00:16 | Duration: 16.8s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 14:00:15 | Duration: 15.1s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 15:00:11 | Duration: 11.8s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 16:00:15 | Duration: 15.8s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 17:00:16 | Duration: 16.5s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 18:00:22 | Duration: 22.7s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 19:00:22 | Duration: 22.8s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 20:00:17 | Duration: 17.5s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 21:00:21 | Duration: 21.1s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 22:00:24 | Duration: 24.2s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 23:00:20 | Duration: 20.3s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 00:01:35 | Duration: 95.6s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 01:00:19 | Duration: 19.4s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 02:00:19 | Duration: 19.0s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 03:00:19 | Duration: 19.6s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 04:00:19 | Duration: 19.3s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 05:00:21 | Duration: 21.9s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 06:00:24 | Duration: 20.9s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 07:00:21 | Duration: 21.9s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 08:00:21 | Duration: 21.1s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 09:00:14 | Duration: 14.2s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 10:00:13 | Duration: 13.3s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 17:00:18 | Duration: 18.0s
+   📈 Status: Success | Output lines: 54
+
+📊 30-MIN DATA COLLECTION: Seattle Mariners @ Texas Rangers
+   ❌ Time: 19:38:02 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 29.5s
+   🆔 Workflow ID: pregame_777340_pre_game_30min_1751067452.474173
+
+🏈 FINAL PRE-GAME ANALYSIS: San Francisco Giants @ Chicago White Sox
+   ❌ Time: 19:38:33 | Status: Failed
+   📧 Email: 📧 Sent | Duration: 31.8s
+   🆔 Workflow ID: pregame_777338_pre_game_final_1751067452.474383
+
+📊 30-MIN DATA COLLECTION: Los Angeles Dodgers @ Kansas City Royals
+   ❌ Time: 19:40:30 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 30.8s
+   🆔 Workflow ID: pregame_777335_pre_game_30min_1751067600.004596
+
+📊 30-MIN DATA COLLECTION: Chicago Cubs @ Houston Astros
+   ❌ Time: 19:41:01 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 31.2s
+   🆔 Workflow ID: pregame_777336_pre_game_30min_1751067600.004863
+
+📊 30-MIN DATA COLLECTION: Colorado Rockies @ Milwaukee Brewers
+   ❌ Time: 19:41:32 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 30.9s
+   🆔 Workflow ID: pregame_777339_pre_game_30min_1751067600.005026
+
+📊 15-MIN DATA COLLECTION: Seattle Mariners @ Texas Rangers
+   ❌ Time: 19:50:35 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 35.9s
+   🆔 Workflow ID: pregame_777340_pre_game_15min_1751068200.005347
+
+📊 15-MIN DATA COLLECTION: Los Angeles Dodgers @ Kansas City Royals
+   ❌ Time: 19:55:31 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 31.4s
+   🆔 Workflow ID: pregame_777335_pre_game_15min_1751068500.001554
+
+📊 15-MIN DATA COLLECTION: Chicago Cubs @ Houston Astros
+   ❌ Time: 19:56:03 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 32.0s
+   🆔 Workflow ID: pregame_777336_pre_game_15min_1751068500.001816
+
+📊 15-MIN DATA COLLECTION: Colorado Rockies @ Milwaukee Brewers
+   ❌ Time: 19:56:35 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 31.8s
+   🆔 Workflow ID: pregame_777339_pre_game_15min_1751068500.001976
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 20:00:23 | Duration: 23.2s
+   📈 Status: Success | Output lines: 54
+
+🏈 FINAL PRE-GAME ANALYSIS: Seattle Mariners @ Texas Rangers
+   ❌ Time: 20:00:54 | Status: Failed
+   📧 Email: 📧 Sent | Duration: 31.5s
+   🆔 Workflow ID: pregame_777340_pre_game_final_1751068823.214916
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 23:00:18 | Duration: 18.9s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 01:00:16 | Duration: 16.6s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 03:01:37 | Duration: 19.9s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 10:00:27 | Duration: 27.6s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 14:00:17 | Duration: 17.5s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 22:00:18 | Duration: 18.2s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 01:00:19 | Duration: 19.4s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 05:00:17 | Duration: 17.6s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 07:00:17 | Duration: 17.6s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 10:00:17 | Duration: 17.2s
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-29 12:00:00 EDT)" was missed by 0:08:15.078104
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-29 14:00:00 EDT)" was missed by 0:15:10.880228
+Run time of job "Hourly Data Collection (trigger: cron[minute='0'], next run at: 2025-06-29 15:00:00 EDT)" was missed by 0:24:10.224087
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'San Diego Padres @ Philadelphia Phillies'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'St. Louis Cardinals @ Pittsburgh Pirates'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'San Diego Padres @ Philadelphia Phillies'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'St. Louis Cardinals @ Pittsburgh Pirates'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'San Diego Padres @ Philadelphia Phillies'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'St. Louis Cardinals @ Pittsburgh Pirates'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'New York Yankees @ Toronto Blue Jays'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Cincinnati Reds @ Boston Red Sox'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'New York Yankees @ Toronto Blue Jays'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Cincinnati Reds @ Boston Red Sox'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'New York Yankees @ Toronto Blue Jays'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Athletics @ Tampa Bay Rays'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Cincinnati Reds @ Boston Red Sox'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Athletics @ Tampa Bay Rays'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Athletics @ Tampa Bay Rays'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Baltimore Orioles @ Texas Rangers'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Baltimore Orioles @ Texas Rangers'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Baltimore Orioles @ Texas Rangers'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mHourly data collection failed [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_scheduler[0m][0m [36mexecution_time[0m=[35m0.543901[0m [36mreturncode[0m=[35m1[0m [36mservice[0m=[35mpre_game_scheduler[0m [36mstderr[0m=[35m'Traceback (most recent call last):\n  File "/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/src/mlb_sharp_betting/entrypoint.py", line 52, in <module>\n    from mlb_sharp_betting.services.data_persistence import DataPersistenceService\n  File "/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/src/mlb_sharp_betting/services/data_persistence.py", line 28, in <module>\n    from ..utils.time_based_validator import get_game_time_validator, ValidationResult\n  File "/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/src/mlb_sharp_betting/utils/time_based_validator.py", line 16, in <module>\n    from ..services.mlb_api_service import MLBAPIService\nImportError: cannot import name \'MLBAPIService\' from \'mlb_sharp_betting.services.mlb_api_service\' (/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/src/mlb_sharp_betting/services/mlb_api_service.py)\n'[0m
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 12:03:07 | Duration: 16.3s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 15:00:16 | Duration: 16.4s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 16:00:17 | Duration: 17.8s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 17:00:19 | Duration: 19.2s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 18:00:17 | Duration: 17.9s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 19:00:19 | Duration: 19.0s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 20:00:27 | Duration: 27.4s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 21:00:24 | Duration: 24.6s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 22:00:24 | Duration: 24.7s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 23:00:26 | Duration: 26.9s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 00:00:22 | Duration: 22.0s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 01:00:21 | Duration: 21.7s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 02:00:22 | Duration: 22.2s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 03:00:22 | Duration: 22.4s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 04:00:23 | Duration: 23.4s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 05:00:25 | Duration: 25.0s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 06:00:24 | Duration: 22.1s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 07:00:22 | Duration: 23.0s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 08:00:25 | Duration: 25.8s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 09:00:13 | Duration: 13.1s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 10:00:12 | Duration: 12.3s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 11:00:12 | Duration: 12.2s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 12:00:09 | Duration: 9.8s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 13:00:09 | Duration: 9.4s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 14:00:12 | Duration: 12.4s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 15:00:10 | Duration: 10.6s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 16:00:19 | Duration: 19.6s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 17:00:14 | Duration: 14.1s
+   📈 Status: Success | Output lines: 54
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 18:00:13 | Duration: 13.0s
+   📈 Status: Success | Output lines: 54
+
+📊 30-MIN DATA COLLECTION: San Diego Padres @ Philadelphia Phillies
+   ❌ Time: 18:05:29 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 29.7s
+   🆔 Workflow ID: pregame_777306_pre_game_30min_1751321100.001769
+
+📊 30-MIN DATA COLLECTION: St. Louis Cardinals @ Pittsburgh Pirates
+   ❌ Time: 18:10:26 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 26.5s
+   🆔 Workflow ID: pregame_777299_pre_game_30min_1751321400.005624
+
+📊 15-MIN DATA COLLECTION: San Diego Padres @ Philadelphia Phillies
+   ❌ Time: 18:20:28 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 28.8s
+   🆔 Workflow ID: pregame_777306_pre_game_15min_1751322000.004519
+
+📊 15-MIN DATA COLLECTION: St. Louis Cardinals @ Pittsburgh Pirates
+   ❌ Time: 18:25:26 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 26.5s
+   🆔 Workflow ID: pregame_777299_pre_game_15min_1751322300.003316
+
+🏈 FINAL PRE-GAME ANALYSIS: San Diego Padres @ Philadelphia Phillies
+   ❌ Time: 18:30:31 | Status: Failed
+   📧 Email: 📧 Sent | Duration: 31.3s
+   🆔 Workflow ID: pregame_777306_pre_game_final_1751322600.000483
+
+🏈 FINAL PRE-GAME ANALYSIS: St. Louis Cardinals @ Pittsburgh Pirates
+   ❌ Time: 18:35:29 | Status: Failed
+   📧 Email: 📧 Sent | Duration: 29.8s
+   🆔 Workflow ID: pregame_777299_pre_game_final_1751322900.002887
+
+📊 30-MIN DATA COLLECTION: New York Yankees @ Toronto Blue Jays
+   ❌ Time: 18:37:28 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 28.3s
+   🆔 Workflow ID: pregame_777295_pre_game_30min_1751323020.001302
+
+📊 30-MIN DATA COLLECTION: Cincinnati Reds @ Boston Red Sox
+   ❌ Time: 18:40:27 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 27.4s
+   🆔 Workflow ID: pregame_777300_pre_game_30min_1751323200.00324
+
+📊 15-MIN DATA COLLECTION: New York Yankees @ Toronto Blue Jays
+   ❌ Time: 18:52:29 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 29.3s
+   🆔 Workflow ID: pregame_777295_pre_game_15min_1751323920.010145
+
+📊 15-MIN DATA COLLECTION: Cincinnati Reds @ Boston Red Sox
+   ❌ Time: 18:55:25 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 25.7s
+   🆔 Workflow ID: pregame_777300_pre_game_15min_1751324100.003902
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 19:00:14 | Duration: 15.0s
+   📈 Status: Success | Output lines: 54
+
+🏈 FINAL PRE-GAME ANALYSIS: New York Yankees @ Toronto Blue Jays
+   ❌ Time: 19:02:28 | Status: Failed
+   📧 Email: 📧 Sent | Duration: 28.2s
+   🆔 Workflow ID: pregame_777295_pre_game_final_1751324520.004138
+
+📊 30-MIN DATA COLLECTION: Athletics @ Tampa Bay Rays
+   ❌ Time: 19:05:28 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 28.0s
+   🆔 Workflow ID: pregame_777296_pre_game_30min_1751324700.002719
+
+🏈 FINAL PRE-GAME ANALYSIS: Cincinnati Reds @ Boston Red Sox
+   ❌ Time: 19:05:58 | Status: Failed
+   📧 Email: 📧 Sent | Duration: 30.7s
+   🆔 Workflow ID: pregame_777300_pre_game_final_1751324700.002863
+
+📊 15-MIN DATA COLLECTION: Athletics @ Tampa Bay Rays
+   ❌ Time: 19:20:29 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 29.0s
+   🆔 Workflow ID: pregame_777296_pre_game_15min_1751325600.058065
+
+🏈 FINAL PRE-GAME ANALYSIS: Athletics @ Tampa Bay Rays
+   ❌ Time: 19:30:32 | Status: Failed
+   📧 Email: 📧 Sent | Duration: 32.0s
+   🆔 Workflow ID: pregame_777296_pre_game_final_1751326200.017058
+
+📊 30-MIN DATA COLLECTION: Baltimore Orioles @ Texas Rangers
+   ❌ Time: 19:35:27 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 27.9s
+   🆔 Workflow ID: pregame_777292_pre_game_30min_1751326500.005437
+
+📊 15-MIN DATA COLLECTION: Baltimore Orioles @ Texas Rangers
+   ❌ Time: 19:50:38 | Status: Failed
+   📧 Email: 📧 Skipped (data collection only) | Duration: 38.4s
+   🆔 Workflow ID: pregame_777292_pre_game_15min_1751327400.008761
+
+📊 HOURLY DATA COLLECTION COMPLETE
+   ✅ Time: 20:00:14 | Duration: 14.4s
+   📈 Status: Success | Output lines: 54
+
+🏈 FINAL PRE-GAME ANALYSIS: Baltimore Orioles @ Texas Rangers
+   ❌ Time: 20:00:42 | Status: Failed
+   📧 Email: 📧 Sent | Duration: 28.2s
+   🆔 Workflow ID: pregame_777292_pre_game_final_1751328014.425338
+
+📊 HOURLY DATA COLLECTION FAILED
+   ❌ Time: 21:00:00 | Duration: 0.5s
+   🚨 Error: Exit code 1
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'San Francisco Giants @ Arizona Diamondbacks'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Kansas City Royals @ Seattle Mariners'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'San Francisco Giants @ Arizona Diamondbacks'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Kansas City Royals @ Seattle Mariners'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'San Francisco Giants @ Arizona Diamondbacks'[0m [36mservice[0m=[35mpre_game_workflow[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mBetting analysis failed       [0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mreturn_code[0m=[35m2[0m [36mservice[0m=[35mpre_game_workflow[0m [36mstderr[0m=[35m'error: Failed to spawn: `/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/analysis_scripts/master_betting_detector.py`\n  Caused by: No such file or directory (os error 2)\n'[0m
+[[31m[1merror    [0m] [1mStage betting_analysis failed after 3 retries[0m [[0m[1m[34mmlb_sharp_betting.services.pre_game_workflow[0m][0m [36mgame[0m=[35m'Kansas City Royals @ Seattle Mariners'[0m [36mservice[0m=[35mpre_game_workflow[0m

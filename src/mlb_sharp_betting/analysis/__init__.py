@@ -4,11 +4,9 @@ MLB Sharp Betting Analysis Module
 This module provides comprehensive sharp action analysis with layered architecture:
 - Analytical processing: ML-based historical analysis and feature extraction
 - Real-time processing: Live signal processing with strategy validation
-- Detection interface: Unified API for sharp action detection
 - Strategy management: Business rules and thresholds
 """
 
-from .detectors.sharp_detector import SharpDetector
 from .processors.analytical_processor import AnalyticalProcessor
 from .processors.sharpaction_processor import SharpActionProcessor
 from .processors.opposingmarkets_processor import OpposingMarketsProcessor
@@ -22,7 +20,6 @@ from .processors.timingbased_processor import TimingBasedProcessor
 from .processors.strategy_processor_factory import StrategyProcessorFactory
 
 __all__ = [
-    "SharpDetector",
     "AnalyticalProcessor", 
     "SharpActionProcessor",
     "OpposingMarketsProcessor",

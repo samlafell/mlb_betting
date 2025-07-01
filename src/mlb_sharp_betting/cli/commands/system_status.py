@@ -1,122 +1,273 @@
-"""
-Comprehensive system status and health checking commands.
-"""
+#!/usr/bin/env python3
+"""System status command for monitoring the sports betting system."""
 
-import click
 import asyncio
-from datetime import datetime
+import click
+from datetime import datetime, timedelta
 from typing import Dict, Any
-import structlog
 
-from ...services.pipeline_orchestrator import PipelineOrchestrator
-from ...services.enhanced_backtesting_service import EnhancedBacktestingService
 from ...db.connection import get_db_manager
-from ...services.data_persistence import DataPersistenceService
+# 🔄 UPDATED: Use new BacktestingEngine instead of deprecated EnhancedBacktestingService
+from ...services.backtesting_engine import get_backtesting_engine
+from ...services.scheduler_engine import get_scheduler_engine
+from ...services.data_service import get_data_service
+from ...services.alert_service import AlertService
+from ...core.logging import get_logger
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
+
+
+async def check_data_freshness_simple(db_manager) -> Dict[str, Any]:
+    """Simple data freshness check using direct database queries."""
+    try:
+        with db_manager.get_cursor() as cursor:
+            # Get latest splits timestamp
+            cursor.execute("""
+                SELECT 
+                    MAX(last_updated) as latest_update,
+                    COUNT(*) as total_splits,
+                    COUNT(DISTINCT CONCAT(home_team, '|', away_team)) as unique_games
+                FROM splits.raw_mlb_betting_splits
+            """)
+            splits_info = cursor.fetchone()
+            
+            # Get latest outcomes timestamp
+            cursor.execute("""
+                SELECT MAX(created_at) as latest_outcome, COUNT(*) as total_outcomes
+                FROM public.game_outcomes
+            """)
+            outcomes_info = cursor.fetchone() if cursor.rowcount > 0 else {'latest_outcome': None, 'total_outcomes': 0}
+            
+            # Calculate data age
+            latest_update = splits_info['latest_update'] if splits_info else None
+            data_age_hours = 0
+            if latest_update:
+                data_age_hours = (datetime.now() - latest_update).total_seconds() / 3600
+            
+            # Data is considered fresh if less than 6 hours old
+            max_age_hours = 6
+            is_fresh = data_age_hours < max_age_hours
+            
+            return {
+                'is_fresh': is_fresh,
+                'data_age_hours': data_age_hours,
+                'max_age_hours': max_age_hours,
+                'latest_splits_update': latest_update,
+                'latest_outcomes_update': outcomes_info.get('latest_outcome'),
+                'total_splits': splits_info.get('total_splits', 0) if splits_info else 0,
+                'unique_games': splits_info.get('unique_games', 0) if splits_info else 0,
+                'total_outcomes': outcomes_info.get('total_outcomes', 0),
+                'needs_collection': not is_fresh
+            }
+    except Exception as e:
+        logger.error("Data freshness check failed", error=str(e))
+        return {
+            'is_fresh': False,
+            'error': str(e),
+            'data_age_hours': 999,  # Very old
+            'needs_collection': True
+        }
+
+
+async def validate_pipeline_requirements_simple() -> Dict[str, bool]:
+    """Simple pipeline requirements validation."""
+    try:
+        db_manager = get_db_manager()
+        validations = {}
+        
+        # Check database connection
+        try:
+            with db_manager.get_cursor() as cursor:
+                cursor.execute("SELECT 1")
+                validations['database_connection'] = True
+        except Exception:
+            validations['database_connection'] = False
+        
+        # Check required tables exist
+        try:
+            with db_manager.get_cursor() as cursor:
+                cursor.execute("""
+                    SELECT COUNT(*) as table_count 
+                    FROM information_schema.tables 
+                    WHERE table_schema = 'splits' AND table_name = 'raw_mlb_betting_splits'
+                """)
+                table_exists = cursor.fetchone()['table_count'] > 0
+                validations['required_tables'] = table_exists
+        except Exception:
+            validations['required_tables'] = False
+        
+        # Check for recent data
+        try:
+            freshness = await check_data_freshness_simple(db_manager)
+            validations['data_availability'] = freshness['total_splits'] > 0
+            validations['data_freshness'] = freshness['is_fresh']
+        except Exception:
+            validations['data_availability'] = False
+            validations['data_freshness'] = False
+        
+        return validations
+    except Exception as e:
+        logger.error("Pipeline validation failed", error=str(e))
+        return {'error': True, 'message': str(e)}
+
+
+async def verify_data_integrity_simple(db_manager) -> Dict[str, Any]:
+    """Simple data integrity verification."""
+    try:
+        with db_manager.get_cursor() as cursor:
+            results = {
+                'overall_health': 'unknown',
+                'checks_passed': 0,
+                'checks_failed': 0,
+                'warnings': [],
+                'errors': []
+            }
+            
+            # Check 1: Data exists
+            cursor.execute("SELECT COUNT(*) as count FROM splits.raw_mlb_betting_splits")
+            splits_count = cursor.fetchone()['count']
+            
+            if splits_count > 0:
+                results['checks_passed'] += 1
+            else:
+                results['checks_failed'] += 1
+                results['errors'].append("No betting splits data found")
+            
+            # Check 2: Recent data exists
+            cursor.execute("""
+                SELECT COUNT(*) as recent_count
+                FROM splits.raw_mlb_betting_splits
+                WHERE last_updated >= NOW() - INTERVAL '24 hours'
+            """)
+            recent_count = cursor.fetchone()['recent_count']
+            
+            if recent_count > 0:
+                results['checks_passed'] += 1
+            else:
+                results['checks_failed'] += 1
+                results['warnings'].append("No recent data (last 24 hours)")
+            
+            # Check 3: Data completeness
+            cursor.execute("""
+                SELECT COUNT(*) as incomplete_count
+                FROM splits.raw_mlb_betting_splits
+                WHERE home_team IS NULL OR away_team IS NULL
+            """)
+            incomplete_count = cursor.fetchone()['incomplete_count']
+            
+            if incomplete_count == 0:
+                results['checks_passed'] += 1
+            else:
+                results['checks_failed'] += 1
+                results['warnings'].append(f"{incomplete_count} records with missing team data")
+            
+            # Determine overall health
+            if results['checks_failed'] == 0:
+                results['overall_health'] = 'good'
+            elif results['checks_passed'] > results['checks_failed']:
+                results['overall_health'] = 'fair'
+            else:
+                results['overall_health'] = 'poor'
+            
+            return results
+    except Exception as e:
+        logger.error("Data integrity check failed", error=str(e))
+        return {
+            'overall_health': 'error',
+            'checks_passed': 0,
+            'checks_failed': 1,
+            'errors': [str(e)]
+        }
 
 
 @click.group() 
 def status_group():
-    """🔧 System status and health checking commands."""
+    """System status and health monitoring commands (Phase 3/4 engines)."""
     pass
 
 
 @status_group.command('overview')
 def system_status():
-    """📊 Show complete system status including data freshness"""
+    """📊 Show overall system status"""
     
     async def show_system_status():
-        click.echo("📊 SYSTEM STATUS OVERVIEW")
+        click.echo("📊 SYSTEM STATUS OVERVIEW (Phase 3/4 Engines)")
         click.echo("=" * 60)
         
         try:
-            # Initialize services
             db_manager = get_db_manager()
-            orchestrator = PipelineOrchestrator(db_manager)
-            enhanced_service = EnhancedBacktestingService(db_manager, auto_collect_data=False)
             
-            # Get system state analysis
-            click.echo("🔍 Analyzing system state...")
-            system_state = await orchestrator.analyze_system_state()
+            # Basic system information
+            click.echo("🖥️  SYSTEM INFORMATION:")
+            click.echo(f"   📅 Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            click.echo(f"   📁 Database: PostgreSQL (mlb_betting)")
             
-            # Display system health
-            health = system_state['system_health']
-            health_emoji = {
-                'excellent': '🟢',
-                'good': '🟡', 
-                'fair': '🟠',
-                'poor': '🔴',
-                'unknown': '⚪'
-            }.get(health, '⚪')
-            
-            click.echo(f"\n{health_emoji} OVERALL SYSTEM HEALTH: {health.upper()}")
-            
-            # Data status
-            click.echo(f"\n📡 DATA STATUS:")
-            if system_state['data_age_hours'] is not None:
-                age_status = "✅" if not system_state['needs_data_collection'] else "⚠️"
-                click.echo(f"   {age_status} Data Age: {system_state['data_age_hours']:.1f} hours")
-                click.echo(f"   📊 Collection Needed: {'Yes' if system_state['needs_data_collection'] else 'No'}")
-            else:
-                click.echo(f"   ❌ No data available")
-            
-            # Backtesting status
-            click.echo(f"\n🔬 BACKTESTING STATUS:")
-            if system_state['backtesting_age_hours'] is not None:
-                bt_status = "✅" if not system_state['needs_backtesting'] else "⚠️"
-                click.echo(f"   {bt_status} Backtesting Age: {system_state['backtesting_age_hours']:.1f} hours")
-                click.echo(f"   🔄 Backtesting Needed: {'Yes' if system_state['needs_backtesting'] else 'No'}")
-            else:
-                click.echo(f"   ❌ No backtesting results available")
-            
-            # Data quality issues
-            if system_state['data_quality_issues']:
-                click.echo(f"\n⚠️  DATA QUALITY ISSUES:")
-                for issue in system_state['data_quality_issues']:
-                    click.echo(f"   • {issue}")
-            
-            # Recommendations
-            if system_state['recommendations']:
-                click.echo(f"\n💡 RECOMMENDATIONS:")
-                for rec in system_state['recommendations']:
-                    click.echo(f"   • {rec}")
+            # Check database connection
+            try:
+                with db_manager.get_cursor() as cursor:
+                    cursor.execute("SELECT version()")
+                    version = cursor.fetchone()[0]
+                    click.echo(f"   ✅ Database Connection: OK")
+                    if "PostgreSQL" in version:
+                        pg_version = version.split()[1]
+                        click.echo(f"   📋 PostgreSQL Version: {pg_version}")
+            except Exception as e:
+                click.echo(f"   ❌ Database Connection: FAILED ({e})")
             
             # Get detailed data freshness
             click.echo(f"\n📊 DETAILED DATA METRICS:")
-            freshness_check = await enhanced_service.check_data_freshness()
+            freshness_check = await check_data_freshness_simple(db_manager)
             
             click.echo(f"   📈 Total Splits: {freshness_check.get('total_splits', 0):,}")
             click.echo(f"   🎮 Unique Games: {freshness_check.get('unique_games', 0)}")
             click.echo(f"   🏆 Game Outcomes: {freshness_check.get('total_outcomes', 0)}")
             
-            # Database connection
-            try:
-                with db_manager.get_cursor() as cursor:
-                    cursor.execute("SELECT 1")
-                    click.echo(f"\n✅ DATABASE CONNECTION: OK")
-                    click.echo(f"   📁 Database: PostgreSQL (mlb_betting)")
-            except Exception as e:
-                click.echo(f"\n❌ DATABASE CONNECTION: FAILED ({e})")
-            
-            # Pipeline recommendations
-            recommendations = await orchestrator.get_pipeline_recommendations()
-            click.echo(f"\n🎚️  PIPELINE PRIORITY: {recommendations['priority_level'].upper()}")
-            click.echo(f"⏱️  ESTIMATED RUNTIME: {recommendations['estimated_runtime_minutes']} minutes")
-            
-            if recommendations['immediate_actions']:
-                click.echo(f"\n🚨 IMMEDIATE ACTIONS NEEDED:")
-                for action in recommendations['immediate_actions']:
-                    click.echo(f"   • {action['action'].title()}: {action['reason']}")
+            # Data freshness status
+            data_age = freshness_check.get('data_age_hours', 999)
+            if freshness_check.get('is_fresh', False):
+                click.echo(f"   ✅ Data Status: FRESH ({data_age:.1f} hours old)")
             else:
-                click.echo(f"\n✅ NO IMMEDIATE ACTIONS NEEDED")
+                click.echo(f"   ⚠️  Data Status: STALE ({data_age:.1f} hours old)")
+                click.echo("   💡 Consider running data collection")
             
+            # Engine status
+            click.echo(f"\n🔧 CONSOLIDATED ENGINES:")
+            
+            # BacktestingEngine status
+            try:
+                backtesting_engine = get_backtesting_engine()
+                status = backtesting_engine.get_comprehensive_status()
+                click.echo(f"   ✅ BacktestingEngine: Available")
+                click.echo(f"      📊 Status: {status}")
+            except Exception as e:
+                click.echo(f"   ❌ BacktestingEngine: Error ({e})")
+            
+            # SchedulerEngine status
+            try:
+                scheduler_engine = get_scheduler_engine()
+                status = scheduler_engine.get_status()
+                click.echo(f"   ✅ SchedulerEngine: Available")
+                click.echo(f"      📊 Status: {status}")
+            except Exception as e:
+                click.echo(f"   ❌ SchedulerEngine: Error ({e})")
+            
+            # Basic recommendations
+            click.echo(f"\n💡 RECOMMENDATIONS:")
+            if not freshness_check.get('is_fresh', False):
+                click.echo(f"   🔄 Run data collection to refresh stale data")
+            if freshness_check.get('total_splits', 0) == 0:
+                click.echo(f"   📥 Initial data collection needed")
+            if freshness_check.get('total_outcomes', 0) == 0:
+                click.echo(f"   🏆 Game outcome data collection recommended")
+            
+            if (freshness_check.get('is_fresh', False) and 
+                freshness_check.get('total_splits', 0) > 0):
+                click.echo(f"   ✨ System is ready for analysis")
+                
         except Exception as e:
             click.echo(f"❌ System status check failed: {e}")
         finally:
             try:
-                if 'orchestrator' in locals():
-                    orchestrator.close()
                 if 'db_manager' in locals():
                     db_manager.close()
             except Exception:
@@ -135,7 +286,7 @@ def health_check(detailed: bool):
     """🏥 Run comprehensive system health check"""
     
     async def run_health_check():
-        click.echo("🏥 COMPREHENSIVE HEALTH CHECK")
+        click.echo("🏥 COMPREHENSIVE HEALTH CHECK (Phase 3/4 Engines)")
         click.echo("=" * 60)
         
         health_results = {
@@ -177,11 +328,11 @@ def health_check(detailed: bool):
                     cursor.execute("""
                         SELECT schema_name 
                         FROM information_schema.schemata 
-                        WHERE schema_name IN ('splits', 'main', 'backtesting')
+                        WHERE schema_name IN ('splits', 'public')
                     """)
                     schemas = [row['schema_name'] for row in cursor.fetchall()]
                     
-                    required_schemas = ['splits', 'main']
+                    required_schemas = ['splits', 'public']
                     missing_schemas = [s for s in required_schemas if s not in schemas]
                     
                     if not missing_schemas:
@@ -190,8 +341,8 @@ def health_check(detailed: bool):
                         if detailed:
                             click.echo(f"      📋 Found schemas: {', '.join(schemas)}")
                     else:
-                        click.echo(f"   ❌ Missing schemas: {', '.join(missing_schemas)}")
-                        issues.append(f"Missing schemas: {', '.join(missing_schemas)}")
+                        click.echo(f"   ⚠️  Missing schemas: {', '.join(missing_schemas)}")
+                        warnings.append(f"Missing schemas: {', '.join(missing_schemas)}")
                         
             except Exception as e:
                 click.echo(f"   ❌ Schema validation failed: {e}")
@@ -213,28 +364,27 @@ def health_check(detailed: bool):
                 issues.append(f"Data pipeline: {e}")
             
             # Test 4: Backtesting Service
-            click.echo("🔍 Testing backtesting service...")
+            click.echo("🔍 Testing backtesting engine...")
             try:
-                enhanced_service = EnhancedBacktestingService(auto_collect_data=False)
-                validations = await enhanced_service.validate_pipeline_requirements()
+                backtesting_engine = get_backtesting_engine()
+                validations = await validate_pipeline_requirements_simple()
                 
-                if all(validations.values()):
+                if all(validations.values()) and 'error' not in validations:
                     health_results['backtesting'] = True
-                    click.echo("   ✅ Backtesting service validation passed")
+                    click.echo("   ✅ Backtesting engine validation passed")
                 else:
-                    failed_reqs = [k for k, v in validations.items() if not v]
+                    failed_reqs = [k for k, v in validations.items() if not v and k != 'error']
                     click.echo(f"   ⚠️  Backtesting validation issues: {', '.join(failed_reqs)}")
                     warnings.append(f"Backtesting issues: {', '.join(failed_reqs)}")
                     
             except Exception as e:
-                click.echo(f"   ❌ Backtesting service test failed: {e}")
-                issues.append(f"Backtesting service: {e}")
+                click.echo(f"   ❌ Backtesting engine test failed: {e}")
+                issues.append(f"Backtesting engine: {e}")
             
             # Test 5: Data Freshness
             click.echo("🔍 Checking data freshness...")
             try:
-                enhanced_service = EnhancedBacktestingService()
-                freshness_check = await enhanced_service.check_data_freshness()
+                freshness_check = await check_data_freshness_simple(db_manager)
                 
                 if freshness_check['is_fresh']:
                     health_results['data_freshness'] = True
@@ -254,8 +404,7 @@ def health_check(detailed: bool):
             # Test 6: Data Quality
             click.echo("🔍 Analyzing data quality...")
             try:
-                persistence_service = DataPersistenceService(db_manager)
-                integrity_results = persistence_service.verify_data_integrity()
+                integrity_results = await verify_data_integrity_simple(db_manager)
                 
                 if integrity_results['overall_health'] == 'good':
                     health_results['data_quality'] = True
@@ -302,7 +451,7 @@ def health_check(detailed: bool):
                 for issue in issues:
                     click.echo(f"   • {issue}")
                     
-                click.echo(f"\n💡 Run 'mlb-cli status fix' to attempt automatic fixes")
+                click.echo(f"\n💡 Run 'uv run -m mlb_sharp_betting.cli status fix' to attempt automatic fixes")
             
             if warnings:
                 click.echo(f"\n⚠️  WARNINGS:")
@@ -328,212 +477,55 @@ def health_check(detailed: bool):
         raise
 
 
-@status_group.command('performance')
-def performance_metrics():
-    """📈 Show system performance metrics"""
+@status_group.command('quick')
+def quick_status():
+    """⚡ Quick system status check"""
     
-    async def show_performance():
-        click.echo("📈 SYSTEM PERFORMANCE METRICS")
-        click.echo("=" * 60)
+    async def run_quick_check():
+        click.echo("⚡ QUICK STATUS CHECK")
+        click.echo("=" * 30)
         
         try:
             db_manager = get_db_manager()
             
-            # Query performance metrics
-            with db_manager.get_cursor() as cursor:
-                # Database size metrics
-                cursor.execute("""
-                    SELECT 
-                        schemaname,
-                        tablename,
-                        pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as size,
-                        pg_total_relation_size(schemaname||'.'||tablename) as size_bytes
-                    FROM pg_tables 
-                    WHERE schemaname IN ('splits', 'main', 'backtesting')
-                    ORDER BY size_bytes DESC
-                """)
-                table_sizes = cursor.fetchall()
-                
-                if table_sizes:
-                    click.echo("💾 DATABASE SIZE METRICS:")
-                    total_size = sum(row['size_bytes'] for row in table_sizes)
-                    click.echo(f"   📊 Total Size: {total_size / (1024*1024):.1f} MB")
-                    
-                    for row in table_sizes[:5]:  # Top 5 largest tables
-                        click.echo(f"   📋 {row['schemaname']}.{row['tablename']}: {row['size']}")
-                
-                # Record counts
-                cursor.execute("SELECT COUNT(*) as splits_count FROM splits.raw_mlb_betting_splits")
-                splits_count = cursor.fetchone()['splits_count']
-                
-                cursor.execute("SELECT COUNT(*) as games_count FROM main.games")
-                games_count = cursor.fetchone()['games_count'] if cursor.rowcount > 0 else 0
-                
-                cursor.execute("SELECT COUNT(*) as outcomes_count FROM public.game_outcomes")
-                outcomes_count = cursor.fetchone()['outcomes_count'] if cursor.rowcount > 0 else 0
-                
-                click.echo(f"\n📊 RECORD COUNTS:")
-                click.echo(f"   📈 Betting Splits: {splits_count:,}")
-                click.echo(f"   🎮 Games: {games_count:,}")
-                click.echo(f"   🏆 Game Outcomes: {outcomes_count:,}")
-                
-                # Recent activity (last 24 hours)
-                cursor.execute("""
-                    SELECT COUNT(*) as recent_splits
-                    FROM splits.raw_mlb_betting_splits
-                    WHERE last_updated >= NOW() - INTERVAL '24 hours'
-                """)
-                recent_splits = cursor.fetchone()['recent_splits']
-                
-                click.echo(f"\n⏰ RECENT ACTIVITY (24h):")
-                click.echo(f"   📈 New Splits: {recent_splits:,}")
-                
-                # Performance indicators
-                if splits_count > 0:
-                    data_density = games_count / splits_count if splits_count > 0 else 0
-                    outcome_coverage = (outcomes_count / games_count * 100) if games_count > 0 else 0
-                    
-                    click.echo(f"\n📊 PERFORMANCE INDICATORS:")
-                    click.echo(f"   🎯 Data Density: {data_density:.2f} games per split")
-                    click.echo(f"   🏆 Outcome Coverage: {outcome_coverage:.1f}%")
-                    
-                    # Data quality score
-                    quality_score = 0
-                    if splits_count >= 100:
-                        quality_score += 25
-                    if games_count >= 50:
-                        quality_score += 25
-                    if outcome_coverage >= 80:
-                        quality_score += 25
-                    if recent_splits >= 10:
-                        quality_score += 25
-                    
-                    quality_emoji = "🟢" if quality_score >= 75 else "🟡" if quality_score >= 50 else "🔴"
-                    click.echo(f"\n{quality_emoji} DATA QUALITY SCORE: {quality_score}/100")
-                
-        except Exception as e:
-            click.echo(f"❌ Performance metrics failed: {e}")
-        finally:
+            # Database connection
             try:
-                if 'db_manager' in locals():
-                    db_manager.close()
-            except Exception:
-                pass
-    
-    try:
-        asyncio.run(show_performance())
-    except Exception:
-        click.echo("❌ Performance metrics failed")
-        raise
-
-
-@status_group.command('fix')
-@click.option('--auto-approve', is_flag=True, help='Automatically approve fixes')
-def fix_issues(auto_approve: bool):
-    """🔧 Attempt to automatically fix common system issues"""
-    
-    async def run_fixes():
-        click.echo("🔧 AUTOMATIC ISSUE RESOLUTION")
-        click.echo("=" * 60)
-        
-        if not auto_approve:
-            click.echo("⚠️  This will attempt to fix system issues automatically")
-            if not click.confirm("Continue?"):
-                click.echo("❌ Fix operation cancelled")
-                return
-        
-        fixes_applied = []
-        fix_errors = []
-        
-        try:
-            # Check what needs fixing
-            orchestrator = PipelineOrchestrator()
-            system_state = await orchestrator.analyze_system_state()
-            
-            click.echo("🔍 Analyzing system for fixable issues...")
-            
-            # Fix 1: Stale data
-            if system_state['needs_data_collection']:
-                click.echo("\n🔧 Fixing stale data...")
-                try:
-                    from ...entrypoint import DataPipeline
-                    
-                    pipeline = DataPipeline(sport='mlb', sportsbook='circa', dry_run=False)
-                    metrics = await pipeline.run()
-                    
-                    click.echo(f"   ✅ Fresh data collected ({metrics.get('parsed_records', 0)} records)")
-                    fixes_applied.append("Fresh data collection")
-                    
-                except Exception as e:
-                    click.echo(f"   ❌ Data collection failed: {e}")
-                    fix_errors.append(f"Data collection: {e}")
-            
-            # Fix 2: Outdated backtesting
-            if system_state['needs_backtesting']:
-                click.echo("\n🔧 Updating backtesting results...")
-                try:
-                    enhanced_service = EnhancedBacktestingService(auto_collect_data=False)
-                    results = await enhanced_service.run_daily_backtesting_pipeline()
-                    
-                    click.echo(f"   ✅ Backtesting updated ({results.total_strategies_analyzed} strategies)")
-                    fixes_applied.append("Backtesting update")
-                    
-                except Exception as e:
-                    click.echo(f"   ❌ Backtesting update failed: {e}")
-                    fix_errors.append(f"Backtesting: {e}")
-            
-            # Fix 3: Database maintenance
-            click.echo("\n🔧 Running database maintenance...")
-            try:
-                db_manager = get_db_manager()
                 with db_manager.get_cursor() as cursor:
-                    # Run VACUUM ANALYZE on main tables
-                    for table in ['splits.raw_mlb_betting_splits', 'public.game_outcomes']:
-                        try:
-                            cursor.execute(f"VACUUM ANALYZE {table}")
-                            click.echo(f"   ✅ Optimized {table}")
-                        except Exception as e:
-                            click.echo(f"   ⚠️  Could not optimize {table}: {e}")
-                
-                fixes_applied.append("Database optimization")
-                
-            except Exception as e:
-                click.echo(f"   ❌ Database maintenance failed: {e}")
-                fix_errors.append(f"Database maintenance: {e}")
-            
-            # Summary
-            click.echo(f"\n📊 FIX SUMMARY:")
-            click.echo(f"   ✅ Fixes Applied: {len(fixes_applied)}")
-            click.echo(f"   ❌ Fix Errors: {len(fix_errors)}")
-            
-            if fixes_applied:
-                click.echo(f"\n✅ SUCCESSFUL FIXES:")
-                for fix in fixes_applied:
-                    click.echo(f"   • {fix}")
-            
-            if fix_errors:
-                click.echo(f"\n❌ FAILED FIXES:")
-                for error in fix_errors:
-                    click.echo(f"   • {error}")
-            
-            if fixes_applied and not fix_errors:
-                click.echo(f"\n🎉 All issues fixed successfully!")
-            elif fixes_applied:
-                click.echo(f"\n⚠️  Some issues fixed, but errors remain")
-            else:
-                click.echo(f"\n❌ No fixes were successful")
-                
-        except Exception as e:
-            click.echo(f"❌ Fix operation failed: {e}")
-        finally:
-            try:
-                if 'orchestrator' in locals():
-                    orchestrator.close()
+                    cursor.execute("SELECT 1")
+                click.echo("✅ Database: Connected")
             except Exception:
-                pass
+                click.echo("❌ Database: Failed")
+                return
+            
+            # Data freshness
+            freshness = await check_data_freshness_simple(db_manager)
+            if freshness['is_fresh']:
+                click.echo(f"✅ Data: Fresh ({freshness['data_age_hours']:.1f}h old)")
+            else:
+                click.echo(f"⚠️  Data: Stale ({freshness['data_age_hours']:.1f}h old)")
+            
+            # Data counts
+            click.echo(f"📊 Splits: {freshness['total_splits']:,}")
+            click.echo(f"🎮 Games: {freshness['unique_games']:,}")
+            
+            # Engine availability
+            try:
+                get_backtesting_engine()
+                click.echo("✅ BacktestingEngine: Available")
+            except Exception:
+                click.echo("❌ BacktestingEngine: Failed")
+            
+            try:
+                get_scheduler_engine()
+                click.echo("✅ SchedulerEngine: Available")
+            except Exception:
+                click.echo("❌ SchedulerEngine: Failed")
+            
+        except Exception as e:
+            click.echo(f"❌ Quick check failed: {e}")
     
-    try:
-        asyncio.run(run_fixes())
-    except Exception:
-        click.echo("❌ Fix operation failed")
-        raise 
+    asyncio.run(run_quick_check())
+
+
+if __name__ == "__main__":
+    status_group() 

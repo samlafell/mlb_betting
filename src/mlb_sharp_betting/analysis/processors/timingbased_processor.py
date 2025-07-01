@@ -105,8 +105,12 @@ class TimingBasedProcessor(BaseStrategyProcessor):
     async def process(self, minutes_ahead: int, 
                      profitable_strategies: List[ProfitableStrategy]) -> List[BettingSignal]:
         """Process timing-based sharp action signals"""
+        # ✅ FIX: Extract proper source_book and split_type from strategy names
+        fixed_strategies = self._fix_strategy_components(profitable_strategies)
+        
         # Placeholder implementation
         self.logger.info("Processing timing-based signals...")
+        # TODO: Implement full timing-based analysis using fixed_strategies
         return []
     
     def _calculate_timing_metrics(self, row: Dict[str, Any], current_time: datetime) -> Dict[str, Any]:
@@ -559,4 +563,82 @@ class TimingBasedProcessor(BaseStrategyProcessor):
                 'closing_window_signals': closing_count,
                 'timing_categories': timing_counts
             }
-        ) 
+        )
+    
+    def _fix_strategy_components(self, profitable_strategies: List[ProfitableStrategy]) -> List[ProfitableStrategy]:
+        """
+        Fix ProfitableStrategy objects by extracting real source_book and split_type from strategy names.
+        
+        This solves the strategy matching issue where strategies have synthetic values like:
+        - source_book="ORCHESTRATOR" (wrong)
+        - split_type="DYNAMIC" (wrong)
+        
+        Instead of real extracted values from strategy names.
+        """
+        fixed_strategies = []
+        
+        for strategy in profitable_strategies:
+            # Extract real values from strategy name
+            source_book, split_type = self._extract_strategy_components(strategy.strategy_name)
+            
+            # Create new strategy with fixed values
+            fixed_strategy = ProfitableStrategy(
+                strategy_name=strategy.strategy_name,
+                source_book=source_book,  # ✅ FIXED: Use extracted source_book
+                split_type=split_type,    # ✅ FIXED: Use extracted split_type
+                win_rate=strategy.win_rate,
+                roi=strategy.roi,
+                total_bets=strategy.total_bets,
+                confidence=strategy.confidence,
+                ci_lower=getattr(strategy, 'ci_lower', 0.0),
+                ci_upper=getattr(strategy, 'ci_upper', 100.0),
+                confidence_score=getattr(strategy, 'confidence_score', 0.5)
+            )
+            fixed_strategies.append(fixed_strategy)
+        
+        return fixed_strategies
+    
+    def _extract_strategy_components(self, strategy_name: str) -> tuple[str, str]:
+        """
+        Extract source_book and split_type from strategy name.
+        
+        Examples:
+        - "VSIN-circa-moneyline" -> ("VSIN-circa", "moneyline") 
+        - "VSIN-draftkings-total" -> ("VSIN-draftkings", "total")
+        - "SBD-unknown-spread" -> ("SBD-unknown", "spread")
+        - "timing_based_strategy_early_24h" -> ("VSIN-unknown", "timing_based")
+        """
+        strategy_name_lower = strategy_name.lower()
+        
+        # Handle direct format: "SOURCE-BOOK-SPLITTYPE"
+        if strategy_name.count('-') >= 2 and len(strategy_name.split('-')) == 3:
+            parts = strategy_name.split('-')
+            source_book = f"{parts[0]}-{parts[1]}"
+            split_type = parts[2]
+            return source_book, split_type
+        
+        # Handle timing-based strategy format
+        source_book = "VSIN-unknown"  # Default for timing-based
+        split_type = "timing_based"  # Default
+        
+        # Extract book information
+        if 'vsin-dra' in strategy_name_lower or 'vsin-draftkings' in strategy_name_lower:
+            source_book = "VSIN-draftkings"
+        elif 'vsin-cir' in strategy_name_lower or 'vsin-circa' in strategy_name_lower:
+            source_book = "VSIN-circa"
+        elif 'sbd' in strategy_name_lower:
+            source_book = "SBD-unknown"
+        elif 'vsin' in strategy_name_lower:
+            source_book = "VSIN-unknown"
+        
+        # Extract split type information for timing-based
+        if 'moneyline' in strategy_name_lower or '_ml_' in strategy_name_lower or 'mone' in strategy_name_lower:
+            split_type = "moneyline"
+        elif 'spread' in strategy_name_lower or '_sprd_' in strategy_name_lower or 'spre' in strategy_name_lower:
+            split_type = "spread"
+        elif 'total' in strategy_name_lower or '_tot_' in strategy_name_lower or 'tota' in strategy_name_lower:
+            split_type = "total"
+        elif 'timing' in strategy_name_lower or 'time' in strategy_name_lower:
+            split_type = "timing_based"
+        
+        return source_book, split_type 

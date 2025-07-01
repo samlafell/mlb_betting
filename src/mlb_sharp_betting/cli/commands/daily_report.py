@@ -67,12 +67,25 @@ def daily_report_group():
               help="Minimum confidence threshold (default: 0.65)")
 @click.option("--max-bets", "-m",
               type=click.IntRange(1, 10),
-              default=5,
-              help="Maximum number of opportunities to return (default: 5)")
+              default=3,
+              help="Maximum number of opportunities to return (default: 3)")
+@click.option("--hours-before-game", "-h",
+              type=click.FloatRange(0.5, 12.0),
+              default=4.0,
+              help="Maximum hours before game to consider signals (default: 4.0)")
+@click.option("--minutes-cutoff", 
+              type=click.IntRange(5, 120),
+              default=15,
+              help="Minimum minutes before game start (default: 15)")
+@click.option("--min-signal-strength",
+              type=click.FloatRange(5.0, 50.0),
+              default=15.0,
+              help="Minimum signal strength threshold (default: 15.0)")
 @click.option("--debug", is_flag=True,
               help="Enable debug logging")
 def generate_report(date: Optional[str], format: str, output_file: Optional[Path],
-                   min_confidence: float, max_bets: int, debug: bool):
+                   min_confidence: float, max_bets: int, hours_before_game: float,
+                   minutes_cutoff: int, min_signal_strength: float, debug: bool):
     """Generate daily betting performance report."""
     
     # Configure logging
@@ -105,7 +118,10 @@ def generate_report(date: Optional[str], format: str, output_file: Optional[Path
             output_format=format,
             output_file=output_file,
             min_confidence=min_confidence,
-            max_bets=max_bets
+            max_bets=max_bets,
+            hours_before_game=hours_before_game,
+            minutes_cutoff=minutes_cutoff,
+            min_signal_strength=min_signal_strength
         ))
         
         if format == "console":
@@ -244,15 +260,19 @@ def validate_report(date: str, show_details: bool):
 
 async def _generate_report_async(target_date: Optional[date], output_format: str,
                                output_file: Optional[Path], min_confidence: float,
-                               max_bets: int) -> dict:
+                               max_bets: int, hours_before_game: float,
+                               minutes_cutoff: int, min_signal_strength: float) -> dict:
     """Async wrapper for report generation."""
     
     # Initialize service
     service = DailyBettingReportService()
     
-    # Update configuration
+    # Update configuration from CLI parameters
     service.config["min_confidence_score"] = min_confidence
     service.config["max_opportunities_per_day"] = max_bets
+    service.config["max_hours_before_game"] = hours_before_game
+    service.config["detection_cutoff_minutes"] = minutes_cutoff
+    service.config["min_signal_strength"] = min_signal_strength
     
     # Generate report
     report = await service.generate_daily_report(

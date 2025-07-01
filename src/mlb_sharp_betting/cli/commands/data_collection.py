@@ -4,15 +4,71 @@ CLI commands for data collection and freshness management.
 
 import click
 import asyncio
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timedelta
+from typing import Dict, Any, Optional
 import structlog
 
 from ...entrypoint import DataPipeline
-from ...services.enhanced_backtesting_service import EnhancedBacktestingService
+from ...services.backtesting_engine import get_backtesting_engine
+from ...services.database_coordinator import get_database_coordinator
+from ...utils.time_based_validator import get_game_time_validator
 from ...db.connection import get_db_manager
+from ...services.data_service import get_data_service
+from ...core.logging import get_logger
 
 logger = structlog.get_logger(__name__)
+
+
+async def check_data_freshness(db_manager) -> Dict[str, Any]:
+    """Simple data freshness check using direct database queries."""
+    try:
+        with db_manager.get_cursor() as cursor:
+            # Get latest splits timestamp
+            cursor.execute("""
+                SELECT 
+                    MAX(last_updated) as latest_update,
+                    COUNT(*) as total_splits,
+                    COUNT(DISTINCT CONCAT(home_team, '|', away_team)) as unique_games
+                FROM splits.raw_mlb_betting_splits
+            """)
+            splits_info = cursor.fetchone()
+            
+            # Get latest outcomes timestamp
+            cursor.execute("""
+                SELECT MAX(created_at) as latest_outcome, COUNT(*) as total_outcomes
+                FROM public.game_outcomes
+            """)
+            outcomes_info = cursor.fetchone() if cursor.rowcount > 0 else {'latest_outcome': None, 'total_outcomes': 0}
+            
+            # Calculate data age
+            latest_update = splits_info['latest_update'] if splits_info else None
+            data_age_hours = 0
+            if latest_update:
+                data_age_hours = (datetime.now() - latest_update).total_seconds() / 3600
+            
+            # Data is considered fresh if less than 6 hours old
+            max_age_hours = 6
+            is_fresh = data_age_hours < max_age_hours
+            
+            return {
+                'is_fresh': is_fresh,
+                'data_age_hours': data_age_hours,
+                'max_age_hours': max_age_hours,
+                'latest_splits_update': latest_update,
+                'latest_outcomes_update': outcomes_info.get('latest_outcome'),
+                'total_splits': splits_info.get('total_splits', 0) if splits_info else 0,
+                'unique_games': splits_info.get('unique_games', 0) if splits_info else 0,
+                'total_outcomes': outcomes_info.get('total_outcomes', 0),
+                'needs_collection': not is_fresh
+            }
+    except Exception as e:
+        logger.error("Data freshness check failed", error=str(e))
+        return {
+            'is_fresh': False,
+            'error': str(e),
+            'data_age_hours': 999,  # Very old
+            'needs_collection': True
+        }
 
 
 @click.group()
@@ -38,8 +94,8 @@ def collect_data(sport: str, sportsbook: str, dry_run: bool, validate_only: bool
             click.echo("🔍 Validating existing data freshness...")
             
             try:
-                enhanced_service = EnhancedBacktestingService()
-                freshness_check = await enhanced_service.check_data_freshness()
+                db_manager = get_db_manager()
+                freshness_check = await check_data_freshness(db_manager)
                 
                 click.echo(f"\n📊 Data Freshness Report:")
                 click.echo(f"   📅 Latest Update: {freshness_check.get('latest_splits_update', 'Unknown')}")
@@ -64,8 +120,8 @@ def collect_data(sport: str, sportsbook: str, dry_run: bool, validate_only: bool
         # Check freshness before collection (unless forced)
         if not force:
             try:
-                enhanced_service = EnhancedBacktestingService()
-                freshness_check = await enhanced_service.check_data_freshness()
+                db_manager = get_db_manager()
+                freshness_check = await check_data_freshness(db_manager)
                 
                 if freshness_check['is_fresh']:
                     click.echo(f"✅ Data is already fresh ({freshness_check['data_age_hours']:.1f} hours old)")
@@ -98,6 +154,18 @@ def collect_data(sport: str, sportsbook: str, dry_run: bool, validate_only: bool
             click.echo(f"   💾 Records Stored: {metrics.get('stored_records', 0)}")
             click.echo(f"   🎯 Sharp Indicators: {metrics.get('sharp_indicators', 0)}")
             
+            # Display timing validation results
+            storage_stats = metrics.get('storage_stats', {})
+            if storage_stats.get('timing_rejections', 0) > 0:
+                timing_rejections = storage_stats['timing_rejections']
+                total_processed = storage_stats.get('processed', 0) + timing_rejections
+                rejection_rate = (timing_rejections / total_processed * 100) if total_processed > 0 else 0
+                click.echo(f"   ⏰ Timing Rejections: {timing_rejections} ({rejection_rate:.1f}%)")
+                
+                # Show alert if rejection rate is high
+                if rejection_rate > 20:
+                    click.echo(f"   ⚠️  HIGH REJECTION RATE - Most games may have already started")
+                
             if metrics.get('errors', 0) > 0:
                 click.echo(f"   ❌ Errors: {metrics['errors']}")
             
@@ -130,8 +198,8 @@ def data_status(detailed: bool):
         click.echo("=" * 50)
         
         try:
-            enhanced_service = EnhancedBacktestingService()
-            freshness_check = await enhanced_service.check_data_freshness()
+            db_manager = get_db_manager()
+            freshness_check = await check_data_freshness(db_manager)
             
             # Basic status
             click.echo(f"🕐 Data Age: {freshness_check.get('data_age_hours', 0):.1f} hours")
@@ -157,7 +225,6 @@ def data_status(detailed: bool):
             
             if detailed:
                 # Show detailed breakdown
-                db_manager = get_db_manager()
                 try:
                     with db_manager.get_cursor() as cursor:
                         # Splits by source
@@ -225,14 +292,11 @@ def cleanup_data(days: int, dry_run: bool):
             click.echo("🧪 DRY RUN MODE - No data will be deleted")
         
         try:
-            from ...services.data_persistence import DataPersistenceService
-            
-            db_manager = get_db_manager()
-            persistence_service = DataPersistenceService(db_manager)
+            data_service = get_data_service(get_db_manager())
             
             if dry_run:
                 # Show what would be deleted
-                with db_manager.get_cursor() as cursor:
+                with get_db_manager().get_cursor() as cursor:
                     cursor.execute("""
                         SELECT COUNT(*) as old_splits
                         FROM splits.raw_mlb_betting_splits
@@ -253,7 +317,7 @@ def cleanup_data(days: int, dry_run: bool):
                     click.echo(f"\n💡 Run without --dry-run to execute cleanup")
             else:
                 # Actually clean up
-                cleanup_stats = persistence_service.cleanup_old_data(days_to_keep=days)
+                cleanup_stats = data_service.persistence.cleanup_old_data(days_to_keep=days)
                 
                 click.echo(f"\n✅ CLEANUP COMPLETED")
                 click.echo(f"   📊 Deleted splits: {cleanup_stats['deleted_splits']:,}")
@@ -272,4 +336,157 @@ def cleanup_data(days: int, dry_run: bool):
         asyncio.run(run_cleanup())
     except Exception:
         click.echo("❌ Cleanup failed")
-        raise 
+        raise
+
+
+@data_collection_group.command('timing-status')
+@click.option('--detailed', is_flag=True, help='Show detailed timing validation metrics')
+@click.option('--check-expired', is_flag=True, help='Check for recently expired splits')
+def timing_validation_status(detailed: bool, check_expired: bool):
+    """⏰ Check timing validation status and 5-minute grace period metrics"""
+    
+    click.echo("⏰ TIMING VALIDATION STATUS")
+    click.echo("=" * 50)
+    
+    try:
+        # Get database coordinator for timing queries
+        coordinator = get_database_coordinator()
+        
+        # Get timing validation metrics
+        timing_status = coordinator.get_timing_validation_status()
+        
+        if timing_status['status'] == 'error':
+            click.echo(f"❌ Error getting timing status: {timing_status.get('error')}")
+            return
+        
+        if timing_status['status'] == 'no_data':
+            click.echo("📭 No recent data found for timing validation")
+            return
+        
+        # Display daily metrics
+        daily_metrics = timing_status.get('daily_metrics', [])
+        if daily_metrics:
+            click.echo("📊 Recent Daily Metrics (7 days):")
+            click.echo(f"{'Date':<12} {'Total':<8} {'Valid':<8} {'Expired':<8} {'Rejection %':<12}")
+            click.echo("-" * 50)
+            
+            for day in daily_metrics[:7]:
+                if isinstance(day, dict):
+                    date = day.get('game_date', 'Unknown')
+                    total = day.get('total_splits', 0)
+                    valid = day.get('valid_splits', 0)
+                    expired = day.get('expired_splits', 0)
+                    rejection_rate = day.get('rejection_rate_percent', 0)
+                else:
+                    # Handle tuple/list format
+                    date = day[0] if len(day) > 0 else 'Unknown'
+                    total = day[1] if len(day) > 1 else 0
+                    valid = day[2] if len(day) > 2 else 0
+                    expired = day[3] if len(day) > 3 else 0
+                    rejection_rate = day[4] if len(day) > 4 else 0
+                
+                # Color code rejection rate
+                if rejection_rate > 20:
+                    rate_display = f"🔴 {rejection_rate:.1f}%"
+                elif rejection_rate > 10:
+                    rate_display = f"🟡 {rejection_rate:.1f}%"
+                else:
+                    rate_display = f"🟢 {rejection_rate:.1f}%"
+                
+                click.echo(f"{str(date):<12} {total:<8} {valid:<8} {expired:<8} {rate_display:<12}")
+        
+        # Get validator stats
+        try:
+            validator = get_game_time_validator()
+            validator_stats = validator.get_validation_stats()
+            
+            click.echo(f"\n🔍 Validator Statistics:")
+            click.echo(f"   Total Validations: {validator_stats.get('total_validations', 0):,}")
+            click.echo(f"   Valid Splits: {validator_stats.get('valid_splits', 0):,}")
+            click.echo(f"   Rejected Splits: {validator_stats.get('expired_splits', 0):,}")
+            click.echo(f"   Delayed Games: {validator_stats.get('delayed_games', 0):,}")
+            click.echo(f"   Postponed Games: {validator_stats.get('postponed_games', 0):,}")
+            
+            # Check for alerts
+            should_alert, alert_reasons = validator.should_alert()
+            if should_alert:
+                click.echo(f"\n⚠️  VALIDATION ALERTS:")
+                for reason in alert_reasons:
+                    click.echo(f"   • {reason}")
+            else:
+                click.echo(f"\n✅ No validation alerts")
+                
+        except Exception as e:
+            click.echo(f"\n⚠️  Could not get validator stats: {e}")
+        
+        # Check for recently expired splits if requested
+        if check_expired:
+            click.echo(f"\n🕐 Checking Recently Expired Splits...")
+            expired_check = coordinator.check_expired_splits(hours_back=24)
+            
+            expired_splits = expired_check.get('expired_splits', [])
+            if expired_splits:
+                click.echo(f"\n❌ Found {len(expired_splits)} splits stored after games started:")
+                click.echo(f"{'Game ID':<15} {'Teams':<25} {'Minutes Late':<12} {'Game Time'}")
+                click.echo("-" * 70)
+                
+                for split in expired_splits[:10]:  # Show top 10
+                    if isinstance(split, dict):
+                        game_id = split.get('game_id', 'Unknown')[:14]
+                        teams = f"{split.get('away_team', '?')} @ {split.get('home_team', '?')}"[:24]
+                        minutes_late = split.get('minutes_after_start', 0)
+                        game_time = str(split.get('game_datetime', 'Unknown'))[:16]
+                    else:
+                        game_id = str(split[0])[:14] if len(split) > 0 else 'Unknown'
+                        teams = f"{split[2]} @ {split[1]}"[:24] if len(split) > 2 else "Unknown"
+                        minutes_late = split[5] if len(split) > 5 else 0
+                        game_time = str(split[3])[:16] if len(split) > 3 else 'Unknown'
+                    
+                    click.echo(f"{game_id:<15} {teams:<25} {minutes_late:>8.1f}    {game_time}")
+                    
+                if len(expired_splits) > 10:
+                    click.echo(f"   ... and {len(expired_splits) - 10} more")
+            else:
+                click.echo(f"\n✅ No expired splits found in last 24 hours")
+        
+        # Show current games status if detailed
+        if detailed:
+            click.echo(f"\n🎮 Current Games Status:")
+            games_status = coordinator.get_current_games_status()
+            
+            games = games_status.get('games', [])
+            status_breakdown = games_status.get('status_breakdown', {})
+            
+            if status_breakdown:
+                click.echo(f"   📈 Status Breakdown:")
+                for status, count in status_breakdown.items():
+                    click.echo(f"      {status}: {count} games")
+            
+            if games:
+                click.echo(f"\n   📋 Upcoming Games (next 18 hours):")
+                for game in games[:5]:  # Show first 5
+                    if isinstance(game, dict):
+                        teams = f"{game.get('away_team', '?')} @ {game.get('home_team', '?')}"
+                        timing_status = game.get('timing_status', 'unknown')
+                        game_time = str(game.get('game_datetime', 'Unknown'))[:16]
+                        minutes = game.get('minutes_since_start', 0)
+                    else:
+                        teams = f"{game[2]} @ {game[1]}" if len(game) > 2 else "Unknown"
+                        timing_status = game[5] if len(game) > 5 else 'unknown'
+                        game_time = str(game[3])[:16] if len(game) > 3 else 'Unknown'
+                        minutes = game[6] if len(game) > 6 else 0
+                    
+                    status_icon = {
+                        'future_game': '🔮',
+                        'within_grace_period': '✅',
+                        'expired': '❌',
+                        'invalid_time': '⚠️'
+                    }.get(timing_status, '❓')
+                    
+                    click.echo(f"      {status_icon} {teams:<25} {game_time} ({timing_status})")
+        
+        click.echo(f"\n💡 Tip: Use --detailed for more information, --check-expired to see violations")
+        
+    except Exception as e:
+        click.echo(f"❌ Timing validation check failed: {e}")
+        raise

@@ -379,6 +379,34 @@ class LateFlipProcessor(BaseStrategyProcessor):
                           timing_multiplier * updates_multiplier * time_development_multiplier)
         final_confidence = max(0.1, min(1.0, final_confidence))
         
+        # Determine confidence level based on final confidence score
+        from ...models.betting_analysis import ConfidenceLevel
+        if final_confidence >= 0.85:
+            confidence_level = ConfidenceLevel.VERY_HIGH
+        elif final_confidence >= 0.7:
+            confidence_level = ConfidenceLevel.HIGH
+        elif final_confidence >= 0.55:
+            confidence_level = ConfidenceLevel.MODERATE
+        elif final_confidence >= 0.4:
+            confidence_level = ConfidenceLevel.LOW
+        else:
+            confidence_level = ConfidenceLevel.VERY_LOW
+        
+        # Create confidence explanation
+        confidence_explanation = (
+            f"Late flip {flip_data.get('flip_type', 'UNKNOWN')} strength={flip_strength:.1f}%, "
+            f"timing={flip_data.get('timing_category', 'UNKNOWN')}, "
+            f"confidence={final_confidence:.2f} ({confidence_level.value})"
+        )
+        
+        # Determine recommendation strength based on confidence
+        if final_confidence >= 0.8:
+            recommendation_strength = "STRONG"
+        elif final_confidence >= 0.6:
+            recommendation_strength = "MODERATE"
+        else:
+            recommendation_strength = "WEAK"
+        
         return {
             'base_confidence': base_confidence,
             'strength_multiplier': strength_multiplier,
@@ -387,6 +415,10 @@ class LateFlipProcessor(BaseStrategyProcessor):
             'updates_multiplier': updates_multiplier,
             'time_development_multiplier': time_development_multiplier,
             'final_confidence': final_confidence,
+            'confidence_score': final_confidence,  # ✅ FIX: Added missing confidence_score key expected by base class
+            'confidence_level': confidence_level,  # ✅ FIX: Added missing confidence_level key expected by base class
+            'confidence_explanation': confidence_explanation,  # ✅ FIX: Added missing confidence_explanation key expected by base class
+            'recommendation_strength': recommendation_strength,  # ✅ FIX: Added missing recommendation_strength key expected by base class
             'flip_strength': flip_strength,
             'strength_category': strength_category,
             'timing_category': timing_category,
