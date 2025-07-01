@@ -591,12 +591,12 @@ class PreGameWorkflowService:
             raise
     
     async def _execute_betting_analysis(self, stage_result: StageResult, workflow_result: WorkflowResult):
-        """Execute Stage 2: Betting Analysis using master betting detector."""
+        """Execute Stage 2: Betting Analysis using enhanced detection system."""
         self.logger.info("Executing Stage 2: Betting Analysis")
         
         try:
-            # Build command for orchestrator demo (replaces old master betting detector)
-            cmd = ["uv", "run", "src/mlb_sharp_betting/cli.py", "orchestrator-demo", "--minutes", "15"]
+            # Build command for enhanced detection system (updated for Phase 4)
+            cmd = ["uv", "run", "python", "-m", "mlb_sharp_betting.cli", "detect", "opportunities", "--minutes", "15"]
             
             # Execute with timeout
             result = await asyncio.wait_for(

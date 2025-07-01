@@ -475,6 +475,54 @@ class DataPipeline:
                 "execution_time": datetime.now().isoformat()
             }
     
+    async def _update_strategy_configurations(self) -> None:
+        """
+        Update strategy configurations based on recent performance.
+        Runs backtesting on recent data to keep strategy configurations current.
+        """
+        logger.info("Updating strategy configurations based on recent performance")
+        
+        try:
+            # Import backtesting engine
+            from mlb_sharp_betting.services.backtesting_engine import get_backtesting_engine
+            
+            # Initialize backtesting engine
+            backtesting_engine = get_backtesting_engine()
+            await backtesting_engine.initialize()
+            
+            # Run backtest on recent data (last 7 days) to update configurations
+            end_date = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')  # Yesterday
+            start_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')  # 7 days ago
+            
+            logger.info(f"Running configuration update backtest: {start_date} to {end_date}")
+            
+            # Run backtest (this will automatically update strategy_configurations table)
+            backtest_results = await backtesting_engine.run_backtest(
+                start_date=start_date,
+                end_date=end_date,
+                include_diagnostics=False,
+                include_alignment=False
+            )
+            
+            # Log results
+            strategies_analyzed = backtest_results.get('backtest_results', {}).get('total_strategies', 0)
+            profitable_strategies = backtest_results.get('backtest_results', {}).get('profitable_strategies', 0)
+            
+            logger.info(
+                "Strategy configuration update completed",
+                strategies_analyzed=strategies_analyzed,
+                profitable_strategies=profitable_strategies,
+                execution_time=backtest_results.get('execution_time_seconds', 0)
+            )
+            
+            # Update metrics
+            self.metrics["strategy_configs_updated"] = strategies_analyzed
+            
+        except Exception as e:
+            logger.error(f"Failed to update strategy configurations: {e}")
+            # Don't fail the entire pipeline for configuration updates
+            self.metrics["errors"] += 1
+    
     def generate_report(self, analysis_results: Dict, output_file: Optional[str] = None, flip_results: Optional[Dict] = None) -> str:
         """Generate a summary report of the pipeline results."""
         
@@ -589,7 +637,10 @@ Flip detection disabled or not available
             # 6. Run cross-market flip detection (automatic after data collection)
             flip_results = await self._run_flip_detection()
             
-            # 7. Generate report
+            # 7. Update strategy configurations based on recent performance
+            await self._update_strategy_configurations()
+            
+            # 8. Generate report
             self.metrics["end_time"] = datetime.now()
             report = self.generate_report(analysis_results, output_file, flip_results)
             

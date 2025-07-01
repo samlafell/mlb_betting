@@ -673,13 +673,18 @@ class TimingAnalysisService:
                 if result:
                     historical_metrics = None
                     if result['historical_total_bets']:
+                        # Convert to float to avoid Decimal/float arithmetic errors
+                        historical_roi = float(result['historical_roi']) if result['historical_roi'] else 0.0
+                        historical_total_bets = float(result['historical_total_bets'])
+                        historical_win_rate = float(result['historical_win_rate']) if result['historical_win_rate'] else 0.0
+                        
                         historical_metrics = TimingPerformanceMetrics(
                             total_bets=result['historical_total_bets'],
-                            wins=int(result['historical_win_rate'] * result['historical_total_bets'] / 100) if result['historical_win_rate'] else 0,
-                            losses=result['historical_total_bets'] - int(result['historical_win_rate'] * result['historical_total_bets'] / 100) if result['historical_win_rate'] else result['historical_total_bets'],
+                            wins=int(float(historical_win_rate) * float(historical_total_bets) / 100) if result['historical_win_rate'] else 0,
+                            losses=result['historical_total_bets'] - int(float(historical_win_rate) * float(historical_total_bets) / 100) if result['historical_win_rate'] else result['historical_total_bets'],
                             pushes=0,
                             total_units_wagered=Decimal(str(result['historical_total_bets'])),
-                            total_profit_loss=Decimal(str(result['historical_roi'] * result['historical_total_bets'] / 100)) if result['historical_roi'] else Decimal('0')
+                            total_profit_loss=Decimal(str(float(historical_roi) * float(historical_total_bets) / 100)) if result['historical_roi'] else Decimal('0')
                         )
                     
                     return TimingRecommendation(

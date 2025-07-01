@@ -166,8 +166,27 @@ class AutomatedBacktestingCLI:
             alerts = []
             if self.alert_service and 'backtest_results' in results:
                 try:
-                    # Note: Alert service may need updating to work with new result format
-                    alerts = await self.alert_service.process_backtesting_results(results['backtest_results'])
+                    # Convert dict results to BacktestingResults object for alert service
+                    from ...services.alert_service import BacktestingResults
+                    
+                    backtest_dict = results['backtest_results']
+                    backtest_results_obj = BacktestingResults(
+                        backtest_date=datetime.strptime(backtest_dict['end_date'], '%Y-%m-%d'),
+                        total_strategies_analyzed=backtest_dict.get('total_strategies', 0),
+                        strategies_with_adequate_data=backtest_dict.get('total_strategies', 0),
+                        profitable_strategies=backtest_dict.get('profitable_strategies', 0),
+                        declining_strategies=backtest_dict.get('total_strategies', 0) - backtest_dict.get('profitable_strategies', 0),
+                        stable_strategies=0,
+                        threshold_recommendations=[],
+                        strategy_alerts=[],
+                        strategy_metrics=backtest_dict.get('strategy_results', []),
+                        data_completeness_pct=results.get('data_quality_score', 100.0),
+                        game_outcome_freshness_hours=1.0,  # Assume recent data
+                        execution_time_seconds=results.get('execution_time_seconds', 0.0),
+                        created_at=datetime.now(timezone.utc)
+                    )
+                    
+                    alerts = await self.alert_service.process_backtesting_results(backtest_results_obj)
                 except Exception as e:
                     self.logger.warning("Failed to process alerts", error=str(e))
                     alerts = []
@@ -331,7 +350,8 @@ class AutomatedBacktestingCLI:
         if alerts:
             print(f"\n🚨 ALERTS ({len(alerts)}):")
             for alert in alerts[:5]:  # Show top 5
-                severity_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(alert.severity.lower(), "⚪")
+                severity_str = str(alert.severity).lower() if hasattr(alert.severity, 'value') else str(alert.severity).lower()
+                severity_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(severity_str, "⚪")
                 print(f"   {severity_emoji} {alert.message}")
         else:
             print(f"\n✅ No critical alerts generated")
@@ -406,7 +426,8 @@ class AutomatedBacktestingCLI:
         print(f"\n🚨 ACTIVE ALERTS ({len(active_alerts)}):")
         if active_alerts:
             for alert in active_alerts[:5]:  # Show top 5
-                severity_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(alert.severity.lower(), "⚪")
+                severity_str = str(alert.severity).lower() if hasattr(alert.severity, 'value') else str(alert.severity).lower()
+                severity_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(severity_str, "⚪")
                 print(f"   {severity_emoji} {alert.message}")
         else:
             print("   ✅ No active alerts")

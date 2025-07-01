@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Stop the pre-game workflow scheduler
+# Stop the pre-game workflow scheduler (Phase 4 SchedulerEngine)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="${SCRIPT_DIR}/pregame_scheduler.pid"
@@ -8,7 +8,7 @@ PID_FILE="${SCRIPT_DIR}/pregame_scheduler.pid"
 if [[ -f "$PID_FILE" ]]; then
     pid=$(cat "$PID_FILE")
     if kill -0 "$pid" 2>/dev/null; then
-        echo "Stopping scheduler (PID: $pid)..."
+        echo "Stopping SchedulerEngine (PID: $pid)..."
         kill "$pid"
         
         # Wait for graceful shutdown
@@ -24,11 +24,11 @@ if [[ -f "$PID_FILE" ]]; then
         fi
         
         rm -f "$PID_FILE"
-        echo "Scheduler stopped successfully"
+        echo "SchedulerEngine stopped successfully"
     else
-        echo "Scheduler not running (stale PID file)"
+        echo "SchedulerEngine not running (stale PID file)"
         rm -f "$PID_FILE"
     fi
 else
-    echo "Scheduler not running (no PID file)"
+    echo "SchedulerEngine not running (no PID file)"
 fi

@@ -19,6 +19,7 @@ from mlb_sharp_betting.analysis.processors.base_strategy_processor import BaseSt
 from mlb_sharp_betting.analysis.processors.sharpaction_processor import SharpActionProcessor
 from mlb_sharp_betting.services.betting_signal_repository import BettingSignalRepository
 from mlb_sharp_betting.services.strategy_validation import StrategyValidation
+from mlb_sharp_betting.services.dynamic_threshold_manager import get_dynamic_threshold_manager
 from mlb_sharp_betting.models.betting_analysis import SignalProcessorConfig
 from mlb_sharp_betting.core.logging import get_logger
 
@@ -103,7 +104,7 @@ class StrategyProcessorFactory:
         },
         'hybrid_line_sharp': {
             'class': 'HybridSharpProcessor',
-            'status': 'IMPLEMENTED',
+            'status': 'PLANNED',  # Temporarily disabled due to SQL parameter issue
             'sql_equivalent': 'hybrid_line_sharp_strategy_postgres.sql',
             'description': 'Hybrid line movement + sharp action with confirmation signals (11KB legacy file)'
         },
@@ -143,6 +144,9 @@ class StrategyProcessorFactory:
         self.config = config
         self.logger = get_logger(__name__)
         
+        # 🎯 DYNAMIC THRESHOLDS: Initialize threshold manager
+        self.threshold_manager = get_dynamic_threshold_manager()
+        
         # Cache for loaded processor classes
         self._processor_class_cache: Dict[str, Type[BaseStrategyProcessor]] = {}
         
@@ -163,9 +167,25 @@ class StrategyProcessorFactory:
         
         # 🚨 FIX: Automatically load all implemented processors during initialization
         self.logger.info("Loading implemented processors during factory initialization...")
+        self.logger.info("🎯 DYNAMIC THRESHOLDS ENABLED: Using progressive threshold optimization")
+        self.logger.info(f"📋 Available Strategies: {len(self.PROCESSOR_MAPPING)} total")
+        
+        # Show which processors we expect to load
+        implemented_strategies = [name for name, info in self.PROCESSOR_MAPPING.items() 
+                                 if info['status'] == 'IMPLEMENTED']
+        self.logger.info(f"🔄 Attempting to load {len(implemented_strategies)} implemented processors:")
+        self.logger.info(f"   {', '.join(implemented_strategies)}")
+        
         try:
             self.create_all_processors()
-            self.logger.info(f"✅ Factory initialized with {len(self._processor_registry)} processors")
+            loaded_names = list(self._processor_registry.keys())
+            self.logger.info(f"✅ Factory initialized with {len(self._processor_registry)} processors:")
+            self.logger.info(f"   Loaded: {', '.join(loaded_names)}")
+            
+            if len(loaded_names) != len(implemented_strategies):
+                missing = set(implemented_strategies) - set(loaded_names)
+                self.logger.warning(f"⚠️  Failed to load some processors: {', '.join(missing)}")
+                
         except Exception as e:
             self.logger.warning(f"⚠️  Some processors failed to load during initialization: {e}")
     
@@ -321,37 +341,58 @@ class StrategyProcessorFactory:
             return None
 
         try:
+            # 🎯 DYNAMIC THRESHOLDS: Pass threshold manager to all processors
             # Special handling for all IMPLEMENTED processors
             if strategy_name == 'sharp_action':
                 from .sharpaction_processor import SharpActionProcessor
-                return SharpActionProcessor(self.repository, self.validator, self.config)
+                processor = SharpActionProcessor(self.repository, self.validator, self.config)
+                processor.threshold_manager = self.threshold_manager
+                return processor
             elif strategy_name == 'opposing_markets':
                 from .opposingmarkets_processor import OpposingMarketsProcessor
-                return OpposingMarketsProcessor(self.repository, self.validator, self.config)
+                processor = OpposingMarketsProcessor(self.repository, self.validator, self.config)
+                processor.threshold_manager = self.threshold_manager
+                return processor
             elif strategy_name == 'book_conflicts':
                 from .bookconflict_processor import BookConflictProcessor
-                return BookConflictProcessor(self.repository, self.validator, self.config)
+                processor = BookConflictProcessor(self.repository, self.validator, self.config)
+                processor.threshold_manager = self.threshold_manager
+                return processor
             elif strategy_name == 'public_money_fade':
                 from .publicfade_processor import PublicFadeProcessor
-                return PublicFadeProcessor(self.repository, self.validator, self.config)
+                processor = PublicFadeProcessor(self.repository, self.validator, self.config)
+                processor.threshold_manager = self.threshold_manager
+                return processor
             elif strategy_name == 'late_sharp_flip':
                 from .lateflip_processor import LateFlipProcessor
-                return LateFlipProcessor(self.repository, self.validator, self.config)
+                processor = LateFlipProcessor(self.repository, self.validator, self.config)
+                processor.threshold_manager = self.threshold_manager
+                return processor
             elif strategy_name == 'consensus_moneyline':
                 from .consensus_processor import ConsensusProcessor
-                return ConsensusProcessor(self.repository, self.validator, self.config)
+                processor = ConsensusProcessor(self.repository, self.validator, self.config)
+                processor.threshold_manager = self.threshold_manager
+                return processor
             elif strategy_name == 'underdog_ml_value':
                 from .underdogvalue_processor import UnderdogValueProcessor
-                return UnderdogValueProcessor(self.repository, self.validator, self.config)
+                processor = UnderdogValueProcessor(self.repository, self.validator, self.config)
+                processor.threshold_manager = self.threshold_manager
+                return processor
             elif strategy_name == 'line_movement':
                 from .linemovement_processor import LineMovementProcessor
-                return LineMovementProcessor(self.repository, self.validator, self.config)
+                processor = LineMovementProcessor(self.repository, self.validator, self.config)
+                processor.threshold_manager = self.threshold_manager
+                return processor
             elif strategy_name == 'timing_based':
                 from .timingbased_processor import TimingBasedProcessor
-                return TimingBasedProcessor(self.repository, self.validator, self.config)
+                processor = TimingBasedProcessor(self.repository, self.validator, self.config)
+                processor.threshold_manager = self.threshold_manager
+                return processor
             elif strategy_name == 'hybrid_line_sharp':
                 from .hybridsharp_processor import HybridSharpProcessor
-                return HybridSharpProcessor(self.repository, self.validator, self.config)
+                processor = HybridSharpProcessor(self.repository, self.validator, self.config)
+                processor.threshold_manager = self.threshold_manager
+                return processor
             else:
                 # Try dynamic loading for other processors
                 processor_class = self._get_processor_class(processor_class_name)

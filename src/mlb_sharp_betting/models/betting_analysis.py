@@ -77,6 +77,17 @@ class BettingSignal:
     total_bets: int
     # Signal-specific metadata
     metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    @property
+    def game_id(self) -> str:
+        """Generate a game_id from home_team, away_team, and game_time"""
+        game_date = self.game_time.strftime('%Y-%m-%d')
+        return f"{self.away_team}@{self.home_team}_{game_date}"
+    
+    @property
+    def recommended_bet(self) -> str:
+        """Extract the recommended bet from the recommendation string"""
+        return self.recommendation
 
 
 @dataclass

@@ -27,6 +27,7 @@ from ..analysis.processors.strategy_processor_factory import StrategyProcessorFa
 from ..services.betting_signal_repository import BettingSignalRepository
 from ..models.betting_analysis import BettingSignal, SignalType, ProfitableStrategy, StrategyThresholds, SignalProcessorConfig
 from ..services.juice_filter_service import get_juice_filter_service
+from ..services.dynamic_threshold_manager import get_dynamic_threshold_manager
 from ..core.config import get_settings
 from ..services.strategy_validation import StrategyValidation
 
@@ -426,27 +427,57 @@ class StrategyManager:
         )
     
     async def execute_live_strategy_detection(self, minutes_ahead: int = 60) -> List[BettingSignal]:
-        """Execute live strategy detection using current configurations."""
+        """Execute live strategy detection using current configurations with processor deduplication."""
         if not self.processor_factory:
             await self.initialize()
-        
+
         live_config = await self.get_live_strategy_configuration()
+        
+        # Group strategies by signal type to avoid duplicate processor execution
+        strategies_by_signal_type = {}
+        for strategy_config in live_config.enabled_strategies:
+            signal_type = strategy_config.signal_type
+            if signal_type not in strategies_by_signal_type:
+                strategies_by_signal_type[signal_type] = []
+            strategies_by_signal_type[signal_type].append(strategy_config)
+
+        # Execute each processor only once per signal type
         all_signals = []
         
-        for strategy_config in live_config.enabled_strategies:
+        for signal_type, strategy_configs in strategies_by_signal_type.items():
             try:
-                signals = await self._execute_strategy_with_config(
-                    strategy_config, minutes_ahead
+                # Get the processor for this signal type
+                processors = self.processor_factory.get_processors_by_type(signal_type.value)
+                
+                if not processors:
+                    self.logger.warning(f"No processor found for signal type: {signal_type}")
+                    continue
+
+                # Execute the processor once for this signal type
+                processor = processors[0]
+                profitable_strategies = []  # TODO: Load actual profitable strategies
+                
+                base_signals = await processor.process(
+                    minutes_ahead=minutes_ahead, 
+                    profitable_strategies=profitable_strategies
                 )
-                all_signals.extend(signals)
+                
+                # Apply each strategy's configuration to the base signals
+                for strategy_config in strategy_configs:
+                    try:
+                        adjusted_signals = self._apply_strategy_adjustments(base_signals, strategy_config)
+                        all_signals.extend(adjusted_signals)
+                    except Exception as e:
+                        self.logger.error(f"Failed to apply strategy adjustments for {strategy_config.strategy_name}: {e}")
+                
             except Exception as e:
-                self.logger.error(f"Failed to execute strategy {strategy_config.strategy_name}: {e}")
-        
+                self.logger.error(f"Failed to execute processor for signal type {signal_type}: {e}")
+
         # Apply ensemble logic and conflict resolution
         if len(all_signals) > 1:
             all_signals = self._apply_ensemble_logic(all_signals, live_config.enabled_strategies)
             all_signals = self._resolve_signal_conflicts(all_signals, live_config.enabled_strategies)
-        
+
         return all_signals
     
     # ===========================================
@@ -466,6 +497,7 @@ class StrategyManager:
             end_date = datetime.now(timezone.utc)
             start_date = end_date - timedelta(days=lookback_days)
             
+            # Cast DECIMAL/NUMERIC types to FLOAT to prevent Python type errors
             query = """
             SELECT DISTINCT
                 strategy_name as strategy_variant,
@@ -473,15 +505,15 @@ class StrategyManager:
                 split_type,
                 total_bets,
                 wins,
-                win_rate,
-                roi_per_100 as roi_per_100_unit,
+                CAST(win_rate AS FLOAT) as win_rate,
+                CAST(roi_per_100 AS FLOAT) as roi_per_100_unit,
                 created_at as last_updated
             FROM backtesting.strategy_performance 
             WHERE backtest_date >= %s
               AND total_bets >= %s
-              AND roi_per_100 >= %s
+              AND CAST(roi_per_100 AS FLOAT) >= %s
               AND strategy_name IS NOT NULL
-            ORDER BY roi_per_100 DESC, total_bets DESC
+            ORDER BY CAST(roi_per_100 AS FLOAT) DESC, total_bets DESC
             """
             
             with self.db_manager.get_cursor() as cursor:
@@ -493,8 +525,9 @@ class StrategyManager:
                     row['total_bets'], row['roi_per_100_unit']
                 )
                 
-                min_threshold, high_threshold = self._calculate_thresholds(
-                    row['strategy_variant'], row['roi_per_100_unit'], row['win_rate']
+                min_threshold, high_threshold = await self._calculate_thresholds(
+                    row['strategy_variant'], row['roi_per_100_unit'], row['win_rate'],
+                    row.get('source_book_type', 'default'), row.get('split_type', 'default')
                 )
                 
                 strategy = HighROIStrategy(
@@ -503,8 +536,8 @@ class StrategyManager:
                     split_type=row['split_type'],
                     strategy_variant=row['strategy_variant'],
                     total_bets=row['total_bets'],
-                    win_rate=float(row['win_rate']),
-                    roi_per_100_unit=float(row['roi_per_100_unit']),
+                    win_rate=row['win_rate'],  # Already cast to FLOAT in SQL
+                    roi_per_100_unit=row['roi_per_100_unit'],  # Already cast to FLOAT in SQL
                     confidence_level=confidence_level,
                     min_threshold=min_threshold,
                     high_threshold=high_threshold,
@@ -590,114 +623,334 @@ class StrategyManager:
         """Load strategy configurations from backtesting results"""
         configs = {}
         
-        query = """
-        SELECT 
-            strategy_name,
-            source_book_type,
-            split_type,
-            win_rate,
-            roi_per_100,
-            total_bets,
-            confidence_level,
-            is_active,
-            last_updated,
-            max_drawdown,
-            sharpe_ratio,
-            kelly_criterion
-        FROM backtesting.strategy_configurations
-        WHERE is_active = true
-        ORDER BY roi_per_100 DESC
-        """
-        
         try:
+            # Check if backtesting schema and table exist first
+            check_schema_query = """
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.schemata 
+                    WHERE schema_name = 'backtesting'
+                )
+            """
+            
             with self.db_manager.get_cursor() as cursor:
+                cursor.execute(check_schema_query)
+                schema_exists = cursor.fetchone()[0]
+                
+                if not schema_exists:
+                    self.logger.info("Backtesting schema doesn't exist yet - using fallback strategy configs")
+                    return self._get_fallback_strategy_configs()
+                
+                # Check if strategy_configurations table exists
+                check_table_query = """
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.tables 
+                        WHERE table_schema = 'backtesting' 
+                        AND table_name = 'strategy_configurations'
+                    )
+                """
+                cursor.execute(check_table_query)
+                table_exists = cursor.fetchone()[0]
+                
+                if not table_exists:
+                    self.logger.info("backtesting.strategy_configurations table doesn't exist yet - using fallback strategy configs")
+                    return self._get_fallback_strategy_configs()
+                
+                # Check if source_book_type column exists in the table
+                check_column_query = """
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_schema = 'backtesting' 
+                        AND table_name = 'strategy_configurations'
+                        AND column_name = 'source_book_type'
+                    )
+                """
+                cursor.execute(check_column_query)
+                column_exists = cursor.fetchone()[0]
+                
+                if not column_exists:
+                    self.logger.info("source_book_type column doesn't exist yet - using fallback strategy configs")
+                    return self._get_fallback_strategy_configs()
+                
+                # If table exists, try to load configs
+                # Cast DECIMAL/NUMERIC types to FLOAT to prevent Python type errors
+                query = """
+                SELECT 
+                    strategy_name,
+                    source_book_type,
+                    split_type,
+                    CAST(win_rate AS FLOAT) as win_rate,
+                    CAST(roi_per_100 AS FLOAT) as roi_per_100,
+                    total_bets,
+                    confidence_level,
+                    is_active,
+                    last_updated,
+                    CAST(COALESCE(max_drawdown, 0.0) AS FLOAT) as max_drawdown,
+                    CAST(COALESCE(sharpe_ratio, 0.0) AS FLOAT) as sharpe_ratio,
+                    CAST(COALESCE(kelly_criterion, 0.0) AS FLOAT) as kelly_criterion
+                FROM backtesting.strategy_configurations
+                WHERE is_active = true
+                ORDER BY roi_per_100 DESC
+                """
+                
                 cursor.execute(query)
                 results = cursor.fetchall()
             
-            for row in results:
-                # Calculate dynamic thresholds
-                min_threshold = max(15.0, 100.0 / max(row['roi_per_100'], 1.0))
-                moderate_threshold = min_threshold * 1.5
-                high_threshold = min_threshold * 2.0
-                
-                config = StrategyConfig(
-                    strategy_name=row['strategy_name'],
-                    source_book_type=row['source_book_type'],
-                    split_type=row['split_type'],
-                    win_rate=float(row['win_rate']),
-                    roi_per_100=float(row['roi_per_100']),
-                    total_bets=row['total_bets'],
-                    confidence_level=row['confidence_level'],
-                    min_threshold=min_threshold,
-                    moderate_threshold=moderate_threshold,
-                    high_threshold=high_threshold,
-                    is_active=row['is_active'],
-                    last_updated=row['last_updated'],
-                    max_drawdown=float(row.get('max_drawdown', 0.0)),
-                    sharpe_ratio=float(row.get('sharpe_ratio', 0.0)),
-                    kelly_criterion=float(row.get('kelly_criterion', 0.0))
-                )
-                
-                configs[row['strategy_name']] = config
+                for row in results:
+                    # SQL query already casts to FLOAT, so values are already Python floats
+                    roi_per_100_float = row['roi_per_100'] if row['roi_per_100'] is not None else 1.0
+                    win_rate_float = row['win_rate'] if row['win_rate'] is not None else 0.5
+                    
+                    # Calculate dynamic thresholds using float values
+                    min_threshold = max(15.0, 100.0 / max(roi_per_100_float, 1.0))
+                    moderate_threshold = min_threshold * 1.5
+                    high_threshold = min_threshold * 2.0
+                    
+                    config = StrategyConfig(
+                        strategy_name=row['strategy_name'],
+                        source_book_type=row['source_book_type'],
+                        split_type=row['split_type'],
+                        win_rate=win_rate_float,
+                        roi_per_100=roi_per_100_float,
+                        total_bets=row['total_bets'],
+                        confidence_level=row['confidence_level'],
+                        min_threshold=min_threshold,
+                        moderate_threshold=moderate_threshold,
+                        high_threshold=high_threshold,
+                        is_active=row['is_active'],
+                        last_updated=row['last_updated'],
+                        max_drawdown=row['max_drawdown'],  # Already cast to FLOAT in SQL
+                        sharpe_ratio=row['sharpe_ratio'],  # Already cast to FLOAT in SQL 
+                        kelly_criterion=row['kelly_criterion']  # Already cast to FLOAT in SQL
+                    )
+                    
+                    configs[row['strategy_name']] = config
+                    
+                self.logger.info(f"Loaded {len(configs)} strategy configurations from database")
                 
         except Exception as e:
             self.logger.warning(f"Failed to load strategy configs from DB: {e}")
-            # Return empty dict - will use defaults
+            # Return fallback configs
+            return self._get_fallback_strategy_configs()
         
         return configs
+    
+    def _get_fallback_strategy_configs(self) -> Dict[str, StrategyConfig]:
+        """Get fallback strategy configurations when database is not available"""
+        fallback_configs = {}
+        
+        # Default configurations for common strategies
+        default_strategies = [
+            {
+                'strategy_name': 'sharp_action_detector',
+                'source_book_type': 'VSIN-CIRCA',
+                'split_type': 'moneyline',
+                'win_rate': 55.0,
+                'roi_per_100': 8.0,
+                'total_bets': 100,
+                'confidence_level': 'MODERATE'
+            },
+            {
+                'strategy_name': 'opposing_markets_detector',
+                'source_book_type': 'VSIN-CIRCA',
+                'split_type': 'spread',
+                'win_rate': 52.0,
+                'roi_per_100': 5.5,
+                'total_bets': 75,
+                'confidence_level': 'MODERATE'
+            },
+            {
+                'strategy_name': 'book_conflicts_detector',
+                'source_book_type': 'VSIN-DRAFTKINGS',
+                'split_type': 'total',
+                'win_rate': 53.0,
+                'roi_per_100': 6.2,
+                'total_bets': 60,
+                'confidence_level': 'MODERATE'
+            }
+        ]
+        
+        for strategy_data in default_strategies:
+            config = StrategyConfig(
+                strategy_name=strategy_data['strategy_name'],
+                source_book_type=strategy_data['source_book_type'],
+                split_type=strategy_data['split_type'],
+                win_rate=strategy_data['win_rate'],
+                roi_per_100=strategy_data['roi_per_100'],
+                total_bets=strategy_data['total_bets'],
+                confidence_level=strategy_data['confidence_level'],
+                min_threshold=15.0,
+                moderate_threshold=22.5,
+                high_threshold=30.0,
+                is_active=True,
+                last_updated=datetime.now(timezone.utc),
+                max_drawdown=0.0,
+                sharpe_ratio=0.0,
+                kelly_criterion=0.0
+            )
+            fallback_configs[strategy_data['strategy_name']] = config
+        
+        self.logger.info(f"Using {len(fallback_configs)} fallback strategy configurations")
+        return fallback_configs
     
     async def _load_threshold_configs(self) -> Dict[str, ThresholdConfig]:
         """Load threshold configurations from database"""
         configs = {}
         
-        query = """
-        SELECT 
-            source,
-            strategy_type,
-            high_confidence_threshold,
-            moderate_confidence_threshold,
-            minimum_threshold,
-            opposing_high_threshold,
-            opposing_moderate_threshold,
-            steam_threshold,
-            steam_time_window_hours,
-            min_sample_size,
-            min_win_rate,
-            last_validated,
-            confidence_level
-        FROM backtesting.threshold_configurations
-        WHERE is_active = true
-        """
-        
         try:
+            # Check if backtesting schema and table exist first
+            check_schema_query = """
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.schemata 
+                    WHERE schema_name = 'backtesting'
+                )
+            """
+            
             with self.db_manager.get_cursor() as cursor:
+                cursor.execute(check_schema_query)
+                schema_exists = cursor.fetchone()[0]
+                
+                if not schema_exists:
+                    self.logger.info("Backtesting schema doesn't exist yet - using fallback threshold configs")
+                    return self._get_fallback_threshold_configs()
+                
+                # Check if threshold_configurations table exists
+                check_table_query = """
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.tables 
+                        WHERE table_schema = 'backtesting' 
+                        AND table_name = 'threshold_configurations'
+                    )
+                """
+                cursor.execute(check_table_query)
+                table_exists = cursor.fetchone()[0]
+                
+                if not table_exists:
+                    self.logger.info("backtesting.threshold_configurations table doesn't exist yet - using fallback threshold configs")
+                    return self._get_fallback_threshold_configs()
+                
+                # Check if source column exists in the table
+                check_column_query = """
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_schema = 'backtesting' 
+                        AND table_name = 'threshold_configurations'
+                        AND column_name = 'source'
+                    )
+                """
+                cursor.execute(check_column_query)
+                column_exists = cursor.fetchone()[0]
+                
+                if not column_exists:
+                    self.logger.info("source column doesn't exist yet - using fallback threshold configs")
+                    return self._get_fallback_threshold_configs()
+                
+                # If table exists, try to load configs
+                query = """
+                SELECT 
+                    source,
+                    strategy_type,
+                    high_confidence_threshold,
+                    moderate_confidence_threshold,
+                    minimum_threshold,
+                    opposing_high_threshold,
+                    opposing_moderate_threshold,
+                    steam_threshold,
+                    steam_time_window_hours,
+                    min_sample_size,
+                    min_win_rate,
+                    last_validated,
+                    confidence_level
+                FROM backtesting.threshold_configurations
+                WHERE is_active = true
+                """
+                
                 cursor.execute(query)
                 results = cursor.fetchall()
             
-            for row in results:
-                config = ThresholdConfig(
-                    source=row['source'],
-                    strategy_type=row['strategy_type'],
-                    high_confidence_threshold=float(row['high_confidence_threshold']),
-                    moderate_confidence_threshold=float(row['moderate_confidence_threshold']),
-                    minimum_threshold=float(row['minimum_threshold']),
-                    opposing_high_threshold=float(row['opposing_high_threshold']),
-                    opposing_moderate_threshold=float(row['opposing_moderate_threshold']),
-                    steam_threshold=float(row['steam_threshold']),
-                    steam_time_window_hours=float(row['steam_time_window_hours']),
-                    min_sample_size=row['min_sample_size'],
-                    min_win_rate=float(row['min_win_rate']),
-                    last_validated=row['last_validated'],
-                    confidence_level=row['confidence_level']
-                )
-                
-                configs[row['source']] = config
+                for row in results:
+                    config = ThresholdConfig(
+                        source=row['source'],
+                        strategy_type=row['strategy_type'],
+                        high_confidence_threshold=float(row['high_confidence_threshold']),
+                        moderate_confidence_threshold=float(row['moderate_confidence_threshold']),
+                        minimum_threshold=float(row['minimum_threshold']),
+                        opposing_high_threshold=float(row['opposing_high_threshold']),
+                        opposing_moderate_threshold=float(row['opposing_moderate_threshold']),
+                        steam_threshold=float(row['steam_threshold']),
+                        steam_time_window_hours=float(row['steam_time_window_hours']),
+                        min_sample_size=row['min_sample_size'],
+                        min_win_rate=float(row['min_win_rate']),
+                        last_validated=row['last_validated'],
+                        confidence_level=row['confidence_level']
+                    )
+                    
+                    configs[row['source']] = config
+                    
+                self.logger.info(f"Loaded {len(configs)} threshold configurations from database")
                 
         except Exception as e:
             self.logger.warning(f"Failed to load threshold configs from DB: {e}")
-            # Return empty dict - will use defaults
+            # Return fallback configs
+            return self._get_fallback_threshold_configs()
         
         return configs
+    
+    def _get_fallback_threshold_configs(self) -> Dict[str, ThresholdConfig]:
+        """Get fallback threshold configurations when database is not available"""
+        fallback_configs = {}
+        
+        # Default threshold configurations
+        default_thresholds = [
+            {
+                'source': 'VSIN-CIRCA',
+                'strategy_type': 'sharp_action',
+                'high_confidence_threshold': 25.0,
+                'moderate_confidence_threshold': 15.0,
+                'minimum_threshold': 10.0,
+                'opposing_high_threshold': 30.0,
+                'opposing_moderate_threshold': 20.0,
+                'steam_threshold': 20.0,
+                'steam_time_window_hours': 2.0,
+                'min_sample_size': 20,
+                'min_win_rate': 52.0,
+                'confidence_level': 'MODERATE'
+            },
+            {
+                'source': 'VSIN-DRAFTKINGS',
+                'strategy_type': 'opposing_markets',
+                'high_confidence_threshold': 22.0,
+                'moderate_confidence_threshold': 12.0,
+                'minimum_threshold': 8.0,
+                'opposing_high_threshold': 28.0,
+                'opposing_moderate_threshold': 18.0,
+                'steam_threshold': 18.0,
+                'steam_time_window_hours': 1.5,
+                'min_sample_size': 15,
+                'min_win_rate': 51.0,
+                'confidence_level': 'MODERATE'
+            }
+        ]
+        
+        for threshold_data in default_thresholds:
+            config = ThresholdConfig(
+                source=threshold_data['source'],
+                strategy_type=threshold_data['strategy_type'],
+                high_confidence_threshold=threshold_data['high_confidence_threshold'],
+                moderate_confidence_threshold=threshold_data['moderate_confidence_threshold'],
+                minimum_threshold=threshold_data['minimum_threshold'],
+                opposing_high_threshold=threshold_data['opposing_high_threshold'],
+                opposing_moderate_threshold=threshold_data['opposing_moderate_threshold'],
+                steam_threshold=threshold_data['steam_threshold'],
+                steam_time_window_hours=threshold_data['steam_time_window_hours'],
+                min_sample_size=threshold_data['min_sample_size'],
+                min_win_rate=threshold_data['min_win_rate'],
+                last_validated=datetime.now(timezone.utc),
+                confidence_level=threshold_data['confidence_level']
+            )
+            fallback_configs[threshold_data['source']] = config
+        
+        self.logger.info(f"Using {len(fallback_configs)} fallback threshold configurations")
+        return fallback_configs
     
     async def _should_update_configuration(self) -> bool:
         """Check if strategy configuration should be updated"""
@@ -819,9 +1072,9 @@ class StrategyManager:
             is_enabled = not should_disable
             
             # Calculate dynamic parameters
-            confidence_multiplier = min(1.2, 0.8 + (result['roi_per_100'] / 100.0))
-            threshold_adjustment = max(0.0, (60.0 - result['win_rate']) / 100.0)
-            weight_in_ensemble = min(1.0, result['roi_per_100'] / 20.0)
+            confidence_multiplier = min(1.2, 0.8 + (float(result['roi_per_100']) / 100.0))
+            threshold_adjustment = max(0.0, (60.0 - float(result['win_rate'])) / 100.0)
+            weight_in_ensemble = min(1.0, float(result['roi_per_100']) / 20.0)
             
             # Map strategy name to signal type
             signal_type = self._map_strategy_to_signal_type(result['strategy_name'])
@@ -880,28 +1133,6 @@ class StrategyManager:
         except Exception as e:
             self.logger.error(f"Failed to update strategy configuration: {e}")
             raise
-    
-    async def _execute_strategy_with_config(self, strategy_config: StrategyConfiguration, minutes_ahead: int) -> List[BettingSignal]:
-        """Execute a strategy with its configuration"""
-        try:
-            # Get the appropriate processor for this strategy
-            processor = self.processor_factory.get_processor(strategy_config.signal_type)
-            
-            if not processor:
-                self.logger.warning(f"No processor found for signal type: {strategy_config.signal_type}")
-                return []
-            
-            # Execute the processor
-            signals = await processor.process_signals(minutes_ahead=minutes_ahead)
-            
-            # Apply strategy-specific adjustments
-            adjusted_signals = self._apply_strategy_adjustments(signals, strategy_config)
-            
-            return adjusted_signals
-            
-        except Exception as e:
-            self.logger.error(f"Failed to execute strategy {strategy_config.strategy_name}: {e}")
-            return []
     
     def _apply_strategy_adjustments(self, signals: List[BettingSignal], strategy_config: StrategyConfiguration) -> List[BettingSignal]:
         """Apply strategy-specific adjustments to signals"""
@@ -1056,24 +1287,60 @@ class StrategyManager:
         else:
             return "LOW"
     
-    def _calculate_thresholds(self, strategy_variant: str, roi: float, win_rate: float) -> Tuple[float, float]:
-        """Calculate dynamic thresholds based on strategy performance."""
+    async def _calculate_thresholds(self, strategy_variant: str, roi: float, win_rate: float, 
+                                  source: str = "default", split_type: str = "default") -> Tuple[float, float]:
+        """
+        Calculate dynamic thresholds based on strategy performance using dynamic threshold system.
+        
+        Prioritizes dynamic thresholds based on actual performance data, with fallback to 
+        improved static calculation.
+        """
+        
+        # 🎯 DYNAMIC THRESHOLDS: Use threshold manager if available
+        try:
+            threshold_manager = get_dynamic_threshold_manager()
+            threshold_config = await threshold_manager.get_dynamic_threshold(
+                strategy_type=strategy_variant,
+                source=source,
+                split_type=split_type
+            )
+            
+            min_threshold = threshold_config.minimum_threshold
+            high_threshold = threshold_config.high_threshold
+            
+            self.logger.debug(f"🎯 Using dynamic thresholds for {strategy_variant}: "
+                            f"min={min_threshold:.1f}%, high={high_threshold:.1f}% "
+                            f"(phase: {threshold_config.phase.value})")
+            
+            return min_threshold, high_threshold
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to get dynamic thresholds for {strategy_variant}, using fallback: {e}")
+        
+        # 🔄 FALLBACK: Improved static threshold calculation (more aggressive than original)
         # Base threshold inversely related to ROI - ensure float conversion
-        base_threshold = max(10.0, 100.0 / max(float(roi), 1.0))
+        base_threshold = max(5.0, 50.0 / max(float(roi), 1.0))  # More aggressive (was 10.0, 100.0)
         
         # Adjust based on win rate - ensure float conversion
-        win_rate_adjustment = (60.0 - float(win_rate)) / 10.0  # Higher threshold for lower win rates
+        win_rate_adjustment = (60.0 - float(win_rate)) / 15.0  # Less penalty (was /10.0)
         
-        # Strategy-specific adjustments
+        # Strategy-specific adjustments (more moderate)
         if 'opposing_markets' in strategy_variant.lower():
-            base_threshold *= 1.5  # Higher threshold for opposing markets
+            base_threshold *= 1.3  # Moderate adjustment (was 1.5)
         elif 'steam' in strategy_variant.lower():
-            base_threshold *= 1.2  # Slightly higher for steam moves
+            base_threshold *= 1.1  # Slight adjustment (was 1.2)
         
         min_threshold = base_threshold + win_rate_adjustment
-        high_threshold = min_threshold * 1.8
+        high_threshold = min_threshold * 1.6  # Tighter spread (was 1.8)
         
-        return max(5.0, min_threshold), max(10.0, high_threshold)
+        # More aggressive bounds
+        min_threshold = max(3.0, min(12.0, min_threshold))  # 3-12% range (was 5.0 min)
+        high_threshold = max(6.0, min(20.0, high_threshold))  # 6-20% range (was 10.0 min)
+        
+        self.logger.debug(f"📊 Static threshold fallback for {strategy_variant}: "
+                        f"min={min_threshold:.1f}%, high={high_threshold:.1f}%")
+        
+        return min_threshold, high_threshold
     
     async def _update_strategy_configuration_for_integration(self, strategy: HighROIStrategy) -> bool:
         """Update strategy configuration for integration"""

@@ -1,0 +1,35 @@
+
+🎯 STRATEGY PERFORMANCE POPULATION REPORT
+============================================================
+
+📊 POPULATION RESULTS:
+- Total records in strategy_performance: 36
+- Unique strategies: 36
+- Unique source/book combinations: 3
+- Unique split types: 3
+- Date range covered: 2025-07-01 to 2025-07-01
+
+🏭 PROCESSING SUMMARY:
+- Total strategy results generated this run: 0
+- Date ranges processed: 0
+
+📈 TOP 15 STRATEGIES BY RECORD COUNT:
+ 1. Moderate Sharp Action - Moneyline - VSIN-DRAFTKINGS: 1 records (Avg ROI: -10.2%, Win Rate: 47.1%)
+ 2. Moderate Sharp Action - Spread - VSIN-CIRCA: 1 records (Avg ROI: -36.4%, Win Rate: 33.3%)
+ 3. Sharp Money Follow - Moneyline - VSIN-DRAFTKINGS: 1 records (Avg ROI: 0.0%, Win Rate: 52.4%)
+ 4. Strong Sharp Action - Total - VSIN-CIRCA: 1 records (Avg ROI: 38.8%, Win Rate: 72.7%)
+ 5. Moderate Sharp Action - Spread - SBD: 1 records (Avg ROI: 23.5%, Win Rate: 64.7%)
+ 6. Strong Sharp Action - Spread - VSIN-DRAFTKINGS: 1 records (Avg ROI: 14.6%, Win Rate: 60.0%)
+ 7. Moderate Sharp Action - Total - VSIN-CIRCA: 1 records (Avg ROI: 40.0%, Win Rate: 73.3%)
+ 8. Sharp Money Follow - Moneyline - VSIN-CIRCA: 1 records (Avg ROI: 4.1%, Win Rate: 54.6%)
+ 9. Moderate Sharp Action - Total - SBD: 1 records (Avg ROI: 6.9%, Win Rate: 56.0%)
+10. Public Fade - Total - SBD: 1 records (Avg ROI: 6.9%, Win Rate: 56.0%)
+11. Strong Sharp Action - Moneyline - VSIN-DRAFTKINGS: 1 records (Avg ROI: -23.6%, Win Rate: 40.0%)
+12. Sharp Money Follow - Total - SBD: 1 records (Avg ROI: 10.1%, Win Rate: 57.7%)
+13. Sharp Money Follow - Total - VSIN-CIRCA: 1 records (Avg ROI: 40.0%, Win Rate: 73.3%)
+14. Sharp Money Follow - Spread - VSIN-DRAFTKINGS: 1 records (Avg ROI: 11.0%, Win Rate: 58.1%)
+15. Public Fade - Moneyline - SBD: 1 records (Avg ROI: -4.6%, Win Rate: 50.0%)
+
+📅 DATE RANGES PROCESSED THIS RUN:
+
+============================================================

@@ -317,7 +317,7 @@ class CollectionManager:
             if not scrape_result.success or not scrape_result.data:
                 return []
             
-            splits = self.vsin_parser.parse_all_splits(scrape_result.data)
+            splits = await self.vsin_parser.parse_all_splits(scrape_result.data)
             
             # Set proper book for VSIN data
             book_mapping = {"circa": BookType.CIRCA, "dk": BookType.DRAFTKINGS}

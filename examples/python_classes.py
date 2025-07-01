@@ -289,3 +289,104 @@ class Split:
         if self.outcome is not None:
             repr_str += f", Outcome: {self.outcome}"
         return repr_str + ")"
+
+#!/usr/bin/env python3
+"""
+Multi-Strategy Processor Example
+
+Demonstrates how to use the StrategyProcessorFactory to load and utilize
+multiple betting strategy processors for comprehensive bet detection.
+"""
+
+from src.mlb_sharp_betting.analysis.processors.strategy_processor_factory import StrategyProcessorFactory
+from src.mlb_sharp_betting.services.betting_signal_repository import BettingSignalRepository
+from src.mlb_sharp_betting.services.strategy_validation import StrategyValidation
+from src.mlb_sharp_betting.models.betting_analysis import SignalProcessorConfig, ProfitableStrategy
+from src.mlb_sharp_betting.db.connection import get_db_connection
+
+
+async def demonstrate_multiple_processors():
+    """
+    Example of using multiple strategy processors for comprehensive bet detection
+    """
+    print("🏭 MULTI-STRATEGY PROCESSOR DEMONSTRATION")
+    print("="*60)
+    
+    # Initialize dependencies
+    config = SignalProcessorConfig()
+    conn = get_db_connection()
+    repo = BettingSignalRepository(conn)
+    validator = StrategyValidation()
+    
+    # Create factory - this automatically loads all 9+ processors
+    factory = StrategyProcessorFactory(repo, validator, config)
+    
+    # Get all loaded processors
+    processors = factory.get_all_processors()
+    print(f"\n✅ Loaded {len(processors)} strategy processors:")
+    
+    for name, processor in processors.items():
+        signal_type = processor.get_signal_type()
+        category = processor.get_strategy_category()
+        description = processor.get_strategy_description()
+        
+        print(f"\n📊 {name.upper()}")
+        print(f"   Class: {processor.__class__.__name__}")
+        print(f"   Signal Type: {signal_type}")
+        print(f"   Category: {category}")
+        print(f"   Description: {description}")
+    
+    # Example: Get processors by signal type
+    print(f"\n🔍 PROCESSORS BY SIGNAL TYPE:")
+    signal_types = ['SHARP_ACTION', 'BOOK_CONFLICTS', 'PUBLIC_FADE']
+    
+    for signal_type in signal_types:
+        matching_processors = factory.get_processors_by_type(signal_type)
+        print(f"   {signal_type}: {len(matching_processors)} processors")
+        for proc in matching_processors:
+            print(f"     - {proc.__class__.__name__}")
+    
+    # Example: Run multiple processors (simulated)
+    print(f"\n🚀 RUNNING MULTIPLE PROCESSORS:")
+    
+    # Mock profitable strategies for demonstration
+    mock_strategies = [
+        ProfitableStrategy(
+            strategy_name="sharp_action_vsin_draftkings",
+            source_book="VSIN-DraftKings",
+            split_type="moneyline", 
+            win_rate=0.58,
+            roi=0.12,
+            total_bets=45,
+            confidence=0.85
+        ),
+        ProfitableStrategy(
+            strategy_name="book_conflicts_general",
+            source_book="Multi-Book",
+            split_type="spread",
+            win_rate=0.62,
+            roi=0.18,
+            total_bets=32,
+            confidence=0.78
+        )
+    ]
+    
+    # Process with each strategy type
+    for name, processor in processors.items():
+        try:
+            print(f"   🔄 Processing with {name}...")
+            
+            # In real usage, you'd call: signals = await processor.process(120, mock_strategies)
+            # For demo, just show the processor is ready
+            print(f"     ✅ {processor.__class__.__name__} ready")
+            
+        except Exception as e:
+            print(f"     ❌ {name} failed: {e}")
+    
+    print(f"\n🎯 CONCLUSION: {len(processors)} different strategy processors")
+    print("   are working together to detect betting opportunities!")
+
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(demonstrate_multiple_processors())

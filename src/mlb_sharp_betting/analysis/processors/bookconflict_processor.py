@@ -80,10 +80,27 @@ class BookConflictProcessor(BaseStrategyProcessor):
             if not self._is_valid_conflict_data(conflict_data, now_est, minutes_ahead):
                 continue
                 
-            # Check if conflict strength is significant enough
+            # 🎯 DYNAMIC THRESHOLDS: Check conflict strength with dynamic thresholds
             conflict_strength = conflict_data.get('weighted_sharp_variance', 0)
-            if conflict_strength < 5.5:  # Minimum 5.5% conflict strength (LOWERED from 8% based on analysis)
-                self.logger.debug(f"Conflict strength {conflict_strength:.2f}% below threshold 5.5%")
+            
+            # Use dynamic threshold if available, otherwise fallback to static
+            min_threshold = 5.5  # Default fallback (LOWERED from 8% based on analysis)
+            
+            if hasattr(self, 'threshold_manager') and self.threshold_manager:
+                try:
+                    threshold_config = await self.threshold_manager.get_dynamic_threshold(
+                        strategy_type='book_conflicts',
+                        source=conflict_data.get('source', 'default'),
+                        split_type=conflict_data.get('split_type', 'default')
+                    )
+                    min_threshold = threshold_config.minimum_threshold
+                    self.logger.debug(f"🎯 Dynamic book conflict threshold: {min_threshold:.1f}% "
+                                    f"(phase: {threshold_config.phase.value})")
+                except Exception as e:
+                    self.logger.warning(f"Failed to get dynamic threshold for book conflicts: {e}")
+            
+            if conflict_strength < min_threshold:
+                self.logger.debug(f"Conflict strength {conflict_strength:.2f}% below threshold {min_threshold:.1f}%")
                 continue
             
             # Apply juice filter if needed

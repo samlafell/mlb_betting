@@ -5,9 +5,11 @@ This module provides functionality to scrape betting splits data from VSIN
 with proper error handling, retry logic, and data validation.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
+import re
+import pytz
 
 import structlog
 from bs4 import BeautifulSoup, Tag
@@ -25,6 +27,9 @@ class VSINScraper(HTMLScraper):
     
     Scrapes betting splits data from VSIN's web interface using
     Circa as the primary data source (per memory constraint).
+    
+    Enhanced with date validation to ensure we're scraping the correct day,
+    since VSIN doesn't update their main URL until 4-5 AM EST.
     """
     
     # Sports URL mappings - VSIN uses sport-specific paths
@@ -89,13 +94,51 @@ class VSINScraper(HTMLScraper):
         if default_sportsbook not in self.SPORTSBOOK_VIEWS:
             raise ValueError(f"Invalid sportsbook: {default_sportsbook}")
     
-    def build_url(self, sport: str, sportsbook: Optional[str] = None) -> str:
+    def _get_est_now(self) -> datetime:
+        """
+        Get current time in EST timezone.
+        
+        Returns:
+            Current datetime in EST
+        """
+        est_tz = pytz.timezone('US/Eastern')
+        return datetime.now(est_tz)
+    
+    def _get_target_date_est(self, target_date: Optional[datetime] = None) -> datetime:
+        """
+        Get target date in EST timezone.
+        
+        Args:
+            target_date: Target date (defaults to today in EST)
+            
+        Returns:
+            Target date in EST
+        """
+        if target_date is None:
+            return self._get_est_now().date()
+        
+        if target_date.tzinfo is None:
+            # Assume EST if no timezone
+            est_tz = pytz.timezone('US/Eastern')
+            return est_tz.localize(target_date).date()
+        else:
+            # Convert to EST
+            est_tz = pytz.timezone('US/Eastern')
+            return target_date.astimezone(est_tz).date()
+    
+    def build_url(
+        self, 
+        sport: str, 
+        sportsbook: Optional[str] = None, 
+        use_tomorrow: bool = False
+    ) -> str:
         """
         Build the complete URL for scraping VSIN data.
         
         Args:
             sport: The sport to scrape (mlb, nfl, etc.)
             sportsbook: The sportsbook view (defaults to Circa)
+            use_tomorrow: Whether to use tomorrow's view
             
         Returns:
             Complete URL for scraping
@@ -120,45 +163,224 @@ class VSINScraper(HTMLScraper):
                 f"Available sportsbooks: {', '.join(self.SPORTSBOOK_VIEWS.keys())}"
             )
         
-        # Build URL with updated VSIN format from vsin_new_url_and_info.md
-        # Both DK and Circa now use the format: /betting-splits/?bookid={book}&view={sport}
-        url = f"{self.base_url}/betting-splits/?bookid={sportsbook_param}&view={sport_param}"
+        # Build URL with updated VSIN format
+        if use_tomorrow:
+            # Use tomorrow view for early morning scraping
+            url = f"{self.base_url}/betting-splits/?bookid={sportsbook_param}&view=tomorrow"
+        else:
+            # Standard view
+            url = f"{self.base_url}/betting-splits/?bookid={sportsbook_param}&view={sport_param}"
         
         self.logger.debug("Built VSIN URL", 
-                         sport=sport, sportsbook=sportsbook, url=url)
+                         sport=sport, sportsbook=sportsbook, 
+                         use_tomorrow=use_tomorrow, url=url)
         
         return url
     
+    def _extract_date_from_html(self, soup: BeautifulSoup) -> Optional[datetime]:
+        """
+        Extract the date that VSIN is showing from the HTML content.
+        
+        This method looks for the date in the table header using the provided XPath patterns.
+        
+        Args:
+            soup: BeautifulSoup object of the page
+            
+        Returns:
+            Extracted date or None if not found
+        """
+        try:
+            # Pattern 1: General betting splits page
+            # XPath: /html/body/div[7]/div[2]/div/div[3]/div[1]/div/div[1]/div[4]/main/div/table/thead/tr[2]/th[1]
+            # HTML: <th class="text-center" style="min-width:191px;">MLB - <span><a class="txt-color-white text-center bold" href="/mlb/games/?gamedate=2025-06-30">Monday,Jun 30</a></span></th>
+            
+            date_selectors = [
+                # Try different table structures for date extraction
+                'table thead tr th a[href*="gamedate"]',
+                'th span a[href*="gamedate"]',
+                'a.txt-color-white[href*="gamedate"]',
+                'a[href*="gamedate"]'
+            ]
+            
+            for selector in date_selectors:
+                date_links = soup.select(selector)
+                for link in date_links:
+                    href = link.get('href', '')
+                    link_text = link.get_text(strip=True)
+                    
+                    # Extract date from href (e.g., "/mlb/games/?gamedate=2025-06-30")
+                    date_match = re.search(r'gamedate=(\d{4}-\d{2}-\d{2})', href)
+                    if date_match:
+                        try:
+                            date_str = date_match.group(1)
+                            parsed_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                            
+                            self.logger.debug("Extracted date from VSIN HTML",
+                                            date_str=date_str,
+                                            parsed_date=parsed_date.strftime('%Y-%m-%d'),
+                                            link_text=link_text,
+                                            href=href)
+                            
+                            return parsed_date
+                        except ValueError as e:
+                            self.logger.debug("Failed to parse date", date_str=date_str, error=str(e))
+                            continue
+            
+            # Fallback: try to parse date from link text (e.g., "Monday,Jun 30")
+            for selector in date_selectors:
+                date_links = soup.select(selector)
+                for link in date_links:
+                    link_text = link.get_text(strip=True)
+                    parsed_date = self._parse_date_from_text(link_text)
+                    if parsed_date:
+                        self.logger.debug("Extracted date from link text",
+                                        link_text=link_text,
+                                        parsed_date=parsed_date.strftime('%Y-%m-%d'))
+                        return parsed_date
+            
+            self.logger.warning("Could not extract date from VSIN HTML")
+            return None
+            
+        except Exception as e:
+            self.logger.error("Error extracting date from HTML", error=str(e))
+            return None
+    
+    def _parse_date_from_text(self, text: str) -> Optional[datetime]:
+        """
+        Parse date from text like "Monday,Jun 30" or "Monday, Jun 30".
+        
+        Args:
+            text: Text containing date information
+            
+        Returns:
+            Parsed date or None if parsing fails
+        """
+        try:
+            # Clean the text
+            clean_text = text.strip().replace(',', ' ')
+            
+            # Common patterns for VSIN date format
+            patterns = [
+                r'(\w+)\s+(\w+)\s+(\d+)',  # "Monday Jun 30"
+                r'(\w+),?\s*(\w+)\s+(\d+)',  # "Monday,Jun 30" or "Monday, Jun 30"
+                r'(\w+)\s+(\d+)',  # "Jun 30"
+            ]
+            
+            current_year = self._get_est_now().year
+            
+            for pattern in patterns:
+                match = re.search(pattern, clean_text)
+                if match:
+                    if len(match.groups()) == 3:
+                        # Day, Month, Date format
+                        day_name, month_name, day_num = match.groups()
+                    else:
+                        # Month, Date format
+                        month_name, day_num = match.groups()
+                    
+                    # Convert month name to number
+                    month_mapping = {
+                        'jan': 1, 'january': 1,
+                        'feb': 2, 'february': 2,
+                        'mar': 3, 'march': 3,
+                        'apr': 4, 'april': 4,
+                        'may': 5,
+                        'jun': 6, 'june': 6,
+                        'jul': 7, 'july': 7,
+                        'aug': 8, 'august': 8,
+                        'sep': 9, 'september': 9,
+                        'oct': 10, 'october': 10,
+                        'nov': 11, 'november': 11,
+                        'dec': 12, 'december': 12
+                    }
+                    
+                    month_num = month_mapping.get(month_name.lower())
+                    if month_num:
+                        try:
+                            return datetime(current_year, month_num, int(day_num)).date()
+                        except ValueError:
+                            continue
+            
+            return None
+            
+        except Exception as e:
+            self.logger.debug("Error parsing date from text", text=text, error=str(e))
+            return None
+    
+    def _validate_date_match(
+        self, 
+        extracted_date: datetime, 
+        target_date: datetime,
+        tolerance_hours: int = 6
+    ) -> bool:
+        """
+        Validate that the extracted date matches our target date.
+        
+        Args:
+            extracted_date: Date extracted from VSIN HTML
+            target_date: Expected target date  
+            tolerance_hours: Hours of tolerance for date mismatches
+            
+        Returns:
+            True if dates match within tolerance
+        """
+        if extracted_date == target_date:
+            return True
+        
+        # Check if we're within tolerance (useful for early morning scraping)
+        date_diff = abs((extracted_date - target_date).days)
+        return date_diff <= 1  # Allow 1 day difference
+    
+    def _should_use_tomorrow_view(self, current_time_est: datetime) -> bool:
+        """
+        Determine if we should use tomorrow's view based on current EST time.
+        
+        VSIN doesn't update until 4-5 AM EST, so before that time we might need
+        to use tomorrow's view to get today's games.
+        
+        Args:
+            current_time_est: Current time in EST
+            
+        Returns:
+            True if we should use tomorrow's view
+        """
+        # If it's before 5 AM EST, consider using tomorrow view
+        return current_time_est.hour < 5
+
     async def scrape_sport(
         self, 
         sport: str = "mlb",
-        sportsbook: Optional[str] = None
+        sportsbook: Optional[str] = None,
+        target_date: Optional[datetime] = None
     ) -> ScrapingResult:
         """
-        Scrape betting splits for a specific sport.
+        Scrape betting splits for a specific sport with date validation.
         
         Args:
             sport: Sport to scrape (defaults to MLB)
             sportsbook: Sportsbook to use (defaults to Circa)
+            target_date: Target date to scrape (defaults to today in EST)
             
         Returns:
             ScrapingResult with scraped data
         """
-        return await self.scrape(sport=sport, sportsbook=sportsbook)
-    
+        return await self.scrape(sport=sport, sportsbook=sportsbook, target_date=target_date)
+
     async def scrape(self, **kwargs: Any) -> ScrapingResult:
         """
-        Scrape VSIN betting splits data.
+        Scrape VSIN betting splits data with enhanced date validation.
         
         Args:
             sport: Sport to scrape (default: mlb)
             sportsbook: Sportsbook to use (default: circa)
+            target_date: Target date to scrape (default: today in EST)
             
         Returns:
             ScrapingResult containing scraped betting splits
         """
         sport = kwargs.get('sport', 'mlb')
         sportsbook = kwargs.get('sportsbook', self.default_sportsbook)
+        target_date = kwargs.get('target_date')
         
         errors = []
         data = []
@@ -166,66 +388,132 @@ class VSINScraper(HTMLScraper):
         total_response_time = 0.0
         
         try:
-            # Build URL
-            url = self.build_url(sport, sportsbook)
+            # Get current EST time and target date
+            current_est = self._get_est_now()
+            target_date_est = self._get_target_date_est(target_date)
             
-            # Make request and get HTML
-            self.logger.info("Starting VSIN scrape", 
-                           sport=sport, sportsbook=sportsbook, url=url)
+            self.logger.info("Starting VSIN scrape with date validation", 
+                           sport=sport, 
+                           sportsbook=sportsbook,
+                           current_est=current_est.strftime('%Y-%m-%d %H:%M:%S EST'),
+                           target_date=target_date_est.strftime('%Y-%m-%d'))
             
-            start_time = datetime.now()
-            soup = await self._get_soup(url)
-            response_time = (datetime.now() - start_time).total_seconds() * 1000
+            # Determine if we should try tomorrow view first
+            should_try_tomorrow = self._should_use_tomorrow_view(current_est)
             
-            request_count = 1
-            total_response_time = response_time
+            # Try up to 2 attempts: regular view and tomorrow view
+            attempts = [False]  # Start with regular view
+            if should_try_tomorrow:
+                attempts = [True, False]  # Try tomorrow first, then regular
+            else:
+                attempts = [False, True]  # Try regular first, then tomorrow
             
-            # Extract main content
-            main_content = self._extract_main_content(soup)
-            if not main_content:
-                error_msg = "Could not find main content container"
+            successful_scrape = None
+            
+            for attempt_num, use_tomorrow in enumerate(attempts, 1):
+                try:
+                    # Build URL for this attempt
+                    url = self.build_url(sport, sportsbook, use_tomorrow)
+                    
+                    self.logger.info(f"VSIN scrape attempt {attempt_num}", 
+                                   use_tomorrow=use_tomorrow, url=url)
+                    
+                    # Make request and get HTML
+                    start_time = datetime.now()
+                    soup = await self._get_soup(url)
+                    response_time = (datetime.now() - start_time).total_seconds() * 1000
+                    
+                    request_count += 1
+                    total_response_time += response_time
+                    
+                    # Extract and validate date from HTML
+                    extracted_date = self._extract_date_from_html(soup)
+                    
+                    if extracted_date:
+                        date_match = self._validate_date_match(extracted_date, target_date_est)
+                        
+                        self.logger.info("Date validation result",
+                                       extracted_date=extracted_date.strftime('%Y-%m-%d'),
+                                       target_date=target_date_est.strftime('%Y-%m-%d'),
+                                       date_match=date_match,
+                                       use_tomorrow=use_tomorrow)
+                        
+                        if date_match:
+                            # Date matches, proceed with scraping
+                            main_content = self._extract_main_content(soup)
+                            if main_content:
+                                betting_splits = self._parse_betting_splits(main_content, sport, sportsbook)
+                                if betting_splits:
+                                    successful_scrape = {
+                                        'data': betting_splits,
+                                        'url': url,
+                                        'extracted_date': extracted_date,
+                                        'use_tomorrow': use_tomorrow
+                                    }
+                                    break
+                            else:
+                                self.logger.warning("No main content found despite date match")
+                        else:
+                            self.logger.warning("Date mismatch, trying next view",
+                                              extracted_date=extracted_date.strftime('%Y-%m-%d'),
+                                              target_date=target_date_est.strftime('%Y-%m-%d'))
+                    else:
+                        self.logger.warning("Could not extract date from HTML")
+                    
+                except Exception as e:
+                    self.logger.warning(f"Attempt {attempt_num} failed", 
+                                      use_tomorrow=use_tomorrow, error=str(e))
+                    continue
+            
+            # Process results
+            if successful_scrape:
+                data = successful_scrape['data']
+                self.logger.info("Successfully scraped VSIN data with date validation",
+                               sport=sport,
+                               sportsbook=sportsbook,
+                               splits_count=len(data),
+                               extracted_date=successful_scrape['extracted_date'].strftime('%Y-%m-%d'),
+                               url=successful_scrape['url'],
+                               use_tomorrow=successful_scrape['use_tomorrow'])
+                
+                return self._create_result(
+                    success=True,
+                    data=data,
+                    errors=errors,
+                    metadata={
+                        "sport": sport,
+                        "sportsbook": sportsbook,
+                        "target_date": target_date_est.strftime('%Y-%m-%d'),
+                        "extracted_date": successful_scrape['extracted_date'].strftime('%Y-%m-%d'),
+                        "url": successful_scrape['url'],
+                        "use_tomorrow": successful_scrape['use_tomorrow'],
+                        "source": DataSource.VSIN.value,
+                        "current_est": current_est.strftime('%Y-%m-%d %H:%M:%S EST')
+                    },
+                    request_count=request_count,
+                    response_time_ms=total_response_time
+                )
+            else:
+                error_msg = f"Failed to find valid data for target date {target_date_est.strftime('%Y-%m-%d')} after {len(attempts)} attempts"
                 errors.append(error_msg)
-                self.logger.warning(error_msg)
+                self.logger.error("All VSIN scrape attempts failed", 
+                                sport=sport, sportsbook=sportsbook, 
+                                target_date=target_date_est.strftime('%Y-%m-%d'),
+                                attempts=len(attempts))
                 
                 return self._create_result(
                     success=False,
                     data=[],
                     errors=errors,
-                    metadata={"sport": sport, "sportsbook": sportsbook, "url": url},
+                    metadata={
+                        "sport": sport, 
+                        "sportsbook": sportsbook,
+                        "target_date": target_date_est.strftime('%Y-%m-%d'),
+                        "attempts": len(attempts)
+                    },
                     request_count=request_count,
                     response_time_ms=total_response_time
                 )
-            
-            # Parse betting splits from HTML
-            betting_splits = self._parse_betting_splits(main_content, sport, sportsbook)
-            
-            if betting_splits:
-                data = betting_splits
-                self.logger.info("Successfully scraped VSIN data",
-                               sport=sport,
-                               sportsbook=sportsbook,
-                               splits_count=len(betting_splits))
-            else:
-                error_msg = "No betting splits data found"
-                errors.append(error_msg)
-                self.logger.warning(error_msg, sport=sport, sportsbook=sportsbook)
-            
-            success = len(data) > 0
-            
-            return self._create_result(
-                success=success,
-                data=data,
-                errors=errors,
-                metadata={
-                    "sport": sport,
-                    "sportsbook": sportsbook,
-                    "url": url,
-                    "html_length": len(str(soup)),
-                    "source": DataSource.VSIN.value
-                },
-                request_count=request_count,
-                response_time_ms=total_response_time
-            )
             
         except Exception as e:
             error_msg = f"VSIN scraping failed: {str(e)}"
@@ -1243,15 +1531,19 @@ class VSINScraper(HTMLScraper):
 
 
 # Convenience function
-async def scrape_vsin_mlb(sportsbook: str = "circa") -> ScrapingResult:
+async def scrape_vsin_mlb(
+    sportsbook: str = "circa", 
+    target_date: Optional[datetime] = None
+) -> ScrapingResult:
     """
-    Convenience function to scrape MLB data from VSIN.
+    Convenience function to scrape MLB data from VSIN with date validation.
     
     Args:
         sportsbook: Sportsbook to use (defaults to Circa per memory constraint)
+        target_date: Target date to scrape (defaults to today in EST)
         
     Returns:
         ScrapingResult with MLB betting splits
     """
     async with VSINScraper() as scraper:
-        return await scraper.scrape_sport("mlb", sportsbook) 
+        return await scraper.scrape_sport("mlb", sportsbook, target_date) 

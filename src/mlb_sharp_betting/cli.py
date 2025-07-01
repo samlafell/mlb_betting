@@ -902,166 +902,6 @@ cli.add_command(status_group, name='status')
 
 
 @cli.command()
-@click.option('--minutes-ahead', default=240, help='Minutes ahead to search for betting opportunities')
-@click.option('--debug', is_flag=True, help='Enable debug output for performance monitoring')
-@click.option('--show-stats', is_flag=True, help='Show repository performance statistics')
-@click.option('--batch-mode', is_flag=True, help='Use batch data retrieval for optimal performance')
-@click.option('--clear-cache', is_flag=True, help='Clear repository cache before processing')
-def detect_opportunities(minutes_ahead: int, debug: bool, show_stats: bool, batch_mode: bool, clear_cache: bool):
-    """
-    Detect betting opportunities using multiple strategy processors
-    
-    🚀 ENHANCED: Added performance monitoring and batch optimization options
-    """
-    asyncio.run(_detect_opportunities_async(minutes_ahead, debug, show_stats, batch_mode, clear_cache))
-
-async def _detect_opportunities_async(minutes_ahead: int, debug: bool, show_stats: bool, 
-                                    batch_mode: bool, clear_cache: bool):
-    """
-    Simplified opportunity detection that works with basic data
-    """
-    from mlb_sharp_betting.db.connection import get_db_manager
-    from mlb_sharp_betting.services.data_service import get_data_service
-    from datetime import datetime, timedelta
-    
-    start_time = datetime.now()
-    
-    try:
-        db_manager = get_db_manager()
-        data_service = get_data_service(db_manager)
-        
-        if debug:
-            click.echo("🔍 DEBUG MODE: Enhanced logging enabled")
-            click.echo(f"⚙️  Configuration: minutes_ahead={minutes_ahead}, batch_mode={batch_mode}")
-        
-        # Calculate time window for upcoming games
-        now = datetime.now()
-        target_time = now + timedelta(minutes=minutes_ahead)
-        
-        click.echo("🔄 Searching for betting opportunities...")
-        
-        # Simple query to find recent betting splits with strong differentials
-        query = """
-            SELECT DISTINCT
-                game_id,
-                home_team,
-                away_team,
-                split_type,
-                home_or_over_bets_percentage,
-                home_or_over_stake_percentage,
-                ABS(home_or_over_bets_percentage - home_or_over_stake_percentage) as differential,
-                last_updated,
-                game_datetime
-            FROM splits.raw_mlb_betting_splits
-            WHERE 
-                last_updated >= CURRENT_DATE - INTERVAL '2 days'
-                AND ABS(home_or_over_bets_percentage - home_or_over_stake_percentage) >= 10.0
-                AND game_datetime IS NOT NULL
-                AND game_datetime >= NOW()
-                AND game_datetime <= NOW() + INTERVAL '%s minutes'
-            ORDER BY differential DESC, last_updated DESC
-            LIMIT 50
-        """
-        
-        opportunities = data_service.execute_read(query, (minutes_ahead,))
-        
-        end_time = datetime.now()
-        processing_time = (end_time - start_time).total_seconds()
-        
-        if opportunities:
-            click.echo(f"\n🎯 Found {len(opportunities)} potential opportunities:")
-            
-            # Group by game for better display
-            games = {}
-            for opp in opportunities:
-                # Handle both dict and tuple formats
-                if isinstance(opp, dict):
-                    game_key = f"{opp['away_team']} @ {opp['home_team']}"
-                    if game_key not in games:
-                        games[game_key] = []
-                    games[game_key].append(opp)
-                else:
-                    # Tuple format: game_id, home_team, away_team, split_type, home_bets, home_stake, differential, last_updated, game_datetime
-                    game_id, home_team, away_team, split_type, home_bets, home_stake, differential, last_updated, game_datetime = opp
-                    game_key = f"{away_team} @ {home_team}"
-                    if game_key not in games:
-                        games[game_key] = []
-                    games[game_key].append({
-                        'game_id': game_id,
-                        'home_team': home_team,
-                        'away_team': away_team,
-                        'split_type': split_type,
-                        'home_or_over_bets_percentage': home_bets,
-                        'home_or_over_stake_percentage': home_stake,
-                        'differential': differential,
-                        'last_updated': last_updated,
-                        'game_datetime': game_datetime
-                    })
-            
-            # Display results
-            for game_key, game_opps in games.items():
-                click.echo(f"\n📋 {game_key}:")
-                
-                for opp in game_opps[:3]:  # Show top 3 per game
-                    split_type = opp['split_type']
-                    differential = float(opp['differential'])
-                    home_bets = float(opp['home_or_over_bets_percentage'])
-                    home_stake = float(opp['home_or_over_stake_percentage'])
-                    
-                    # Determine which side has the sharp money (stake vs bets)
-                    if home_stake > home_bets:
-                        sharp_side = "HOME" if split_type == "moneyline" or split_type == "spread" else "OVER"
-                        public_side = "AWAY" if split_type == "moneyline" or split_type == "spread" else "UNDER"
-                        recommendation = f"Sharp money on {sharp_side}"
-                    else:
-                        sharp_side = "AWAY" if split_type == "moneyline" or split_type == "spread" else "UNDER"
-                        public_side = "HOME" if split_type == "moneyline" or split_type == "spread" else "OVER"
-                        recommendation = f"Sharp money on {sharp_side}"
-                    
-                    confidence = min(95.0, max(50.0, differential * 2.5))  # Simple confidence calc
-                    
-                    click.echo(f"   • {split_type.title()}: {recommendation}")
-                    click.echo(f"     📊 Differential: {differential:.1f}% | Confidence: {confidence:.1f}%")
-                    click.echo(f"     🎯 Bets: {home_bets:.1f}% | Money: {home_stake:.1f}%")
-                    
-                    if differential >= 20:
-                        click.echo("     🔥 STRONG SIGNAL - High differential")
-                    elif differential >= 15:
-                        click.echo("     ⭐ GOOD SIGNAL - Notable differential")
-                    
-                if len(game_opps) > 3:
-                    click.echo(f"   ... and {len(game_opps) - 3} more signals")
-        else:
-            click.echo("📭 No betting opportunities found")
-            click.echo("💡 Try increasing --minutes-ahead or check if data is recent")
-        
-        # Performance summary
-        click.echo(f"\n⏱️  Processing completed in {processing_time:.2f} seconds")
-        
-        if show_stats:
-            click.echo("\n📊 Simple Detection Statistics:")
-            click.echo(f"   • Database queries: 1 (optimized)")
-            click.echo(f"   • Records analyzed: {len(opportunities) if opportunities else 0}")
-            click.echo(f"   • Games with opportunities: {len(games) if opportunities else 0}")
-            click.echo("   • Detection method: Direct SQL analysis")
-    
-    except Exception as e:
-        click.echo(f"❌ Error detecting opportunities: {e}", err=True)
-        if debug:
-            import traceback
-            click.echo(traceback.format_exc(), err=True)
-        sys.exit(1)
-
-async def _detect_with_batch_optimization(detector, repository, minutes_ahead: int, debug: bool):
-    """
-    Simplified batch optimization - now just returns empty list since we use direct SQL
-    """
-    if debug:
-        click.echo("🔄 Batch mode enabled but using direct SQL approach")
-    return []
-
-
-@cli.command()
 @click.option('--hours-back', '-h', type=int, default=24,
               help='Hours back to search for flips (default: 24)')
 @click.option('--min-confidence', '-c', type=float, default=50.0,
@@ -1255,7 +1095,523 @@ cli.add_command(enhanced_backtesting_group, name='backtest')
 cli.add_command(status_group, name='status')
 cli.add_command(diagnostics, name='diagnostics')
 
-# Add individual commands
+@cli.command()
+@click.option('--threshold', '-t', default=10.0, help='Minimum differential threshold (default: 10.0)')
+@click.option('--limit', '-l', default=20, help='Maximum number of results (default: 20)')
+@click.option('--days-back', '-d', default=2, help='Days back to search (default: 2)')
+def simple_scan(threshold: float, limit: int, days_back: int):
+    """🔍 Simple betting opportunity scanner (no complex dependencies)"""
+    
+    from mlb_sharp_betting.db.connection import get_db_manager
+    
+    try:
+        click.echo("🔍 SIMPLE BETTING OPPORTUNITY SCANNER")
+        click.echo("=" * 60)
+        click.echo(f"📊 Threshold: ≥{threshold}% differential")
+        click.echo(f"📅 Search period: Last {days_back} days")
+        click.echo(f"🎯 Max results: {limit}")
+        
+        db_manager = get_db_manager()
+        
+        # Ultra-simple query with no complex dependencies
+        query = """
+            SELECT 
+                home_team,
+                away_team,
+                split_type,
+                CAST(home_or_over_bets_percentage AS FLOAT) as bets_pct,
+                CAST(home_or_over_stake_percentage AS FLOAT) as stake_pct,
+                CAST(ABS(home_or_over_bets_percentage - home_or_over_stake_percentage) AS FLOAT) as diff,
+                game_datetime,
+                last_updated,
+                source,
+                book
+            FROM splits.raw_mlb_betting_splits
+            WHERE 
+                last_updated >= CURRENT_DATE - INTERVAL '%s days'
+                AND home_or_over_bets_percentage IS NOT NULL
+                AND home_or_over_stake_percentage IS NOT NULL
+                AND ABS(home_or_over_bets_percentage - home_or_over_stake_percentage) >= %s
+            ORDER BY diff DESC, last_updated DESC
+            LIMIT %s
+        """
+        
+        with db_manager.get_cursor() as cursor:
+            cursor.execute(query, (days_back, threshold, limit))
+            results = cursor.fetchall()
+        
+        if not results:
+            click.echo(f"\n❌ No opportunities found with ≥{threshold}% differential")
+            click.echo("💡 Try lowering the threshold with --threshold 5.0")
+            return
+        
+        click.echo(f"\n🎯 Found {len(results)} betting opportunities:")
+        
+        for i, result in enumerate(results, 1):
+            # Handle both dict and tuple formats
+            if isinstance(result, dict):
+                home = result['home_team']
+                away = result['away_team']
+                split_type = result['split_type']
+                bets_pct = result['bets_pct']
+                stake_pct = result['stake_pct']
+                diff = result['diff']
+                source = result.get('source', 'Unknown')
+                book = result.get('book', 'Unknown')
+            else:
+                home, away, split_type, bets_pct, stake_pct, diff, game_dt, last_up, source, book = result
+            
+            # Convert to float safely
+            try:
+                bets_pct = float(bets_pct) if bets_pct is not None else 0.0
+                stake_pct = float(stake_pct) if stake_pct is not None else 0.0
+                diff = float(diff) if diff is not None else 0.0
+            except (ValueError, TypeError):
+                continue
+            
+            # Determine sharp side
+            if stake_pct > bets_pct:
+                if split_type and split_type.lower() in ['moneyline', 'spread']:
+                    sharp_side = "HOME"
+                else:
+                    sharp_side = "OVER"
+            else:
+                if split_type and split_type.lower() in ['moneyline', 'spread']:
+                    sharp_side = "AWAY"
+                else:
+                    sharp_side = "UNDER"
+            
+            click.echo(f"\n{i:2d}. 🎯 {away} @ {home} ({split_type or 'unknown'})")
+            click.echo(f"    💰 Sharp Money: {sharp_side}")
+            click.echo(f"    📊 Bets: {bets_pct:.1f}% | Money: {stake_pct:.1f}% | Diff: {diff:.1f}%")
+            click.echo(f"    📡 Source: {source}-{book}")
+            
+            # Signal strength
+            if diff >= 20:
+                click.echo(f"    🔥 STRONG SIGNAL")
+            elif diff >= 15:
+                click.echo(f"    ⭐ GOOD SIGNAL")  
+            elif diff >= 10:
+                click.echo(f"    ✅ VALID SIGNAL")
+        
+        click.echo(f"\n✅ Scan completed successfully")
+        
+    except Exception as e:
+        click.echo(f"❌ Simple scan failed: {e}")
+        click.echo("\n🔧 Basic troubleshooting:")
+        click.echo("   • Is PostgreSQL running?")
+        click.echo("   • Does the 'mlb_betting' database exist?")
+        click.echo("   • Try 'mlb-cli status' to check system health")
+
+
+@cli.command()
+@click.option('--create-missing', is_flag=True, help='Create missing tables')
+@click.option('--show-schema', is_flag=True, help='Show current database schema')
+def fix_schema(create_missing: bool, show_schema: bool):
+    """🔧 Check and fix database schema issues"""
+    
+    from mlb_sharp_betting.db.connection import get_db_manager
+    
+    try:
+        click.echo("🔧 DATABASE SCHEMA CHECKER")
+        click.echo("=" * 60)
+        
+        db_manager = get_db_manager()
+        
+        # Check existing tables
+        with db_manager.get_cursor() as cursor:
+            cursor.execute("""
+                SELECT schemaname, tablename
+                FROM pg_tables 
+                WHERE schemaname NOT IN ('information_schema', 'pg_catalog')
+                ORDER BY schemaname, tablename
+            """)
+            existing_tables = cursor.fetchall()
+        
+        if show_schema:
+            click.echo("📊 Current database schema:")
+            current_schema = None
+            for table in existing_tables:
+                schema = table[0] if isinstance(table, tuple) else table['schemaname']
+                name = table[1] if isinstance(table, tuple) else table['tablename']
+                
+                if schema != current_schema:
+                    click.echo(f"\n📁 Schema: {schema}")
+                    current_schema = schema
+                
+                click.echo(f"   • {name}")
+        
+        # Check for missing critical tables
+        required_tables = {
+            'splits': ['raw_mlb_betting_splits'],
+            'validation': ['strategy_records'],
+            'backtesting': ['strategy_configurations', 'threshold_configurations', 'strategy_performance'],
+            'main': ['games', 'game_outcomes']
+        }
+        
+        existing_by_schema = {}
+        for table in existing_tables:
+            schema = table[0] if isinstance(table, tuple) else table['schemaname']
+            name = table[1] if isinstance(table, tuple) else table['tablename']
+            
+            if schema not in existing_by_schema:
+                existing_by_schema[schema] = []
+            existing_by_schema[schema].append(name)
+        
+        click.echo("\n🔍 Schema Analysis:")
+        missing_tables = []
+        
+        for schema, tables in required_tables.items():
+            schema_exists = schema in existing_by_schema
+            click.echo(f"\n📁 {schema} schema: {'✅ EXISTS' if schema_exists else '❌ MISSING'}")
+            
+            if schema_exists:
+                for table in tables:
+                    exists = table in existing_by_schema[schema]
+                    status = '✅' if exists else '❌'
+                    click.echo(f"   • {table}: {status}")
+                    if not exists:
+                        missing_tables.append(f"{schema}.{table}")
+            else:
+                for table in tables:
+                    click.echo(f"   • {table}: ❌ (schema missing)")
+                    missing_tables.append(f"{schema}.{table}")
+        
+        if missing_tables:
+            click.echo(f"\n⚠️  Missing {len(missing_tables)} critical tables:")
+            for table in missing_tables:
+                click.echo(f"   • {table}")
+            
+            if create_missing:
+                click.echo("\n🔧 Creating missing schemas and tables...")
+                
+                with db_manager.get_cursor() as cursor:
+                    # Create schemas
+                    for schema in ['validation', 'backtesting']:
+                        if schema not in existing_by_schema:
+                            cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+                            click.echo(f"✅ Created schema: {schema}")
+                    
+                    # Create basic validation table
+                    if 'validation' not in existing_by_schema or 'strategy_records' not in existing_by_schema.get('validation', []):
+                        cursor.execute("""
+                            CREATE TABLE IF NOT EXISTS validation.strategy_records (
+                                id SERIAL PRIMARY KEY,
+                                strategy_name VARCHAR(100) NOT NULL,
+                                validation_date DATE NOT NULL,
+                                roi_per_100 DECIMAL(10,2),
+                                win_rate DECIMAL(5,2),
+                                total_bets INTEGER,
+                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                            )
+                        """)
+                        click.echo("✅ Created table: validation.strategy_records")
+                    
+                    # Create basic backtesting tables
+                    if 'backtesting' not in existing_by_schema or 'strategy_configurations' not in existing_by_schema.get('backtesting', []):
+                        cursor.execute("""
+                            CREATE TABLE IF NOT EXISTS backtesting.strategy_configurations (
+                                id SERIAL PRIMARY KEY,
+                                strategy_name VARCHAR(255) NOT NULL,
+                                source_book_type VARCHAR(100) NOT NULL,
+                                split_type VARCHAR(50) NOT NULL,
+                                win_rate DECIMAL(5,4) NOT NULL,
+                                roi_per_100 DECIMAL(8,2) NOT NULL,
+                                total_bets INTEGER NOT NULL,
+                                confidence_level VARCHAR(20) NOT NULL,
+                                min_threshold DECIMAL(8,2) DEFAULT 15.0,
+                                moderate_threshold DECIMAL(8,2) DEFAULT 22.5,
+                                high_threshold DECIMAL(8,2) DEFAULT 30.0,
+                                is_active BOOLEAN DEFAULT true,
+                                max_drawdown DECIMAL(8,2) DEFAULT 0.0,
+                                sharpe_ratio DECIMAL(8,2) DEFAULT 0.0,
+                                kelly_criterion DECIMAL(8,2) DEFAULT 0.0,
+                                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                UNIQUE(strategy_name, source_book_type, split_type)
+                            )
+                        """)
+                        click.echo("✅ Created table: backtesting.strategy_configurations")
+                    
+                    if 'backtesting' not in existing_by_schema or 'threshold_configurations' not in existing_by_schema.get('backtesting', []):
+                        cursor.execute("""
+                            CREATE TABLE IF NOT EXISTS backtesting.threshold_configurations (
+                                id SERIAL PRIMARY KEY,
+                                source VARCHAR(100) NOT NULL,
+                                strategy_type VARCHAR(100) NOT NULL,
+                                high_confidence_threshold DECIMAL(8,2) NOT NULL,
+                                moderate_confidence_threshold DECIMAL(8,2) NOT NULL,
+                                minimum_threshold DECIMAL(8,2) NOT NULL,
+                                opposing_high_threshold DECIMAL(8,2) NOT NULL,
+                                opposing_moderate_threshold DECIMAL(8,2) NOT NULL,
+                                steam_threshold DECIMAL(8,2) NOT NULL,
+                                steam_time_window_hours DECIMAL(4,2) DEFAULT 2.0,
+                                min_sample_size INTEGER DEFAULT 10,
+                                min_win_rate DECIMAL(5,4) DEFAULT 0.52,
+                                is_active BOOLEAN DEFAULT true,
+                                last_validated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                confidence_level VARCHAR(20) DEFAULT 'MODERATE',
+                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                UNIQUE(source, strategy_type)
+                            )
+                        """)
+                        click.echo("✅ Created table: backtesting.threshold_configurations")
+                    
+                    if 'backtesting' not in existing_by_schema or 'strategy_performance' not in existing_by_schema.get('backtesting', []):
+                        cursor.execute("""
+                            CREATE TABLE IF NOT EXISTS backtesting.strategy_performance (
+                                id SERIAL PRIMARY KEY,
+                                backtest_date DATE NOT NULL,
+                                strategy_name VARCHAR(255) NOT NULL,
+                                source_book_type VARCHAR(100) NOT NULL,
+                                split_type VARCHAR(50) NOT NULL,
+                                total_bets INTEGER NOT NULL,
+                                wins INTEGER NOT NULL,
+                                win_rate DECIMAL(5,4) NOT NULL,
+                                roi_per_100 DECIMAL(8,2) NOT NULL,
+                                confidence_level VARCHAR(20) NOT NULL,
+                                kelly_criterion DECIMAL(8,2) DEFAULT 0.0,
+                                sharpe_ratio DECIMAL(8,2) DEFAULT 0.0,
+                                max_drawdown DECIMAL(8,2) DEFAULT 0.0,
+                                total_profit_loss DECIMAL(10,2) DEFAULT 0.0,
+                                is_active BOOLEAN DEFAULT true,
+                                strategy_type VARCHAR(100),
+                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                UNIQUE(strategy_name, source_book_type, split_type, backtest_date)
+                            )
+                        """)
+                        click.echo("✅ Created table: backtesting.strategy_performance")
+                
+                click.echo("\n✅ Schema setup completed!")
+            else:
+                click.echo("\n💡 Use --create-missing to create missing tables")
+        else:
+            click.echo("\n✅ All critical tables exist!")
+        
+    except Exception as e:
+        click.echo(f"❌ Schema check failed: {e}")
+        import traceback
+        click.echo(f"Details: {traceback.format_exc()}")
+
+
+@cli.command()
+@click.option('--days-back', '-d', default=7, help='Days back to analyze for strategy configs (default: 7)')
+@click.option('--create-tables', is_flag=True, help='Create missing strategy configuration tables')
+@click.option('--force-update', is_flag=True, help='Force update even if recent configs exist')
+def update_strategy_configs(days_back: int, create_tables: bool, force_update: bool):
+    """🔧 Update strategy configurations based on backtest performance"""
+    
+    async def run_config_update():
+        click.echo("🔧 STRATEGY CONFIGURATION UPDATER")
+        click.echo("=" * 60)
+        click.echo(f"📅 Analyzing last {days_back} days of performance")
+        
+        try:
+            from mlb_sharp_betting.services.backtesting_engine import get_backtesting_engine
+            
+            # Initialize backtesting engine
+            backtesting_engine = get_backtesting_engine()
+            await backtesting_engine.initialize()
+            
+            if create_tables:
+                click.echo("🏗️  Creating strategy configuration tables...")
+                # The tables will be created automatically when backtesting runs
+                click.echo("✅ Tables will be created during backtest execution")
+            
+            # Calculate date range
+            end_date = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
+            
+            click.echo(f"🔍 Running backtest: {start_date} to {end_date}")
+            
+            # Run backtest to update configurations
+            results = await backtesting_engine.run_backtest(
+                start_date=start_date,
+                end_date=end_date,
+                include_diagnostics=False,
+                include_alignment=False
+            )
+            
+            # Display results
+            backtest_results = results.get('backtest_results', {})
+            total_strategies = backtest_results.get('total_strategies', 0)
+            profitable_strategies = backtest_results.get('profitable_strategies', 0)
+            total_bets = backtest_results.get('total_bets', 0)
+            overall_roi = backtest_results.get('overall_roi', 0)
+            
+            click.echo(f"\n📊 CONFIGURATION UPDATE RESULTS:")
+            click.echo(f"   • Strategies analyzed: {total_strategies}")
+            click.echo(f"   • Profitable strategies: {profitable_strategies}")
+            click.echo(f"   • Total bets analyzed: {total_bets}")
+            click.echo(f"   • Overall ROI: {overall_roi:.2f}%")
+            click.echo(f"   • Execution time: {results.get('execution_time_seconds', 0):.2f}s")
+            
+            if total_strategies > 0:
+                click.echo(f"\n✅ Strategy configurations updated successfully!")
+                click.echo(f"📁 Tables: backtesting.strategy_configurations & backtesting.threshold_configurations")
+                
+                # Show top performing strategies
+                strategy_results = backtest_results.get('strategy_results', [])
+                if strategy_results:
+                    click.echo(f"\n🏆 Top performing strategies:")
+                    sorted_strategies = sorted(strategy_results, key=lambda x: x.get('roi_per_100', 0), reverse=True)
+                    for i, strategy in enumerate(sorted_strategies[:5], 1):
+                        name = strategy.get('strategy_name', 'Unknown')
+                        roi = strategy.get('roi_per_100', 0)
+                        win_rate = strategy.get('win_rate', 0)
+                        bets = strategy.get('total_bets', 0)
+                        click.echo(f"   {i}. {name}: {roi:+.1f}% ROI, {win_rate:.1%} WR, {bets} bets")
+            else:
+                click.echo(f"\n⚠️  No strategies found in the specified date range")
+                click.echo(f"💡 Try increasing --days-back or ensure you have recent betting data")
+            
+        except Exception as e:
+            click.echo(f"❌ Configuration update failed: {e}")
+            import traceback
+            click.echo(f"Details: {traceback.format_exc()}")
+            sys.exit(1)
+    
+    try:
+        asyncio.run(run_config_update())
+    except KeyboardInterrupt:
+        click.echo("\n⚠️  Configuration update interrupted by user")
+    except Exception as e:
+        click.echo(f"❌ Configuration update failed: {e}")
+        sys.exit(1)
+
+
+@cli.command()
+@click.option('--show-inactive', is_flag=True, help='Also show inactive strategies')
+@click.option('--show-thresholds', is_flag=True, help='Show threshold configurations')
+def strategy_config_status(show_inactive: bool, show_thresholds: bool):
+    """📊 Show current strategy configuration status"""
+    
+    async def run_status_check():
+        click.echo("📊 STRATEGY CONFIGURATION STATUS")
+        click.echo("=" * 60)
+        
+        try:
+            from mlb_sharp_betting.services.strategy_manager import get_strategy_manager
+            from mlb_sharp_betting.db.connection import get_db_manager
+            
+            # Initialize strategy manager
+            strategy_manager = await get_strategy_manager()
+            db_manager = get_db_manager()
+            
+            # Check if tables exist
+            with db_manager.get_cursor() as cursor:
+                cursor.execute("""
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.tables 
+                        WHERE table_schema = 'backtesting' 
+                        AND table_name = 'strategy_configurations'
+                    )
+                """)
+                configs_table_exists = cursor.fetchone()[0]
+                
+                cursor.execute("""
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.tables 
+                        WHERE table_schema = 'backtesting' 
+                        AND table_name = 'threshold_configurations'
+                    )
+                """)
+                thresholds_table_exists = cursor.fetchone()[0]
+            
+            click.echo(f"🏗️  Tables Status:")
+            click.echo(f"   • strategy_configurations: {'✅ EXISTS' if configs_table_exists else '❌ MISSING'}")
+            click.echo(f"   • threshold_configurations: {'✅ EXISTS' if thresholds_table_exists else '❌ MISSING'}")
+            
+            if not configs_table_exists:
+                click.echo(f"\n⚠️  Strategy configurations table missing!")
+                click.echo(f"💡 Run 'mlb-cli update-strategy-configs --create-tables' to create tables")
+                return
+            
+            # Get active strategies
+            active_strategies = await strategy_manager.get_active_strategies()
+            
+            click.echo(f"\n📈 Active Strategies: {len(active_strategies)}")
+            if active_strategies:
+                for i, strategy in enumerate(active_strategies[:10], 1):  # Show top 10
+                    click.echo(f"   {i:2d}. {strategy.strategy_name}")
+                    click.echo(f"       📊 {strategy.roi_per_100:+.1f}% ROI | {strategy.win_rate:.1%} WR | {strategy.total_bets} bets")
+                    click.echo(f"       🎯 Source: {strategy.source_book_type} | Type: {strategy.split_type}")
+                    click.echo(f"       🎚️  Thresholds: {strategy.min_threshold:.1f}-{strategy.high_threshold:.1f}%")
+                    click.echo()
+            
+            # Show inactive strategies if requested
+            if show_inactive:
+                with db_manager.get_cursor() as cursor:
+                    cursor.execute("""
+                        SELECT strategy_name, source_book_type, split_type, roi_per_100, win_rate, total_bets
+                        FROM backtesting.strategy_configurations
+                        WHERE is_active = false
+                        ORDER BY roi_per_100 DESC
+                        LIMIT 10
+                    """)
+                    inactive_strategies = cursor.fetchall()
+                
+                click.echo(f"❌ Inactive Strategies: {len(inactive_strategies)}")
+                for strategy in inactive_strategies:
+                    if isinstance(strategy, dict):
+                        name = strategy['strategy_name']
+                        roi = strategy['roi_per_100']
+                        win_rate = strategy['win_rate']
+                        bets = strategy['total_bets']
+                        source = strategy['source_book_type']
+                        split_type = strategy['split_type']
+                    else:
+                        name, source, split_type, roi, win_rate, bets = strategy
+                    
+                    click.echo(f"   • {name}: {roi:+.1f}% ROI, {win_rate:.1%} WR, {bets} bets ({source}-{split_type})")
+            
+            # Show threshold configurations if requested
+            if show_thresholds and thresholds_table_exists:
+                with db_manager.get_cursor() as cursor:
+                    cursor.execute("""
+                        SELECT source, strategy_type, high_confidence_threshold, 
+                               moderate_confidence_threshold, minimum_threshold, confidence_level
+                        FROM backtesting.threshold_configurations
+                        WHERE is_active = true
+                        ORDER BY source, strategy_type
+                    """)
+                    threshold_configs = cursor.fetchall()
+                
+                click.echo(f"\n🎚️  Threshold Configurations: {len(threshold_configs)}")
+                for config in threshold_configs:
+                    if isinstance(config, dict):
+                        source = config['source']
+                        strategy_type = config['strategy_type']
+                        high = config['high_confidence_threshold']
+                        moderate = config['moderate_confidence_threshold']
+                        minimum = config['minimum_threshold']
+                        confidence = config['confidence_level']
+                    else:
+                        source, strategy_type, high, moderate, minimum, confidence = config
+                    
+                    click.echo(f"   • {source}-{strategy_type}: {minimum:.1f}%/{moderate:.1f}%/{high:.1f}% ({confidence})")
+            
+            # Show manager status
+            manager_status = strategy_manager.get_metrics()
+            click.echo(f"\n🔧 Manager Status:")
+            click.echo(f"   • Strategy cache: {manager_status['cache_status']['strategy_cache_size']} strategies")
+            click.echo(f"   • Threshold cache: {manager_status['cache_status']['threshold_cache_size']} configs")
+            click.echo(f"   • Cache valid: {'✅' if manager_status['cache_status']['cache_valid'] else '❌'}")
+            
+        except Exception as e:
+            click.echo(f"❌ Status check failed: {e}")
+            import traceback
+            click.echo(f"Details: {traceback.format_exc()}")
+            sys.exit(1)
+    
+    try:
+        asyncio.run(run_status_check())
+    except KeyboardInterrupt:
+        click.echo("\n⚠️  Status check interrupted by user")
+    except Exception as e:
+        click.echo(f"❌ Status check failed: {e}")
+        sys.exit(1)
 
 
 if __name__ == '__main__':

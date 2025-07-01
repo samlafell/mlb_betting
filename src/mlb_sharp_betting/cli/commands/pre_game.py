@@ -94,43 +94,71 @@ def status(project_root: Optional[Path]):
     click.echo("=" * 40)
     
     try:
-        # 🔄 UPDATED: Use new SchedulerEngine
+        # First, check if the process is actually running by checking PID file
+        # This is the real indicator of whether the scheduler is running
+        project_root = project_root or Path.cwd()
+        pid_file = project_root / "pregame_scheduler.pid"
+        
+        process_running = False
+        pid = None
+        
+        if pid_file.exists():
+            try:
+                with open(pid_file, 'r') as f:
+                    pid = int(f.read().strip())
+                
+                # Check if process is actually running
+                import os
+                import signal
+                try:
+                    os.kill(pid, 0)  # This doesn't actually kill, just checks if process exists
+                    process_running = True
+                except (OSError, ProcessLookupError):
+                    # Process doesn't exist, remove stale PID file
+                    pid_file.unlink(missing_ok=True)
+                    process_running = False
+            except (ValueError, IOError):
+                process_running = False
+        
+        # Display process status first (most important)
+        click.echo(f"Running: {'✅ Yes' if process_running else '❌ No'}")
+        if process_running and pid:
+            click.echo(f"Process ID: {pid}")
+        
+        # Only try to get detailed status if we have a way to connect to the running instance
+        # For now, we'll show basic info from a new instance but clearly indicate the limitation
         scheduler_engine = get_scheduler_engine()
         if project_root:
             scheduler_engine.project_root = project_root
         
-        # Get status from unified engine
+        # Get status from a fresh instance (note: this won't show running jobs from the actual running process)
         status_info = scheduler_engine.get_status()
         
-        click.echo(f"Running: {'✅ Yes' if status_info.get('running', False) else '❌ No'}")
-        click.echo(f"Mode: {status_info.get('mode', 'Unknown')}")
-        click.echo(f"Notifications: {'✅ Enabled' if status_info.get('notifications_enabled', False) else '❌ Disabled'}")
-        click.echo(f"Scheduled Games: {status_info.get('scheduled_games_count', 0)}")
-        click.echo(f"Active Jobs: {status_info.get('active_jobs', 0)}")
+        click.echo(f"Mode: pregame")
+        click.echo(f"Notifications: {'✅ Enabled' if scheduler_engine.notifications_enabled else '❌ Disabled'}")
         
-        # Show metrics from unified metrics
-        if 'metrics' in status_info:
-            metrics = status_info['metrics']
-            click.echo("\n📈 Scheduler Metrics:")
-            click.echo(f"  Workflows Triggered: {metrics.get('workflows_triggered', 0)}")
-            click.echo(f"  Successful Workflows: {metrics.get('successful_workflows', 0)}")
-            click.echo(f"  Failed Workflows: {metrics.get('failed_workflows', 0)}")
-            click.echo(f"  Game Alerts: {metrics.get('game_alerts', 0)}")
-            click.echo(f"  Total Jobs Executed: {metrics.get('total_jobs_executed', 0)}")
+        if process_running:
+            click.echo(f"Alert Minutes: {scheduler_engine.alert_minutes}")
+            click.echo(f"Daily Setup Hour: {scheduler_engine.daily_setup_hour} EST")
             
-            # Show last run times
-            if metrics.get('last_hourly_run'):
-                click.echo(f"  Last Hourly Run: {metrics['last_hourly_run']}")
-            if metrics.get('last_game_alert'):
-                click.echo(f"  Last Game Alert: {metrics['last_game_alert']}")
-        
-        # Show module status
-        if 'modules' in status_info:
-            modules = status_info['modules']
-            click.echo("\n🔧 Module Status:")
-            for module_name, module_info in modules.items():
-                status_emoji = "✅" if module_info.get('loaded', False) else "❌"
-                click.echo(f"  {status_emoji} {module_name.title()}: {'Loaded' if module_info.get('loaded', False) else 'Not loaded'}")
+            # Show log file info
+            log_file = project_root / "pregame_scheduler.log"
+            if log_file.exists():
+                click.echo(f"Log File: {log_file}")
+                try:
+                    import time
+                    mtime = log_file.stat().st_mtime
+                    last_modified = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(mtime))
+                    click.echo(f"Last Log Update: {last_modified}")
+                except Exception:
+                    pass
+            
+            click.echo("\n💡 Note: The scheduler is running in a separate process.")
+            click.echo("   To see detailed job status, check the log file:")
+            click.echo(f"   tail -f {project_root}/pregame_scheduler.log")
+        else:
+            click.echo("\n🔧 To start the scheduler, run:")
+            click.echo("   ./start_pregame_scheduler.sh")
         
     except Exception as e:
         click.echo(f"❌ Failed to get status: {str(e)}", err=True)

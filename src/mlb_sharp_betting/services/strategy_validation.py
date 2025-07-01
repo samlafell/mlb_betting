@@ -534,41 +534,116 @@ class StrategyValidation:
     async def _load_validation_records(self):
         """Load validation records from database"""
         try:
-            query = """
-            SELECT 
-                strategy_name,
-                validation_status,
-                last_validated,
-                performance_metrics,
-                circuit_breaker_open,
-                max_daily_recommendations,
-                max_bet_size_multiplier,
-                requires_manual_approval
-            FROM validation.strategy_records
-            WHERE is_active = true
+            # Check if validation schema and table exist first
+            check_schema_query = """
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.schemata 
+                    WHERE schema_name = 'validation'
+                )
             """
             
             with self.db_manager.get_cursor() as cursor:
+                cursor.execute(check_schema_query)
+                schema_exists = cursor.fetchone()[0]
+                
+                if not schema_exists:
+                    self.logger.info("Validation schema doesn't exist yet - using default validation records")
+                    return
+                
+                # Check if strategy_records table exists
+                check_table_query = """
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.tables 
+                        WHERE table_schema = 'validation' 
+                        AND table_name = 'strategy_records'
+                    )
+                """
+                cursor.execute(check_table_query)
+                table_exists = cursor.fetchone()[0]
+                
+                if not table_exists:
+                    self.logger.info("validation.strategy_records table doesn't exist yet - using default validation records")
+                    return
+                
+                # Check if validation_status column exists in the table
+                check_column_query = """
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_schema = 'validation' 
+                        AND table_name = 'strategy_records'
+                        AND column_name = 'validation_status'
+                    )
+                """
+                cursor.execute(check_column_query)
+                column_exists = cursor.fetchone()[0]
+                
+                if not column_exists:
+                    self.logger.info("validation_status column doesn't exist yet - using default validation records")
+                    return
+                
+                # If table exists, try to load records
+                query = """
+                SELECT 
+                    strategy_name,
+                    validation_status,
+                    last_validated,
+                    performance_metrics,
+                    circuit_breaker_open,
+                    max_daily_recommendations,
+                    max_bet_size_multiplier,
+                    requires_manual_approval
+                FROM validation.strategy_records
+                WHERE is_active = true
+                """
+                
                 cursor.execute(query)
                 results = cursor.fetchall()
             
-            for row in results:
-                record = ValidationRecord(
-                    strategy_name=row['strategy_name'],
-                    validation_status=ValidationStatus(row['validation_status']),
-                    last_validated=row['last_validated'],
-                    performance_metrics=json.loads(row['performance_metrics']) if row['performance_metrics'] else {},
-                    circuit_breaker_open=row['circuit_breaker_open'],
-                    max_daily_recommendations=row['max_daily_recommendations'],
-                    max_bet_size_multiplier=row['max_bet_size_multiplier'],
-                    requires_manual_approval=row['requires_manual_approval']
-                )
-                
-                self.validation_records[row['strategy_name']] = record
+                for row in results:
+                    record = ValidationRecord(
+                        strategy_name=row['strategy_name'],
+                        validation_status=ValidationStatus(row['validation_status']),
+                        last_validated=row['last_validated'],
+                        performance_metrics=json.loads(row['performance_metrics']) if row['performance_metrics'] else {},
+                        circuit_breaker_open=row['circuit_breaker_open'],
+                        max_daily_recommendations=row['max_daily_recommendations'],
+                        max_bet_size_multiplier=row['max_bet_size_multiplier'],
+                        requires_manual_approval=row['requires_manual_approval']
+                    )
+                    
+                    self.validation_records[row['strategy_name']] = record
+                    
+                self.logger.info(f"Loaded {len(results)} validation records from database")
                 
         except Exception as e:
             self.logger.warning(f"Failed to load validation records from DB: {e}")
             # Continue with empty records - system should still function
+            # Initialize with default validation for common strategies
+            self._initialize_default_validation_records()
+    
+    def _initialize_default_validation_records(self):
+        """Initialize default validation records when database is not available"""
+        default_strategies = [
+            'sharp_action_detector',
+            'opposing_markets_detector', 
+            'book_conflicts_detector',
+            'line_movement_detector',
+            'consensus_fade_detector'
+        ]
+        
+        for strategy_name in default_strategies:
+            self.validation_records[strategy_name] = ValidationRecord(
+                strategy_name=strategy_name,
+                validation_status=ValidationStatus.VALIDATED,  # Allow basic functionality
+                last_validated=datetime.now(),
+                performance_metrics={},
+                circuit_breaker_open=False,
+                max_daily_recommendations=50,
+                max_bet_size_multiplier=1.0,
+                requires_manual_approval=False
+            )
+        
+        self.logger.info(f"Initialized {len(default_strategies)} default validation records")
     
     async def _persist_validation_records(self):
         """Persist validation records to database"""

@@ -833,6 +833,9 @@ class BettingSignalRepository:
 
     async def get_hybrid_sharp_data(self, start_time: datetime, end_time: datetime) -> List[Dict]:
         """Get hybrid sharp data with line movement calculations"""
+        # Ensure minimum_differential has a default value
+        min_diff = getattr(self.config, 'minimum_differential', 10.0)
+        
         query = """
         WITH comprehensive_data AS (
             SELECT 
@@ -889,145 +892,66 @@ class BettingSignalRepository:
               AND go.away_score IS NOT NULL
         ),
         
-        opening_closing_with_sharp AS (
+        line_movement_data AS (
             SELECT 
-                game_id,
-                source,
-                book,
-                split_type,
-                home_team,
-                away_team,
-                game_datetime,
-                
-                -- Opening metrics
+                game_id, source, book, split_type, home_team, away_team, game_datetime,
+                differential, stake_pct, bet_pct, sharp_indicator,
+                line_value,
                 FIRST_VALUE(line_value) OVER (
                     PARTITION BY game_id, source, book, split_type 
                     ORDER BY last_updated ASC
-                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
                 ) as opening_line,
-                
-                FIRST_VALUE(differential) OVER (
-                    PARTITION BY game_id, source, book, split_type 
-                    ORDER BY last_updated ASC
-                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-                ) as opening_differential,
-                
-                -- Closing metrics
                 LAST_VALUE(line_value) OVER (
                     PARTITION BY game_id, source, book, split_type 
                     ORDER BY last_updated ASC
                     ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
                 ) as closing_line,
-                
-                LAST_VALUE(differential) OVER (
-                    PARTITION BY game_id, source, book, split_type 
-                    ORDER BY last_updated ASC
-                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-                ) as closing_differential,
-                
-                LAST_VALUE(sharp_indicator) OVER (
-                    PARTITION BY game_id, source, book, split_type 
-                    ORDER BY last_updated ASC
-                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-                ) as closing_sharp_indicator,
-                
-                LAST_VALUE(stake_pct) OVER (
-                    PARTITION BY game_id, source, book, split_type 
-                    ORDER BY last_updated ASC
-                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-                ) as closing_stake_pct,
-                
-                LAST_VALUE(bet_pct) OVER (
-                    PARTITION BY game_id, source, book, split_type 
-                    ORDER BY last_updated ASC
-                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-                ) as closing_bet_pct,
-                
-                LAST_VALUE(last_updated) OVER (
-                    PARTITION BY game_id, source, book, split_type 
-                    ORDER BY last_updated ASC
-                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-                ) as last_updated,
-                
-                -- Calculate line movement
-                LAST_VALUE(line_value) OVER (
-                    PARTITION BY game_id, source, book, split_type 
-                    ORDER BY last_updated ASC
-                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-                ) - FIRST_VALUE(line_value) OVER (
-                    PARTITION BY game_id, source, book, split_type 
-                    ORDER BY last_updated ASC
-                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-                ) as line_movement,
-                
+                last_updated,
                 ROW_NUMBER() OVER (PARTITION BY game_id, source, book, split_type ORDER BY last_updated DESC) as rn
-                
             FROM comprehensive_data
             WHERE line_value IS NOT NULL
         )
         
         SELECT 
             game_id, source, book, split_type, home_team, away_team, game_datetime,
-            opening_line, closing_line, line_movement,
-            opening_differential, closing_differential, closing_sharp_indicator,
-            closing_stake_pct as stake_pct, closing_bet_pct as bet_pct,
-            closing_differential as differential, last_updated,
+            opening_line, closing_line, 
+            COALESCE(closing_line - opening_line, 0) as line_movement,
+            differential, stake_pct, bet_pct, sharp_indicator,
             
             -- Movement classification
             CASE 
                 WHEN split_type = 'moneyline' THEN
-                    CASE WHEN ABS(COALESCE(line_movement, 0)) >= 20 THEN 'SIGNIFICANT'
-                         WHEN ABS(COALESCE(line_movement, 0)) >= 10 THEN 'MODERATE'
-                         WHEN ABS(COALESCE(line_movement, 0)) > 0 THEN 'MINOR'
+                    CASE WHEN ABS(COALESCE(closing_line - opening_line, 0)) >= 20 THEN 'SIGNIFICANT'
+                         WHEN ABS(COALESCE(closing_line - opening_line, 0)) >= 10 THEN 'MODERATE'
+                         WHEN ABS(COALESCE(closing_line - opening_line, 0)) > 0 THEN 'MINOR'
                          ELSE 'NONE' END
                 ELSE
-                    CASE WHEN ABS(COALESCE(line_movement, 0)) >= 1.0 THEN 'SIGNIFICANT'
-                         WHEN ABS(COALESCE(line_movement, 0)) >= 0.5 THEN 'MODERATE'
-                         WHEN ABS(COALESCE(line_movement, 0)) > 0 THEN 'MINOR'
+                    CASE WHEN ABS(COALESCE(closing_line - opening_line, 0)) >= 1.0 THEN 'SIGNIFICANT'
+                         WHEN ABS(COALESCE(closing_line - opening_line, 0)) >= 0.5 THEN 'MODERATE'
+                         WHEN ABS(COALESCE(closing_line - opening_line, 0)) > 0 THEN 'MINOR'
                          ELSE 'NONE' END
             END as movement_significance,
             
-            -- Hybrid strategy classification
+            -- Simplified hybrid strategy classification
             CASE 
-                -- Strong confirmation strategies (line movement + strong sharp action in same direction)
-                WHEN ABS(COALESCE(line_movement, 0)) >= 10 AND closing_sharp_indicator LIKE 'STRONG_SHARP_%' THEN
-                    CASE 
-                        WHEN (line_movement > 0 AND closing_sharp_indicator LIKE '%AWAY_UNDER') OR 
-                             (line_movement < 0 AND closing_sharp_indicator LIKE '%HOME_OVER') THEN 'STRONG_CONFIRMATION'
-                        ELSE 'STRONG_CONFLICT'
-                    END
-                
-                -- Moderate confirmation strategies
-                WHEN ABS(COALESCE(line_movement, 0)) >= 5 AND closing_sharp_indicator LIKE 'MODERATE_SHARP_%' THEN
-                    CASE 
-                        WHEN (line_movement > 0 AND closing_sharp_indicator LIKE '%AWAY_UNDER') OR 
-                             (line_movement < 0 AND closing_sharp_indicator LIKE '%HOME_OVER') THEN 'MODERATE_CONFIRMATION'
-                        ELSE 'MODERATE_CONFLICT'
-                    END
-                
-                -- Steam play: strong sharp action without significant line movement
-                WHEN ABS(COALESCE(line_movement, 0)) < 5 AND closing_sharp_indicator LIKE 'STRONG_SHARP_%' THEN 'STEAM_PLAY'
-                
-                -- Public move: line movement without sharp confirmation
-                WHEN ABS(COALESCE(line_movement, 0)) >= 10 AND closing_sharp_indicator = 'NO_SHARP_ACTION' THEN 'PUBLIC_MOVE'
-                
-                -- Reverse line movement: line moves opposite to public
-                WHEN ABS(COALESCE(line_movement, 0)) >= 5 AND 
-                     ((line_movement > 0 AND closing_stake_pct < 40) OR 
-                      (line_movement < 0 AND closing_stake_pct > 60)) THEN 'REVERSE_LINE_MOVEMENT'
-                
-                ELSE 'NO_CLEAR_SIGNAL'
+                WHEN ABS(differential) >= 20 AND sharp_indicator LIKE 'PREMIUM_SHARP_%' THEN 'PREMIUM_SHARP_ACTION'
+                WHEN ABS(differential) >= 15 AND sharp_indicator LIKE 'STRONG_SHARP_%' THEN 'STRONG_SHARP_ACTION'
+                WHEN ABS(differential) >= 10 THEN 'MODERATE_SHARP_ACTION'
+                ELSE 'WEAK_OR_NO_SIGNAL'
             END as hybrid_strategy_type
             
-        FROM opening_closing_with_sharp
+        FROM line_movement_data
         WHERE rn = 1 
           AND opening_line IS NOT NULL 
           AND closing_line IS NOT NULL
-          AND ABS(closing_differential) >= %s
-        ORDER BY ABS(closing_differential) DESC, ABS(COALESCE(line_movement, 0)) DESC
+          AND ABS(differential) >= %s
+        ORDER BY ABS(differential) DESC, ABS(COALESCE(closing_line - opening_line, 0)) DESC
+        LIMIT 1000
         """
         
-        return self.coordinator.execute_read(query, (
-            start_time, end_time, 
-            self.config.minimum_differential
-        )) 
+        try:
+            return self.coordinator.execute_read(query, (start_time, end_time, min_diff))
+        except Exception as e:
+            # Log the error but return empty list to prevent processor failure
+            self.logger.error(f"Failed to get hybrid sharp data: {e}")
+            return [] 

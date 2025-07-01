@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # MLB Sharp Betting - Pre-Game Workflow Scheduler Startup Script
-# This script starts the automated pre-game workflow system
+# This script starts the automated pre-game workflow system using the new SchedulerEngine (Phase 4)
 
 set -e
 
@@ -119,8 +119,8 @@ check_email_config() {
     fi
     
     if [[ "$config_ok" == "false" ]]; then
-                 warn "Email configuration incomplete. Run email setup:"
-        echo "  uv run python src/mlb_sharp_betting/cli.py pregame configure-email"
+        warn "Email configuration incomplete. Run email setup:"
+        echo "  uv run python -m mlb_sharp_betting.cli pregame configure-email"
         echo ""
         echo "Or set environment variables manually:"
         echo "  export EMAIL_FROM_ADDRESS='your-gmail@gmail.com'"
@@ -144,14 +144,15 @@ install_dependencies() {
 
 # Start the scheduler
 start_scheduler() {
-    log "Starting MLB Pre-Game Workflow Scheduler..."
+    log "Starting MLB Pre-Game Workflow Scheduler (Phase 4 SchedulerEngine)..."
     
     cd "$SCRIPT_DIR"
     
-    # Start scheduler in background
-    nohup uv run python src/mlb_sharp_betting/cli.py pregame start \
+    # Start scheduler in background using new CLI command
+    nohup uv run python -m mlb_sharp_betting.cli pregame start \
         --alert-minutes 5 \
         --daily-setup-hour 6 \
+        --notifications \
         > "$LOG_FILE" 2>&1 &
     
     local pid=$!
@@ -161,21 +162,24 @@ start_scheduler() {
     sleep 3
     
     if kill -0 "$pid" 2>/dev/null; then
-        success "Scheduler started successfully!"
+        success "SchedulerEngine started successfully!"
         log "Process ID: $pid"
         log "Log file: $LOG_FILE"
         log "PID file: $PID_FILE"
         echo ""
-        log "Scheduler is now running and will:"
+        log "Phase 4 SchedulerEngine is now running and will:"
         echo "  • Check for MLB games daily at 6 AM EST"
         echo "  • Trigger workflow 5 minutes before each game"
+        echo "  • Convert betting signals to trackable recommendations"
+        echo "  • Save recommendations to tracking.pre_game_recommendations table"
         echo "  • Send email notifications with results"
+        echo "  • Run automated backtesting (daily at 2 AM EST)"
         echo ""
         log "Monitor logs with: tail -f $LOG_FILE"
-        log "Check status with: uv run python src/mlb_sharp_betting/cli.py pregame status"
+        log "Check status with: uv run python -m mlb_sharp_betting.cli pregame status"
         log "Stop scheduler with: ./stop_pregame_scheduler.sh"
     else
-        error "Scheduler failed to start. Check logs:"
+        error "SchedulerEngine failed to start. Check logs:"
         echo "  tail -n 50 $LOG_FILE"
         rm -f "$PID_FILE"
         exit 1
@@ -189,7 +193,7 @@ create_stop_script() {
     cat > "$stop_script" << 'EOF'
 #!/bin/bash
 
-# Stop the pre-game workflow scheduler
+# Stop the pre-game workflow scheduler (Phase 4 SchedulerEngine)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="${SCRIPT_DIR}/pregame_scheduler.pid"
@@ -197,7 +201,7 @@ PID_FILE="${SCRIPT_DIR}/pregame_scheduler.pid"
 if [[ -f "$PID_FILE" ]]; then
     pid=$(cat "$PID_FILE")
     if kill -0 "$pid" 2>/dev/null; then
-        echo "Stopping scheduler (PID: $pid)..."
+        echo "Stopping SchedulerEngine (PID: $pid)..."
         kill "$pid"
         
         # Wait for graceful shutdown
@@ -213,13 +217,13 @@ if [[ -f "$PID_FILE" ]]; then
         fi
         
         rm -f "$PID_FILE"
-        echo "Scheduler stopped successfully"
+        echo "SchedulerEngine stopped successfully"
     else
-        echo "Scheduler not running (stale PID file)"
+        echo "SchedulerEngine not running (stale PID file)"
         rm -f "$PID_FILE"
     fi
 else
-    echo "Scheduler not running (no PID file)"
+    echo "SchedulerEngine not running (no PID file)"
 fi
 EOF
     
@@ -230,7 +234,7 @@ EOF
 show_usage() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
-    echo "Start the MLB Pre-Game Workflow Scheduler"
+    echo "Start the MLB Pre-Game Workflow Scheduler (Phase 4 SchedulerEngine)"
     echo ""
     echo "Options:"
     echo "  --restart    Stop existing scheduler and start new one"
@@ -238,10 +242,12 @@ show_usage() {
     echo "  --status     Show scheduler status"
     echo "  --help       Show this help message"
     echo ""
-    echo "The scheduler will:"
+    echo "The Phase 4 SchedulerEngine will:"
     echo "  • Monitor MLB games and schedule workflows 5 minutes before each game"
     echo "  • Execute three-stage workflow: data collection, analysis, email notification"
+    echo "  • Convert betting signals to recommendations saved in tracking.pre_game_recommendations"
     echo "  • Run daily setup at 6 AM EST to schedule new games"
+    echo "  • Perform automated backtesting (daily at 2 AM EST, weekly on Mondays)"
     echo ""
 }
 
@@ -250,15 +256,18 @@ show_status() {
     if check_running; then
         local pid=$(cat "$PID_FILE")
         local start_time=$(ps -o lstart= -p "$pid" 2>/dev/null | xargs)
-        success "Scheduler is running"
+        success "SchedulerEngine is running"
         echo "  PID: $pid"
         echo "  Started: $start_time"
         echo "  Log file: $LOG_FILE"
         echo ""
         echo "Recent log entries:"
         tail -n 10 "$LOG_FILE" 2>/dev/null || echo "  (no log entries yet)"
+        echo ""
+        echo "Check detailed status with:"
+        echo "  uv run python -m mlb_sharp_betting.cli pregame status"
     else
-        warn "Scheduler is not running"
+        warn "SchedulerEngine is not running"
         if [[ -f "$LOG_FILE" ]]; then
             echo ""
             echo "Last log entries:"
@@ -297,7 +306,7 @@ main() {
     
     # Check if already running (unless restarting)
     if [[ "${1:-}" != "--restart" ]] && check_running; then
-        warn "Scheduler is already running!"
+        warn "SchedulerEngine is already running!"
         show_status
         echo ""
         echo "Use --restart to restart or --stop to stop"
@@ -305,8 +314,8 @@ main() {
     fi
     
     # Header
-    echo "🏈 MLB Sharp Betting - Pre-Game Workflow Scheduler"
-    echo "=================================================="
+    echo "🏈 MLB Sharp Betting - Pre-Game Workflow Scheduler (Phase 4)"
+    echo "============================================================="
     
     # Run startup sequence
     check_dependencies

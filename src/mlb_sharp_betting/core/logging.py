@@ -329,6 +329,9 @@ class BoundCompatibleLogger:
         return BoundCompatibleLogger(self.parent, **combined_context)
 
 
+# Flag to track if compatibility has been setup
+_compatibility_setup_done = False
+
 def setup_universal_logger_compatibility():
     """
     🚨 UNIVERSAL FIX: Apply logger compatibility globally to ALL structlog bound loggers.
@@ -336,6 +339,11 @@ def setup_universal_logger_compatibility():
     This ensures that any logger.bind() call anywhere in the application 
     will return a logger with the required compatibility methods.
     """
+    global _compatibility_setup_done
+    
+    # Prevent multiple setups
+    if _compatibility_setup_done:
+        return
     
     # Store the original bind method
     original_bind = structlog.stdlib.BoundLogger.bind
@@ -397,6 +405,8 @@ def setup_universal_logger_compatibility():
     # Monkey patch the bind method globally
     structlog.stdlib.BoundLogger.bind = enhanced_bind
     
+    # Mark setup as complete and log only once
+    _compatibility_setup_done = True
     print("🔧 Universal logger compatibility enabled for all bound loggers")
 
 
@@ -438,8 +448,7 @@ def get_logger(name: str = None) -> Union[BackwardCompatibleLogger, structlog.st
         frame = inspect.currentframe().f_back
         name = frame.f_globals.get('__name__', 'unknown')
     
-    # Apply universal compatibility if not already done
-    setup_universal_logger_compatibility()
+    # Universal compatibility is automatically setup when module is imported
     
     # For service classes and components that need full compatibility, use BackwardCompatibleLogger
     if any(keyword in name.lower() for keyword in ['service', 'processor', 'manager', 'orchestrator']):

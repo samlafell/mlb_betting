@@ -178,10 +178,17 @@ def detection_group():
               help='Store betting recommendations to PostgreSQL (default: enabled)')
 @click.option('--min-confidence', type=float, default=60.0,
               help='Minimum confidence to store recommendations (default: 60.0)')
+@click.option('--simple-mode', is_flag=True,
+              help='Use simple detection mode (bypasses complex pipeline)')
+@click.option('--debug', is_flag=True, 
+              help='Enable debug output for performance monitoring')
+@click.option('--show-stats', is_flag=True, 
+              help='Show repository performance statistics')
 def detect_opportunities(minutes: int, fresh_data: bool, run_backtesting: bool, 
                         format: str, output: Optional[Path], include_cross_market: bool, 
                         min_flip_confidence: float, store_recommendations: bool, 
-                        min_confidence: float):
+                        min_confidence: float, simple_mode: bool, debug: bool, 
+                        show_stats: bool):
     """🎯 MASTER BETTING DETECTOR with full data pipeline and PostgreSQL storage
     
     This command runs a complete betting detection pipeline that:
@@ -192,310 +199,413 @@ def detect_opportunities(minutes: int, fresh_data: bool, run_backtesting: bool,
     5. ✅ Stores recommendations to PostgreSQL with full context
     6. ✅ Handles multiple recommendations per game (e.g., early vs late)
     
+    NEW: --simple-mode bypasses complex pipeline for direct SQL detection
+    
     Each recommendation is stored with:
     - Exact recommendation text and confidence level
     - Strategy source and signal strength at time of recommendation  
     - Game context and timing information
     - Unique ID to track multiple recommendations for same game
     """
+    if simple_mode:
+        asyncio.run(_run_simple_detection(minutes, debug, show_stats, format, output))
+    else:
+        asyncio.run(run_detection(minutes, fresh_data, run_backtesting, format, output, 
+                                include_cross_market, min_flip_confidence, store_recommendations, 
+                                min_confidence))
+
+
+async def _run_simple_detection(minutes_ahead: int, debug: bool, show_stats: bool, 
+                               format: str, output: Optional[Path]):
+    """
+    Robust opportunity detection that works with basic betting splits data
+    """
+    from ...db.connection import get_db_manager
+    from datetime import datetime, timedelta
+    from decimal import Decimal
+    import sys
     
-    async def run_detection():
-        click.echo("🎯 MASTER BETTING DETECTOR")
-        click.echo("=" * 60)
-        click.echo("🤖 Using AI-optimized strategies with intelligent pipeline")
-        
-        if fresh_data:
-            click.echo("📡 Fresh data collection: ENABLED")
-        else:
-            click.echo("📊 Using existing data: ENABLED")
-            
-        if run_backtesting:
-            click.echo("🔬 Backtesting: ENABLED")
-        else:
-            click.echo("📋 Using existing backtesting: ENABLED")
-            
-        if include_cross_market:
-            click.echo("🔀 Cross-market flips: ENABLED")
-            
-        if store_recommendations:
-            click.echo("💾 PostgreSQL storage: ENABLED")
-            click.echo(f"📊 Min confidence for storage: {min_confidence}%")
-        
-        # Initialize recommendation tracker if storing
-        recommendation_tracker = None
-        storage_enabled = store_recommendations  # Create local copy
-        if storage_enabled:
-            try:
-                recommendation_tracker = PreGameRecommendationTracker()
-                click.echo("✅ Recommendation tracker initialized")
-            except Exception as e:
-                click.echo(f"⚠️  Warning: Failed to initialize recommendation tracker: {e}")
-                click.echo("   Continuing without recommendation storage...")
-                storage_enabled = False
-        
-        try:
-            # Initialize orchestrator
-            orchestrator = PipelineOrchestrator()
-            
-            # Run smart pipeline
-            results = await orchestrator.execute_smart_pipeline(
-                detection_minutes=minutes,
-                force_fresh_data=fresh_data,
-                force_backtesting=run_backtesting
-            )
-            
-            # Store recommendations to PostgreSQL if enabled
-            stored_recommendations = []
-            if storage_enabled and recommendation_tracker:
-                current_time = datetime.now()
-                
-                try:
-                    # Convert detection results to recommendations
-                    all_signals = []
-                    if results['detection_results']:
-                        detection_results = results['detection_results']
-                        for game_key, game_analysis in detection_results.games.items():
-                            # Collect all signals from this game
-                            all_signals.extend(game_analysis.sharp_signals)
-                            all_signals.extend(game_analysis.opposing_markets) 
-                            all_signals.extend(game_analysis.steam_moves)
-                            all_signals.extend(game_analysis.book_conflicts)
-                    
-                    # Filter signals by confidence threshold
-                    high_confidence_signals = [
-                        signal for signal in all_signals 
-                        if signal.confidence_score >= (min_confidence / 100.0)
-                    ]
-                    
-                    # Convert to recommendations
-                    signal_recommendations = _convert_betting_signals_to_recommendations(
-                        high_confidence_signals, current_time
-                    )
-                    stored_recommendations.extend(signal_recommendations)
-                    
-                    # Convert cross-market flips to recommendations
-                    if include_cross_market and results['cross_market_flips']:
-                        flips = results['cross_market_flips']['flips']
-                        flip_recommendations = _convert_cross_market_flips_to_recommendations(
-                            flips, current_time
-                        )
-                        # Filter flip recommendations by confidence
-                        high_confidence_flips = [
-                            rec for rec in flip_recommendations 
-                            if (rec.signal_strength * 100) >= min_confidence
-                        ]
-                        stored_recommendations.extend(high_confidence_flips)
-                    
-                    # Store all recommendations
-                    if stored_recommendations:
-                        await recommendation_tracker.log_pre_game_recommendations(stored_recommendations)
-                        click.echo(f"\n💾 RECOMMENDATIONS STORED TO POSTGRESQL")
-                        click.echo(f"   📊 Stored {len(stored_recommendations)} recommendations")
-                        
-                        # Show breakdown by game
-                        games_with_recommendations = {}
-                        for rec in stored_recommendations:
-                            game_key = f"{rec.away_team} @ {rec.home_team}"
-                            if game_key not in games_with_recommendations:
-                                games_with_recommendations[game_key] = []
-                            games_with_recommendations[game_key].append(rec)
-                        
-                        for game, recs in games_with_recommendations.items():
-                            click.echo(f"   🎮 {game}: {len(recs)} recommendation(s)")
-                            for rec in recs:
-                                confidence_icon = "🔥" if rec.confidence_level == "HIGH" else "⭐" if rec.confidence_level == "MODERATE" else "💡"
-                                click.echo(f"      {confidence_icon} {rec.recommendation} ({rec.confidence_level} - {rec.signal_source})")
-                    else:
-                        click.echo(f"\n💾 No recommendations met {min_confidence}% confidence threshold for storage")
-                        
-                except Exception as e:
-                    click.echo(f"\n❌ Failed to store recommendations: {e}")
-                    logger.error("Recommendation storage failed", error=str(e))
-            
-            if format == "console":
-                # Display execution summary
-                click.echo(f"\n🚀 PIPELINE EXECUTION SUMMARY")
-                click.echo(f"   ⏱️  Total Time: {results['total_execution_time']:.2f}s")
-                click.echo(f"   🔧 Steps: {', '.join(results['steps_executed'])}")
-                
-                if results['errors']:
-                    click.echo(f"   ❌ Errors: {len(results['errors'])}")
-                    for error in results['errors']:
-                        click.echo(f"      • {error}")
-                
-                if results['warnings']:
-                    click.echo(f"   ⚠️  Warnings: {len(results['warnings'])}")
-                    for warning in results['warnings']:
-                        click.echo(f"      • {warning}")
-                
-                # Display detection results
-                if results['detection_results']:
-                    detection_results = results['detection_results']
-                    total_opportunities = sum(
-                        len(game_analysis.sharp_signals) + 
-                        len(game_analysis.opposing_markets) + 
-                        len(game_analysis.steam_moves) + 
-                        len(game_analysis.book_conflicts)
-                        for game_analysis in detection_results.games.values()
-                    )
-                    
-                    click.echo(f"\n🎯 OPPORTUNITY DETECTION RESULTS")
-                    click.echo(f"   🎮 Games Analyzed: {len(detection_results.games)}")
-                    click.echo(f"   🚨 Total Opportunities: {total_opportunities}")
-                    
-                    # Display each game's opportunities
-                    for game_key, game_analysis in detection_results.games.items():
-                        away, home, game_time = game_key
-                        opportunities = (
-                            len(game_analysis.sharp_signals) + 
-                            len(game_analysis.opposing_markets) + 
-                            len(game_analysis.steam_moves) + 
-                            len(game_analysis.book_conflicts)
-                        )
-                        
-                        if opportunities > 0:
-                            click.echo(f"\n   🎲 {away} @ {home}")
-                            click.echo(f"      📅 {game_time.strftime('%Y-%m-%d %H:%M EST')}")
-                            click.echo(f"      🎯 Opportunities: {opportunities}")
-                            
-                            if game_analysis.sharp_signals:
-                                click.echo(f"         🔪 Sharp Signals: {len(game_analysis.sharp_signals)}")
-                            if game_analysis.opposing_markets:
-                                click.echo(f"         ⚔️  Opposing Markets: {len(game_analysis.opposing_markets)}")
-                            if game_analysis.steam_moves:
-                                click.echo(f"         🌊 Steam Moves: {len(game_analysis.steam_moves)}")
-                            if game_analysis.book_conflicts:
-                                click.echo(f"         📚 Book Conflicts: {len(game_analysis.book_conflicts)}")
-                else:
-                    click.echo(f"\n⚠️  No opportunity detection results available")
-                
-                # Display cross-market flips
-                if include_cross_market and results['cross_market_flips']:
-                    flips = results['cross_market_flips']['flips']
-                    
-                    if flips:
-                        click.echo(f"\n🔀 CROSS-MARKET FLIP ANALYSIS")
-                        click.echo("=" * 60)
-                        click.echo(f"Found {len(flips)} cross-market flips with ≥{min_flip_confidence}% confidence")
-                        
-                        for i, flip in enumerate(flips, 1):
-                            click.echo(f"\n🎯 FLIP #{i}: {flip.away_team} @ {flip.home_team}")
-                            click.echo(f"   📅 Game: {flip.game_datetime.strftime('%Y-%m-%d %H:%M EST')}")
-                            click.echo(f"   🔄 Type: {flip.flip_type.value.replace('_', ' ').title()}")
-                            click.echo(f"   📊 Confidence: {flip.confidence_score:.1f}%")
-                            click.echo(f"   💡 Strategy: {flip.strategy_recommendation}")
-                            click.echo(f"   🧠 Reasoning: {flip.reasoning}")
-                            
-                            # Highlight high-confidence flips
-                            if flip.confidence_score >= 80:
-                                click.echo(f"   🔥 HIGH CONFIDENCE - STRONG BETTING OPPORTUNITY")
-                            elif flip.confidence_score >= 70:
-                                click.echo(f"   ✨ GOOD CONFIDENCE - SOLID BETTING OPPORTUNITY")
-                            
-                            # ⚠️ CRITICAL WARNING: This strategy is untested
-                            click.echo(f"   ⚠️  WARNING: Cross-market flip strategies have NO backtesting results")
-                            click.echo(f"   📊 Confidence is theoretical only - strategy performance unknown")
-                            click.echo(f"   💡 Use small bet sizes until strategy is proven")
-                    else:
-                        click.echo(f"\n🔀 No cross-market flips found with ≥{min_flip_confidence}% confidence")
-                
-            elif format == "json":
-                import json
-                
-                # Convert to JSON-serializable format
-                json_output = {
-                    'timestamp': datetime.now().isoformat(),
-                    'pipeline_execution': {
-                        'steps_executed': results['steps_executed'],
-                        'execution_time_seconds': results['total_execution_time'],
-                        'errors': results['errors'],
-                        'warnings': results['warnings']
-                    },
-                    'detection_window_minutes': minutes,
-                    'fresh_data_enabled': fresh_data,
-                    'backtesting_enabled': run_backtesting,
-                    'cross_market_enabled': include_cross_market,
-                    'min_flip_confidence': min_flip_confidence
-                }
-                
-                # Add detection results if available
-                if results['detection_results']:
-                    detection_results = results['detection_results']
-                    json_games = {}
-                    for game_key, game_analysis in detection_results.games.items():
-                        away, home, game_time = game_key
-                        game_key_str = f"{away}_vs_{home}_{game_time.isoformat()}"
-                        json_games[game_key_str] = {
-                            'away_team': away,
-                            'home_team': home,
-                            'game_time': game_time.isoformat(),
-                            'sharp_signals': len(game_analysis.sharp_signals),
-                            'opposing_markets': len(game_analysis.opposing_markets),
-                            'steam_moves': len(game_analysis.steam_moves),
-                            'book_conflicts': len(game_analysis.book_conflicts),
-                            'total_opportunities': (
-                                len(game_analysis.sharp_signals) + 
-                                len(game_analysis.opposing_markets) + 
-                                len(game_analysis.steam_moves) + 
-                                len(game_analysis.book_conflicts)
-                            )
-                        }
-                    
-                    json_output['opportunities'] = {
-                        'total_games': len(detection_results.games),
-                        'games': json_games,
-                        'analysis_metadata': detection_results.analysis_metadata
-                    }
-                
-                # Add cross-market flips if available
-                if include_cross_market and results['cross_market_flips']:
-                    flips = results['cross_market_flips']['flips']
-                    json_flips = []
-                    for flip in flips:
-                        json_flips.append({
-                            'game_id': flip.game_id,
-                            'away_team': flip.away_team,
-                            'home_team': flip.home_team,
-                            'game_datetime': flip.game_datetime.isoformat(),
-                            'flip_type': flip.flip_type.value,
-                            'confidence_score': flip.confidence_score,
-                            'strategy_recommendation': flip.strategy_recommendation,
-                            'reasoning': flip.reasoning
-                        })
-                    
-                    json_output['cross_market_flips'] = {
-                        'count': len(flips),
-                        'flips': json_flips
-                    }
-                
-                json_str = json.dumps(json_output, indent=2)
-                if output:
-                    output.write_text(json_str)
-                    click.echo(f"✅ Detection results saved to: {output}")
-                else:
-                    click.echo(json_str)
-                    
-        except Exception as e:
-            click.echo(f"❌ Detection pipeline failed: {e}")
-            raise
-        finally:
-            # Cleanup
-            try:
-                if 'orchestrator' in locals():
-                    orchestrator.close()
-                if 'recommendation_tracker' in locals() and recommendation_tracker:
-                    # Recommendation tracker cleanup is handled automatically
-                    pass
-            except Exception as cleanup_error:
-                click.echo(f"⚠️  Cleanup warning: {cleanup_error}")
+    start_time = datetime.now()
     
     try:
-        asyncio.run(run_detection())
-    except KeyboardInterrupt:
-        click.echo("\n⚠️  Detection interrupted by user")
-    except Exception:
-        click.echo("❌ Detection failed")
-        raise
+        db_manager = get_db_manager()
+        
+        if debug:
+            click.echo("🔍 DEBUG MODE: Enhanced logging enabled")
+            click.echo(f"⚙️  Configuration: minutes_ahead={minutes_ahead}, simple_mode=True")
+        
+        click.echo("🔄 Searching for betting opportunities...")
+        
+        # Calculate time window for upcoming games
+        now = datetime.now()
+        target_time = now + timedelta(minutes=minutes_ahead)
+        
+        # Robust query with proper type handling
+        query = """
+            SELECT DISTINCT
+                game_id,
+                home_team,
+                away_team,
+                split_type,
+                CAST(home_or_over_bets_percentage AS FLOAT) as home_bets_pct,
+                CAST(home_or_over_stake_percentage AS FLOAT) as home_stake_pct,
+                CAST(ABS(home_or_over_bets_percentage - home_or_over_stake_percentage) AS FLOAT) as differential,
+                last_updated,
+                game_datetime,
+                source,
+                book
+            FROM splits.raw_mlb_betting_splits
+            WHERE 
+                last_updated >= CURRENT_DATE - INTERVAL '2 days'
+                AND home_or_over_bets_percentage IS NOT NULL
+                AND home_or_over_stake_percentage IS NOT NULL
+                AND ABS(home_or_over_bets_percentage - home_or_over_stake_percentage) >= 10.0
+                AND (
+                    game_datetime IS NULL 
+                    OR game_datetime >= NOW()
+                    OR game_datetime <= NOW() + INTERVAL %s
+                )
+            ORDER BY differential DESC, last_updated DESC
+            LIMIT 50
+        """
+        
+        with db_manager.get_cursor() as cursor:
+            cursor.execute(query, (f"{minutes_ahead} minutes",))
+            opportunities = cursor.fetchall()
+        
+        end_time = datetime.now()
+        processing_time = (end_time - start_time).total_seconds()
+        
+        # Format results for output
+        formatted_results = []
+        
+        if opportunities:
+            click.echo(f"\n🎯 Found {len(opportunities)} potential opportunities:")
+            
+            # Group by game for better display
+            games = {}
+            for opp in opportunities:
+                # Convert to dict format for consistent handling
+                if isinstance(opp, dict):
+                    opp_dict = opp
+                else:
+                    # Handle tuple format
+                    opp_dict = {
+                        'game_id': opp[0],
+                        'home_team': opp[1],
+                        'away_team': opp[2],
+                        'split_type': opp[3],
+                        'home_bets_pct': opp[4],
+                        'home_stake_pct': opp[5],
+                        'differential': opp[6],
+                        'last_updated': opp[7],
+                        'game_datetime': opp[8],
+                        'source': opp[9] if len(opp) > 9 else None,
+                        'book': opp[10] if len(opp) > 10 else None
+                    }
+                
+                # Safely convert values to float
+                try:
+                    opp_dict['home_bets_pct'] = float(opp_dict['home_bets_pct']) if opp_dict['home_bets_pct'] is not None else 0.0
+                    opp_dict['home_stake_pct'] = float(opp_dict['home_stake_pct']) if opp_dict['home_stake_pct'] is not None else 0.0
+                    opp_dict['differential'] = float(opp_dict['differential']) if opp_dict['differential'] is not None else 0.0
+                except (ValueError, TypeError, AttributeError) as e:
+                    if debug:
+                        click.echo(f"⚠️  Skipping record due to type conversion error: {e}")
+                    continue
+                
+                game_key = f"{opp_dict['away_team']} @ {opp_dict['home_team']}"
+                if game_key not in games:
+                    games[game_key] = []
+                games[game_key].append(opp_dict)
+            
+            # Display results or prepare for JSON output
+            if format == "console":
+                for game_key, game_opps in games.items():
+                    click.echo(f"\n📋 {game_key}:")
+                    
+                    for opp in game_opps[:3]:  # Show top 3 per game
+                        split_type = opp['split_type'] or 'unknown'
+                        differential = opp['differential']
+                        home_bets = opp['home_bets_pct']
+                        home_stake = opp['home_stake_pct']
+                        
+                        # Determine which side has the sharp money (stake vs bets)
+                        if home_stake > home_bets:
+                            if split_type.lower() in ['moneyline', 'spread']:
+                                sharp_side = "HOME"
+                            else:
+                                sharp_side = "OVER"
+                            recommendation = f"Sharp money on {sharp_side}"
+                        else:
+                            if split_type.lower() in ['moneyline', 'spread']:
+                                sharp_side = "AWAY"
+                            else:
+                                sharp_side = "UNDER"
+                            recommendation = f"Sharp money on {sharp_side}"
+                        
+                        # Simple confidence calculation
+                        confidence = min(95.0, max(50.0, differential * 2.5))
+                        
+                        click.echo(f"   • {split_type.title()}: {recommendation}")
+                        click.echo(f"     📊 Differential: {differential:.1f}% | Confidence: {confidence:.1f}%")
+                        click.echo(f"     🎯 Bets: {home_bets:.1f}% | Money: {home_stake:.1f}%")
+                        
+                        # Add source info if available
+                        if opp.get('source') and opp.get('book'):
+                            source = opp.get('source')
+                            book = opp.get('book')
+                            
+                            # Format book attribution to make data source clear
+                            if source == 'VSIN' and book and book != 'unknown':
+                                book_attribution = f"VSIN ({book.title()})"
+                            elif source == 'SBD':
+                                book_attribution = "SBD"
+                            else:
+                                if book and book != 'unknown':
+                                    book_attribution = f"{source} ({book.title()})"
+                                else:
+                                    book_attribution = source
+                            
+                            click.echo(f"     📡 Source: {book_attribution}")
+                        elif opp.get('source'):
+                            click.echo(f"     📡 Source: {opp.get('source')}")
+                        
+                        # Signal strength indicators
+                        if differential >= 20:
+                            click.echo("     🔥 STRONG SIGNAL - High differential")
+                        elif differential >= 15:
+                            click.echo("     ⭐ GOOD SIGNAL - Notable differential")
+                        elif differential >= 10:
+                            click.echo("     ✅ VALID SIGNAL - Above threshold")
+                        
+                        # Store for JSON output
+                        formatted_results.append({
+                            'game': game_key,
+                            'split_type': split_type,
+                            'recommendation': recommendation,
+                            'differential': differential,
+                            'confidence': confidence,
+                            'home_bets_pct': home_bets,
+                            'home_stake_pct': home_stake,
+                            'source': opp.get('source'),
+                            'book': opp.get('book')
+                        })
+                    
+                    if len(game_opps) > 3:
+                        click.echo(f"   ... and {len(game_opps) - 3} more signals")
+            
+            # JSON output
+            elif format == "json":
+                json_output = {
+                    'timestamp': datetime.now().isoformat(),
+                    'search_minutes_ahead': minutes_ahead,
+                    'opportunities_found': len(opportunities),
+                    'games_with_opportunities': len(games),
+                    'processing_time_seconds': processing_time,
+                    'detection_method': 'simple_mode_direct_sql',
+                    'opportunities': formatted_results
+                }
+                
+                json_str = json.dumps(json_output, indent=2, default=str)
+                if output:
+                    output.write_text(json_str)
+                    click.echo(f"✅ JSON output saved to: {output}")
+                else:
+                    click.echo(json_str)
+        else:
+            click.echo("📭 No betting opportunities found")
+            click.echo("💡 Suggestions:")
+            click.echo("   • Try increasing --minutes for more games")
+            click.echo("   • Check if recent data is available with 'mlb-cli query'")
+            click.echo("   • Run 'mlb-cli run' to collect fresh data")
+        
+        # Performance summary
+        if format == "console":
+            click.echo(f"\n⏱️  Processing completed in {processing_time:.2f} seconds")
+            
+            if show_stats:
+                click.echo("\n📊 Detection Statistics:")
+                click.echo(f"   • Database queries: 1 (optimized)")
+                click.echo(f"   • Records analyzed: {len(opportunities) if opportunities else 0}")
+                click.echo(f"   • Games with opportunities: {len(games) if opportunities else 0}")
+                click.echo(f"   • Detection method: Direct SQL with type safety")
+                click.echo(f"   • Time window: {minutes_ahead} minutes ahead")
+    
+    except Exception as e:
+        click.echo(f"❌ Error detecting opportunities: {e}", err=True)
+        if debug:
+            import traceback
+            click.echo(f"Full traceback:\n{traceback.format_exc()}", err=True)
+        
+        # Provide helpful troubleshooting info
+        click.echo("\n🔧 Troubleshooting:")
+        click.echo("   • Check if PostgreSQL is running")
+        click.echo("   • Verify database 'mlb_betting' exists")
+        click.echo("   • Ensure betting splits data is available")
+        click.echo("   • Try 'mlb-cli status' to check system health")
+        
+        sys.exit(1)
+
+
+async def run_detection(minutes: int, fresh_data: bool, run_backtesting: bool, 
+                       format: str, output: Optional[Path], include_cross_market: bool, 
+                       min_flip_confidence: float, store_recommendations: bool, 
+                       min_confidence: float):
+    """
+    Enhanced detection command with full data pipeline and PostgreSQL storage
+    """
+    click.echo("🎯 MASTER BETTING DETECTOR")
+    click.echo("=" * 60)
+    click.echo("🤖 Using AI-optimized strategies with intelligent pipeline")
+    
+    if fresh_data:
+        click.echo("📡 Fresh data collection: ENABLED")
+    else:
+        click.echo("📊 Using existing data: ENABLED")
+        
+    if run_backtesting:
+        click.echo("🔬 Backtesting: ENABLED")
+    else:
+        click.echo("📋 Using existing backtesting: ENABLED")
+        
+    if include_cross_market:
+        click.echo("🔀 Cross-market flips: ENABLED")
+        
+    if store_recommendations:
+        click.echo("💾 PostgreSQL storage: ENABLED")
+        click.echo(f"📊 Min confidence for storage: {min_confidence}%")
+    
+    # Initialize recommendation tracker if storing
+    recommendation_tracker = None
+    storage_enabled = store_recommendations  # Create local copy
+    if storage_enabled:
+        try:
+            recommendation_tracker = PreGameRecommendationTracker()
+            click.echo("✅ Recommendation tracker initialized")
+        except Exception as e:
+            click.echo(f"⚠️  Warning: Failed to initialize recommendation tracker: {e}")
+            click.echo("   Continuing without recommendation storage...")
+            storage_enabled = False
+    
+    try:
+        # Initialize orchestrator
+        orchestrator = PipelineOrchestrator()
+        
+        # Run smart pipeline
+        results = await orchestrator.execute_smart_pipeline(
+            detection_minutes=minutes,
+            force_fresh_data=fresh_data,
+            force_backtesting=run_backtesting
+        )
+        
+        # Store recommendations to PostgreSQL if enabled
+        stored_recommendations = []
+        if storage_enabled and recommendation_tracker:
+            current_time = datetime.now()
+            
+            try:
+                # Convert detection results to recommendations
+                all_signals = []
+                if results['detection_results']:
+                    detection_results = results['detection_results']
+                    for game_key, game_analysis in detection_results.games.items():
+                        # Collect all signals from this game
+                        all_signals.extend(game_analysis.sharp_signals)
+                        all_signals.extend(game_analysis.opposing_markets) 
+                        all_signals.extend(game_analysis.steam_moves)
+                        all_signals.extend(game_analysis.book_conflicts)
+                
+                # Filter signals by confidence threshold
+                high_confidence_signals = [
+                    signal for signal in all_signals 
+                    if signal.confidence_score >= (min_confidence / 100.0)
+                ]
+                
+                # Convert to recommendations
+                signal_recommendations = _convert_betting_signals_to_recommendations(
+                    high_confidence_signals, current_time
+                )
+                stored_recommendations.extend(signal_recommendations)
+                
+                # Convert cross-market flips to recommendations
+                if include_cross_market and results['cross_market_flips']:
+                    flips = results['cross_market_flips']['flips']
+                    flip_recommendations = _convert_cross_market_flips_to_recommendations(
+                        flips, current_time
+                    )
+                    # Filter flip recommendations by confidence
+                    high_confidence_flips = [
+                        rec for rec in flip_recommendations 
+                        if (rec.signal_strength * 100) >= min_confidence
+                    ]
+                    stored_recommendations.extend(high_confidence_flips)
+                
+                # Store all recommendations
+                if stored_recommendations:
+                    await recommendation_tracker.log_pre_game_recommendations(stored_recommendations)
+                    click.echo(f"\n💾 RECOMMENDATIONS STORED TO POSTGRESQL")
+                    click.echo(f"   📊 Stored {len(stored_recommendations)} recommendations")
+                    
+                    # Show breakdown by game
+                    games_with_recommendations = {}
+                    for rec in stored_recommendations:
+                        game_key = f"{rec.away_team} @ {rec.home_team}"
+                        if game_key not in games_with_recommendations:
+                            games_with_recommendations[game_key] = []
+                        games_with_recommendations[game_key].append(rec)
+                    
+                    for game, recs in games_with_recommendations.items():
+                        click.echo(f"   🎮 {game}: {len(recs)} recommendation(s)")
+                        for rec in recs:
+                            confidence_icon = "🔥" if rec.confidence_level == "HIGH" else "⭐" if rec.confidence_level == "MODERATE" else "💡"
+                            click.echo(f"      {confidence_icon} {rec.recommendation} ({rec.confidence_level} - {rec.signal_source})")
+                else:
+                    click.echo(f"\n💾 No recommendations met {min_confidence}% confidence threshold for storage")
+                    
+            except Exception as e:
+                click.echo(f"⚠️  Warning: Failed to store recommendations: {e}")
+                click.echo("   Detection results will still be displayed...")
+        
+        # Display results in specified format
+        if format == "json":
+            result_json = {
+                'timestamp': datetime.now().isoformat(),
+                'detection_results': results,
+                'stored_recommendations': len(stored_recommendations) if stored_recommendations else 0,
+                'recommendations': [
+                    {
+                        'game': f"{rec.away_team} @ {rec.home_team}",
+                        'recommendation': rec.recommendation,
+                        'confidence': rec.confidence_level,
+                        'signal_source': rec.signal_source,
+                        'signal_strength': rec.signal_strength
+                    } for rec in stored_recommendations
+                ] if stored_recommendations else []
+            }
+            
+            json_str = json.dumps(result_json, indent=2, default=str)
+            if output:
+                output.write_text(json_str)
+                click.echo(f"✅ Results saved to: {output}")
+            else:
+                click.echo(json_str)
+        else:
+            # Console display handled by orchestrator
+            pass
+            
+    except Exception as e:
+        click.echo(f"❌ Error during detection: {e}", err=True)
+        import traceback
+        click.echo(f"Full traceback:\n{traceback.format_exc()}", err=True)
+        
+        click.echo("\n🔧 Troubleshooting:")
+        click.echo("   • Check if PostgreSQL is running")
+        click.echo("   • Verify all required database tables exist")
+        click.echo("   • Try 'mlb-cli fix-schema --create-missing'")
+        click.echo("   • Use --simple-mode for basic detection")
+    
+    # This function doesn't need to call itself
 
 
 @detection_group.command('smart-pipeline')

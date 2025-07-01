@@ -390,7 +390,18 @@ class BaseStrategyProcessor(ABC):
         """Calculate base confidence score for a signal"""
         
         # Base confidence from differential strength
-        abs_diff = abs(float(differential))
+        # Ensure robust type conversion from Decimal to float to avoid arithmetic errors
+        try:
+            if hasattr(differential, '__float__'):
+                # Handle Decimal types explicitly
+                abs_diff = float(abs(differential))
+            else:
+                abs_diff = abs(float(differential))
+        except (ValueError, TypeError, AttributeError) as e:
+            # Fallback to a safe default if conversion fails
+            self.logger.warning(f"Failed to convert differential to float: {differential} ({type(differential)}), using 0.0")
+            abs_diff = 0.0
+            
         base_score = min(0.95, abs_diff / 30.0)  # Scale to max 95%
         
         # Time-based modifier (closer to game = more confident)
@@ -529,13 +540,31 @@ class BaseStrategyProcessor(ABC):
         game_time = self._normalize_game_time(raw_data['game_datetime'])
         now_est = datetime.now(self.est)
         
+        # Format book attribution to make data source clear
+        source = raw_data.get('source', 'Unknown')
+        raw_book = raw_data.get('book', 'unknown')
+        
+        # Create clear book attribution
+        if source == 'VSIN' and raw_book and raw_book != 'unknown':
+            # For VSIN data, show source with specific book
+            book_attribution = f"VSIN ({raw_book.title()})"
+        elif source == 'SBD':
+            # For SBD data, just show SBD since it's their own data
+            book_attribution = "SBD"
+        else:
+            # For other cases, show both if available
+            if raw_book and raw_book != 'unknown':
+                book_attribution = f"{source} ({raw_book.title()})"
+            else:
+                book_attribution = source
+        
         # Prepare metadata
         signal_metadata = {
             'processor': self.__class__.__name__,
             'strategy_category': self.get_strategy_category(),
             'raw_differential': differential,
-            'source': raw_data.get('source'),
-            'book': raw_data.get('book'),
+            'original_source': source,  # Keep original source for reference
+            'original_book': raw_book,  # Keep original book for reference
             'split_type': raw_data.get('split_type')
         }
         
@@ -551,8 +580,8 @@ class BaseStrategyProcessor(ABC):
             minutes_to_game=self._calculate_minutes_to_game(game_time, now_est),
             split_type=raw_data['split_type'],
             split_value=raw_data.get('split_value'),
-            source=raw_data['source'],
-            book=raw_data.get('book'),
+            source=source,  # Keep original source for compatibility
+            book=book_attribution,  # Use formatted book attribution
             differential=differential,
             signal_strength=abs(differential),  # Use absolute differential as signal strength
             confidence_score=confidence_data['confidence_score'],

@@ -853,7 +853,7 @@ class DailyBettingReportService:
         # Basic statistics
         total_risk = sum(opp.stake_amount for opp in opportunities)
         potential_win = sum(opp.win_amount for opp in opportunities)
-        expected_value = sum(opp.stake_amount * (Decimal(str(opp.roi_estimate)) / Decimal("100")) for opp in opportunities)
+        expected_value = sum(float(opp.stake_amount) * (float(opp.roi_estimate) / 100.0) for opp in opportunities)
         
         # Check for actual results
         opportunities_with_results = [opp for opp in opportunities if opp.actual_result is not None]
