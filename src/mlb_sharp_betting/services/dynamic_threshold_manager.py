@@ -8,6 +8,8 @@ Implements progressive threshold optimization that:
 4. Provides ROI-based threshold recommendations
 
 This replaces static threshold systems with dynamic, performance-driven thresholds.
+
+🚀 PHASE 2B: Updated to use table registry for dynamic table resolution
 """
 
 import asyncio
@@ -21,6 +23,7 @@ from decimal import Decimal
 
 from ..core.logging import get_logger
 from ..db.connection import DatabaseManager, get_db_manager
+from ..db.table_registry import get_table_registry
 
 
 class ThresholdPhase(Enum):
@@ -78,11 +81,16 @@ class DynamicThresholdManager:
     """
     Manages dynamic thresholds that start loose and progressively tighten
     based on sample size and ROI optimization.
+    
+    🚀 PHASE 2B: Updated to use table registry for dynamic table resolution
     """
     
     def __init__(self, db_manager: Optional[DatabaseManager] = None):
         self.logger = get_logger(__name__)
         self.db_manager = db_manager or get_db_manager()
+        
+        # 🚀 PHASE 2B: Initialize table registry for dynamic table resolution
+        self.table_registry = get_table_registry()
         
         # Threshold configurations cache
         self._threshold_cache: Dict[str, ThresholdConfig] = {}
@@ -91,15 +99,15 @@ class DynamicThresholdManager:
         
         # Bootstrap thresholds (VERY loose to collect initial data)
         self.bootstrap_thresholds = {
-            'sharp_action': {'min': 3.0, 'mod': 5.0, 'high': 8.0},
-            'book_conflicts': {'min': 2.5, 'mod': 4.0, 'high': 6.0},
-            'public_fade': {'min': 45.0, 'mod': 50.0, 'high': 55.0},
-            'late_flip': {'min': 4.0, 'mod': 6.0, 'high': 8.0},
-            'consensus': {'min': 3.5, 'mod': 5.5, 'high': 7.5},
-            'underdog_value': {'min': 5.0, 'mod': 8.0, 'high': 12.0},
-            'line_movement': {'min': 3.0, 'mod': 5.0, 'high': 8.0},
-            'timing_based': {'min': 4.0, 'mod': 6.0, 'high': 9.0},
-            'default': {'min': 3.0, 'mod': 5.0, 'high': 8.0}
+            'sharp_action': {'min': 2.5, 'mod': 4.5, 'high': 7.5},
+            'book_conflicts': {'min': 2.0, 'mod': 3.5, 'high': 5.5},
+            'public_fade': {'min': 42.0, 'mod': 47.0, 'high': 52.0},
+            'late_flip': {'min': 3.5, 'mod': 5.5, 'high': 7.5},
+            'consensus': {'min': 3.0, 'mod': 5.0, 'high': 7.0},
+            'underdog_value': {'min': 4.5, 'mod': 7.5, 'high': 11.0},
+            'line_movement': {'min': 2.5, 'mod': 4.5, 'high': 7.5},
+            'timing_based': {'min': 3.5, 'mod': 5.5, 'high': 8.5},
+            'default': {'min': 2.5, 'mod': 4.5, 'high': 7.5}
         }
         
         # Phase-based multipliers for threshold progression
@@ -110,7 +118,7 @@ class DynamicThresholdManager:
             ThresholdPhase.OPTIMIZATION: 2.5   # ROI-optimized, typically 2.5x bootstrap
         }
         
-        self.logger.info("🎯 Dynamic Threshold Manager initialized - progressive threshold optimization enabled")
+        self.logger.info("🎯 Dynamic Threshold Manager initialized with table registry support")
     
     async def get_dynamic_threshold(self, strategy_type: str, source: str = "default", 
                                   split_type: str = "default") -> ThresholdConfig:
@@ -173,15 +181,21 @@ class DynamicThresholdManager:
         return await self._create_bootstrap_config(strategy_key, strategy_type)
     
     async def _load_threshold_from_db(self, strategy_key: str) -> Optional[ThresholdConfig]:
-        """Load threshold configuration from database"""
+        """Load threshold configuration from database
+        
+        🚀 PHASE 2B: Updated to use table registry for table resolution
+        """
         try:
-            query = """
+            # 🚀 PHASE 2B: Get table name from registry
+            dynamic_thresholds_table = self.table_registry.get_table('dynamic_thresholds')
+            
+            query = f"""
                 SELECT 
                     strategy_key, phase, sample_size, minimum_threshold,
                     moderate_threshold, high_threshold, current_roi,
                     current_win_rate, confidence_score, threshold_history,
                     last_optimization, next_optimization, created_at, updated_at
-                FROM backtesting.dynamic_thresholds 
+                FROM {dynamic_thresholds_table} 
                 WHERE strategy_key = %s
             """
             
@@ -478,12 +492,15 @@ class DynamicThresholdManager:
     async def _get_strategy_performance(self, strategy_key: str) -> Optional[Dict[str, Any]]:
         """Get current strategy performance from database"""
         try:
-            query = """
+            # Get table name from registry
+            strategy_performance_table = self.table_registry.get_table_name('analytics', 'strategy_performance')
+            
+            query = f"""
                 SELECT 
                     COUNT(*) as sample_size,
                     AVG(CASE WHEN roi_per_100 IS NOT NULL THEN roi_per_100 ELSE 0 END) as roi,
                     AVG(CASE WHEN win_rate IS NOT NULL THEN win_rate ELSE 0.5 END) as win_rate
-                FROM backtesting.strategy_performance
+                FROM {strategy_performance_table}
                 WHERE strategy_name LIKE %s
                   AND total_bets > 0
                   AND backtest_date >= %s
@@ -524,8 +541,12 @@ class DynamicThresholdManager:
     async def _get_historical_signal_data(self, strategy_key: str) -> List[Dict[str, Any]]:
         """Get historical signal data for optimization"""
         try:
+            # Get table names from registry
+            betting_splits_table = self.table_registry.get_table_name('raw_data', 'raw_mlb_betting_splits')
+            game_outcomes_table = self.table_registry.get_table_name('core_betting', 'game_outcomes')
+            
             # Get betting splits data that would have generated signals
-            query = """
+            query = f"""
                 SELECT 
                     s.differential,
                     s.game_id,
@@ -536,8 +557,8 @@ class DynamicThresholdManager:
                     o.over,
                     o.home_score,
                     o.away_score
-                FROM splits.raw_mlb_betting_splits s
-                LEFT JOIN public.game_outcomes o ON s.game_id = o.game_id
+                FROM {betting_splits_table} s
+                LEFT JOIN {game_outcomes_table} o ON s.game_id = o.game_id
                 WHERE s.last_updated >= %s
                   AND o.home_score IS NOT NULL
                   AND o.away_score IS NOT NULL
@@ -632,9 +653,12 @@ class DynamicThresholdManager:
             # Ensure table exists
             await self._ensure_threshold_table_exists()
             
+            # Get table name from registry
+            dynamic_thresholds_table = self.table_registry.get_table_name('analytics', 'dynamic_thresholds')
+            
             # Upsert configuration
-            query = """
-                INSERT INTO backtesting.dynamic_thresholds (
+            query = f"""
+                INSERT INTO {dynamic_thresholds_table} (
                     strategy_key, phase, sample_size, minimum_threshold,
                     moderate_threshold, high_threshold, current_roi,
                     current_win_rate, confidence_score, threshold_history,
@@ -679,8 +703,11 @@ class DynamicThresholdManager:
     async def _ensure_threshold_table_exists(self) -> None:
         """Ensure the dynamic thresholds table exists"""
         try:
-            query = """
-                CREATE TABLE IF NOT EXISTS backtesting.dynamic_thresholds (
+            # Get table name from registry
+            dynamic_thresholds_table = self.table_registry.get_table_name('analytics', 'dynamic_thresholds')
+            
+            query = f"""
+                CREATE TABLE IF NOT EXISTS {dynamic_thresholds_table} (
                     strategy_key VARCHAR(255) PRIMARY KEY,
                     phase VARCHAR(50) NOT NULL,
                     sample_size INTEGER NOT NULL DEFAULT 0,
@@ -707,14 +734,17 @@ class DynamicThresholdManager:
     async def get_threshold_summary(self) -> Dict[str, Any]:
         """Get summary of all threshold configurations"""
         try:
-            query = """
+            # Get table name from registry
+            dynamic_thresholds_table = self.table_registry.get_table_name('analytics', 'dynamic_thresholds')
+            
+            query = f"""
                 SELECT 
                     phase,
                     COUNT(*) as count,
                     AVG(minimum_threshold) as avg_min_threshold,
                     AVG(current_roi) as avg_roi,
                     AVG(sample_size) as avg_sample_size
-                FROM backtesting.dynamic_thresholds
+                FROM {dynamic_thresholds_table}
                 GROUP BY phase
                 ORDER BY 
                     CASE phase 

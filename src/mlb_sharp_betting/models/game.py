@@ -158,6 +158,8 @@ class Team(str, Enum):
             "ANA": "LAA",
             "TBR": "TB",   # Tampa Bay Rays
             "TBD": "TB",
+            "AZ": "ARI",   # Arizona (SportsbookReview)
+            "ATH": "OAK",  # Athletics (SportsbookReview)
             
             # Full names
             "BALTIMORE ORIOLES": "BAL",

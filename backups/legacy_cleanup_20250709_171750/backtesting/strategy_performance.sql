@@ -1,0 +1,26 @@
+-- Backup of backtesting.strategy_performance
+-- Created: 2025-07-09T17:17:50.253182
+-- Record count: 36
+
+-- Table structure
+-- id: integer
+-- strategy_name: character varying
+-- source_book_type: character varying
+-- split_type: character varying
+-- backtest_date: date
+-- win_rate: numeric
+-- roi_per_100: numeric
+-- total_bets: integer
+-- total_profit_loss: numeric
+-- sharpe_ratio: numeric
+-- max_drawdown: numeric
+-- kelly_criterion: numeric
+-- confidence_level: character varying
+-- last_updated: timestamp with time zone
+-- created_at: timestamp with time zone
+-- wins: integer
+-- is_active: boolean
+-- strategy_type: character varying
+
+-- Data backup would go here
+-- Use pg_dump for actual data backup in production

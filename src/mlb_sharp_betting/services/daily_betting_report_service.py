@@ -13,6 +13,8 @@ Key Features:
 - Integration with existing sharp action analyzers
 - Performance tracking and validation
 
+🚀 PHASE 2B: Updated to use table registry for dynamic table resolution
+
 Usage:
     service = DailyBettingReportService()
     results = await service.generate_daily_report()
@@ -37,6 +39,7 @@ from mlb_sharp_betting.services.juice_filter_service import get_juice_filter_ser
 
 try:
     from ..db.connection import DatabaseManager, get_db_manager
+    from ..db.table_registry import get_table_registry
     from ..core.exceptions import DatabaseError, ValidationError
     from ..services.mlb_api_service import MLBStatsAPIService
     from ..services.game_updater import GameUpdater
@@ -53,6 +56,7 @@ except ImportError:
     sys.path.insert(0, str(src_path))
     
     from mlb_sharp_betting.db.connection import DatabaseManager, get_db_manager
+    from mlb_sharp_betting.db.table_registry import get_table_registry
     from mlb_sharp_betting.core.exceptions import DatabaseError, ValidationError
     from mlb_sharp_betting.services.mlb_api_service import MLBStatsAPIService
     from mlb_sharp_betting.services.game_updater import GameUpdater
@@ -215,34 +219,40 @@ class BetSizingCalculator:
 
 
 class DailyBettingReportService:
-    """Main service for generating daily betting performance reports."""
+    """Service for generating daily betting performance reports."""
     
     def __init__(self, db_manager: Optional[DatabaseManager] = None):
         """Initialize the daily betting report service."""
         self.db_manager = db_manager or get_db_manager()
-        self.mlb_api = MLBStatsAPIService()
-        self.game_updater = GameUpdater()
         self.logger = logger.bind(service="daily_betting_report")
+        
+        # 🚀 PHASE 2B: Initialize table registry for dynamic table resolution
+        self.table_registry = get_table_registry()
+        
+        # Load configuration
         self.settings = get_settings()
+        
+        # Initialize bet sizing calculator
+        self.bet_calculator = BetSizingCalculator()
+        
+        # Initialize juice filter service
         self.juice_filter = get_juice_filter_service()
         
-        # Configuration
+        # Configuration for opportunity extraction
         self.config = {
-            "max_opportunities_per_day": 3,  # Focus on top 3 strongest bets
-            "min_confidence_score": 0.60,
-            "min_roi_threshold": 5.0,  # 5% minimum ROI
-            "stake_normalization_base": 100,  # $100 baseline
-            "detection_cutoff_minutes": 15,  # No bets within 15 min of game start
-            "max_hours_before_game": 4,  # Only bets detected within 4 hours of first pitch
-            "min_signal_strength": 15,  # Only strongest signals (raised from 10)
+            "min_signal_strength": 15.0,  # Minimum differential for consideration
+            "max_hours_before_game": 24,   # Maximum hours before game to consider signals
+            "detection_cutoff_minutes": 30,  # Minimum minutes before game for signal detection
+            "min_roi_threshold": 5.0,      # Minimum expected ROI %
+            "min_confidence_score": 0.55,  # Minimum confidence score (55%)
+            "max_opportunities_per_day": 5  # Maximum opportunities to report per day
         }
+        
+        self.logger.info("🚀 DailyBettingReportService initialized with table registry support")
         
         # Ensure reports directory exists
         self.reports_dir = Path("reports/daily")
         self.reports_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Initialize calculator
-        self.bet_calculator = BetSizingCalculator()
     
     async def generate_daily_report(self, target_date: Optional[date] = None, 
                                   output_format: str = "console") -> DailyBettingReport:
@@ -392,13 +402,18 @@ class DailyBettingReportService:
         
         Uses the opposing markets strategy and sharp action detection with proven
         thresholds rather than naive differential approaches.
+        
+        🚀 PHASE 2B: Updated to use table registry for table resolution
         """
         opportunities = []
         
         try:
             with self.db_manager.get_cursor() as cursor:
+                # 🚀 PHASE 2B: Get table name from registry
+                raw_splits_table = self.table_registry.get_table('raw_betting_splits')
+                
                 # Use the VALIDATED opposing markets strategy (60-70% win rates)
-                opposing_markets_query = """
+                opposing_markets_query = f"""
                 WITH latest_splits AS (
                     SELECT 
                         game_id,
@@ -417,7 +432,7 @@ class DailyBettingReportService:
                             PARTITION BY game_id, split_type, source, COALESCE(book, 'UNKNOWN')
                             ORDER BY last_updated DESC
                         ) as rn
-                    FROM mlb_betting.splits.raw_mlb_betting_splits
+                    FROM {raw_splits_table}
                     WHERE home_or_over_stake_percentage IS NOT NULL 
                       AND home_or_over_bets_percentage IS NOT NULL
                       AND game_datetime IS NOT NULL
@@ -714,28 +729,20 @@ class DailyBettingReportService:
     
     async def _add_actual_results(self, opportunities: List[BettingOpportunity], 
                                 target_date: date) -> List[BettingOpportunity]:
-        """Add actual results for completed games."""
+        """Add actual game results to betting opportunities if available."""
         
         if not opportunities:
             return opportunities
         
-        # Use Eastern Time for current date comparison
-        eastern_tz = timezone(timedelta(hours=-4))  # EDT
-        today = datetime.now(eastern_tz).date()
-        
-        # Only check for results if the target date is today or in the past
-        if target_date > today:
-            self.logger.info("Target date is in the future, no results to update",
-                           target_date=target_date.isoformat())
-            return opportunities
-        
         try:
-            # Get all game IDs for opportunities
-            game_ids = [opp.game_id for opp in opportunities]
-            
-            # Query game outcomes from database
             with self.db_manager.get_cursor() as cursor:
-                placeholders = ','.join(['%s' for _ in game_ids])
+                # 🚀 PHASE 2B: Get table name from registry
+                game_outcomes_table = self.table_registry.get_table('game_outcomes')
+                
+                # Get unique game IDs
+                game_ids = list(set(opp.game_id for opp in opportunities))
+                placeholders = ','.join(['%s'] * len(game_ids))
+                
                 query = f"""
                 SELECT 
                     game_id,
@@ -746,7 +753,7 @@ class DailyBettingReportService:
                     home_cover_spread,
                     over,
                     'completed' as game_status
-                FROM mlb_betting.public.game_outcomes 
+                FROM {game_outcomes_table}
                 WHERE game_id IN ({placeholders})
                   AND home_score IS NOT NULL 
                   AND away_score IS NOT NULL

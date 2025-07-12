@@ -230,15 +230,22 @@ class GameUpdater:
                 if use_betting_lines:
                     total_line, home_spread_line = await self._get_betting_lines(home_team, away_team, game_date)
                 
-                # Skip games without betting lines data
+                # Use default betting lines if none found or if not using betting lines
                 if total_line is None or home_spread_line is None:
-                    logger.warning("No betting lines found for game, skipping outcome calculation",
-                                 game_id=game_id,
-                                 home_team=home_team.value,
-                                 away_team=away_team.value,
-                                 total_line=total_line,
-                                 home_spread_line=home_spread_line)
-                    return None
+                    if use_betting_lines:
+                        logger.warning("No betting lines found for game, using default lines",
+                                     game_id=game_id,
+                                     home_team=home_team.value,
+                                     away_team=away_team.value)
+                    else:
+                        logger.info("Using default betting lines for game outcome calculation",
+                                  game_id=game_id,
+                                  home_team=home_team.value,
+                                  away_team=away_team.value)
+                    
+                    # Use typical MLB betting line defaults
+                    total_line = 9.0  # Average MLB total runs
+                    home_spread_line = -1.5  # Home team typically slight favorite
                 
                 # Calculate betting outcomes
                 total_score = home_score + away_score

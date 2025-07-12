@@ -23,6 +23,10 @@ from mlb_sharp_betting.models.timing_analysis import (
     RealtimeTimingLookup,
     TimingRecommendation
 )
+from mlb_sharp_betting.models.actionnetwork import (
+    TeamDimension,
+    GameFact
+)
 
 __all__ = [
     "BaseModel",
@@ -52,4 +56,6 @@ __all__ = [
     "ComprehensiveTimingAnalysis",
     "RealtimeTimingLookup",
     "TimingRecommendation",
+    "TeamDimension",
+    "GameFact",
 ] 

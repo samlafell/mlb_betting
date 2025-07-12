@@ -12,4 +12,6 @@ __all__ = [
     "GameUpdater", 
     "OddsAPIService",
     "OddsData",
+    "GameOutcomeService",
+    "get_game_outcome_service",
 ] 

@@ -1,0 +1,34 @@
+-- Backup of splits.raw_mlb_betting_splits
+-- Created: 2025-07-09T17:17:50.156012
+-- Record count: 43370
+
+-- Table structure
+-- id: bigint
+-- game_id: text
+-- home_team: text
+-- away_team: text
+-- game_datetime: timestamp without time zone
+-- split_type: text
+-- last_updated: timestamp without time zone
+-- home_or_over_bets: integer
+-- home_or_over_bets_percentage: double precision
+-- home_or_over_stake_percentage: double precision
+-- away_or_under_bets: integer
+-- away_or_under_bets_percentage: double precision
+-- away_or_under_stake_percentage: double precision
+-- sharp_action: text
+-- outcome: text
+-- created_at: timestamp without time zone
+-- updated_at: timestamp without time zone
+-- source: text
+-- book: text
+-- split_value: text
+-- hybrid_strategy: boolean
+-- multi_consensus_bets: integer
+-- winning_team: text
+-- correct_movements: integer
+-- line_movement: double precision
+-- strategy_variant: text
+
+-- Data backup would go here
+-- Use pg_dump for actual data backup in production

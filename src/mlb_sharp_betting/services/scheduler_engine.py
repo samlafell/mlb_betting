@@ -470,20 +470,26 @@ class CoreScheduler:
             self.logger.error(f"Daily setup error: {e}")
     
     async def _run_entrypoint(self, context: str = "scheduled") -> Dict[str, Any]:
-        """Run the main entrypoint script."""
+        """Run the enhanced data pipeline with smart detection."""
         start_time = datetime.now(timezone.utc)
-        self.logger.info("Starting entrypoint execution", context=context)
+        self.logger.info("Starting enhanced pipeline execution", context=context)
         
         try:
-            entrypoint_path = self.project_root / "src" / "mlb_sharp_betting" / "entrypoint.py"
-            cmd = ["uv", "run", str(entrypoint_path), "--verbose"]
+            # 🔧 FIX: Use smart pipeline with 120-minute detection window instead of basic entrypoint
+            # This ensures games like Yankees (77 minutes away) are included in analysis
+            cmd = [
+                "uv", "run", "python", "-m", "mlb_sharp_betting.cli", 
+                "enhanced-detection", "smart-pipeline", 
+                "--minutes", "120",  # Increased from default 60 to 120
+                "--force-fresh"  # Always get fresh data
+            ]
             
             result = subprocess.run(
                 cmd,
                 cwd=self.project_root,
                 capture_output=True,
                 text=True,
-                timeout=300  # 5 minute timeout
+                timeout=600  # 10 minute timeout for enhanced pipeline
             )
             
             execution_time = (datetime.now(timezone.utc) - start_time).total_seconds()
@@ -499,7 +505,7 @@ class CoreScheduler:
             }
             
         except Exception as e:
-            self.logger.error(f"Entrypoint execution failed: {e}")
+            self.logger.error(f"Enhanced pipeline execution failed: {e}")
             return {
                 'success': False,
                 'context': context,

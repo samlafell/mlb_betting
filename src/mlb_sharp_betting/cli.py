@@ -901,6 +901,7 @@ cli.add_command(enhanced_backtesting_group, name='backtest')
 cli.add_command(status_group, name='status')
 
 
+
 @cli.command()
 @click.option('--hours-back', '-h', type=int, default=24,
               help='Hours back to search for flips (default: 24)')
@@ -1202,6 +1203,318 @@ def simple_scan(threshold: float, limit: int, days_back: int):
         click.echo("   • Is PostgreSQL running?")
         click.echo("   • Does the 'mlb_betting' database exist?")
         click.echo("   • Try 'mlb-cli status' to check system health")
+
+
+@cli.group()
+def game_outcomes():
+    """🏆 Manage MLB game outcomes and results"""
+    pass
+
+
+@game_outcomes.command()
+@click.option('--no-betting-lines', is_flag=True, help='Use default betting lines instead of requiring splits data')
+@click.option('--verbose', '-v', is_flag=True, help='Show detailed game results')
+def daily(no_betting_lines: bool, verbose: bool):
+    """📅 Update yesterday's and today's completed games"""
+    
+    async def run_daily_update():
+        from mlb_sharp_betting.services.game_outcome_service import get_game_outcome_service
+        
+        click.echo("🏆 DAILY GAME OUTCOMES UPDATE")
+        click.echo("=" * 60)
+        
+        use_betting_lines = not no_betting_lines
+        if no_betting_lines:
+            click.echo("🎯 Using default betting lines (not dependent on splits data)")
+        
+        try:
+            service = get_game_outcome_service()
+            summary = await service.update_daily_games(use_betting_lines=use_betting_lines)
+            
+            # Display results
+            click.echo(f"\n📊 UPDATE SUMMARY:")
+            click.echo(f"   • Total games processed: {summary.total_games_processed}")
+            click.echo(f"   • Dates processed: {len(summary.dates_processed)}")
+            click.echo(f"   • Execution time: {summary.execution_time_seconds:.2f}s")
+            
+            if summary.dates_processed:
+                click.echo(f"   • Dates: {', '.join(summary.dates_processed)}")
+            
+            # Show betting statistics
+            if summary.total_games_processed > 0:
+                stats = summary.betting_statistics
+                click.echo(f"\n📈 BETTING RESULTS:")
+                click.echo(f"   • Home vs Away: {stats['home_wins']}-{stats['away_wins']} ({stats['home_win_percentage']:.1f}% home)")
+                click.echo(f"   • Over vs Under: {stats['overs']}-{stats['unders']} ({stats['over_percentage']:.1f}% over)")
+                click.echo(f"   • Home Spread: {stats['home_covers']}-{stats['away_covers']} ({stats['home_cover_percentage']:.1f}% home cover)")
+            
+            # Show database status
+            db_status = summary.database_status
+            click.echo(f"\n💾 DATABASE STATUS:")
+            click.echo(f"   • Status: {'✅ Connected' if db_status['status'] == 'connected' else '❌ Error'}")
+            if db_status.get('latest_game_date'):
+                click.echo(f"   • Latest game: {db_status['latest_game_date']}")
+            click.echo(f"   • Recent outcomes: {db_status.get('recent_outcomes_count', 0)}")
+            
+            if summary.total_games_processed > 0:
+                click.echo(f"\n✅ Daily update completed successfully!")
+            else:
+                click.echo(f"\nℹ️  Daily update completed - no new games found")
+                
+        except Exception as e:
+            click.echo(f"❌ Daily update failed: {str(e)}")
+            if verbose:
+                import traceback
+                click.echo(f"Details: {traceback.format_exc()}")
+            sys.exit(1)
+    
+    asyncio.run(run_daily_update())
+
+
+@game_outcomes.command()
+@click.argument('date', type=str)
+@click.option('--no-betting-lines', is_flag=True, help='Use default betting lines instead of requiring splits data')
+@click.option('--verbose', '-v', is_flag=True, help='Show detailed game results')
+def date(date: str, no_betting_lines: bool, verbose: bool):
+    """📅 Update games for a specific date (YYYY-MM-DD)"""
+    
+    async def run_date_update():
+        from mlb_sharp_betting.services.game_outcome_service import get_game_outcome_service
+        
+        # Parse date
+        try:
+            target_date = datetime.strptime(date, "%Y-%m-%d").date()
+        except ValueError:
+            click.echo(f"❌ Invalid date format: {date}. Use YYYY-MM-DD format.", err=True)
+            sys.exit(1)
+        
+        click.echo("🏆 SPECIFIC DATE GAME OUTCOMES UPDATE")
+        click.echo("=" * 60)
+        click.echo(f"📅 Target date: {target_date}")
+        
+        use_betting_lines = not no_betting_lines
+        if no_betting_lines:
+            click.echo("🎯 Using default betting lines (not dependent on splits data)")
+        
+        try:
+            service = get_game_outcome_service()
+            summary = await service.update_specific_date(target_date, use_betting_lines=use_betting_lines)
+            
+            # Display results
+            click.echo(f"\n📊 UPDATE SUMMARY:")
+            click.echo(f"   • Total games processed: {summary.total_games_processed}")
+            click.echo(f"   • Execution time: {summary.execution_time_seconds:.2f}s")
+            
+            # Show betting statistics
+            if summary.total_games_processed > 0:
+                stats = summary.betting_statistics
+                click.echo(f"\n📈 BETTING RESULTS:")
+                click.echo(f"   • Home vs Away: {stats['home_wins']}-{stats['away_wins']} ({stats['home_win_percentage']:.1f}% home)")
+                click.echo(f"   • Over vs Under: {stats['overs']}-{stats['unders']} ({stats['over_percentage']:.1f}% over)")
+                click.echo(f"   • Home Spread: {stats['home_covers']}-{stats['away_covers']} ({stats['home_cover_percentage']:.1f}% home cover)")
+            
+            # Show database status
+            db_status = summary.database_status
+            click.echo(f"\n💾 DATABASE STATUS:")
+            click.echo(f"   • Status: {'✅ Connected' if db_status['status'] == 'connected' else '❌ Error'}")
+            if db_status.get('latest_game_date'):
+                click.echo(f"   • Latest game: {db_status['latest_game_date']}")
+            click.echo(f"   • Recent outcomes: {db_status.get('recent_outcomes_count', 0)}")
+            
+            if summary.total_games_processed > 0:
+                click.echo(f"\n✅ Date update completed successfully!")
+            else:
+                click.echo(f"\nℹ️  Date update completed - no completed games found for {target_date}")
+                
+        except Exception as e:
+            click.echo(f"❌ Date update failed: {str(e)}")
+            if verbose:
+                import traceback
+                click.echo(f"Details: {traceback.format_exc()}")
+            sys.exit(1)
+    
+    asyncio.run(run_date_update())
+
+
+@game_outcomes.command()
+@click.option('--season-year', type=int, help='Season year (default: current season)')
+@click.option('--batch-size', type=int, default=7, help='Number of days to process in each batch (default: 7)')
+@click.option('--no-betting-lines', is_flag=True, help='Use default betting lines (recommended for large refreshes)')
+@click.option('--verbose', '-v', is_flag=True, help='Show detailed progress')
+def season_refresh(season_year: Optional[int], batch_size: int, no_betting_lines: bool, verbose: bool):
+    """🔄 Refresh game outcomes for the entire season"""
+    
+    async def run_season_refresh():
+        from mlb_sharp_betting.services.game_outcome_service import get_game_outcome_service
+        
+        click.echo("🏆 FULL SEASON GAME OUTCOMES REFRESH")
+        click.echo("=" * 60)
+        
+        use_betting_lines = not no_betting_lines
+        if no_betting_lines:
+            click.echo("🎯 Using default betting lines (recommended for large refreshes)")
+        
+        # Confirm if using betting lines for large refresh
+        if use_betting_lines:
+            click.echo("⚠️  WARNING: Using betting lines for full season refresh.")
+            click.echo("   This will be much slower and may fail if betting splits data is incomplete.")
+            click.echo("   Consider using --no-betting-lines for faster, more reliable results.")
+            if not click.confirm("   Continue with betting lines?"):
+                return
+        
+        try:
+            service = get_game_outcome_service()
+            
+            # Show estimated time based on season length
+            current_date = datetime.now().date()
+            estimated_year = season_year or (current_date.year if current_date.month >= 4 else current_date.year - 1)
+            season_start = datetime(estimated_year, 4, 1).date()
+            season_end = min(current_date, datetime(estimated_year, 10, 31).date())
+            estimated_days = (season_end - season_start).days
+            
+            click.echo(f"📅 Season: {estimated_year}")
+            click.echo(f"📊 Estimated date range: {season_start} to {season_end}")
+            click.echo(f"🔢 Estimated days: {estimated_days}")
+            click.echo(f"⏱️  Estimated time: {estimated_days * 0.5:.1f} seconds")
+            
+            if not click.confirm("Proceed with full season refresh?"):
+                return
+            
+            with click.progressbar(length=100, label="Processing season...") as bar:
+                result = await service.refresh_full_season(
+                    season_year=season_year,
+                    use_betting_lines=use_betting_lines,
+                    batch_size=batch_size
+                )
+                bar.update(100)
+            
+            # Display results
+            click.echo(f"\n📊 SEASON REFRESH SUMMARY:")
+            click.echo(f"   • Season: {result.season_year}")
+            click.echo(f"   • Date range: {result.start_date} to {result.end_date}")
+            click.echo(f"   • Total games processed: {result.total_games_processed}")
+            click.echo(f"   • Dates processed: {result.dates_processed}")
+            click.echo(f"   • Dates skipped: {result.dates_skipped}")
+            click.echo(f"   • Execution time: {result.total_execution_time_seconds:.2f}s")
+            
+            # Show aggregated betting statistics
+            if result.total_games_processed > 0:
+                all_outcomes = []
+                for summary in result.daily_summaries:
+                    all_outcomes.extend([None] * summary.total_games_processed)  # Placeholder for stats calculation
+                
+                # Calculate season-wide stats from individual summaries
+                total_home_wins = sum(summary.betting_statistics['home_wins'] for summary in result.daily_summaries)
+                total_away_wins = sum(summary.betting_statistics['away_wins'] for summary in result.daily_summaries)
+                total_overs = sum(summary.betting_statistics['overs'] for summary in result.daily_summaries)
+                total_unders = sum(summary.betting_statistics['unders'] for summary in result.daily_summaries)
+                total_home_covers = sum(summary.betting_statistics['home_covers'] for summary in result.daily_summaries)
+                total_away_covers = sum(summary.betting_statistics['away_covers'] for summary in result.daily_summaries)
+                
+                click.echo(f"\n📈 SEASON BETTING RESULTS:")
+                click.echo(f"   • Home vs Away: {total_home_wins}-{total_away_wins} ({total_home_wins/(total_home_wins+total_away_wins)*100:.1f}% home)")
+                click.echo(f"   • Over vs Under: {total_overs}-{total_unders} ({total_overs/(total_overs+total_unders)*100:.1f}% over)")
+                click.echo(f"   • Home Spread: {total_home_covers}-{total_away_covers} ({total_home_covers/(total_home_covers+total_away_covers)*100:.1f}% home cover)")
+            
+            # Show errors if any
+            if result.errors:
+                click.echo(f"\n⚠️  ERRORS ({len(result.errors)}):")
+                for error in result.errors[:5]:  # Show first 5 errors
+                    click.echo(f"   • {error}")
+                if len(result.errors) > 5:
+                    click.echo(f"   ... and {len(result.errors) - 5} more errors")
+            
+            if result.total_games_processed > 0:
+                click.echo(f"\n✅ Season refresh completed successfully!")
+            else:
+                click.echo(f"\nℹ️  Season refresh completed - no games found in date range")
+                
+        except Exception as e:
+            click.echo(f"❌ Season refresh failed: {str(e)}")
+            if verbose:
+                import traceback
+                click.echo(f"Details: {traceback.format_exc()}")
+            sys.exit(1)
+    
+    asyncio.run(run_season_refresh())
+
+
+@game_outcomes.command()
+@click.option('--detailed', is_flag=True, help='Show detailed database information')
+def status(detailed: bool):
+    """📊 Show game outcomes database status"""
+    
+    async def run_status_check():
+        from mlb_sharp_betting.services.game_outcome_service import get_game_outcome_service
+        
+        click.echo("🏆 GAME OUTCOMES DATABASE STATUS")
+        click.echo("=" * 60)
+        
+        try:
+            service = get_game_outcome_service()
+            db_status = await service.get_database_status()
+            
+            # Basic status
+            click.echo(f"💾 Database Status: {'✅ Connected' if db_status['status'] == 'connected' else '❌ Error'}")
+            
+            if db_status['status'] == 'connected':
+                click.echo(f"📊 Has data: {'✅ Yes' if db_status['has_data'] else '❌ No'}")
+                
+                if db_status['has_data']:
+                    click.echo(f"🗓️  Latest game: {db_status['latest_game_date']}")
+                    click.echo(f"📈 Recent outcomes: {db_status['recent_outcomes_count']}")
+                    
+                    if detailed:
+                        # Additional detailed information
+                        from mlb_sharp_betting.db.connection import get_db_manager
+                        db_manager = get_db_manager()
+                        
+                        with db_manager.get_cursor() as cursor:
+                            # Total game outcomes
+                            cursor.execute("SELECT COUNT(*) FROM public.game_outcomes")
+                            total_outcomes = cursor.fetchone()[0]
+                            
+                            # Date range
+                            cursor.execute("""
+                                SELECT MIN(game_date) as earliest, MAX(game_date) as latest
+                                FROM public.game_outcomes
+                            """)
+                            date_range = cursor.fetchone()
+                            
+                            # Games by month
+                            cursor.execute("""
+                                SELECT 
+                                    EXTRACT(YEAR FROM game_date) as year,
+                                    EXTRACT(MONTH FROM game_date) as month,
+                                    COUNT(*) as games
+                                FROM public.game_outcomes
+                                GROUP BY year, month
+                                ORDER BY year, month
+                            """)
+                            monthly_counts = cursor.fetchall()
+                        
+                        click.echo(f"\n🔍 DETAILED INFORMATION:")
+                        click.echo(f"   • Total outcomes: {total_outcomes:,}")
+                        if date_range and date_range[0]:
+                            click.echo(f"   • Date range: {date_range[0]} to {date_range[1]}")
+                        
+                        if monthly_counts:
+                            click.echo(f"   • Monthly breakdown:")
+                            for year, month, count in monthly_counts[-12:]:  # Last 12 months
+                                month_name = datetime(int(year), int(month), 1).strftime('%b %Y')
+                                click.echo(f"     - {month_name}: {count} games")
+                else:
+                    click.echo("ℹ️  No game outcome data found")
+                    click.echo("💡 Run 'mlb-cli game-outcomes daily' to populate data")
+                    
+            else:
+                click.echo(f"❌ Database error: {db_status.get('error', 'Unknown error')}")
+                
+        except Exception as e:
+            click.echo(f"❌ Status check failed: {str(e)}")
+            sys.exit(1)
+    
+    asyncio.run(run_status_check())
 
 
 @cli.command()
@@ -1613,6 +1926,9 @@ def strategy_config_status(show_inactive: bool, show_thresholds: bool):
         click.echo(f"❌ Status check failed: {e}")
         sys.exit(1)
 
+
+# Add the game outcomes command group
+cli.add_command(game_outcomes, name='game-outcomes')
 
 if __name__ == '__main__':
     cli() 

@@ -1,0 +1,9 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+[status]
+development
+not implmented yet - keep all action work separate (root dir, action/ folder)
+

@@ -1,0 +1,25 @@
+-- Backup of timing_analysis.timing_recommendations_cache
+-- Created: 2025-07-09T17:17:50.239458
+-- Record count: 1
+
+-- Table structure
+-- id: integer
+-- timing_bucket: character varying
+-- source: character varying
+-- book: character varying
+-- split_type: character varying
+-- strategy_name: character varying
+-- recommendation: text
+-- confidence: character varying
+-- expected_win_rate: numeric
+-- expected_roi: numeric
+-- risk_factors: jsonb
+-- sample_size_warning: boolean
+-- historical_total_bets: integer
+-- historical_win_rate: numeric
+-- historical_roi: numeric
+-- expires_at: timestamp with time zone
+-- created_at: timestamp with time zone
+
+-- Data backup would go here
+-- Use pg_dump for actual data backup in production

@@ -10,6 +10,8 @@ Calculates confidence scores for betting recommendations based on:
 4. Data Quality (recency, cross-validation, sample size)
 5. Market Context (time to game, market conditions)
 
+🚀 PHASE 2B: Updated to use table registry for dynamic table resolution
+
 Confidence Score Range: 0-100
 - 90-100: VERY HIGH CONFIDENCE (bet with confidence)
 - 75-89:  HIGH CONFIDENCE (strong recommendation)
@@ -25,6 +27,7 @@ from dataclasses import dataclass
 import pytz
 
 from .database_coordinator import get_database_coordinator
+from ..db.table_registry import get_table_registry
 
 
 @dataclass
@@ -62,6 +65,9 @@ class ConfidenceScorer:
     def __init__(self):
         self.coordinator = get_database_coordinator()
         self.est = pytz.timezone('US/Eastern')
+        
+        # 🚀 PHASE 2B: Initialize table registry for dynamic table resolution
+        self.table_registry = get_table_registry()
         
         # Scoring weights (must sum to 1.0) - ADJUSTED for better signal detection
         self.weights = {
@@ -193,30 +199,35 @@ class ConfidenceScorer:
         """
         Calculate score based on historical source/book performance
         
+        🚀 PHASE 2B: Updated to use table registry for table resolution
+        
         Source Reliability Scoring:
         - 70%+ win rate: 100 points
         - 65-69% win rate: 85-99 points
         - 60-64% win rate: 70-84 points
         - 55-59% win rate: 55-69 points
-        - 52.4-54% win rate: 40-54 points (break-even)
-        - <52.4% win rate: 0-39 points
+        - 52.4%+ win rate: 40-54 points (breakeven)
+        - <52.4% win rate: 0-39 points (losing)
         """
         
-        # Try different source/book combinations
+        # 🚀 PHASE 2B: Get table name from registry
+        strategy_performance_table = self.table_registry.get_table('strategy_performance')
+        
+        # Try different source-book combinations for historical data
         source_book_patterns = [
             f"{source}-{book}",
             f"{source}-{book}-{split_type}",
-            source,
+            f"{source}-{split_type}",
             f"{source}-{split_type}"
         ]
         
         for pattern in source_book_patterns:
-            query = """
+            query = f"""
             SELECT 
                 AVG(win_rate) as avg_win_rate,
                 SUM(total_bets) as total_bets,
                 AVG(roi_per_100) as avg_database_roi
-            FROM backtesting.strategy_performance
+            FROM {strategy_performance_table}
             WHERE source_book_type LIKE ? 
               AND (split_type = ? OR split_type = 'opposing_markets')
               AND total_bets >= 5
@@ -265,7 +276,12 @@ class ConfidenceScorer:
     ) -> Tuple[float, Optional[float], Optional[float]]:
         """
         Calculate score based on strategy-specific historical performance
+        
+        🚀 PHASE 2B: Updated to use table registry for table resolution
         """
+        
+        # 🚀 PHASE 2B: Get table name from registry
+        strategy_performance_table = self.table_registry.get_table('strategy_performance')
         
         strategy_patterns = [
             strategy_name,
@@ -275,12 +291,12 @@ class ConfidenceScorer:
         ]
         
         for pattern in strategy_patterns:
-            query = """
+            query = f"""
             SELECT 
                 win_rate * 100 as win_rate_pct,
                 total_bets,
                 roi_per_100 as database_roi
-            FROM backtesting.strategy_performance
+            FROM {strategy_performance_table}
             WHERE strategy_name LIKE %s
               AND (split_type = %s OR split_type = 'opposing_markets')
               AND total_bets >= 5
@@ -467,11 +483,14 @@ class ConfidenceScorer:
     def _get_source_reliability_score(self, source_book_type: str, split_type: str) -> Tuple[float, str]:
         """Calculate source reliability score based on historical win rate."""
         try:
+            # 🚀 PHASE 2B: Get table name from registry
+            strategy_performance_table = self.table_registry.get_table('strategy_performance')
+            
             # Get historical performance for this source/book combination
-            query = """
+            query = f"""
                 SELECT AVG(win_rate) as avg_win_rate, COUNT(*) as strategy_count,
                        AVG(total_bets) as avg_sample_size
-                FROM backtesting.strategy_performance 
+                FROM {strategy_performance_table} 
                 WHERE source_book_type = %s 
                   AND split_type = %s
                   AND total_bets >= 10
@@ -521,10 +540,13 @@ class ConfidenceScorer:
     def _get_strategy_performance_score(self, strategy_name: str, source_book_type: str, split_type: str) -> Tuple[float, str]:
         """Calculate strategy performance score based on historical ROI."""
         try:
+            # 🚀 PHASE 2B: Get table name from registry
+            strategy_performance_table = self.table_registry.get_table('strategy_performance')
+            
             # Get historical performance for this specific strategy
-            query = """
+            query = f"""
                 SELECT total_bets, ROUND(win_rate * total_bets) as wins, AVG(total_bets) as avg_bets
-                FROM backtesting.strategy_performance 
+                FROM {strategy_performance_table} 
                 WHERE strategy_name LIKE %s 
                   AND source_book_type = %s
                   AND split_type = %s

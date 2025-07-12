@@ -326,4 +326,123 @@ def quick_health_check():
     # Run the async function
     result = asyncio.run(quick_check())
     if not result:
+        exit(1)
+
+
+@diagnostics.command()
+@click.option('--strategy', default='sharp_action', help='Strategy type to debug')
+@click.option('--source', default='VSIN', help='Source to test (VSIN, SBD, etc.)')
+@click.option('--split-type', default='moneyline', help='Split type to test (moneyline, spread, total)')
+@click.option('--show-dynamic', is_flag=True, help='Show dynamic threshold details')
+@click.option('--test-signals', is_flag=True, help='Test with sample signal values')
+def debug_thresholds(strategy: str, source: str, split_type: str, show_dynamic: bool, test_signals: bool):
+    """Debug threshold system to see what values are actually being used."""
+    
+    async def run_threshold_debug():
+        from mlb_sharp_betting.services.dynamic_threshold_manager import get_dynamic_threshold_manager
+        from mlb_sharp_betting.analysis.processors.sharpaction_processor import SharpActionProcessor
+        from mlb_sharp_betting.services.betting_signal_repository import BettingSignalRepository
+        from mlb_sharp_betting.services.strategy_validation import StrategyValidation
+        from mlb_sharp_betting.models.betting_analysis import SignalProcessorConfig
+        from mlb_sharp_betting.db.connection import get_db_manager
+        
+        logger = get_logger(__name__)
+        click.echo("🔧 THRESHOLD DEBUG MODE")
+        click.echo("=" * 60)
+        
+        try:
+            # Initialize components
+            db_manager = get_db_manager()
+            repository = BettingSignalRepository(db_manager)
+            validator = StrategyValidation(db_manager=db_manager)
+            config = SignalProcessorConfig()
+            
+            # Get dynamic threshold manager
+            threshold_manager = get_dynamic_threshold_manager()
+            
+            click.echo(f"📊 Testing Strategy: {strategy}")
+            click.echo(f"📊 Testing Source: {source}")
+            click.echo(f"📊 Testing Split Type: {split_type}")
+            
+            if show_dynamic:
+                click.echo("\n🎯 DYNAMIC THRESHOLD DETAILS:")
+                click.echo("-" * 40)
+                
+                # Test dynamic threshold system
+                threshold_config = await threshold_manager.get_dynamic_threshold(
+                    strategy_type=strategy,
+                    source=source,
+                    split_type=split_type
+                )
+                
+                click.echo(f"Phase: {threshold_config.phase.value}")
+                click.echo(f"Sample Size: {threshold_config.sample_size}")
+                click.echo(f"Minimum Threshold: {threshold_config.minimum_threshold:.1f}%")
+                click.echo(f"Moderate Threshold: {threshold_config.moderate_threshold:.1f}%")
+                click.echo(f"High Threshold: {threshold_config.high_threshold:.1f}%")
+                click.echo(f"Current ROI: {threshold_config.current_roi:.1f}%")
+                click.echo(f"Current Win Rate: {threshold_config.current_win_rate:.1%}")
+                click.echo(f"Confidence Score: {threshold_config.confidence_score:.2f}")
+                
+                # Show bootstrap values for comparison
+                bootstrap = threshold_manager.bootstrap_thresholds.get(strategy, {})
+                if bootstrap:
+                    click.echo(f"\n📋 BOOTSTRAP REFERENCE VALUES:")
+                    click.echo(f"Min: {bootstrap.get('min', 'N/A')}%, Mod: {bootstrap.get('mod', 'N/A')}%, High: {bootstrap.get('high', 'N/A')}%")
+            
+            if test_signals:
+                click.echo("\n🧪 TESTING SAMPLE SIGNALS:")
+                click.echo("-" * 40)
+                
+                # Test various signal strengths
+                test_differentials = [1.0, 2.5, 3.0, 4.0, 5.0, 8.0, 10.0]
+                
+                # Create processor to test actual threshold logic
+                processor = SharpActionProcessor(repository, validator, config)
+                processor.threshold_manager = threshold_manager
+                
+                for diff in test_differentials:
+                    # Test the actual threshold logic
+                    from mlb_sharp_betting.models.betting_analysis import ProfitableStrategy
+                    test_strategy = ProfitableStrategy(
+                        strategy_name="test_strategy",
+                        source_book="test",
+                        split_type=split_type,
+                        win_rate=55.0,  # 55% win rate
+                        roi=10.0,
+                        total_bets=100,
+                        confidence=0.8,
+                        ci_lower=50.0,
+                        ci_upper=60.0
+                    )
+                    
+                    # Get actual threshold that would be used
+                    actual_threshold = await processor._get_actual_threshold_for_debug(
+                        test_strategy, diff, source, split_type
+                    )
+                    
+                    # Test if signal would pass
+                    would_pass = await processor._meets_strategy_threshold(
+                        test_strategy, diff, source, split_type
+                    )
+                    
+                    status = "✅ PASS" if would_pass else "❌ FAIL"
+                    click.echo(f"Signal {diff:4.1f}% vs Threshold {actual_threshold:4.1f}% = {status}")
+            
+            click.echo("\n🎯 DIAGNOSIS COMPLETE")
+            click.echo("If you see high threshold values (>8%), the dynamic system may not be working properly.")
+            click.echo("If you see low threshold values (3-8%) but signals still fail, check the integration.")
+            
+        except Exception as e:
+            click.echo(f"❌ Threshold debug failed: {e}")
+            logger.error(f"❌ Threshold debug failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+        
+        return True
+    
+    # Run the async function
+    result = asyncio.run(run_threshold_debug())
+    if not result:
         exit(1) 

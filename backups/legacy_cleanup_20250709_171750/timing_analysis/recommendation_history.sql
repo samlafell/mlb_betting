@@ -1,0 +1,28 @@
+-- Backup of timing_analysis.recommendation_history
+-- Created: 2025-07-09T17:17:50.213118
+-- Record count: 9
+
+-- Table structure
+-- id: integer
+-- game_id: character varying
+-- home_team: character varying
+-- away_team: character varying
+-- game_datetime: timestamp with time zone
+-- recommendation_datetime: timestamp with time zone
+-- hours_until_game: numeric
+-- timing_bucket: character varying
+-- source: character varying
+-- book: character varying
+-- split_type: character varying
+-- strategy_name: character varying
+-- recommended_side: character varying
+-- odds_at_recommendation: numeric
+-- closing_odds: numeric
+-- outcome: character varying
+-- actual_profit_loss: numeric
+-- units_wagered: numeric
+-- created_at: timestamp with time zone
+-- updated_at: timestamp with time zone
+
+-- Data backup would go here
+-- Use pg_dump for actual data backup in production

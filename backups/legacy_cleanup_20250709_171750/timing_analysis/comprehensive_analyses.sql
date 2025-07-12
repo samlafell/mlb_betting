@@ -1,0 +1,30 @@
+-- Backup of timing_analysis.comprehensive_analyses
+-- Created: 2025-07-09T17:17:50.233520
+-- Record count: 11
+
+-- Table structure
+-- id: integer
+-- analysis_name: character varying
+-- total_games_analyzed: integer
+-- total_recommendations: integer
+-- analysis_start_date: date
+-- analysis_end_date: date
+-- overall_total_bets: integer
+-- overall_wins: integer
+-- overall_losses: integer
+-- overall_pushes: integer
+-- overall_total_units_wagered: numeric
+-- overall_total_profit_loss: numeric
+-- overall_avg_odds_at_recommendation: numeric
+-- overall_avg_closing_odds: numeric
+-- overall_win_rate: numeric
+-- overall_roi_percentage: numeric
+-- best_bucket: character varying
+-- best_source: character varying
+-- best_strategy: character varying
+-- trends: jsonb
+-- created_at: timestamp with time zone
+-- updated_at: timestamp with time zone
+
+-- Data backup would go here
+-- Use pg_dump for actual data backup in production

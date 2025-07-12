@@ -1,0 +1,41 @@
+-- Backup of mlb_betting.totals
+-- Created: 2025-07-09T17:17:50.142675
+-- Record count: 7875
+
+-- Table structure
+-- id: integer
+-- game_id: integer
+-- sportsbook: character varying
+-- total_line: numeric
+-- over_price: integer
+-- under_price: integer
+-- odds_timestamp: timestamp with time zone
+-- opening_total: numeric
+-- opening_over_price: integer
+-- opening_under_price: integer
+-- closing_total: numeric
+-- closing_over_price: integer
+-- closing_under_price: integer
+-- over_bets_count: integer
+-- under_bets_count: integer
+-- over_bets_percentage: numeric
+-- under_bets_percentage: numeric
+-- over_money_percentage: numeric
+-- under_money_percentage: numeric
+-- sharp_action: character varying
+-- reverse_line_movement: boolean
+-- steam_move: boolean
+-- winning_side: character varying
+-- profit_loss: numeric
+-- final_total: integer
+-- went_over: boolean
+-- source: character varying
+-- data_quality: character varying
+-- created_at: timestamp with time zone
+-- updated_at: timestamp with time zone
+-- game_datetime: timestamp with time zone
+-- home_team: character varying
+-- away_team: character varying
+
+-- Data backup would go here
+-- Use pg_dump for actual data backup in production

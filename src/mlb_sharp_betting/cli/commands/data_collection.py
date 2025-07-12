@@ -339,6 +339,127 @@ def cleanup_data(days: int, dry_run: bool):
         raise
 
 
+@data_collection_group.command('debug-vsin')
+@click.option('--game-id', type=str, help='Specific game ID to debug')
+@click.option('--teams', type=str, help='Team names to search for (e.g., "Yankees,Toronto")')
+@click.option('--sportsbook', default='circa', help='Sportsbook to test (default: circa)')
+@click.option('--all-books', is_flag=True, help='Test all available sportsbooks')
+def debug_vsin_scraper(game_id: str, teams: str, sportsbook: str, all_books: bool):
+    """🔍 Debug VSIN scraper for specific games or teams"""
+    
+    async def run_debug():
+        from ...scrapers.vsin import VSINScraper
+        from ...db.connection import get_db_manager
+        
+        click.echo("🔍 VSIN SCRAPER DEBUG")
+        click.echo("=" * 50)
+        
+        if game_id:
+            click.echo(f"🎯 Debugging game ID: {game_id}")
+            
+            # Check database first
+            try:
+                db_manager = get_db_manager()
+                with db_manager.get_cursor() as cursor:
+                    cursor.execute("""
+                        SELECT game_id, away_team, home_team, source, book, last_updated
+                        FROM splits.raw_mlb_betting_splits 
+                        WHERE game_id = %s
+                        ORDER BY last_updated DESC
+                        LIMIT 5
+                    """, (game_id,))
+                    
+                    results = cursor.fetchall()
+                    if results:
+                        click.echo(f"✅ Found {len(results)} records in database:")
+                        for row in results:
+                            click.echo(f"   {row['source']}/{row['book']}: {row['away_team']} @ {row['home_team']} ({row['last_updated']})")
+                    else:
+                        click.echo(f"❌ No records found for game ID {game_id}")
+            except Exception as e:
+                click.echo(f"⚠️  Database check failed: {e}")
+        
+        if teams:
+            team_list = [team.strip() for team in teams.split(',')]
+            click.echo(f"🏟️  Debugging teams: {', '.join(team_list)}")
+        
+        # Test sportsbooks
+        sportsbooks_to_test = ['circa', 'dk', 'fanduel', 'mgm', 'caesars'] if all_books else [sportsbook]
+        
+        for book in sportsbooks_to_test:
+            click.echo(f"\n📊 Testing {book.upper()} sportsbook...")
+            
+            try:
+                scraper = VSINScraper(default_sportsbook=book)
+                
+                # Test both views
+                for use_tomorrow in [False, True]:
+                    view_name = "Tomorrow" if use_tomorrow else "Regular"
+                    click.echo(f"\n   🔍 {view_name} View:")
+                    
+                    url = scraper.build_url('mlb', book, use_tomorrow)
+                    click.echo(f"      URL: {url}")
+                    
+                    try:
+                        soup = await scraper._get_soup(url)
+                        
+                        # Extract date
+                        extracted_date = scraper._extract_date_from_html(soup)
+                        if extracted_date:
+                            click.echo(f"      📅 Date: {extracted_date}")
+                        else:
+                            click.echo(f"      ⚠️  No date found")
+                        
+                        # Look for team links
+                        team_links = soup.find_all('a', href=True)
+                        mlb_links = [link for link in team_links if '/mlb/teams/' in link.get('href', '')]
+                        click.echo(f"      🔗 Found {len(mlb_links)} team links")
+                        
+                        # If searching for specific teams
+                        if teams:
+                            found_teams = []
+                            for team in team_list:
+                                team_lower = team.lower()
+                                matching_links = [link for link in mlb_links 
+                                                if team_lower in link.get_text().lower()]
+                                if matching_links:
+                                    found_teams.extend([link.get_text() for link in matching_links])
+                            
+                            if found_teams:
+                                click.echo(f"      ✅ Found teams: {', '.join(set(found_teams))}")
+                            else:
+                                click.echo(f"      ❌ Teams not found")
+                        
+                        # Try to parse content
+                        main_content = scraper._extract_main_content(soup)
+                        if main_content:
+                            splits = scraper._parse_betting_splits(main_content, 'mlb', book)
+                            click.echo(f"      📊 Parsed {len(splits)} games")
+                            
+                            # Show sample games
+                            if splits:
+                                click.echo(f"      📋 Sample games:")
+                                for i, split in enumerate(splits[:3]):
+                                    game = split.get('Game', 'Unknown')
+                                    click.echo(f"         [{i+1}] {game}")
+                        else:
+                            click.echo(f"      ❌ No betting table found")
+                    
+                    except Exception as e:
+                        click.echo(f"      ❌ Error: {e}")
+            
+            except Exception as e:
+                click.echo(f"   ❌ Sportsbook {book} failed: {e}")
+        
+        click.echo(f"\n🏁 Debug complete")
+    
+    try:
+        asyncio.run(run_debug())
+    except Exception:
+        click.echo("❌ Debug failed")
+        raise
+
+
 @data_collection_group.command('timing-status')
 @click.option('--detailed', is_flag=True, help='Show detailed timing validation metrics')
 @click.option('--check-expired', is_flag=True, help='Check for recently expired splits')

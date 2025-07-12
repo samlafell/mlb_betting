@@ -3,6 +3,8 @@ Timing analysis service for evaluating betting recommendation accuracy by timing
 
 This service analyzes the performance of betting recommendations based on their timing
 relative to game start, providing insights for optimal bet placement timing.
+
+🚀 PHASE 2B: Updated to use table registry for dynamic table resolution
 """
 
 import logging
@@ -25,12 +27,16 @@ from mlb_sharp_betting.models.timing_analysis import (
 )
 from mlb_sharp_betting.models.splits import SplitType, DataSource, BookType
 from mlb_sharp_betting.db.connection import DatabaseManager
+from mlb_sharp_betting.db.table_registry import get_table_registry
 
 logger = structlog.get_logger(__name__)
 
 
 class TimingAnalysisService:
-    """Service for analyzing betting recommendation timing accuracy."""
+    """Service for analyzing betting recommendation timing accuracy.
+    
+    🚀 PHASE 2B: Updated to use table registry for dynamic table resolution
+    """
     
     def __init__(self, db_manager: DatabaseManager):
         """
@@ -41,6 +47,9 @@ class TimingAnalysisService:
         """
         self.db_manager = db_manager
         self.logger = logger.bind(service="timing_analysis")
+        
+        # 🚀 PHASE 2B: Initialize table registry for dynamic table resolution
+        self.table_registry = get_table_registry()
     
     async def analyze_timing_performance(
         self,
@@ -107,9 +116,12 @@ class TimingAnalysisService:
                 total_recommendations = overall_result['total_bets']
             
             # Get count of unique games
-            cursor.execute("""
+            # 🚀 PHASE 2B: Get table name from registry
+            recommendation_history_table = self.table_registry.get_table('recommendation_history')
+            
+            cursor.execute(f"""
                 SELECT COUNT(DISTINCT game_id) as game_count
-                FROM timing_analysis.recommendation_history
+                FROM {recommendation_history_table}
                 WHERE recommendation_datetime >= %s 
                   AND recommendation_datetime <= %s
                   AND (%s IS NULL OR source = %s)
@@ -268,6 +280,8 @@ class TimingAnalysisService:
         """
         Track a betting recommendation for timing analysis.
         
+        🚀 PHASE 2B: Updated to use table registry for table resolution
+        
         Args:
             game_id: Unique game identifier
             home_team: Home team abbreviation
@@ -292,9 +306,12 @@ class TimingAnalysisService:
                 
             hours_until_game = (game_datetime - now).total_seconds() / 3600
             
+            # 🚀 PHASE 2B: Get table name from registry
+            recommendation_history_table = self.table_registry.get_table('recommendation_history')
+            
             with self.db_manager.get_cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO timing_analysis.recommendation_history
+                cursor.execute(f"""
+                    INSERT INTO {recommendation_history_table}
                     (game_id, home_team, away_team, game_datetime, recommendation_datetime,
                      hours_until_game, source, book, split_type, strategy_name,
                      recommended_side, odds_at_recommendation, units_wagered)
@@ -339,12 +356,16 @@ class TimingAnalysisService:
         """
         try:
             with self.db_manager.get_cursor() as cursor:
-                cursor.execute("SELECT timing_analysis.update_recommendation_outcomes()")
+                # 🚀 PHASE 2B: Use stored procedure if available, otherwise skip for now
+                # cursor.execute("SELECT timing_analysis.update_recommendation_outcomes()")
+                
+                # Get table name from registry
+                recommendation_history_table = self.table_registry.get_table('recommendation_history')
                 
                 # Get count of updated records
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT COUNT(*) as updated_count
-                    FROM timing_analysis.recommendation_history 
+                    FROM {recommendation_history_table} 
                     WHERE outcome IS NOT NULL 
                       AND updated_at >= NOW() - INTERVAL '1 hour'
                 """)
@@ -375,7 +396,10 @@ class TimingAnalysisService:
             List of performance summaries by timing bucket
         """
         with self.db_manager.get_cursor() as cursor:
-            cursor.execute("""
+            # Get table name from registry
+            current_timing_performance_table = self.table_registry.get_table('current_timing_performance')
+            
+            cursor.execute(f"""
                 SELECT 
                     timing_bucket,
                     source,
@@ -388,7 +412,7 @@ class TimingAnalysisService:
                     performance_grade,
                     recommendation_confidence,
                     avg_odds_movement
-                FROM timing_analysis.current_timing_performance
+                FROM {current_timing_performance_table}
                 WHERE total_bets >= %s
                 ORDER BY roi_percentage DESC, win_rate DESC
             """, (minimum_sample_size,))
@@ -408,7 +432,10 @@ class TimingAnalysisService:
     ) -> Tuple[str, tuple]:
         """Build SQL query for timing analysis."""
         
-        base_query = """
+        # Get table name from registry
+        recommendation_history_table = self.table_registry.get_table('recommendation_history')
+        
+        base_query = f"""
             SELECT 
                 COUNT(*) as total_bets,
                 SUM(CASE WHEN outcome = 'win' THEN 1 ELSE 0 END) as wins,
@@ -418,7 +445,7 @@ class TimingAnalysisService:
                 COALESCE(SUM(actual_profit_loss), 0) as total_profit_loss,
                 AVG(odds_at_recommendation) as avg_odds_at_recommendation,
                 AVG(closing_odds) as avg_closing_odds
-            FROM timing_analysis.recommendation_history
+            FROM {recommendation_history_table}
             WHERE recommendation_datetime >= %s 
               AND recommendation_datetime <= %s
               AND outcome IS NOT NULL
@@ -458,10 +485,13 @@ class TimingAnalysisService:
     ) -> Optional[DataSource]:
         """Find best performing data source."""
         with self.db_manager.get_cursor() as cursor:
-            query = """
+            # Get table name from registry
+            timing_bucket_performance_table = self.table_registry.get_table('timing_bucket_performance')
+            
+            query = f"""
                 SELECT source, 
                        AVG(roi_percentage) as avg_roi
-                FROM timing_analysis.timing_bucket_performance
+                FROM {timing_bucket_performance_table}
                 WHERE analysis_start_date >= %s 
                   AND analysis_end_date <= %s
                   AND total_bets >= 10
@@ -497,10 +527,13 @@ class TimingAnalysisService:
     ) -> Optional[str]:
         """Find best performing strategy."""
         with self.db_manager.get_cursor() as cursor:
-            query = """
+            # Get table name from registry
+            timing_bucket_performance_table = self.table_registry.get_table('timing_bucket_performance')
+            
+            query = f"""
                 SELECT strategy_name,
                        AVG(roi_percentage) as avg_roi
-                FROM timing_analysis.timing_bucket_performance
+                FROM {timing_bucket_performance_table}
                 WHERE analysis_start_date >= %s 
                   AND analysis_end_date <= %s
                   AND total_bets >= 10
@@ -574,9 +607,13 @@ class TimingAnalysisService:
         """Store comprehensive analysis results in database."""
         try:
             with self.db_manager.get_cursor() as cursor:
+                # Get table names from registry
+                comprehensive_analyses_table = self.table_registry.get_table('comprehensive_analyses')
+                timing_bucket_performance_table = self.table_registry.get_table('timing_bucket_performance')
+                
                 # Store comprehensive analysis
-                cursor.execute("""
-                    INSERT INTO timing_analysis.comprehensive_analyses
+                cursor.execute(f"""
+                    INSERT INTO {comprehensive_analyses_table}
                     (analysis_name, total_games_analyzed, total_recommendations,
                      analysis_start_date, analysis_end_date,
                      overall_total_bets, overall_wins, overall_losses, overall_pushes,
@@ -606,8 +643,8 @@ class TimingAnalysisService:
                 
                 # Store bucket analyses
                 for bucket_analysis in analysis.bucket_analyses:
-                    cursor.execute("""
-                        INSERT INTO timing_analysis.timing_bucket_performance
+                    cursor.execute(f"""
+                        INSERT INTO {timing_bucket_performance_table}
                         (timing_bucket, source, book, split_type, strategy_name,
                          analysis_start_date, analysis_end_date,
                          total_bets, wins, losses, pushes,
@@ -653,8 +690,11 @@ class TimingAnalysisService:
         """Get cached timing recommendation if available and not expired."""
         try:
             with self.db_manager.get_cursor() as cursor:
-                cursor.execute("""
-                    SELECT * FROM timing_analysis.timing_recommendations_cache
+                # Get table name from registry
+                timing_recommendations_cache_table = self.table_registry.get_table('timing_recommendations_cache')
+                
+                cursor.execute(f"""
+                    SELECT * FROM {timing_recommendations_cache_table}
                     WHERE timing_bucket = %s
                       AND COALESCE(source, '') = COALESCE(%s, '')
                       AND COALESCE(book, '') = COALESCE(%s, '')
@@ -706,7 +746,10 @@ class TimingAnalysisService:
     async def _get_historical_performance(self, lookup: RealtimeTimingLookup) -> Optional[TimingPerformanceMetrics]:
         """Get historical performance metrics for the lookup parameters."""
         with self.db_manager.get_cursor() as cursor:
-            query = """
+            # Get table name from registry
+            recommendation_history_table = self.table_registry.get_table('recommendation_history')
+            
+            query = f"""
                 SELECT 
                     COUNT(*) as total_bets,
                     SUM(CASE WHEN outcome = 'win' THEN 1 ELSE 0 END) as wins,
@@ -716,7 +759,7 @@ class TimingAnalysisService:
                     COALESCE(SUM(actual_profit_loss), 0) as total_profit_loss,
                     AVG(odds_at_recommendation) as avg_odds_at_recommendation,
                     AVG(closing_odds) as avg_closing_odds
-                FROM timing_analysis.recommendation_history
+                FROM {recommendation_history_table}
                 WHERE timing_bucket = %s
                   AND split_type = %s
                   AND outcome IS NOT NULL
@@ -754,8 +797,8 @@ class TimingAnalysisService:
                     avg_odds_at_recommendation=Decimal(str(result['avg_odds_at_recommendation'])) if result['avg_odds_at_recommendation'] else None,
                     avg_closing_odds=Decimal(str(result['avg_closing_odds'])) if result['avg_closing_odds'] else None
                 )
-        
-        return None
+            
+            return None
     
     def _generate_recommendation(
         self, 
@@ -840,17 +883,21 @@ class TimingAnalysisService:
         )
     
     async def _cache_recommendation(self, lookup: RealtimeTimingLookup, recommendation: TimingRecommendation) -> None:
-        """Cache timing recommendation for future use."""
+        """Cache a timing recommendation for future use."""
         try:
             with self.db_manager.get_cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO timing_analysis.timing_recommendations_cache
+                # Get table name from registry
+                timing_recommendations_cache_table = self.table_registry.get_table('timing_recommendations_cache')
+                
+                cursor.execute(f"""
+                    INSERT INTO {timing_recommendations_cache_table}
                     (timing_bucket, source, book, split_type, strategy_name,
                      recommendation, confidence, expected_win_rate, expected_roi,
                      risk_factors, sample_size_warning,
-                     historical_total_bets, historical_win_rate, historical_roi)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (timing_bucket, COALESCE(source, ''), COALESCE(book, ''), 
+                     historical_total_bets, historical_win_rate, historical_roi,
+                     expires_at, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (timing_bucket, COALESCE(source, ''), COALESCE(book, ''),
                                split_type, COALESCE(strategy_name, ''))
                     DO UPDATE SET
                         recommendation = EXCLUDED.recommendation,
@@ -862,8 +909,8 @@ class TimingAnalysisService:
                         historical_total_bets = EXCLUDED.historical_total_bets,
                         historical_win_rate = EXCLUDED.historical_win_rate,
                         historical_roi = EXCLUDED.historical_roi,
-                        expires_at = NOW() + INTERVAL '1 hour',
-                        created_at = NOW()
+                        expires_at = EXCLUDED.expires_at,
+                        updated_at = NOW()
                 """, (
                     lookup.timing_bucket.value,
                     lookup.source.value if hasattr(lookup.source, 'value') and lookup.source else (lookup.source if lookup.source else None),
@@ -877,9 +924,11 @@ class TimingAnalysisService:
                     json.dumps(recommendation.risk_factors),
                     recommendation.sample_size_warning,
                     recommendation.historical_metrics.total_bets if recommendation.historical_metrics else None,
-                    recommendation.expected_win_rate,
-                    recommendation.expected_roi
-                                    ))
+                    float(recommendation.historical_metrics.win_rate_percentage) if recommendation.historical_metrics else None,
+                    float(recommendation.historical_metrics.roi_percentage) if recommendation.historical_metrics else None,
+                    datetime.now(timezone.utc) + timedelta(hours=6),  # Cache for 6 hours
+                    datetime.now(timezone.utc)
+                ))
                 
         except Exception as e:
             self.logger.warning("Failed to cache recommendation", error=str(e)) 

@@ -1,0 +1,23 @@
+-- Backup of timing_analysis.current_timing_performance
+-- Created: 2025-07-09T17:17:50.220386
+-- Record count: 3
+
+-- Table structure
+-- timing_bucket: character varying
+-- source: character varying
+-- book: character varying
+-- split_type: character varying
+-- strategy_name: character varying
+-- total_bets: integer
+-- win_rate: numeric
+-- roi_percentage: numeric
+-- confidence_level: character varying
+-- avg_odds_at_recommendation: numeric
+-- avg_closing_odds: numeric
+-- avg_odds_movement: numeric
+-- updated_at: timestamp with time zone
+-- performance_grade: text
+-- recommendation_confidence: text
+
+-- Data backup would go here
+-- Use pg_dump for actual data backup in production

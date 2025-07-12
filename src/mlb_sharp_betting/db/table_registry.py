@@ -56,35 +56,96 @@ class TableRegistry:
         """Initialize table mappings based on database type."""
         if self.database_type == DatabaseType.POSTGRESQL:
             self._table_mappings = {
-                # Raw betting data
-                'raw_betting_splits': 'splits.raw_mlb_betting_splits',
-                'betting_splits': 'splits.betting_splits',
+                # ================================================================================
+                # PRIMARY TABLES - NEW CONSOLIDATED SCHEMA (Phase 2A Migration Active)
+                # ================================================================================
                 
-                # Game data
-                'games': 'splits.games',
-                'game_outcomes': 'public.game_outcomes',
+                # Raw data schema - all external data ingestion and raw storage
+                'raw_betting_splits': 'raw_data.raw_mlb_betting_splits',
+                'sbr_raw_html': 'raw_data.sbr_raw_html',
+                'sbr_parsed_games': 'raw_data.sbr_parsed_games',
+                'mlb_api_responses': 'raw_data.mlb_api_responses',
+                'odds_api_responses': 'raw_data.odds_api_responses',
+                'vsin_raw_data': 'raw_data.vsin_raw_data',
+                'parsing_status_logs': 'raw_data.parsing_status_logs',
                 
-                # Sharp action analysis
-                'sharp_actions': 'splits.sharp_actions',
+                # Core betting schema - clean, processed betting data and core business entities
+                'games': 'core_betting.games',
+                'game_outcomes': 'core_betting.game_outcomes',
+                'teams': 'core_betting.teams',
+                'sportsbooks': 'core_betting.sportsbooks',
+                'betting_lines_moneyline': 'core_betting.betting_lines_moneyline',
+                'betting_lines_spreads': 'core_betting.betting_lines_spreads',
+                'betting_lines_totals': 'core_betting.betting_lines_totals',
+                'betting_splits': 'core_betting.betting_splits',
+                'line_movements': 'core_betting.line_movements',
+                'steam_moves': 'core_betting.steam_moves',
+                'sharp_action_indicators': 'core_betting.sharp_action_indicators',
                 
-                # Backtesting and strategy performance
-                'strategy_performance': 'backtesting.strategy_performance',
+                # Primary betting tables (consolidated approach)
+                'moneyline': 'core_betting.betting_lines_moneyline',
+                'spreads': 'core_betting.betting_lines_spreads', 
+                'totals': 'core_betting.betting_lines_totals',
                 
-                # Clean/processed data (if using deduplication service)
-                'clean_betting_recommendations': 'clean.betting_recommendations',
+                # Analytics schema - derived analytics, signals, and strategy outputs
+                'strategy_signals': 'analytics.strategy_signals',
+                'betting_recommendations': 'analytics.betting_recommendations',
+                'timing_analysis_results': 'analytics.timing_analysis_results',
+                'cross_market_analysis': 'analytics.cross_market_analysis',
+                'confidence_scores': 'analytics.confidence_scores',
+                'roi_calculations': 'analytics.roi_calculations',
+                'performance_metrics': 'analytics.performance_metrics',
+                'clean_betting_recommendations': 'analytics.betting_recommendations',
+                'recommendation_history': 'analytics.recommendation_history',
+                'current_timing_performance': 'analytics.current_timing_performance',
+                'timing_bucket_performance': 'analytics.timing_bucket_performance',
+                'comprehensive_analyses': 'analytics.comprehensive_analyses',
+                'timing_recommendations_cache': 'analytics.timing_recommendations_cache',
+                'dynamic_thresholds': 'analytics.dynamic_thresholds',
                 
-                # Legacy/migration tables
+                # Operational schema - system operations, monitoring, and validation
+                'strategy_performance': 'operational.strategy_performance',
+                'pre_game_recommendations': 'operational.pre_game_recommendations',
+                'system_health_checks': 'operational.system_health_checks',
+                'data_quality_metrics': 'operational.data_quality_metrics',
+                'pipeline_execution_logs': 'operational.pipeline_execution_logs',
+                'alert_configurations': 'operational.alert_configurations',
+                'alert_history': 'operational.alert_history',
+                'recommendation_tracking': 'operational.recommendation_tracking',
+                'backtesting_configurations': 'operational.backtesting_configurations',
+                'orchestrator_update_triggers': 'operational.orchestrator_update_triggers',
+                
+                # ================================================================================
+                # LEGACY TABLES - BACKWARD COMPATIBILITY (Phase 2A Migration)
+                # ================================================================================
+                # These remain available for existing code during gradual migration
                 'legacy_games': 'public.games',
-                'legacy_betting_splits': 'public.betting_splits',
-                'legacy_mlb_betting_splits': 'public.MLB_BETTING_SPLITS',
-                'legacy_splits': 'public.SPLITS',
+                'legacy_betting_splits': 'splits.raw_mlb_betting_splits',
+                'legacy_mlb_betting_splits': 'splits.raw_mlb_betting_splits',
+                'legacy_strategy_performance': 'backtesting.strategy_performance',
+                'legacy_pre_game_recommendations': 'tracking.pre_game_recommendations',
+                'legacy_moneyline': 'mlb_betting.moneyline',
+                'legacy_spreads': 'mlb_betting.spreads',
+                'legacy_totals': 'mlb_betting.totals',
+                'legacy_clean_betting_recommendations': 'clean.betting_recommendations',
             }
             
             # Schema mappings for easier schema-level operations
             self._schema_mappings = {
+                # Primary consolidated schemas
+                'raw_data': 'raw_data',
+                'core_betting': 'core_betting', 
+                'analytics': 'analytics',
+                'operational': 'operational',
+                
+                # Legacy schemas (for backward compatibility during migration)
                 'splits': 'splits',
                 'backtesting': 'backtesting',
+                'tracking': 'tracking',
+                'timing_analysis': 'timing_analysis',
                 'clean': 'clean',
+                'action': 'action',
+                'mlb_betting': 'mlb_betting',
                 'public': 'public'
             }
 
@@ -283,9 +344,20 @@ class Tables:
 
 class Schemas:
     """Constants for logical schema names."""
+    # New consolidated schemas
+    RAW_DATA = 'raw_data'
+    CORE_BETTING = 'core_betting'
+    ANALYTICS = 'analytics'
+    OPERATIONAL = 'operational'
+    
+    # Legacy schemas (for backward compatibility during migration)
     SPLITS = 'splits'
     BACKTESTING = 'backtesting'
+    TRACKING = 'tracking'
+    TIMING_ANALYSIS = 'timing_analysis'
     CLEAN = 'clean'
+    ACTION = 'action'
+    MLB_BETTING = 'mlb_betting'
     PUBLIC = 'public'
 
 

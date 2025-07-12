@@ -9,6 +9,9 @@ Use UV over PIP
 
 Use Ruff to format Python code
 
+[focus_on_unity]
+- Removing action/, sportsbookreview/ and src/mlb_sharp_betting/ folders and unifying all of the logic and processes.
+- still want ability to run individual data collection, parsing, historical analysis, backtesitng, prediction all as separate or together (ability to not have Action Network and VSIN communicate, but also having the ability to combine thier signals)
 
 [stack]
 Python

@@ -344,7 +344,10 @@ class BaseStrategyProcessor(ABC):
             game_datetime = parser.parse(game_datetime)
         
         if game_datetime.tzinfo is None:
-            game_datetime = pytz.utc.localize(game_datetime)
+            # 🚨 TIMEZONE BUG FIX: Database stores game times in EST, not UTC
+            # Previous logic incorrectly assumed timezone-naive datetimes were UTC
+            # This caused games to appear 4-5 hours in the past during analysis
+            game_datetime = self.est.localize(game_datetime)
         
         return game_datetime.astimezone(self.est)
     

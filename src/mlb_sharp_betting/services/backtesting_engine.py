@@ -35,6 +35,7 @@ from decimal import Decimal
 from ..core.config import get_settings
 from ..core.logging import get_logger, get_clean_logger, setup_universal_logger_compatibility
 from ..db.connection import DatabaseManager, get_db_manager
+from ..db.table_registry import get_table_registry
 from ..core.exceptions import DatabaseError, ValidationError
 
 # Factory and analysis imports
@@ -364,6 +365,9 @@ class CoreBacktestingEngine:
         self.processor_config = processor_config
         self.logger = get_logger(f"{__name__}.core_engine")
         
+        # 🚀 PHASE 2B: Initialize table registry for dynamic table resolution
+        self.table_registry = get_table_registry()
+        
         # Initialize processor factory
         self.processor_factory = None
         
@@ -497,7 +501,11 @@ class CoreBacktestingEngine:
     async def _get_betting_splits_data(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
         """Get betting splits data for the specified date range."""
         try:
-            query = """
+            # Get table names from registry
+            betting_splits_table = self.table_registry.get_table('raw_betting_splits')
+            game_outcomes_table = self.table_registry.get_table('game_outcomes')
+            
+            query = f"""
                 SELECT 
                     s.game_id,
                     s.home_team,
@@ -517,8 +525,8 @@ class CoreBacktestingEngine:
                     o.over,
                     o.total_line,
                     o.home_spread_line
-                FROM splits.raw_mlb_betting_splits s
-                LEFT JOIN public.game_outcomes o ON s.game_id = o.game_id
+                FROM {betting_splits_table} s
+                LEFT JOIN {game_outcomes_table} o ON s.game_id = o.game_id
                 WHERE s.last_updated >= %s
                   AND s.last_updated <= %s
                   AND s.game_datetime IS NOT NULL
@@ -1095,15 +1103,18 @@ class CoreBacktestingEngine:
     
     async def _store_backtest_results(self, strategy_results: List[Dict[str, Any]], 
                                     start_date: str, end_date: str):
-        """Store backtest results in the database."""
+        """Store backtest results in database."""
         try:
-            # Create backtesting schema if it doesn't exist
+            # Get table names from registry
+            strategy_performance_table = self.table_registry.get_table('strategy_performance')
+            strategy_configurations_table = self.table_registry.get_table_name('operational', 'backtesting_configurations')
+            threshold_configurations_table = self.table_registry.get_table_name('operational', 'threshold_configurations')
+            
+            # Create backtesting schema if it doesn't exist (using operational schema now)
             with self.db_manager.get_cursor() as cursor:
-                cursor.execute("CREATE SCHEMA IF NOT EXISTS backtesting")
-                
                 # Create strategy_configurations table if it doesn't exist
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS backtesting.strategy_configurations (
+                cursor.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {strategy_configurations_table} (
                         id SERIAL PRIMARY KEY,
                         strategy_name VARCHAR(255) NOT NULL,
                         source_book_type VARCHAR(100) NOT NULL,
@@ -1126,14 +1137,14 @@ class CoreBacktestingEngine:
                 """)
                 
                 # Create index for faster lookups
-                cursor.execute("""
+                cursor.execute(f"""
                     CREATE INDEX IF NOT EXISTS idx_strategy_configs_active 
-                    ON backtesting.strategy_configurations(is_active, roi_per_100 DESC)
+                    ON {strategy_configurations_table}(is_active, roi_per_100 DESC)
                 """)
                 
                 # Create threshold_configurations table if it doesn't exist
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS backtesting.threshold_configurations (
+                cursor.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {threshold_configurations_table} (
                         id SERIAL PRIMARY KEY,
                         source VARCHAR(100) NOT NULL,
                         strategy_type VARCHAR(100) NOT NULL,
@@ -1155,17 +1166,17 @@ class CoreBacktestingEngine:
                 """)
                 
                 # Create index for threshold lookups
-                cursor.execute("""
+                cursor.execute(f"""
                     CREATE INDEX IF NOT EXISTS idx_threshold_configs_active 
-                    ON backtesting.threshold_configurations(is_active, source, strategy_type)
+                    ON {threshold_configurations_table}(is_active, source, strategy_type)
                 """)
             
             # Store individual strategy results
             for result in strategy_results:
                 try:
                     # Use INSERT ... ON CONFLICT with strategy combination instead of custom ID
-                    query = """
-                        INSERT INTO backtesting.strategy_performance (
+                    query = f"""
+                        INSERT INTO {strategy_performance_table} (
                             backtest_date, strategy_name, source_book_type, split_type,
                             total_bets, wins, win_rate, roi_per_100, confidence_level,
                             created_at, last_updated, kelly_criterion, sharpe_ratio, 
@@ -1222,6 +1233,9 @@ class CoreBacktestingEngine:
     async def _update_strategy_configurations(self, strategy_results: List[Dict[str, Any]]):
         """Update strategy configurations based on backtest results."""
         try:
+            # Get table name from registry
+            strategy_configurations_table = self.table_registry.get_table_name('operational', 'backtesting_configurations')
+            
             for result in strategy_results:
                 # 🎯 DYNAMIC THRESHOLDS: Use threshold manager for ROI-based optimization
                 roi = result.get('roi_per_100', 0)
@@ -1262,8 +1276,8 @@ class CoreBacktestingEngine:
                 is_active = not should_disable
                 
                 # Insert or update strategy configuration
-                config_query = """
-                    INSERT INTO backtesting.strategy_configurations (
+                config_query = f"""
+                    INSERT INTO {strategy_configurations_table} (
                         strategy_name, source_book_type, split_type, win_rate, roi_per_100,
                         total_bets, confidence_level, min_threshold, moderate_threshold, 
                         high_threshold, is_active, max_drawdown, sharpe_ratio, kelly_criterion,
@@ -1301,119 +1315,128 @@ class CoreBacktestingEngine:
                         result.get('max_drawdown', 0.0),
                         result.get('sharpe_ratio', 0.0),
                         result.get('kelly_criterion', 0.0),
-                        datetime.now()
+                        datetime.now(timezone.utc)
                     ))
-            
-            self.logger.info(f"Updated {len(strategy_results)} strategy configurations")
-            
-            # Also update threshold configurations based on performance
-            await self._update_threshold_configurations(strategy_results)
-            
+                    
         except Exception as e:
             self.logger.error(f"Failed to update strategy configurations: {e}")
-    
+
     async def _update_threshold_configurations(self, strategy_results: List[Dict[str, Any]]):
-        """Update threshold configurations based on strategy performance."""
+        """Update threshold configurations based on backtest results."""
         try:
-            # Group results by source to calculate optimal thresholds
-            source_performance = {}
+            # Get table name from registry
+            threshold_configurations_table = self.table_registry.get_table_name('operational', 'threshold_configurations')
             
+            # Group results by source and strategy type for threshold calculation
+            source_strategy_groups = {}
             for result in strategy_results:
                 source = result.get('source_book_type', 'UNKNOWN')
-                strategy_type = result.get('strategy_type', 'sharp_action')
+                strategy_type = result.get('strategy_type', 'unknown')
+                key = f"{source}_{strategy_type}"
                 
-                if source not in source_performance:
-                    source_performance[source] = {}
-                
-                if strategy_type not in source_performance[source]:
-                    source_performance[source][strategy_type] = []
-                
-                source_performance[source][strategy_type].append(result)
+                if key not in source_strategy_groups:
+                    source_strategy_groups[key] = []
+                source_strategy_groups[key].append(result)
             
-            # Update thresholds for each source/strategy combination
-            for source, strategy_types in source_performance.items():
-                for strategy_type, results in strategy_types.items():
-                    # Calculate optimal thresholds based on performance
-                    best_performing = max(results, key=lambda x: x.get('roi_per_100', 0))
-                    avg_roi = sum(r.get('roi_per_100', 0) for r in results) / len(results)
-                    avg_win_rate = sum(r.get('win_rate', 0.5) for r in results) / len(results)
+            # Update thresholds for each source-strategy combination
+            for group_key, group_results in source_strategy_groups.items():
+                source, strategy_type = group_key.split('_', 1)
+                
+                # Calculate aggregate metrics for the group
+                total_bets = sum(r.get('total_bets', 0) for r in group_results)
+                if total_bets == 0:
+                    continue
+                
+                total_wins = sum(r.get('wins', 0) for r in group_results)
+                win_rate = total_wins / total_bets
+                
+                # Calculate weighted ROI
+                weighted_roi = sum(r.get('roi_per_100', 0) * r.get('total_bets', 0) for r in group_results)
+                avg_roi = weighted_roi / total_bets
+                
+                # Use dynamic threshold manager for optimized thresholds
+                try:
+                    threshold_manager = get_dynamic_threshold_manager()
+                    threshold_config = await threshold_manager.get_dynamic_threshold(
+                        strategy_type=strategy_type,
+                        source=source
+                    )
                     
-                    # Dynamic threshold calculation based on performance
-                    if avg_roi >= 15.0:
-                        # High performance - use more aggressive thresholds
-                        high_conf = 20.0
-                        moderate_conf = 12.0
-                        minimum = 8.0
-                    elif avg_roi >= 8.0:
-                        # Good performance - use moderate thresholds  
-                        high_conf = 25.0
-                        moderate_conf = 15.0
-                        minimum = 10.0
+                    high_threshold = threshold_config.high_threshold
+                    moderate_threshold = threshold_config.moderate_threshold
+                    minimum_threshold = threshold_config.minimum_threshold
+                    
+                except Exception as e:
+                    self.logger.warning(f"Failed to get dynamic thresholds for {group_key}, using calculated values: {e}")
+                    # Fallback calculation based on performance
+                    if avg_roi > 10:
+                        high_threshold = 25.0
+                        moderate_threshold = 15.0
+                        minimum_threshold = 8.0
+                    elif avg_roi > 5:
+                        high_threshold = 30.0
+                        moderate_threshold = 20.0
+                        minimum_threshold = 10.0
                     else:
-                        # Lower performance - use conservative thresholds
-                        high_conf = 30.0
-                        moderate_conf = 20.0
-                        minimum = 15.0
+                        high_threshold = 35.0
+                        moderate_threshold = 25.0
+                        minimum_threshold = 12.0
+                
+                # Calculate opposing thresholds (slightly higher)
+                opposing_high_threshold = high_threshold * 1.2
+                opposing_moderate_threshold = moderate_threshold * 1.2
+                
+                # Steam threshold based on volatility
+                steam_threshold = minimum_threshold * 0.8
+                
+                # Determine if configuration should be active
+                is_active = (
+                    total_bets >= 10 and
+                    win_rate >= 0.50 and
+                    avg_roi >= 0
+                )
+                
+                # Insert or update threshold configuration
+                threshold_query = f"""
+                    INSERT INTO {threshold_configurations_table} (
+                        source, strategy_type, high_confidence_threshold, 
+                        moderate_confidence_threshold, minimum_threshold,
+                        opposing_high_threshold, opposing_moderate_threshold,
+                        steam_threshold, min_sample_size, min_win_rate,
+                        is_active, last_validated, confidence_level
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (source, strategy_type)
+                    DO UPDATE SET
+                        high_confidence_threshold = EXCLUDED.high_confidence_threshold,
+                        moderate_confidence_threshold = EXCLUDED.moderate_confidence_threshold,
+                        minimum_threshold = EXCLUDED.minimum_threshold,
+                        opposing_high_threshold = EXCLUDED.opposing_high_threshold,
+                        opposing_moderate_threshold = EXCLUDED.opposing_moderate_threshold,
+                        steam_threshold = EXCLUDED.steam_threshold,
+                        min_sample_size = EXCLUDED.min_sample_size,
+                        min_win_rate = EXCLUDED.min_win_rate,
+                        is_active = EXCLUDED.is_active,
+                        last_validated = EXCLUDED.last_validated,
+                        confidence_level = EXCLUDED.confidence_level
+                """
+                
+                with self.db_manager.get_cursor() as cursor:
+                    cursor.execute(threshold_query, (
+                        source,
+                        strategy_type,
+                        high_threshold,
+                        moderate_threshold,
+                        minimum_threshold,
+                        opposing_high_threshold,
+                        opposing_moderate_threshold,
+                        steam_threshold,
+                        max(10, int(total_bets * 0.1)),  # min_sample_size: 10% of total bets, minimum 10
+                        max(0.52, win_rate),  # min_win_rate: at least current win rate or 52%
+                        is_active,
+                        datetime.now(timezone.utc),
+                        'HIGH' if avg_roi > 10 else ('MODERATE' if avg_roi > 5 else 'LOW')
+                    ))
                     
-                    # Opposing market thresholds (higher than regular)
-                    opposing_high = high_conf * 1.5
-                    opposing_moderate = moderate_conf * 1.3
-                    
-                    # Steam thresholds
-                    steam_threshold = high_conf * 0.9
-                    
-                    # Determine confidence level
-                    total_bets = sum(r.get('total_bets', 0) for r in results)
-                    if total_bets >= 50 and avg_roi >= 10.0:
-                        confidence_level = "HIGH"
-                    elif total_bets >= 20 and avg_roi >= 5.0:
-                        confidence_level = "MODERATE"
-                    else:
-                        confidence_level = "LOW"
-                    
-                    # Insert or update threshold configuration
-                    threshold_query = """
-                        INSERT INTO backtesting.threshold_configurations (
-                            source, strategy_type, high_confidence_threshold, 
-                            moderate_confidence_threshold, minimum_threshold,
-                            opposing_high_threshold, opposing_moderate_threshold,
-                            steam_threshold, steam_time_window_hours, min_sample_size,
-                            min_win_rate, is_active, last_validated, confidence_level
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (source, strategy_type)
-                        DO UPDATE SET
-                            high_confidence_threshold = EXCLUDED.high_confidence_threshold,
-                            moderate_confidence_threshold = EXCLUDED.moderate_confidence_threshold,
-                            minimum_threshold = EXCLUDED.minimum_threshold,
-                            opposing_high_threshold = EXCLUDED.opposing_high_threshold,
-                            opposing_moderate_threshold = EXCLUDED.opposing_moderate_threshold,
-                            steam_threshold = EXCLUDED.steam_threshold,
-                            min_win_rate = EXCLUDED.min_win_rate,
-                            is_active = EXCLUDED.is_active,
-                            last_validated = EXCLUDED.last_validated,
-                            confidence_level = EXCLUDED.confidence_level
-                    """
-                    
-                    with self.db_manager.get_cursor() as cursor:
-                        cursor.execute(threshold_query, (
-                            source,
-                            strategy_type,
-                            high_conf,
-                            moderate_conf,
-                            minimum,
-                            opposing_high,
-                            opposing_moderate,
-                            steam_threshold,
-                            2.0,  # steam_time_window_hours
-                            max(10, int(total_bets / len(results))),  # min_sample_size based on avg
-                            avg_win_rate,
-                            avg_roi > 0,  # is_active if profitable
-                            datetime.now(),
-                            confidence_level
-                        ))
-            
-            self.logger.info(f"Updated threshold configurations for {len(source_performance)} sources")
-            
         except Exception as e:
             self.logger.error(f"Failed to update threshold configurations: {e}")
     

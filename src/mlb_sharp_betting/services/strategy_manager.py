@@ -7,6 +7,8 @@ This service consolidates the functionality from:
 - strategy_auto_integration.py (auto-integration of profitable strategies)
 
 This eliminates redundancy and provides a single point of control for all strategy management.
+
+🚀 PHASE 2B: Updated to use table registry for dynamic table resolution
 """
 
 import asyncio
@@ -21,6 +23,7 @@ import pytz
 
 from ..core.logging import get_logger
 from ..db.connection import get_db_manager, DatabaseManager
+from ..db.table_registry import get_table_registry
 from ..core.exceptions import DatabaseError, ValidationError
 from ..services.database_coordinator import get_database_coordinator
 from ..analysis.processors.strategy_processor_factory import StrategyProcessorFactory
@@ -223,81 +226,57 @@ class LifecycleThresholds:
 
 class StrategyManager:
     """
-    Consolidated Strategy Manager combining orchestration, configuration, and auto-integration.
+    Consolidated strategy manager providing all strategy management functionality.
     
-    This service consolidates functionality from:
-    - StrategyOrchestrator (orchestration and lifecycle management)
-    - StrategyConfigManager (configuration management)
-    - StrategyAutoIntegration (auto-integration of profitable strategies)
+    🚀 PHASE 2B: Updated to use table registry for dynamic table resolution
     """
     
     def __init__(self, db_manager: Optional[DatabaseManager] = None):
-        self.logger = get_logger(__name__)
+        """Initialize the strategy manager."""
         self.db_manager = db_manager or get_db_manager()
         self.coordinator = get_database_coordinator()
-        self.processor_factory = None
-        self.signal_repository = None
-        self.settings = get_settings()
+        self.logger = get_logger(__name__)
+        
+        # 🚀 PHASE 2B: Initialize table registry for dynamic table resolution
+        self.table_registry = get_table_registry()
+        
+        # Initialize dependencies
+        self.processor_factory = StrategyProcessorFactory()
+        self.signal_repository = BettingSignalRepository()
         self.juice_filter = get_juice_filter_service()
+        self.threshold_manager = get_dynamic_threshold_manager()
+        self.settings = get_settings()
+        self.validation = StrategyValidation()
         
-        # Strategy management policies
-        self.update_policy = UpdatePolicy()
+        # Configuration
+        self.min_bet_count = 5
+        self.min_roi_threshold = 10.0
+        self.max_strategies_per_type = 10
+        
+        # Lifecycle management
         self.lifecycle_thresholds = LifecycleThresholds()
+        self.update_policy = UpdatePolicy()
         
-        # Caches for performance
+        # Cache management
         self._strategy_cache: Dict[str, StrategyConfig] = {}
         self._threshold_cache: Dict[str, ThresholdConfig] = {}
-        self._cache_expiry = datetime.now(timezone.utc)
         self._cache_duration = timedelta(minutes=15)
-        
-        # Auto-integration settings
-        self.min_roi_threshold = 10.0
-        self.min_bet_count = 10
-        self.est = pytz.timezone('US/Eastern')
+        self._cache_expiry = datetime.now(timezone.utc)
         
         # Performance tracking
         self.metrics = {
             "strategies_evaluated": 0,
             "strategies_integrated": 0,
-            "strategies_updated": 0,
-            "strategies_paused": 0,
             "contrarian_strategies_found": 0,
-            "opposing_markets_strategies_found": 0
+            "opposing_markets_strategies_found": 0,
+            "disabled_strategies": 0,
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "last_configuration_update": None,
+            "configuration_update_count": 0
         }
         
-        # Default threshold configurations
-        self._default_thresholds = {
-            "VSIN": ThresholdConfig(
-                source="VSIN",
-                strategy_type="default",
-                high_confidence_threshold=25.0,
-                moderate_confidence_threshold=20.0,
-                minimum_threshold=15.0,
-                opposing_high_threshold=40.0,
-                opposing_moderate_threshold=30.0,
-                steam_threshold=25.0,
-                steam_time_window_hours=2.0,
-                min_sample_size=10,
-                min_win_rate=0.52,
-                last_validated=datetime.now(timezone.utc),
-                confidence_level="DEFAULT"
-            ),
-            "SBD": ThresholdConfig(
-                source="SBD", 
-                strategy_type="default",
-                high_confidence_threshold=30.0,
-                moderate_confidence_threshold=25.0,
-                minimum_threshold=20.0,
-                opposing_high_threshold=45.0,
-                opposing_moderate_threshold=35.0,
-                steam_threshold=30.0,
-                steam_time_window_hours=2.0,
-                min_sample_size=10,
-                min_win_rate=0.52,
-                last_validated=datetime.now(timezone.utc),
-                confidence_level="DEFAULT"
-            )
-        }
+        self.logger.info("🚀 StrategyManager initialized with table registry support")
     
     async def initialize(self):
         """Initialize the strategy manager"""
@@ -485,20 +464,20 @@ class StrategyManager:
     # ===========================================
     
     async def identify_high_roi_strategies(self, lookback_days: int = 30) -> List[HighROIStrategy]:
-        """Identify strategies with high ROI and sufficient sample size from recent backtesting."""
-        self.logger.info("Identifying high-ROI strategies for auto-integration",
-                        min_roi=self.min_roi_threshold,
-                        min_bets=self.min_bet_count,
-                        lookback_days=lookback_days)
+        """Identify strategies with high ROI and sufficient sample size from recent backtesting.
         
+        🚀 PHASE 2B: Updated to use table registry for table resolution
+        """
         high_roi_strategies = []
         
         try:
-            end_date = datetime.now(timezone.utc)
-            start_date = end_date - timedelta(days=lookback_days)
+            start_date = datetime.now() - timedelta(days=lookback_days)
+            
+            # 🚀 PHASE 2B: Get table name from registry
+            strategy_performance_table = self.table_registry.get_table('strategy_performance')
             
             # Cast DECIMAL/NUMERIC types to FLOAT to prevent Python type errors
-            query = """
+            query = f"""
             SELECT DISTINCT
                 strategy_name as strategy_variant,
                 source_book_type,
@@ -508,7 +487,7 @@ class StrategyManager:
                 CAST(win_rate AS FLOAT) as win_rate,
                 CAST(roi_per_100 AS FLOAT) as roi_per_100_unit,
                 created_at as last_updated
-            FROM backtesting.strategy_performance 
+            FROM {strategy_performance_table} 
             WHERE backtest_date >= %s
               AND total_bets >= %s
               AND CAST(roi_per_100 AS FLOAT) >= %s
@@ -620,10 +599,16 @@ class StrategyManager:
             raise
     
     async def _load_strategy_configs(self) -> Dict[str, StrategyConfig]:
-        """Load strategy configurations from backtesting results"""
+        """Load strategy configurations from backtesting results
+        
+        🚀 PHASE 2B: Updated to use table registry for table resolution
+        """
         configs = {}
         
         try:
+            # 🚀 PHASE 2B: Get table name from registry
+            strategy_configurations_table = self.table_registry.get_table('strategy_configurations')
+            
             # Check if backtesting schema and table exist first
             check_schema_query = """
                 SELECT EXISTS (
@@ -673,7 +658,7 @@ class StrategyManager:
                 
                 # If table exists, try to load configs
                 # Cast DECIMAL/NUMERIC types to FLOAT to prevent Python type errors
-                query = """
+                query = f"""
                 SELECT 
                     strategy_name,
                     source_book_type,
@@ -687,7 +672,7 @@ class StrategyManager:
                     CAST(COALESCE(max_drawdown, 0.0) AS FLOAT) as max_drawdown,
                     CAST(COALESCE(sharpe_ratio, 0.0) AS FLOAT) as sharpe_ratio,
                     CAST(COALESCE(kelly_criterion, 0.0) AS FLOAT) as kelly_criterion
-                FROM backtesting.strategy_configurations
+                FROM {strategy_configurations_table}
                 WHERE is_active = true
                 ORDER BY roi_per_100 DESC
                 """
@@ -793,10 +778,16 @@ class StrategyManager:
         return fallback_configs
     
     async def _load_threshold_configs(self) -> Dict[str, ThresholdConfig]:
-        """Load threshold configurations from database"""
+        """Load threshold configurations from database
+        
+        🚀 PHASE 2B: Updated to use table registry for table resolution
+        """
         configs = {}
         
         try:
+            # 🚀 PHASE 2B: Get table name from registry
+            threshold_configurations_table = self.table_registry.get_table('threshold_configurations')
+            
             # Check if backtesting schema and table exist first
             check_schema_query = """
                 SELECT EXISTS (
@@ -845,7 +836,7 @@ class StrategyManager:
                     return self._get_fallback_threshold_configs()
                 
                 # If table exists, try to load configs
-                query = """
+                query = f"""
                 SELECT 
                     source,
                     strategy_type,
@@ -860,7 +851,7 @@ class StrategyManager:
                     min_win_rate,
                     last_validated,
                     confidence_level
-                FROM backtesting.threshold_configurations
+                FROM {threshold_configurations_table}
                 WHERE is_active = true
                 """
                 
@@ -998,11 +989,14 @@ class StrategyManager:
     async def _check_new_backtest_results(self) -> bool:
         """Check if there are new backtest results since last configuration update"""
         try:
+            # 🚀 PHASE 2B: Get table name from registry
+            strategy_performance_table = self.table_registry.get_table('strategy_performance')
+            
             last_update = getattr(self, '_last_config_update', datetime.now(timezone.utc) - timedelta(hours=24))
             
-            query = """
+            query = f"""
             SELECT COUNT(*) as new_results
-            FROM backtesting.strategy_performance
+            FROM {strategy_performance_table}
             WHERE created_at > %s
             """
             
@@ -1018,7 +1012,10 @@ class StrategyManager:
     async def _get_recent_backtest_results(self) -> List[Dict[str, Any]]:
         """Get recent backtest results for strategy configuration"""
         try:
-            query = """
+            # 🚀 PHASE 2B: Get table name from registry
+            strategy_performance_table = self.table_registry.get_table('strategy_performance')
+            
+            query = f"""
             SELECT 
                 strategy_name,
                 win_rate,
@@ -1028,7 +1025,7 @@ class StrategyManager:
                 source_book_type,
                 split_type,
                 created_at
-            FROM backtesting.strategy_performance
+            FROM {strategy_performance_table}
             WHERE created_at >= %s
               AND total_bets >= 5
             ORDER BY roi_per_100 DESC

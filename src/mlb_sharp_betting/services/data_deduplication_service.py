@@ -23,6 +23,11 @@ from enum import Enum
 from mlb_sharp_betting.core.logging import get_logger
 from mlb_sharp_betting.services.database_coordinator import get_database_coordinator
 from mlb_sharp_betting.core.exceptions import DatabaseError
+from mlb_sharp_betting.core.config import get_settings
+from mlb_sharp_betting.db.connection import DatabaseManager, get_db_manager
+from mlb_sharp_betting.db.table_registry import get_table_registry
+from typing import List, Dict, Any, Optional, Tuple
+import asyncio
 
 logger = get_logger(__name__)
 
@@ -80,9 +85,11 @@ class ConsensusSignal:
 class DataDeduplicationService:
     """Service for enforcing data integrity and deduplication rules."""
     
-    def __init__(self):
-        self.coordinator = get_database_coordinator()
-        self.logger = logger.bind(service="data_deduplication")
+    def __init__(self, db_manager: Optional[DatabaseManager] = None):
+        self.db_manager = db_manager or get_db_manager()
+        self.table_registry = get_table_registry()
+        self.logger = get_logger(f"{__name__}.DataDeduplicationService")
+        self.settings = get_settings()
         
         # Initialize deduplication infrastructure
         self._ensure_deduplication_tables()
@@ -91,7 +98,7 @@ class DataDeduplicationService:
         """Create tables for tracking deduplicated recommendations."""
         try:
             # Create schema first
-            self.coordinator.execute_write("CREATE SCHEMA IF NOT EXISTS mlb_betting.clean", [])
+            self.db_manager.execute_write("CREATE SCHEMA IF NOT EXISTS mlb_betting.clean", [])
             
             # Create deduplicated recommendations table
             dedup_table_sql = """
@@ -133,8 +140,8 @@ class DataDeduplicationService:
             )
             """
             
-            self.coordinator.execute_write(dedup_table_sql, [])
-            self.coordinator.execute_write(evolution_table_sql, [])
+            self.db_manager.execute_write(dedup_table_sql, [])
+            self.db_manager.execute_write(evolution_table_sql, [])
             self.logger.info("Deduplication tables ensured")
             
         except Exception as e:
@@ -151,7 +158,7 @@ class DataDeduplicationService:
             ON mlb_betting.splits.raw_mlb_betting_splits (game_id, split_type, source, book, DATE(last_updated))
             """
             
-            self.coordinator.execute_write(constraint_sql, [])
+            self.db_manager.execute_write(constraint_sql, [])
             self.logger.info("Applied database constraints")
             
         except Exception as e:
@@ -183,7 +190,7 @@ class DataDeduplicationService:
         """
         
         try:
-            results = self.coordinator.execute_read(performance_query, [market_type.value])
+            results = self.db_manager.execute_read(performance_query, [market_type.value])
             
             # Return the threshold with best historical performance
             if results:
@@ -218,7 +225,7 @@ class DataDeduplicationService:
         ORDER BY game_datetime DESC
         """
         
-        games = self.coordinator.execute_read(games_query, [lookback_days])
+        games = self.db_manager.execute_read(games_query, [lookback_days])
         
         for game_row in games:
             game_id, home_team, away_team, game_datetime = game_row
@@ -265,7 +272,7 @@ class DataDeduplicationService:
         ORDER BY source, book, last_updated DESC
         """
         
-        market_data = self.coordinator.execute_read(
+        market_data = self.db_manager.execute_read(
             market_data_query, [game_id, market_type.value, threshold]
         )
         
@@ -343,7 +350,7 @@ class DataDeduplicationService:
         """
         
         try:
-            agreeing_sources = self.coordinator.execute_read(
+            agreeing_sources = self.db_manager.execute_read(
                 consensus_query, [game_id, market_type.value, timestamp, recommended_side]
             )[0][0]
             
@@ -375,7 +382,7 @@ class DataDeduplicationService:
         evolution_id = f"{game_id}_{market_type.value}_{source}_{book}_{int(timestamp.timestamp())}"
         
         try:
-            self.coordinator.execute_write(insert_sql, [
+            self.db_manager.execute_write(insert_sql, [
                 evolution_id, game_id, market_type.value, source, book,
                 differential, timestamp, minutes_before, evolution_type
             ])
@@ -477,7 +484,7 @@ class DataDeduplicationService:
             recommendation.last_updated
         ]
         
-        self.coordinator.execute_write(insert_sql, params)
+        self.db_manager.execute_write(insert_sql, params)
     
     def track_signal_evolution(self, game_id: str, market_type: MarketType) -> List[Dict]:
         """Track how signals evolve over time leading up to game."""
@@ -493,7 +500,7 @@ class DataDeduplicationService:
         ORDER BY source, book, last_updated
         """
         
-        rows = self.coordinator.execute_read(evolution_query, [game_id, market_type.value])
+        rows = self.db_manager.execute_read(evolution_query, [game_id, market_type.value])
         
         # Group by source-book and show evolution
         evolution = {}
@@ -523,7 +530,7 @@ class DataDeduplicationService:
         ORDER BY game_datetime DESC, confidence_score DESC
         """
         
-        rows = self.coordinator.execute_read(query, [days_back])
+        rows = self.db_manager.execute_read(query, [days_back])
         
         return [
             {
@@ -572,13 +579,13 @@ class DataDeduplicationService:
         
         # Count before cleanup
         count_before_sql = "SELECT COUNT(*) FROM mlb_betting.splits.raw_mlb_betting_splits"
-        count_before = self.coordinator.execute_read(count_before_sql)[0][0]
+        count_before = self.db_manager.execute_read(count_before_sql)[0][0]
         
         # Perform cleanup
-        self.coordinator.execute_write(cleanup_sql, [])
+        self.db_manager.execute_write(cleanup_sql, [])
         
         # Count after cleanup
-        count_after = self.coordinator.execute_read(count_before_sql)[0][0]
+        count_after = self.db_manager.execute_read(count_before_sql)[0][0]
         
         records_removed = count_before - count_after
         
@@ -617,8 +624,8 @@ class DataDeduplicationService:
         WHERE game_datetime >= CURRENT_DATE - INTERVAL 7 DAY
         """
         
-        raw_metrics = self.coordinator.execute_read(raw_metrics_query)[0]
-        clean_metrics = self.coordinator.execute_read(clean_metrics_query)[0]
+        raw_metrics = self.db_manager.execute_read(raw_metrics_query)[0]
+        clean_metrics = self.db_manager.execute_read(clean_metrics_query)[0]
         
         # Calculate data quality metrics
         raw_total, raw_games, raw_markets, raw_sources = raw_metrics
@@ -654,7 +661,7 @@ class DataDeduplicationService:
         return report
 
 
-def main():
+async def main():
     """Test the deduplication service."""
     service = DataDeduplicationService()
     
@@ -689,4 +696,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    asyncio.run(main()) 

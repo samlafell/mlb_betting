@@ -200,32 +200,27 @@ class SharpActionProcessor(BaseStrategyProcessor):
         if book_strategy_key in book_strategies:
             strategy = book_strategies[book_strategy_key]
             
-            # Debug threshold calculation
-            if strategy.win_rate >= 65:
-                threshold = 10.0
-            elif strategy.win_rate >= 60:
-                threshold = 12.0
-            elif strategy.win_rate >= 55:
-                threshold = 15.0
-            elif strategy.win_rate >= 50:
-                threshold = 18.0
-            else:
-                threshold = 20.0
-            
-            threshold_pass = abs_diff >= threshold
-            self.logger.info(f"🎯 Exact match found for '{book_strategy_key}': win_rate={strategy.win_rate}%, threshold={threshold}%, signal_diff={abs_diff}%, passes={threshold_pass}")
-            
-            # Extract source and split_type for dynamic thresholds
+            # 🎯 THRESHOLD DEBUG: Get actual threshold values used by the dynamic system
             source = row.get('source', 'unknown')
             split_type = row.get('split_type', 'unknown')
             source = 'unknown' if source is None else str(source).upper()
             split_type = 'unknown' if split_type is None else str(split_type).lower()
             
+            # Get the actual threshold that will be used
+            threshold_used = await self._get_actual_threshold_for_debug(strategy, abs_diff, source, split_type)
+            
+            self.logger.info(f"🎯 THRESHOLD DEBUG: {book_strategy_key}")
+            self.logger.info(f"  - Signal differential: {abs_diff}%")
+            self.logger.info(f"  - Actual threshold used: {threshold_used}%")
+            self.logger.info(f"  - Strategy win_rate: {strategy.win_rate}%")
+            self.logger.info(f"  - Threshold check: {abs_diff}% >= {threshold_used}% = {abs_diff >= threshold_used}")
+            
             threshold_result = await self._meets_strategy_threshold(strategy, abs_diff, source, split_type)
             if threshold_result:
+                self.logger.info(f"✅ Threshold passed for '{book_strategy_key}': {abs_diff}% >= {threshold_used}%")
                 return strategy
             else:
-                self.logger.warning(f"❌ Threshold failed for exact match '{book_strategy_key}': {abs_diff}% < threshold (win_rate={strategy.win_rate}%)")
+                self.logger.warning(f"❌ Threshold failed for exact match '{book_strategy_key}': {abs_diff}% < {threshold_used}% (win_rate={strategy.win_rate}%)")
         
         # Try source-level match (ignore book)
         source = row.get('source', 'unknown')
@@ -249,6 +244,51 @@ class SharpActionProcessor(BaseStrategyProcessor):
                 return strategy
         
         return None
+    
+    async def _get_actual_threshold_for_debug(self, strategy: ProfitableStrategy, abs_diff: float, 
+                                            source: str = "default", split_type: str = "default") -> float:
+        """Get the actual threshold value that will be used - for debugging purposes only."""
+        
+        # 🎯 DYNAMIC THRESHOLDS: Use threshold manager if available
+        if hasattr(self, 'threshold_manager') and self.threshold_manager:
+            try:
+                threshold_config = await self.threshold_manager.get_dynamic_threshold(
+                    strategy_type='sharp_action',
+                    source=source,
+                    split_type=split_type
+                )
+                
+                # Use appropriate threshold based on signal strength
+                if abs_diff >= threshold_config.high_threshold:
+                    threshold = threshold_config.minimum_threshold
+                elif abs_diff >= threshold_config.moderate_threshold:
+                    threshold = threshold_config.minimum_threshold
+                else:
+                    threshold = threshold_config.minimum_threshold
+                
+                self.logger.debug(f"🎯 Dynamic threshold debug for {source}/{split_type}: {threshold:.1f}% "
+                                f"(phase: {threshold_config.phase.value}, sample_size: {threshold_config.sample_size})")
+                
+                return threshold
+                
+            except Exception as e:
+                self.logger.warning(f"Failed to get dynamic threshold for debug, falling back to static: {e}")
+        
+        # 🔄 FALLBACK: Original static threshold logic (now much more aggressive)
+        # ✅ FIX: Dramatically lowered thresholds to capture real-world signals
+        if strategy.win_rate >= 65:
+            threshold = 1.5   # ULTRA aggressive for high performers (was 2.0)
+        elif strategy.win_rate >= 60:
+            threshold = 2.0   # ULTRA aggressive (was 2.5)
+        elif strategy.win_rate >= 55:
+            threshold = 2.5   # Very aggressive (was 3.0)
+        elif strategy.win_rate >= 50:
+            threshold = 3.0   # Aggressive (was 3.5)
+        else:
+            threshold = 3.5   # Still conservative but much lower (was 4.0)
+        
+        self.logger.debug(f"📊 Static threshold fallback for debug: {threshold:.1f}% for win_rate {strategy.win_rate:.1%}")
+        return threshold
     
     def _extract_book_variants(self, strategy: ProfitableStrategy) -> Dict[str, ProfitableStrategy]:
         """
@@ -376,15 +416,15 @@ class SharpActionProcessor(BaseStrategyProcessor):
         # 🔄 FALLBACK: Original static threshold logic (now much more aggressive)
         # ✅ FIX: Dramatically lowered thresholds to capture real-world signals
         if strategy.win_rate >= 65:
-            threshold = 3.0   # Very aggressive for high performers (was 10.0)
+            threshold = 1.5   # ULTRA aggressive for high performers (was 2.0)
         elif strategy.win_rate >= 60:
-            threshold = 4.0   # Aggressive (was 12.0)
+            threshold = 2.0   # ULTRA aggressive (was 2.5)
         elif strategy.win_rate >= 55:
-            threshold = 5.0   # Moderate (was 15.0)
+            threshold = 2.5   # Very aggressive (was 3.0)
         elif strategy.win_rate >= 50:
-            threshold = 6.0   # Conservative (was 18.0)
+            threshold = 3.0   # Aggressive (was 3.5)
         else:
-            threshold = 8.0   # Very conservative (was 20.0)
+            threshold = 3.5   # Still conservative but much lower (was 4.0)
         
         self.logger.debug(f"📊 Static threshold fallback: {threshold:.1f}% for win_rate {strategy.win_rate:.1%}")
         return abs_diff >= threshold

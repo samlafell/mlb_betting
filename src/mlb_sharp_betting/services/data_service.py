@@ -37,6 +37,7 @@ from ..db.repositories import (
     get_sharp_action_repository,
 )
 from ..db.schema import SchemaManager
+from ..db.table_registry import get_table_registry
 from ..models.splits import BettingSplit, DataSource, BookType, SplitType
 from ..models.game import Game, GameStatus
 from ..models.sharp import SharpAction
@@ -484,17 +485,21 @@ class DeduplicationManager:
         self._ensure_deduplication_tables()
     
     def _ensure_deduplication_tables(self):
-        """Create tables for tracking deduplicated recommendations."""
+        """Create tables for tracking deduplicated recommendations using new consolidated schema."""
         try:
-            # Create schema first
-            self.connection.execute_write("CREATE SCHEMA IF NOT EXISTS mlb_betting", [])
+            # 🚀 PHASE 2A: Use new consolidated schema structure
+            table_registry = get_table_registry()
             
-            # Create clean schema for deduplicated data
-            self.connection.execute_write("CREATE SCHEMA IF NOT EXISTS clean", [])
+            # Create analytics schema for deduplicated data
+            analytics_schema = table_registry.get_schema('analytics')
+            self.connection.execute_write(f"CREATE SCHEMA IF NOT EXISTS {analytics_schema}", [])
             
-            # Create deduplicated recommendations table
-            dedup_table_sql = """
-            CREATE TABLE IF NOT EXISTS clean.betting_recommendations (
+            # Get the new consolidated table name
+            betting_recommendations_table = table_registry.get_table('betting_recommendations')
+            
+            # Create deduplicated recommendations table in new schema
+            dedup_table_sql = f"""
+            CREATE TABLE IF NOT EXISTS {betting_recommendations_table} (
                 id VARCHAR PRIMARY KEY,
                 game_id VARCHAR NOT NULL,
                 home_team VARCHAR NOT NULL,
@@ -518,7 +523,8 @@ class DeduplicationManager:
             """
             
             self.connection.execute_write(dedup_table_sql, [])
-            self.logger.info("Deduplication tables ensured")
+            self.logger.info("Deduplication tables ensured in new consolidated schema", 
+                           table=betting_recommendations_table)
             
         except Exception as e:
             self.logger.error("Failed to create deduplication tables", error=str(e))
@@ -529,14 +535,16 @@ class DeduplicationManager:
         try:
             self.logger.info("Starting deduplication process", lookback_days=lookback_days)
             
-            # Get raw data from the last N days
+            # Get raw data from the last N days using new consolidated schema
             cutoff_date = datetime.now() - timedelta(days=lookback_days)
+            table_registry = get_table_registry()
+            raw_splits_table = table_registry.get_table('raw_betting_splits')
             
-            query = """
+            query = f"""
             SELECT DISTINCT 
                 game_id, home_team, away_team, game_datetime,
                 split_type as market_type
-            FROM splits.raw_mlb_betting_splits 
+            FROM {raw_splits_table} 
             WHERE game_datetime >= %s
               AND game_datetime <= CURRENT_TIMESTAMP + INTERVAL '7 days'
             ORDER BY game_datetime DESC
@@ -581,11 +589,16 @@ class DeduplicationManager:
                                              market_type: MarketType) -> int:
         """Process a specific game/market combination for deduplication."""
         try:
+            # Get table name from registry
+            from ..db.table_registry import get_table_registry
+            table_registry = get_table_registry()
+            raw_betting_splits_table = table_registry.get_table('raw_betting_splits')
+            
             # Query raw data for this game/market
-            query = """
+            query = f"""
             SELECT source, book, differential, stake_percentage, bet_percentage,
                    last_updated, split_value
-            FROM splits.raw_mlb_betting_splits
+            FROM {raw_betting_splits_table}
             WHERE game_id = %s AND split_type = %s
             ORDER BY last_updated DESC
             """
@@ -634,12 +647,17 @@ class DeduplicationManager:
     def cleanup_historical_duplicates(self, keep_latest_only: bool = True) -> Dict:
         """Clean up historical duplicates."""
         try:
+            # Get table name from registry
+            from ..db.table_registry import get_table_registry
+            table_registry = get_table_registry()
+            raw_betting_splits_table = table_registry.get_table('raw_betting_splits')
+            
             # Simple cleanup - remove duplicates based on game_id + market_type + source + book
-            cleanup_query = """
-            DELETE FROM splits.raw_mlb_betting_splits 
+            cleanup_query = f"""
+            DELETE FROM {raw_betting_splits_table} 
             WHERE id NOT IN (
                 SELECT DISTINCT ON (game_id, split_type, source, book) id
-                FROM splits.raw_mlb_betting_splits
+                FROM {raw_betting_splits_table}
                 ORDER BY game_id, split_type, source, book, last_updated DESC
             )
             """

@@ -2,9 +2,9 @@
   "service_name": "odds_api",
   "max_quota": 480,
   "time_window": "monthly",
-  "used": 3,
-  "window_start": "2025-06-30T19:40:58.779514",
-  "last_updated": "2025-06-30T19:44:36.771621",
+  "used": 0,
+  "window_start": "2025-07-08T21:34:12.928149",
+  "last_updated": "2025-07-08T21:34:12.928248",
   "history": [
     {
       "timestamp": "2025-06-30T19:40:58.779710",
