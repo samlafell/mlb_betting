@@ -39,3 +39,13 @@ logs/
 # OS files
 .DS_Store
 Thumbs.db
+
+## Data
+data/mlb_api_cache/**.json
+**results**.json
+**data**.json
+**report**.json
+**analysis**.json
+**line_movement**.json
+**game_urls**.json
+**betting_opportunities**.json
