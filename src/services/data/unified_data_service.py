@@ -17,6 +17,8 @@ import structlog
 
 from ...data.collection.actionnetwork import ActionNetworkHistoryCollector
 from ...data.models.unified.actionnetwork import ActionNetworkHistoricalData
+from ...data.database.connection import get_connection
+from ...data.database.action_network_repository import ActionNetworkRepository
 from ...core.config import get_settings
 from ...core.exceptions import DataError
 
@@ -39,15 +41,33 @@ class UnifiedDataService:
         # Initialize collectors
         self.action_network_history_collector = ActionNetworkHistoryCollector()
         
+        # Initialize database connection and repository
+        self.db_connection = None
+        self.action_network_repository = None
+        
         # Service statistics
         self.stats = {
             "total_operations": 0,
             "successful_operations": 0,
             "failed_operations": 0,
+            "database_saves": 0,
+            "database_save_errors": 0,
             "last_operation_time": None
         }
         
         self.logger.info("UnifiedDataService initialized")
+    
+    async def _get_database_repository(self) -> ActionNetworkRepository:
+        """Get or create the Action Network database repository."""
+        if not self.action_network_repository:
+            if not self.db_connection:
+                self.db_connection = get_connection()
+                await self.db_connection.connect()
+            
+            self.action_network_repository = ActionNetworkRepository(self.db_connection)
+            self.logger.info("Action Network database repository initialized")
+        
+        return self.action_network_repository
     
     async def collect_action_network_history(self, game_data: Dict[str, Any]) -> Optional[ActionNetworkHistoricalData]:
         """
@@ -89,6 +109,9 @@ class UnifiedDataService:
             
             if result.success and result.data:
                 historical_data = result.data[0]  # First item is the ActionNetworkHistoricalData
+                
+                # Save to database automatically
+                await self._save_to_database(historical_data)
                 
                 self.stats["successful_operations"] += 1
                 self.stats["last_operation_time"] = datetime.now()
@@ -140,7 +163,12 @@ class UnifiedDataService:
             
             for result in results:
                 if result.success and result.data:
-                    historical_data_list.append(result.data[0])
+                    historical_data = result.data[0]
+                    historical_data_list.append(historical_data)
+                    
+                    # Save to database automatically
+                    await self._save_to_database(historical_data)
+                    
                     successful_count += 1
                 else:
                     failed_count += 1
@@ -217,7 +245,7 @@ class UnifiedDataService:
                 self.logger.warning("No games with history URLs found in JSON file")
                 return []
             
-            # Collect historical data for all games
+            # Collect historical data for all games (will auto-save to database)
             return await self.collect_multiple_action_network_histories(games_with_history)
             
         except Exception as e:
@@ -268,6 +296,199 @@ class UnifiedDataService:
                             output_path=output_file_path,
                             error=str(e))
             return False
+    
+    async def _save_to_database(self, historical_data: ActionNetworkHistoricalData) -> None:
+        """
+        Save Action Network historical data to database.
+        
+        Args:
+            historical_data: ActionNetworkHistoricalData to save
+        """
+        try:
+            repository = await self._get_database_repository()
+            
+            # Check if we've already processed this game recently
+            last_extraction_time = await repository.get_last_extraction_time(historical_data.game_id)
+            
+            if last_extraction_time:
+                # Check if this is a recent duplicate (within 5 minutes)
+                time_diff = datetime.now() - last_extraction_time
+                if time_diff.total_seconds() < 300:  # 5 minutes
+                    self.logger.info("Skipping database save - recent extraction exists",
+                                   game_id=historical_data.game_id,
+                                   last_extraction=last_extraction_time,
+                                   time_diff_seconds=time_diff.total_seconds())
+                    return
+            
+            # Save to database
+            save_result = await repository.save_historical_data(historical_data)
+            
+            if save_result['success']:
+                self.stats["database_saves"] += 1
+                self.logger.info("Saved Action Network data to database",
+                               game_id=historical_data.game_id,
+                               lines_saved=save_result['lines_saved'],
+                               duration_seconds=save_result['duration_seconds'])
+            else:
+                self.stats["database_save_errors"] += 1
+                self.logger.error("Failed to save Action Network data to database",
+                                game_id=historical_data.game_id,
+                                error=save_result['error'])
+            
+        except Exception as e:
+            self.stats["database_save_errors"] += 1
+            self.logger.error("Exception during database save",
+                            game_id=historical_data.game_id,
+                            error=str(e))
+    
+    async def get_new_lines_since_last_extraction(self, game_id: int, book_id: int, 
+                                                market_type: str) -> List[Dict[str, Any]]:
+        """
+        Get new betting lines since the last extraction for incremental updates.
+        
+        Args:
+            game_id: Action Network game ID
+            book_id: Action Network book ID
+            market_type: Market type ('moneyline', 'spread', 'total')
+            
+        Returns:
+            List of new betting lines
+        """
+        try:
+            repository = await self._get_database_repository()
+            return await repository.get_new_lines_since_last_extraction(
+                game_id, book_id, market_type
+            )
+        except Exception as e:
+            self.logger.error("Failed to get new lines since last extraction",
+                            game_id=game_id,
+                            book_id=book_id,
+                            market_type=market_type,
+                            error=str(e))
+            return []
+    
+    async def get_line_movement_summary(self, game_id: int, book_id: Optional[int] = None,
+                                      market_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Get line movement summary for analysis.
+        
+        Args:
+            game_id: Action Network game ID
+            book_id: Optional book ID filter
+            market_type: Optional market type filter
+            
+        Returns:
+            List of line movement summaries
+        """
+        try:
+            repository = await self._get_database_repository()
+            return await repository.get_line_movement_summary(game_id, book_id, market_type)
+        except Exception as e:
+            self.logger.error("Failed to get line movement summary",
+                            game_id=game_id,
+                            error=str(e))
+            return []
+    
+    async def check_for_new_movements(self, games_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Check for new line movements across all games and markets.
+        
+        This method checks each game/book/market combination for new movements
+        since the last extraction and returns a summary of what's new.
+        
+        Args:
+            games_data: List of game data dictionaries
+            
+        Returns:
+            Dictionary with new movement summary
+        """
+        try:
+            repository = await self._get_database_repository()
+            
+            new_movements_summary = {
+                "total_games_checked": len(games_data),
+                "games_with_new_movements": 0,
+                "total_new_lines": 0,
+                "by_market": {
+                    "moneyline": 0,
+                    "spread": 0,
+                    "total": 0
+                },
+                "by_book": {},
+                "games_needing_update": []
+            }
+            
+            # Common Action Network book IDs
+            book_ids = [15, 30, 68, 69, 71, 75]  # DK, FD, MGM, CZR, PB, CIRCA
+            market_types = ['moneyline', 'spread', 'total']
+            
+            for game_data in games_data:
+                game_id = game_data.get('game_id')
+                if not game_id:
+                    continue
+                
+                game_has_new_movements = False
+                game_new_lines = 0
+                
+                # Check each book/market combination
+                for book_id in book_ids:
+                    for market_type in market_types:
+                        new_lines = await repository.get_new_lines_since_last_extraction(
+                            game_id, book_id, market_type
+                        )
+                        
+                        if new_lines:
+                            game_has_new_movements = True
+                            game_new_lines += len(new_lines)
+                            new_movements_summary["total_new_lines"] += len(new_lines)
+                            new_movements_summary["by_market"][market_type] += len(new_lines)
+                            
+                            # Track by book
+                            book_name = f"book_{book_id}"
+                            if book_name not in new_movements_summary["by_book"]:
+                                new_movements_summary["by_book"][book_name] = 0
+                            new_movements_summary["by_book"][book_name] += len(new_lines)
+                
+                if game_has_new_movements:
+                    new_movements_summary["games_with_new_movements"] += 1
+                    new_movements_summary["games_needing_update"].append({
+                        "game_id": game_id,
+                        "home_team": game_data.get('home_team'),
+                        "away_team": game_data.get('away_team'),
+                        "new_lines_count": game_new_lines
+                    })
+            
+            self.logger.info("Completed new movements check",
+                           total_games=new_movements_summary["total_games_checked"],
+                           games_with_new_movements=new_movements_summary["games_with_new_movements"],
+                           total_new_lines=new_movements_summary["total_new_lines"])
+            
+            return new_movements_summary
+            
+        except Exception as e:
+            self.logger.error("Failed to check for new movements", error=str(e))
+            return {
+                "total_games_checked": len(games_data),
+                "games_with_new_movements": 0,
+                "total_new_lines": 0,
+                "error": str(e)
+            }
+    
+    async def cleanup(self) -> None:
+        """Clean up database connections and resources."""
+        try:
+            if self.action_network_history_collector:
+                await self.action_network_history_collector.close()
+            
+            if self.db_connection:
+                await self.db_connection.close()
+                self.db_connection = None
+                self.action_network_repository = None
+            
+            self.logger.info("UnifiedDataService cleanup completed")
+            
+        except Exception as e:
+            self.logger.error("Error during cleanup", error=str(e))
     
     def get_service_stats(self) -> Dict[str, Any]:
         """

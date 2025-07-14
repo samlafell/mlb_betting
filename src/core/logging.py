@@ -48,6 +48,7 @@ class LogComponent(str, Enum):
     STRATEGY = "strategy"
     BACKTESTING = "backtesting"
     NOTIFICATION = "notification"
+    CLI = "cli"
     SCHEDULER = "scheduler"
     RATE_LIMITER = "rate_limiter"
     CIRCUIT_BREAKER = "circuit_breaker"

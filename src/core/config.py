@@ -101,11 +101,43 @@ class DatabaseSettings(BaseSettings):
         env="DUCKDB_PATH"
     )
     
+    # Read replica settings
+    read_replica_connection_string: Optional[str] = Field(
+        default=None,
+        description="Read replica connection string",
+        env="DB_READ_REPLICA_URL"
+    )
+    
     class Config:
         env_prefix = ""
         case_sensitive = False
         use_enum_values = True
         extra = "allow"  # Allow extra fields for backward compatibility
+    
+    # Computed properties for backward compatibility with connection pool
+    @computed_field
+    @property
+    def pool_size(self) -> int:
+        """Map min_connections to pool_size for backward compatibility."""
+        return self.min_connections
+        
+    @computed_field
+    @property
+    def max_overflow(self) -> int:
+        """Map max_connections to max_overflow for backward compatibility."""
+        return self.max_connections - self.min_connections
+        
+    @computed_field
+    @property
+    def pool_timeout(self) -> int:
+        """Map connection_timeout to pool_timeout for backward compatibility."""
+        return self.connection_timeout
+        
+    @computed_field
+    @property
+    def pool_recycle(self) -> int:
+        """Default pool recycle time."""
+        return 3600  # 1 hour
     
     @computed_field
     @property

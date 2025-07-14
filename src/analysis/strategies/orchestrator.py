@@ -19,7 +19,7 @@ from enum import Enum
 from dataclasses import dataclass, field
 import concurrent.futures
 
-from src.core.logging import get_logger
+from src.core.logging import get_logger, LogComponent
 from src.core.exceptions import StrategyError, AnalysisError
 from src.data.database import UnifiedRepository
 from src.analysis.strategies.base import BaseStrategyProcessor
@@ -125,7 +125,7 @@ class StrategyOrchestrator:
         self.factory = factory
         self.repository = repository
         self.config = config
-        self.logger = get_logger(__name__)
+        self.logger = get_logger(__name__, LogComponent.STRATEGY)
         
         # Execution management
         self._active_executions: Dict[str, OrchestrationResult] = {}

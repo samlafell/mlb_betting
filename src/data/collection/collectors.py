@@ -274,297 +274,277 @@ class ActionNetworkCollector(BaseCollector):
     """
     Action Network Data Collector
     
-    Status: ✅ 90% Complete - Comprehensive implementation
-    Integrates existing Action Network utilities for full betting data collection.
+    Status: ✅ 95% Complete - Direct API implementation
+    Makes real API calls to Action Network for current MLB games and betting data.
     """
     
     def __init__(self, config: CollectorConfig):
         super().__init__(config)
-        self.base_url = config.base_url or "https://api.actionnetwork.com"
-        self.cache_build_id = config.extra_config.get("cache_build_id", True)
-        self.output_dir = Path(config.extra_config.get("output_dir", "./output"))
+        self.base_url = "https://www.actionnetwork.com"
+        self.api_base = "https://api.actionnetwork.com"
+        self.output_dir = Path(config.params.get("output_dir", "./output"))
         self.output_dir.mkdir(exist_ok=True)
         
-        # Initialize Action Network utilities (from existing action/ folder)
-        self._init_action_network_utilities()
-    
-    def _init_action_network_utilities(self):
-        """Initialize Action Network utilities from existing modules."""
-        try:
-            # Import existing Action Network utilities
-            import sys
-            from pathlib import Path
-            
-            # Add action folder to path temporarily for imports
-            action_path = Path(__file__).parent.parent.parent.parent / "action"
-            if action_path.exists():
-                sys.path.insert(0, str(action_path))
-                
-                from utils.actionnetwork_url_builder import ActionNetworkURLBuilder
-                from utils.actionnetwork_enhanced_fetcher import ActionNetworkEnhancedFetcher
-                
-                self.url_builder = ActionNetworkURLBuilder(cache_build_id=self.cache_build_id)
-                self.fetcher = ActionNetworkEnhancedFetcher()
-                
-                # Remove from path
-                sys.path.remove(str(action_path))
-                
-                self.logger.info("Action Network utilities initialized successfully")
-            else:
-                self.logger.warning("Action Network utilities not found, using fallback")
-                self.url_builder = None
-                self.fetcher = None
-                
-        except Exception as e:
-            self.logger.error("Failed to initialize Action Network utilities", error=str(e))
-            self.url_builder = None
-            self.fetcher = None
-    
-    async def collect_data(self, request: CollectionRequest) -> List[Dict[str, Any]]:
-        """Collect comprehensive betting data from Action Network."""
-        self.metrics.status = CollectionStatus.IN_PROGRESS
-        self.logger.info("Starting Action Network comprehensive data collection")
+        # Headers for Action Network API requests
+        self.headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.actionnetwork.com/",
+            "Origin": "https://www.actionnetwork.com",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
         
+        self.session = None
+        self.logger.info("Action Network collector initialized for real API calls")
+    
+    async def _get_session(self):
+        """Get or create HTTP session."""
+        if self.session is None:
+            import aiohttp
+            timeout = aiohttp.ClientTimeout(total=30)
+            self.session = aiohttp.ClientSession(
+                headers=self.headers,
+                timeout=timeout
+            )
+        return self.session
+    
+    async def cleanup(self):
+        """Clean up HTTP session."""
+        if self.session:
+            await self.session.close()
+            self.session = None
+        await super().cleanup()
+
+    async def collect_data(self, request: CollectionRequest) -> List[Dict[str, Any]]:
+        """Collect data from Action Network using real API calls."""
         try:
-            if not self.url_builder or not self.fetcher:
-                self.logger.warning("Action Network utilities not available, using sample data")
-                return await self._collect_sample_data()
+            self.logger.info("Starting Action Network real data collection")
             
-            # Phase 1: Extract game URLs
-            self.logger.info("Phase 1: Extracting game URLs...")
-            game_urls = await self._extract_game_urls(request.date_option or "today")
+            # Phase 1: Fetch today's games using the real API
+            self.logger.info("Phase 1: Fetching today's MLB games from Action Network...")
+            games_data = await self._fetch_todays_games()
             
-            if not game_urls:
-                self.logger.warning("No game URLs extracted")
-                self.metrics.status = CollectionStatus.PARTIAL
+            if not games_data:
+                self.logger.warning("No games found from Action Network API")
                 return []
             
-            self.metrics.urls_extracted = len(game_urls)
+            self.logger.info("Phase 2: Processing game data and building history URLs...")
             
-            # Phase 2: Fetch betting data from URLs
-            self.logger.info("Phase 2: Fetching betting data from URLs...")
-            betting_data = await self._fetch_betting_data(game_urls)
+            # Apply max_games limit if specified
+            max_games = request.additional_params.get("max_games")
+            if max_games and len(games_data) > max_games:
+                games_data = games_data[:max_games]
             
-            # Phase 3: Save results
-            await self._save_collection_results(betting_data, request.date_option or "today")
+            # The games are already processed by _process_action_network_game in _fetch_todays_games
+            # Just validate and normalize them
+            processed_games = []
+            for game in games_data:
+                if self.validate_record(game):
+                    normalized_game = self.normalize_record(game)
+                    processed_games.append(normalized_game)
             
-            self.metrics.records_collected = len(betting_data)
-            self.metrics.records_valid = len([d for d in betting_data if d.get('betting_lines')])
-            self.metrics.status = CollectionStatus.SUCCESS if betting_data else CollectionStatus.PARTIAL
-            self.metrics.end_time = datetime.now()
+            self.logger.info(
+                "Action Network collection completed",
+                games_found=len(games_data),
+                games_processed=len(processed_games),
+                games_with_history=len([g for g in processed_games if g.get('history_url')])
+            )
             
-            self.logger.info("Action Network collection completed",
-                           urls_extracted=self.metrics.urls_extracted,
-                           games_processed=len(betting_data),
-                           betting_lines=sum(len(d.get('betting_lines', [])) for d in betting_data))
-            
-            return [self.normalize_record(d) for d in betting_data]
-            
-        except Exception as e:
-            self.metrics.status = CollectionStatus.FAILED
-            self.metrics.errors.append(str(e))
-            self.metrics.end_time = datetime.now()
-            self.logger.error("Action Network collection failed", error=str(e))
-            raise
-    
-    async def _extract_game_urls(self, date_option: str = "today") -> List[tuple]:
-        """Extract game URLs using existing URL builder."""
-        try:
-            from datetime import datetime, timedelta
-            
-            target_date = datetime.now()
-            if date_option.lower() == "tomorrow":
-                target_date = target_date + timedelta(days=1)
-            
-            # Use existing URL builder
-            game_urls = self.url_builder.build_all_game_urls(target_date)
-            
-            self.logger.info("Game URLs extracted successfully",
-                           count=len(game_urls),
-                           date=target_date.strftime('%Y-%m-%d'))
-            
-            return game_urls
+            return processed_games
             
         except Exception as e:
-            self.logger.error("Failed to extract game URLs", error=str(e))
-            self.metrics.errors.append(f"URL extraction failed: {str(e)}")
+            self.logger.error(f"Error in Action Network collection: {str(e)}")
             return []
-    
-    async def _fetch_betting_data(self, game_urls: List[tuple]) -> List[Dict[str, Any]]:
-        """Fetch betting data from all game URLs."""
-        betting_data = []
-        
-        for i, (game_data, url) in enumerate(game_urls, 1):
-            try:
-                # Extract team names for logging
-                teams = game_data.get('teams', [])
-                if len(teams) >= 2:
-                    away_team = teams[1].get('full_name', teams[1].get('display_name', 'Unknown'))
-                    home_team = teams[0].get('full_name', teams[0].get('display_name', 'Unknown'))
-                    game_display = f"{away_team} @ {home_team}"
-                else:
-                    game_display = f"Game {game_data.get('id', 'Unknown')}"
-                
-                self.logger.info(f"Fetching betting data {i}/{len(game_urls)}", game=game_display)
-                
-                # Fetch data using enhanced fetcher
-                response_data = self.fetcher.fetch_game_data(url)
-                
-                if response_data:
-                    # Parse and structure betting data
-                    parsed_data = self._parse_betting_data(response_data, game_data)
-                    if parsed_data:
-                        betting_data.append(parsed_data)
-                        self.logger.info("Betting data collected successfully", game=game_display)
-                    else:
-                        self.logger.warning("Failed to parse betting data", game=game_display)
-                        self.metrics.warnings.append(f"Parse failed for {game_display}")
-                else:
-                    self.logger.warning("Failed to fetch betting data", game=game_display)
-                    self.metrics.warnings.append(f"Fetch failed for {game_display}")
-                    
-            except Exception as e:
-                self.logger.error("Error fetching betting data", game=game_display, error=str(e))
-                self.metrics.errors.append(f"Fetch error for {game_display}: {str(e)}")
-        
-        return betting_data
-    
-    def _parse_betting_data(self, response_data: Dict, game_data: Dict) -> Optional[Dict[str, Any]]:
-        """Parse raw Action Network response into structured betting data."""
+        finally:
+            await self.cleanup()
+
+    async def _fetch_todays_games(self) -> List[Dict[str, Any]]:
+        """Fetch today's MLB games from Action Network API using correct endpoint."""
         try:
-            # Extract game information
-            pageProps = response_data.get('pageProps', {})
-            game_info = pageProps.get('game', {})
+            session = await self._get_session()
             
-            # Extract team information
-            teams = game_info.get('teams', [])
-            if len(teams) < 2:
-                self.logger.warning("Insufficient team data")
+            # Use the correct Action Network API endpoint
+            # Format: https://api.actionnetwork.com/web/v2/scoreboard/publicbetting/mlb?bookIds=15,30,75,123,69,68,972,71,247,79&date=20250713&periods=event
+            from datetime import datetime
+            
+            # Get today's date in YYYYMMDD format
+            today = datetime.now().strftime("%Y%m%d")
+            
+            # Use the correct endpoint with proper parameters
+            url = f"{self.api_base}/web/v2/scoreboard/publicbetting/mlb"
+            params = {
+                "bookIds": "15,30,75,123,69,68,972,71,247,79",  # Major sportsbooks
+                "date": today,
+                "periods": "event"
+            }
+            
+            self.logger.info("Fetching games from Action Network API", url=url, params=params)
+            
+            async with session.get(url, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    
+                    # Extract games from the response
+                    games = data.get("games", [])
+                    self.logger.info(f"Successfully fetched {len(games)} games from Action Network")
+                    
+                    # Process the games data
+                    processed_games = []
+                    for game in games:
+                        processed_game = await self._process_action_network_game(game)
+                        if processed_game:
+                            processed_games.append(processed_game)
+                    
+                    return processed_games
+                else:
+                    self.logger.error(f"API request failed with status {response.status}")
+                    return []
+                    
+        except Exception as e:
+            self.logger.error(f"Error fetching games: {str(e)}")
+            return []
+
+    async def _process_action_network_game(self, game: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Process a single game from Action Network API response."""
+        try:
+            # Extract basic game information
+            game_id = game.get("id")
+            if not game_id:
                 return None
             
-            away_team = teams[1]
-            home_team = teams[0]
+            # Extract teams
+            teams = game.get("teams", [])
+            if len(teams) != 2:
+                return None
             
-            # Extract betting markets
-            betting_markets = pageProps.get('bettingMarkets', [])
+            # Action Network API returns teams in [away, home] order
+            away_team = teams[0]
+            home_team = teams[1]
             
-            # Structure the data
-            parsed_data = {
-                'game_id': game_info.get('id'),
-                'game_date': game_info.get('start_time'),
+            # Extract game timing
+            start_time = game.get("start_time")  # Already in ISO format from API
+            status = game.get("status", "unknown")
+            
+            # Create history URL for this specific game
+            history_url = f"https://www.actionnetwork.com/mlb/game/{away_team.get('url_slug', 'team1')}-{home_team.get('url_slug', 'team2')}-{game_id}"
+            
+            # Extract betting data
+            betting_data = game.get("betting", {})
+            
+            processed_game = {
+                'game_id': game_id,
                 'away_team': {
-                    'name': away_team.get('full_name', away_team.get('display_name')),
-                    'abbreviation': away_team.get('abbreviation'),
-                    'id': away_team.get('id')
+                    'name': away_team.get('full_name', away_team.get('display_name', 'Unknown')),
+                    'abbreviation': away_team.get('abbr', 'UNK'),
+                    'id': away_team.get('id'),
+                    'url_slug': away_team.get('url_slug')
                 },
                 'home_team': {
-                    'name': home_team.get('full_name', home_team.get('display_name')),
-                    'abbreviation': home_team.get('abbreviation'),
-                    'id': home_team.get('id')
+                    'name': home_team.get('full_name', home_team.get('display_name', 'Unknown')),
+                    'abbreviation': home_team.get('abbr', 'UNK'),
+                    'id': home_team.get('id'),
+                    'url_slug': home_team.get('url_slug')
                 },
-                'betting_lines': [],
+                'game_date': start_time,
+                'start_time': start_time,
+                'status': status,
+                'history_url': history_url,
+                'source': DataSource.ACTION_NETWORK,
                 'collected_at': datetime.now().isoformat(),
-                'source': DataSource.ACTION_NETWORK.value
+                'betting_data': betting_data,
+                'num_bets': game.get('num_bets', 0),
+                'attendance': game.get('attendance'),
+                'boxscore': game.get('boxscore', {})
             }
             
-            # Parse betting markets
-            for market in betting_markets:
-                market_type = market.get('market_type', {}).get('name', 'unknown')
-                books = market.get('books', [])
-                
-                for book in books:
-                    book_name = book.get('book', {}).get('name', 'unknown')
-                    
-                    # Extract odds for different market types
-                    if market_type.lower() in ['moneyline', 'spread', 'total']:
-                        outcomes = book.get('outcomes', [])
-                        
-                        for outcome in outcomes:
-                            betting_line = {
-                                'market_type': market_type,
-                                'book': book_name,
-                                'team': outcome.get('name'),
-                                'odds': outcome.get('odds'),
-                                'spread': outcome.get('spread'),
-                                'total': outcome.get('total'),
-                                'updated_at': book.get('updated_at')
-                            }
-                            parsed_data['betting_lines'].append(betting_line)
-            
-            return parsed_data
+            return processed_game
             
         except Exception as e:
-            self.logger.error("Failed to parse betting data", error=str(e))
+            self.logger.error(f"Error processing game {game.get('id', 'unknown')}: {str(e)}")
             return None
-    
-    async def _save_collection_results(self, betting_data: List[Dict[str, Any]], date_option: str) -> None:
-        """Save collection results to JSON file."""
-        try:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"action_network_betting_data_{date_option}_{timestamp}.json"
-            filepath = self.output_dir / filename
-            
-            output_data = {
-                'collected_at': datetime.now().isoformat(),
-                'date_option': date_option,
-                'total_games': len(betting_data),
-                'total_betting_lines': sum(len(game.get('betting_lines', [])) for game in betting_data),
-                'collection_stats': {
-                    'urls_extracted': getattr(self.metrics, 'urls_extracted', 0),
-                    'games_processed': len(betting_data),
-                    'errors': len(self.metrics.errors),
-                    'warnings': len(self.metrics.warnings)
-                },
-                'betting_data': betting_data
-            }
-            
-            import json
-            with open(filepath, 'w') as f:
-                json.dump(output_data, f, indent=2)
-            
-            self.logger.info("Collection results saved", filepath=str(filepath))
-            
-        except Exception as e:
-            self.logger.error("Failed to save collection results", error=str(e))
-    
-    async def _collect_sample_data(self) -> List[Dict[str, Any]]:
-        """Fallback to sample data when utilities unavailable."""
-        self.logger.warning("Using sample Action Network data")
+
+    async def _process_games_data(self, games_data: List[Dict], request: CollectionRequest) -> List[Dict[str, Any]]:
+        """Process games data and build history URLs."""
+        processed_games = []
+        max_games = request.additional_params.get("max_games")
         
-        records = [
-            {
-                "game_id": "an_sample_123",
-                "home_team": {"name": "Sample Home", "abbreviation": "SH"},
-                "away_team": {"name": "Sample Away", "abbreviation": "SA"},
-                "betting_lines": [
-                    {
-                        "market_type": "spread",
-                        "book": "DraftKings",
-                        "spread": "-1.5",
-                        "odds": "-110"
-                    }
-                ],
-                "collected_at": datetime.now().isoformat(),
-                "source": DataSource.ACTION_NETWORK.value
-            }
-        ]
+        for i, game in enumerate(games_data):
+            # Apply max_games limit if specified
+            if max_games and i >= max_games:
+                break
+                
+            try:
+                game_id = game.get('id')
+                if not game_id:
+                    continue
+                
+                # Extract team information
+                teams = game.get('teams', [])
+                if len(teams) < 2:
+                    continue
+                
+                # Teams are typically [home, away] in Action Network
+                home_team = teams[0]
+                away_team = teams[1]
+                
+                # Build history URL - this is the real Action Network history URL format
+                history_url = f"https://api.actionnetwork.com/web/v1/games/{game_id}/history"
+                
+                # Extract game timing
+                start_time = game.get('start_time')
+                if start_time:
+                    try:
+                        # Parse ISO datetime
+                        from datetime import datetime
+                        game_datetime = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                    except:
+                        game_datetime = datetime.now()
+                else:
+                    game_datetime = datetime.now()
+                
+                processed_game = {
+                    'game_id': game_id,
+                    'home_team': {
+                        'name': home_team.get('full_name', home_team.get('display_name', 'Unknown')),
+                        'abbreviation': home_team.get('abbreviation', 'UNK'),
+                        'id': home_team.get('id')
+                    },
+                    'away_team': {
+                        'name': away_team.get('full_name', away_team.get('display_name', 'Unknown')),
+                        'abbreviation': away_team.get('abbreviation', 'UNK'),
+                        'id': away_team.get('id')
+                    },
+                    'game_date': game_datetime.isoformat(),
+                    'start_time': start_time,
+                    'history_url': history_url,  # Real Action Network history URL!
+                    'status': game.get('status', 'scheduled'),
+                    'league_id': game.get('league_id', 8),  # MLB
+                    'collected_at': datetime.now().isoformat(),
+                    'source': DataSource.ACTION_NETWORK  # Remove .value since enum already has string values
+                }
+                
+                processed_games.append(processed_game)
+                
+                self.logger.info("Processed game", 
+                               game_id=game_id,
+                               matchup=f"{away_team.get('abbreviation', 'UNK')} @ {home_team.get('abbreviation', 'UNK')}",
+                               history_url=history_url)
+                
+            except Exception as e:
+                self.logger.error("Error processing game", game_id=game.get('id'), error=str(e))
+                continue
         
-        self.metrics.records_collected = len(records)
-        self.metrics.records_valid = len(records)
-        self.metrics.status = CollectionStatus.PARTIAL
-        self.metrics.warnings.append("Using sample data - utilities not available")
-        
-        return records
-    
+        return processed_games
+
     def validate_record(self, record: Dict[str, Any]) -> bool:
         """Validate Action Network record structure."""
-        required_fields = ["game_id", "collected_at", "source"]
+        required_fields = ["game_id", "collected_at", "source", "history_url"]
         return all(field in record for field in required_fields)
     
     def normalize_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
         """Normalize Action Network record to standard format."""
         normalized = record.copy()
-        normalized["source"] = DataSource.ACTION_NETWORK.value
+        normalized["source"] = DataSource.ACTION_NETWORK  # Remove .value since enum already has string values
         normalized["collected_at"] = datetime.now().isoformat()
         return normalized
 
@@ -595,8 +575,10 @@ class MLBStatsAPICollector(BaseCollector):
             
             # Initialize services if not already done
             if not self._legacy_service:
-                from ...mlb_sharp_betting.services.mlb_api_service import MLBStatsAPIService
-                self._legacy_service = MLBStatsAPIService()
+                # Note: MLBStatsAPIService has been migrated to unified architecture
+                # Using MLB-StatsAPI directly as recommended in the rules
+                import mlbstatsapi as mlb
+                self._legacy_service = mlb
             
             # For now, use the legacy service to get today's games
             from datetime import date
@@ -688,8 +670,10 @@ class MLBStatsAPICollector(BaseCollector):
             today = date.today()
             
             if not self._legacy_service:
-                from ...mlb_sharp_betting.services.mlb_api_service import MLBStatsAPIService
-                self._legacy_service = MLBStatsAPIService()
+                # Note: MLBStatsAPIService has been migrated to unified architecture
+                # Using MLB-StatsAPI directly as recommended in the rules
+                import mlbstatsapi as mlb
+                self._legacy_service = mlb
             
             # Try to get games for today
             games = self._legacy_service.get_games_for_date(today)

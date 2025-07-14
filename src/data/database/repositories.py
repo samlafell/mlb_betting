@@ -926,3 +926,16 @@ class UnifiedRepository:
                 error=e
             )
             raise 
+
+
+# Factory function for unified repository
+def get_unified_repository() -> UnifiedRepository:
+    """
+    Factory function to create a UnifiedRepository instance.
+    
+    Returns:
+        UnifiedRepository: Configured repository instance
+    """
+    from .connection import get_connection
+    connection = get_connection()
+    return UnifiedRepository(connection)

@@ -498,16 +498,17 @@ class DataCommands:
         try:
             console.print(f"🔄 [blue]Running unified {source_name} collector...[/blue]")
             
-            # Import unified services
-            from src.services.data.unified_data_service import UnifiedDataService, DataSource, CollectionRequest
+            # Import enhanced data service which has proper collection methods
+            from src.services.data.enhanced_data_service import EnhancedDataService, DataSourceType
+            from src.data.collection.base import DataSource, CollectionRequest
             
-            # Map source names to DataSource enum
+            # Map source names to DataSourceType enum
             source_mapping = {
-                'action_network': DataSource.ACTION_NETWORK,
-                'sports_betting_report': DataSource.SPORTS_BETTING_REPORT,
-                'sportsbookreview': DataSource.SPORTS_BETTING_REPORT,
-                'vsin': DataSource.VSIN,
-                'sbd': DataSource.SBD
+                'action_network': DataSourceType.ACTION_NETWORK,
+                'sports_betting_report': DataSourceType.SPORTSBOOKREVIEW,
+                'sportsbookreview': DataSourceType.SPORTSBOOKREVIEW,
+                'vsin': DataSourceType.VSIN,
+                'sbd': DataSourceType.SBD
             }
             
             data_source = source_mapping.get(source_name)
@@ -515,37 +516,37 @@ class DataCommands:
                 console.print(f"❌ [red]Unknown data source: {source_name}[/red]")
                 return {"status": "failed", "error": f"Unknown data source: {source_name}"}
             
-            # Initialize unified data service
-            service = UnifiedDataService()
+            # Initialize enhanced data service
+            service = EnhancedDataService()
             
-            # Create collection request
-            request = CollectionRequest(
-                source=data_source,
-                date_option="today",
-                test_mode=test_mode
-            )
+            # Collect data using enhanced service
+            results = await service.collect_all_sources(sport="mlb")
             
-            # Collect data using unified service
-            result = await service.collect_from_source(data_source, request)
+            # Filter results for the specific source
+            result = None
+            for collection_result in results:
+                if collection_result.source == data_source:
+                    result = collection_result
+                    break
             
-            if result.success:
-                console.print(f"✅ [green]{source_name.upper()} unified collection successful[/green]")
+            if result and result.success:
+                console.print(f"✅ [green]{source_name.upper()} enhanced collection successful[/green]")
                 summary = (
                     f"Records collected: {result.records_collected}\n"
-                    f"Valid records: {result.records_valid}\n"
-                    f"Success rate: {result.success_rate:.1f}%\n"
-                    f"Duration: {result.duration_seconds:.2f}s"
+                    f"Records stored: {result.records_stored}\n"
+                    f"Data quality: {result.data_quality.value}\n"
+                    f"Duration: {result.execution_time_seconds:.2f}s"
                 )
                 return {
                     "status": "success", 
                     "output": summary,
                     "records_collected": result.records_collected,
-                    "records_valid": result.records_valid,
-                    "duration": result.duration_seconds
+                    "records_stored": result.records_stored,
+                    "duration": result.execution_time_seconds
                 }
             else:
-                console.print(f"❌ [red]{source_name.upper()} unified collection failed[/red]")
-                error_msg = "; ".join(result.errors) if result.errors else "Unknown error"
+                console.print(f"❌ [red]{source_name.upper()} enhanced collection failed[/red]")
+                error_msg = "; ".join(result.errors) if result and result.errors else f"No data collected for {source_name}"
                 return {"status": "failed", "error": error_msg}
 
         except Exception as e:

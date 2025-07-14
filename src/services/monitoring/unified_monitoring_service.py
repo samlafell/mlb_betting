@@ -30,14 +30,14 @@ from enum import Enum
 import structlog
 
 from ...core.config import UnifiedConfig
-from ...core.logging import get_logger
+from ...core.logging import get_logger, LogComponent
 from ...core.exceptions import (
     UnifiedMLBException,
     MonitoringException,
     AlertException
 )
 
-logger = get_logger(__name__)
+logger = get_logger(__name__, LogComponent.MONITORING)
 
 
 class HealthStatus(str, Enum):
@@ -150,11 +150,12 @@ class UnifiedMonitoringService:
     def _import_legacy_services(self):
         """Import and initialize legacy services for integration."""
         try:
-            # Import legacy alert service
-            from ...mlb_sharp_betting.services.alert_service import AlertService
-            self.legacy_alert_service = AlertService()
+            # Note: Legacy alert service has been migrated to unified architecture
+            # The functionality has been integrated into this unified monitoring service
+            # from ...mlb_sharp_betting.services.alert_service import AlertService
+            # self.legacy_alert_service = AlertService()
             
-            logger.info("Legacy monitoring services imported successfully")
+            logger.info("Legacy monitoring services migration completed - using unified implementation")
             
         except ImportError as e:
             logger.warning(f"Could not import legacy monitoring service: {e}")

@@ -18,7 +18,7 @@ from typing import Dict, List, Type, Optional, Any, Set
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from src.core.logging import get_logger
+from src.core.logging import get_logger, LogComponent
 from src.core.exceptions import StrategyError, ConfigurationError
 from src.data.database import UnifiedRepository
 from src.analysis.strategies.base import BaseStrategyProcessor
@@ -308,7 +308,7 @@ class StrategyFactory:
         """
         self.repository = repository
         self.config = config
-        self.logger = get_logger(__name__)
+        self.logger = get_logger(__name__, LogComponent.STRATEGY)
         
         # Strategy management
         self._strategy_cache: Dict[str, Type[BaseStrategyProcessor]] = {}
@@ -512,10 +512,10 @@ class StrategyFactory:
             # Legacy strategies may need different constructor parameters
             # This is a simplified approach - in practice, we'd need more sophisticated mapping
             
-            # Mock legacy dependencies for compatibility
-            from src.mlb_sharp_betting.services.betting_signal_repository import BettingSignalRepository
-            from src.mlb_sharp_betting.services.strategy_validation import StrategyValidation
-            from src.mlb_sharp_betting.models.betting_analysis import SignalProcessorConfig
+            # Note: Legacy dependencies have been migrated to unified architecture
+            # These imports are commented out as the services are now in the unified structure
+            # from src.services.strategy.strategy_manager_service import StrategyManagerService
+            # from src.analysis.models.unified_models import SignalProcessorConfig
             
             # Create mock legacy dependencies
             mock_repository = None  # Would create actual mock

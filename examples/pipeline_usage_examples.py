@@ -5,9 +5,9 @@ These examples demonstrate the enhanced CLI commands and pipeline orchestration 
 """
 
 import asyncio
-from mlb_sharp_betting.services.pipeline_orchestrator import PipelineOrchestrator
-from mlb_sharp_betting.services.backtesting_engine import get_backtesting_engine
-from mlb_sharp_betting.db.connection import get_db_manager
+from src.services.orchestration.pipeline_orchestration_service import PipelineOrchestrationService
+from src.analysis.backtesting.engine import create_recommendation_backtesting_engine
+from src.data.database.connection import get_db_manager
 
 
 async def example_smart_pipeline():
@@ -17,7 +17,7 @@ async def example_smart_pipeline():
     print("=" * 50)
     
     db_manager = get_db_manager()
-    orchestrator = PipelineOrchestrator(db_manager)
+    orchestrator = PipelineOrchestrationService(db_manager)
     
     try:
         # First, get recommendations
@@ -106,9 +106,9 @@ async def example_data_freshness_check():
         await backtesting_engine.initialize()
         
         # Check data freshness
-        from mlb_sharp_betting.services.data_service import get_data_service
-        from mlb_sharp_betting.db.connection import get_db_manager
-        data_service = get_data_service(get_db_manager())
+        from src.services.data.enhanced_data_service import EnhancedDataService
+        from src.data.database.connection import get_db_manager
+        data_service = EnhancedDataService(get_db_manager())
         freshness_check = await data_service.check_data_freshness()
         
         print(f"📅 Data age: {freshness_check.get('data_age_hours', 0):.1f} hours")
@@ -168,7 +168,8 @@ async def example_backtesting_engine_features():
     print("🔬 BACKTESTING ENGINE FEATURES EXAMPLE")
     print("=" * 50)
     
-    backtesting_engine = get_backtesting_engine()
+    repository = get_db_manager()
+    backtesting_engine = create_recommendation_backtesting_engine(repository)
     
     try:
         await backtesting_engine.initialize()

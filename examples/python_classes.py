@@ -298,11 +298,10 @@ Demonstrates how to use the StrategyProcessorFactory to load and utilize
 multiple betting strategy processors for comprehensive bet detection.
 """
 
-from src.mlb_sharp_betting.analysis.processors.strategy_processor_factory import StrategyProcessorFactory
-from src.mlb_sharp_betting.services.betting_signal_repository import BettingSignalRepository
-from src.mlb_sharp_betting.services.strategy_validation import StrategyValidation
-from src.mlb_sharp_betting.models.betting_analysis import SignalProcessorConfig, ProfitableStrategy
-from src.mlb_sharp_betting.db.connection import get_db_connection
+# Note: These legacy services have been migrated to the unified architecture
+# from src.analysis.strategies.factory import StrategyFactory
+# from src.services.strategy.strategy_manager_service import StrategyManagerService
+# from src.data.database.connection import get_db_connection
 
 
 async def demonstrate_multiple_processors():

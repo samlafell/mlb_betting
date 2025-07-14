@@ -17,14 +17,18 @@ This package provides:
 Part of Phase 3: Strategy Integration - Unified Architecture Migration
 """
 
-from .engine import UnifiedBacktestingEngine
-from .analyzer import PerformanceAnalyzer
-from .comparator import StrategyComparator
-from .orchestrator import BacktestingOrchestrator
+from .engine import (
+    RecommendationBasedBacktestingEngine,
+    RecommendationBacktestConfig,
+    RecommendationBacktestResult,
+    BacktestStatus,
+    BetOutcome
+)
 
 __all__ = [
-    "UnifiedBacktestingEngine",
-    "PerformanceAnalyzer",
-    "StrategyComparator",
-    "BacktestingOrchestrator"
+    "RecommendationBasedBacktestingEngine",
+    "RecommendationBacktestConfig", 
+    "RecommendationBacktestResult",
+    "BacktestStatus",
+    "BetOutcome"
 ] 

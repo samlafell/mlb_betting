@@ -24,7 +24,7 @@ from decimal import Decimal
 from enum import Enum
 import pytz
 
-from src.core.logging import get_logger
+from src.core.logging import get_logger, LogComponent
 from src.core.exceptions import StrategyError, ValidationError
 from src.data.database import UnifiedRepository
 from src.analysis.models.unified_models import (
@@ -83,7 +83,7 @@ class BaseStrategyProcessor(ABC):
         """
         self.repository = repository
         self.config = config
-        self.logger = get_logger(self.__class__.__name__)
+        self.logger = get_logger(self.__class__.__name__, LogComponent.STRATEGY)
         self.est = pytz.timezone('US/Eastern')
         
         # Processing state

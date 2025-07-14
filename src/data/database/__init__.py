@@ -46,6 +46,7 @@ from .repositories import (
     BettingAnalysisRepository,
     SharpDataRepository,
     UnifiedRepository,
+    get_unified_repository,
     GameCreateSchema,
     GameUpdateSchema,
     OddsCreateSchema,

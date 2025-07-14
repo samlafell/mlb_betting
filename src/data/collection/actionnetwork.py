@@ -49,6 +49,37 @@ class ActionNetworkHistoryParser:
             Processed ActionNetworkHistoricalData or None if parsing fails
         """
         try:
+            # Log the raw response for debugging
+            self.logger.info("Raw API response received", 
+                           response_type=type(response_data).__name__,
+                           response_keys=list(response_data.keys()) if isinstance(response_data, dict) else "N/A",
+                           response_length=len(response_data) if isinstance(response_data, (list, dict)) else "N/A")
+            
+            # Handle both list and dict response formats
+            if isinstance(response_data, dict):
+                # If it's a dict, try to extract the list from common keys
+                if 'data' in response_data:
+                    response_data = response_data['data']
+                elif 'history' in response_data:
+                    response_data = response_data['history']
+                elif 'results' in response_data:
+                    response_data = response_data['results']
+                else:
+                    # Check if the dict has numeric keys (sportsbook IDs)
+                    # This is the new format where keys are sportsbook IDs
+                    if all(key.isdigit() for key in response_data.keys()):
+                        self.logger.info("Detected sportsbook ID format", 
+                                       sportsbook_ids=list(response_data.keys()))
+                        # Extract historical data from each sportsbook
+                        historical_entries = []
+                        for sportsbook_id, sportsbook_data in response_data.items():
+                            if isinstance(sportsbook_data, dict) and 'event' in sportsbook_data:
+                                historical_entries.append(sportsbook_data)
+                        response_data = historical_entries
+                    else:
+                        # If it's a single dict entry, wrap it in a list
+                        response_data = [response_data]
+            
             # Validate response structure
             if not isinstance(response_data, list):
                 self.logger.error("Expected list response from history API",
@@ -144,47 +175,86 @@ class ActionNetworkHistoryParser:
             if not market_data:
                 return None
             
-            # Extract pricing data
-            home_price = None
-            away_price = None
-            line_value = None
-            
-            if market_type == 'moneyline':
-                # Moneyline has home and away prices
-                home_odds = market_data.get('home', {})
-                away_odds = market_data.get('away', {})
+            # Handle both dict and list formats
+            if isinstance(market_data, list):
+                # New format: market_data is a list of betting lines
+                # Find home and away sides
+                home_line = None
+                away_line = None
                 
-                if home_odds:
+                for line in market_data:
+                    if line.get('side') == 'home':
+                        home_line = line
+                    elif line.get('side') == 'away':
+                        away_line = line
+                    elif line.get('side') == 'over' and market_type == 'total':
+                        home_line = line  # Treat "over" as home for totals
+                    elif line.get('side') == 'under' and market_type == 'total':
+                        away_line = line  # Treat "under" as away for totals
+                
+                # Extract pricing data
+                home_price = None
+                away_price = None
+                line_value = None
+                
+                if home_line:
                     home_price = ActionNetworkPrice(
-                        decimal=home_odds.get('decimal'),
-                        american=home_odds.get('american')
+                        decimal=None,  # Not provided in this format
+                        american=home_line.get('odds')
                     )
+                    if market_type in ['spread', 'total']:
+                        line_value = home_line.get('value')
                 
-                if away_odds:
+                if away_line:
                     away_price = ActionNetworkPrice(
-                        decimal=away_odds.get('decimal'),
-                        american=away_odds.get('american')
+                        decimal=None,  # Not provided in this format
+                        american=away_line.get('odds')
                     )
-            
-            elif market_type in ['spread', 'total']:
-                # Spread and total have line values and pricing
-                line_value = market_data.get('line') or market_data.get('value')
+                    if market_type in ['spread', 'total'] and not line_value:
+                        line_value = away_line.get('value')
                 
-                # Extract pricing (may be in different formats)
-                home_odds = market_data.get('home', {}) or market_data.get('over', {})
-                away_odds = market_data.get('away', {}) or market_data.get('under', {})
+            else:
+                # Legacy format: market_data is a dict
+                home_price = None
+                away_price = None
+                line_value = None
                 
-                if home_odds:
-                    home_price = ActionNetworkPrice(
-                        decimal=home_odds.get('decimal'),
-                        american=home_odds.get('american')
-                    )
+                if market_type == 'moneyline':
+                    # Moneyline has home and away prices
+                    home_odds = market_data.get('home', {})
+                    away_odds = market_data.get('away', {})
+                    
+                    if home_odds:
+                        home_price = ActionNetworkPrice(
+                            decimal=home_odds.get('decimal'),
+                            american=home_odds.get('american')
+                        )
+                    
+                    if away_odds:
+                        away_price = ActionNetworkPrice(
+                            decimal=away_odds.get('decimal'),
+                            american=away_odds.get('american')
+                        )
                 
-                if away_odds:
-                    away_price = ActionNetworkPrice(
-                        decimal=away_odds.get('decimal'),
-                        american=away_odds.get('american')
-                    )
+                elif market_type in ['spread', 'total']:
+                    # Spread and total have line values and pricing
+                    line_value = market_data.get('line') or market_data.get('value')
+                    
+                    # Extract pricing (may be in different formats)
+                    home_odds = market_data.get('home', {}) or market_data.get('over', {})
+                    away_odds = market_data.get('away', {}) or market_data.get('under', {})
+                    
+                    if home_odds:
+                        home_price = ActionNetworkPrice(
+                            decimal=home_odds.get('decimal'),
+                            american=home_odds.get('american')
+                        )
+                    
+                    if away_odds:
+                        away_price = ActionNetworkPrice(
+                            decimal=away_odds.get('decimal'),
+                            american=away_odds.get('american')
+                        )
             
             # Create market data object
             return ActionNetworkMarketData(

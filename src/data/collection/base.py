@@ -150,7 +150,7 @@ class BaseCollector(ABC):
             source=self.source,
             start_time=datetime.now()
         )
-        self.logger = logger.bind(source=self.source.value)
+        self.logger = logger.bind(source=self.source)  # Remove .value since source is already a string
         
     async def __aenter__(self):
         """Async context manager entry."""
@@ -176,7 +176,7 @@ class BaseCollector(ABC):
         if self.session:
             await self.session.close()
             self.session = None
-        self.logger.info("Collector cleaned up", source=self.source.value)
+        self.logger.info("Collector cleaned up", source=self.source)  # Remove .value since source is already a string
     
     @abstractmethod
     async def collect_data(self, request: CollectionRequest) -> List[Dict[str, Any]]:

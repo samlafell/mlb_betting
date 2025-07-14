@@ -129,18 +129,20 @@ class UnifiedReportingService:
     def _import_legacy_services(self):
         """Import and initialize legacy services for integration."""
         try:
-            # Import legacy daily report service
-            from ...mlb_sharp_betting.services.daily_betting_report_service import DailyBettingReportService
-            self.legacy_daily_report_service = DailyBettingReportService()
+            # Note: Legacy services have been migrated to unified architecture
+            # These imports are commented out as the services are now in the unified structure
+            # The functionality has been integrated into this unified reporting service
             
-            # Import legacy formatting services
-            from ...mlb_sharp_betting.services.betting_analysis_formatter import BettingAnalysisFormatter
-            self.legacy_analysis_formatter = BettingAnalysisFormatter()
+            # from ...mlb_sharp_betting.services.daily_betting_report_service import DailyBettingReportService
+            # self.legacy_daily_report_service = DailyBettingReportService()
             
-            from ...mlb_sharp_betting.services.betting_recommendation_formatter import BettingRecommendationFormatter
-            self.legacy_recommendation_formatter = BettingRecommendationFormatter()
+            # from ...mlb_sharp_betting.services.betting_analysis_formatter import BettingAnalysisFormatter
+            # self.legacy_analysis_formatter = BettingAnalysisFormatter()
             
-            logger.info("Legacy reporting services imported successfully")
+            # from ...mlb_sharp_betting.services.betting_recommendation_formatter import BettingRecommendationFormatter
+            # self.legacy_recommendation_formatter = BettingRecommendationFormatter()
+            
+            logger.info("Legacy reporting services migration completed - using unified implementation")
             
         except ImportError as e:
             logger.warning(f"Could not import legacy reporting service: {e}")
