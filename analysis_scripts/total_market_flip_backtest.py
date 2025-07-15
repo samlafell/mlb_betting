@@ -5,19 +5,21 @@ Validates profitability of total market flips by source and book before recommen
 """
 
 import sys
-sys.path.insert(0, '../src')
+
+sys.path.insert(0, "../src")
 
 from mlb_sharp_betting.db.connection import get_db_manager
 
+
 def main():
     db_manager = get_db_manager()
-    
+
     try:
-        print('🎯 TOTAL MARKET FLIP STRATEGY - BACKTESTING BY SOURCE/BOOK')
-        print('=' * 70)
-        
+        print("🎯 TOTAL MARKET FLIP STRATEGY - BACKTESTING BY SOURCE/BOOK")
+        print("=" * 70)
+
         # Use the exact same query structure that found VSIN-Circa data earlier
-        query = '''
+        query = """
         WITH early_signals AS (
             SELECT 
                 s.game_id,
@@ -130,88 +132,114 @@ def main():
         GROUP BY source, book
         HAVING COUNT(*) >= 1  -- Lower threshold to see all data
         ORDER BY roi DESC, total_bets DESC;
-        '''
-        
+        """
+
         results = db_manager.execute_query(query, fetch=True)
-        
+
         if results:
-            print(f'🔍 Found {len(results)} source/book combinations with total flip data')
+            print(
+                f"🔍 Found {len(results)} source/book combinations with total flip data"
+            )
             print()
-            
+
             profitable_combinations = []
             unprofitable_combinations = []
-            
+
             for i, row in enumerate(results, 1):
-                source, book, combo, bets, wins, win_rate, roi, early_strength, late_strength, over_signals, under_signals, over_win_rate, under_win_rate = row
-                
+                (
+                    source,
+                    book,
+                    combo,
+                    bets,
+                    wins,
+                    win_rate,
+                    roi,
+                    early_strength,
+                    late_strength,
+                    over_signals,
+                    under_signals,
+                    over_win_rate,
+                    under_win_rate,
+                ) = row
+
                 if roi > 5:
-                    status = '🔥'
+                    status = "🔥"
                     profitable_combinations.append(combo)
                 elif roi > 0:
-                    status = '✅'
+                    status = "✅"
                     profitable_combinations.append(combo)
                 else:
-                    status = '❌'
+                    status = "❌"
                     unprofitable_combinations.append(combo)
-                
-                print(f'{status} #{i}. {combo}')
-                print(f'   📊 Performance: {wins}/{bets} ({win_rate:.1%}) | ROI: {roi:.2f}%')
-                print(f'   📈 Signal Strength: Early {early_strength:.1f}% vs Late {late_strength:.1f}%')
-                print(f'   🎯 Direction: {over_signals} OVER vs {under_signals} UNDER early signals')
+
+                print(f"{status} #{i}. {combo}")
+                print(
+                    f"   📊 Performance: {wins}/{bets} ({win_rate:.1%}) | ROI: {roi:.2f}%"
+                )
+                print(
+                    f"   📈 Signal Strength: Early {early_strength:.1f}% vs Late {late_strength:.1f}%"
+                )
+                print(
+                    f"   🎯 Direction: {over_signals} OVER vs {under_signals} UNDER early signals"
+                )
                 if over_signals > 0 and under_signals > 0:
-                    print(f'   📊 OVER Win Rate: {over_win_rate:.1%} | UNDER Win Rate: {under_win_rate:.1%}')
+                    print(
+                        f"   📊 OVER Win Rate: {over_win_rate:.1%} | UNDER Win Rate: {under_win_rate:.1%}"
+                    )
                 print()
-            
+
             # Summary
             total_profitable = len(profitable_combinations)
             total_unprofitable = len(unprofitable_combinations)
-            
-            print('🏆 TOTAL FLIP STRATEGY ASSESSMENT')
-            print('=' * 50)
-            print(f'✅ Profitable Combinations: {total_profitable}')
-            print(f'❌ Unprofitable Combinations: {total_unprofitable}')
+
+            print("🏆 TOTAL FLIP STRATEGY ASSESSMENT")
+            print("=" * 50)
+            print(f"✅ Profitable Combinations: {total_profitable}")
+            print(f"❌ Unprofitable Combinations: {total_unprofitable}")
             print()
-            
+
             if profitable_combinations:
-                print('✅ APPROVED FOR RECOMMENDATIONS:')
+                print("✅ APPROVED FOR RECOMMENDATIONS:")
                 for combo in profitable_combinations:
-                    print(f'   • {combo}')
+                    print(f"   • {combo}")
                 print()
-            
+
             if unprofitable_combinations:
-                print('❌ BANNED FROM RECOMMENDATIONS:')
+                print("❌ BANNED FROM RECOMMENDATIONS:")
                 for combo in unprofitable_combinations:
-                    print(f'   • {combo}')
+                    print(f"   • {combo}")
                 print()
-            
+
             # Generate configuration for cross-market detector
-            print('⚙️ CONFIGURATION FOR CROSS-MARKET DETECTOR:')
-            print('```python')
-            print('TOTAL_FLIP_APPROVED_COMBINATIONS = {')
+            print("⚙️ CONFIGURATION FOR CROSS-MARKET DETECTOR:")
+            print("```python")
+            print("TOTAL_FLIP_APPROVED_COMBINATIONS = {")
             for combo in profitable_combinations:
                 print(f'    "{combo}": True,')
-            print('}')
+            print("}")
             print()
-            print('TOTAL_FLIP_BANNED_COMBINATIONS = {')
+            print("TOTAL_FLIP_BANNED_COMBINATIONS = {")
             for combo in unprofitable_combinations:
                 print(f'    "{combo}": True,')
-            print('}')
-            print('```')
-            
+            print("}")
+            print("```")
+
         else:
-            print('❌ No total flip patterns detected in recent data')
-            print('💡 This could indicate:')
-            print('   • Total markets are more efficient')
-            print('   • Signal thresholds may be too strict')
-            print('   • Need longer data collection period')
-            
+            print("❌ No total flip patterns detected in recent data")
+            print("💡 This could indicate:")
+            print("   • Total markets are more efficient")
+            print("   • Signal thresholds may be too strict")
+            print("   • Need longer data collection period")
+
     except Exception as e:
         print(f"❌ Backtest failed: {e}")
         import traceback
+
         traceback.print_exc()
-        
+
     finally:
         db_manager.close()
 
+
 if __name__ == "__main__":
-    main() 
+    main()

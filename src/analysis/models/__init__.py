@@ -6,10 +6,10 @@ Consolidates and enhances models from the legacy mlb_sharp_betting system.
 """
 
 from .unified_models import (
+    CrossStrategyComparison,
     UnifiedBettingSignal,
-    UnifiedStrategyData,
     UnifiedPerformanceMetrics,
-    CrossStrategyComparison
+    UnifiedStrategyData,
 )
 
 __all__ = [
@@ -17,5 +17,5 @@ __all__ = [
     "UnifiedBettingSignal",
     "UnifiedStrategyData",
     "UnifiedPerformanceMetrics",
-    "CrossStrategyComparison"
-] 
+    "CrossStrategyComparison",
+]

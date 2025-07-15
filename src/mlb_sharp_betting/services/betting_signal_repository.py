@@ -7,9 +7,9 @@ This service provides data for various betting signal processors and strategies.
 🚀 PHASE 2B: Updated to use table registry for dynamic table resolution
 """
 
-import asyncio
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from datetime import datetime
+from typing import Any
+
 import structlog
 
 from ..db.connection import get_db_manager
@@ -20,68 +20,70 @@ logger = structlog.get_logger(__name__)
 
 class BettingSignalRepository:
     """Repository for betting signal data operations."""
-    
-    def __init__(self, config: Optional[Dict] = None):
+
+    def __init__(self, config: dict | None = None):
         """Initialize the repository with optional configuration."""
         self.coordinator = get_db_manager()
         self.config = config or {}
         self.logger = logger.bind(service="betting_signal_repository")
-        
+
         # 🚀 PHASE 2B: Initialize table registry for dynamic table resolution
         self.table_registry = get_table_registry()
-        
+
         # Performance tracking
-        self._call_stats = {
-            'database_calls': 0,
-            'cache_hits': 0,
-            'total_calls': 0
-        }
-        
+        self._call_stats = {"database_calls": 0, "cache_hits": 0, "total_calls": 0}
+
         # Simple in-memory cache
         self._cache = {}
         self._cache_ttl = 300  # 5 minutes
-        
-        self.logger.info("🚀 BettingSignalRepository initialized with table registry support")
-    
+
+        self.logger.info(
+            "🚀 BettingSignalRepository initialized with table registry support"
+        )
+
     def _get_cache_key(self, method_name: str, *args) -> str:
         """Generate cache key for method and arguments."""
         return f"{method_name}_{hash(str(args))}"
-    
-    def _get_from_cache(self, cache_key: str) -> Optional[Any]:
+
+    def _get_from_cache(self, cache_key: str) -> Any | None:
         """Get data from cache if not expired."""
         if cache_key in self._cache:
             data, timestamp = self._cache[cache_key]
             if datetime.now().timestamp() - timestamp < self._cache_ttl:
-                self._call_stats['cache_hits'] += 1
+                self._call_stats["cache_hits"] += 1
                 return data
             else:
                 del self._cache[cache_key]
         return None
-    
+
     def _set_cache(self, cache_key: str, data: Any) -> None:
         """Set data in cache with current timestamp."""
         self._cache[cache_key] = (data, datetime.now().timestamp())
-    
-    async def get_sharp_signal_data(self, start_time: datetime, end_time: datetime) -> List[Dict]:
+
+    async def get_sharp_signal_data(
+        self, start_time: datetime, end_time: datetime
+    ) -> list[dict]:
         """
         Get raw sharp signal data for analysis
-        
+
         🚀 ENHANCED: Added intelligent caching to reduce database calls
         🚀 PHASE 2B: Updated to use table registry for table resolution
         """
         # Check cache first
-        cache_key = self._get_cache_key('get_sharp_signal_data', start_time, end_time)
+        cache_key = self._get_cache_key("get_sharp_signal_data", start_time, end_time)
         cached_data = self._get_from_cache(cache_key)
         if cached_data is not None:
             return cached_data
-        
+
         # 🚀 PERFORMANCE LOG: Track database calls
-        self._call_stats['database_calls'] += 1
-        self.logger.info(f"🗄️  Fetching sharp signal data from database (time window: {start_time.strftime('%H:%M')} to {end_time.strftime('%H:%M')})")
-        
+        self._call_stats["database_calls"] += 1
+        self.logger.info(
+            f"🗄️  Fetching sharp signal data from database (time window: {start_time.strftime('%H:%M')} to {end_time.strftime('%H:%M')})"
+        )
+
         # 🚀 PHASE 2B: Get table name from registry
-        raw_splits_table = self.table_registry.get_table('raw_betting_splits')
-        
+        raw_splits_table = self.table_registry.get_table("raw_betting_splits")
+
         query = f"""
         WITH valid_splits AS (
             SELECT 
@@ -116,27 +118,31 @@ class BettingSignalRepository:
         WHERE rn = 1
         ORDER BY ABS(differential) DESC
         """
-        
-        min_differential = self.config.get('minimum_differential', 10.0)
-        
-        results = self.coordinator.execute_read(query, (start_time, end_time, min_differential))
-        
+
+        min_differential = self.config.get("minimum_differential", 10.0)
+
+        results = self.coordinator.execute_read(
+            query, (start_time, end_time, min_differential)
+        )
+
         # Cache results
         self._set_cache(cache_key, results)
-        
+
         return results or []
-    
-    async def get_betting_signal_data(self, start_time: datetime, end_time: datetime) -> List[Dict]:
+
+    async def get_betting_signal_data(
+        self, start_time: datetime, end_time: datetime
+    ) -> list[dict]:
         """
         Get comprehensive betting signal data for all signal types
-        
+
         🚀 PHASE 2B: Updated to use table registry for table resolution
         """
-        min_differential = self.config.get('minimum_differential', 10.0)
-        
+        min_differential = self.config.get("minimum_differential", 10.0)
+
         # 🚀 PHASE 2B: Get table name from registry
-        raw_splits_table = self.table_registry.get_table('raw_betting_splits')
-        
+        raw_splits_table = self.table_registry.get_table("raw_betting_splits")
+
         # Single optimized query for all signal types
         query = f"""
         WITH valid_splits AS (
@@ -177,14 +183,21 @@ class BettingSignalRepository:
         WHERE ABS(differential) >= %s
         ORDER BY split_type, ABS(differential) DESC
         """
-        
-        return self.coordinator.execute_read(query, (start_time, end_time, min_differential)) or []
-    
-    async def get_line_movement_data(self, start_time: datetime, end_time: datetime) -> List[Dict]:
+
+        return (
+            self.coordinator.execute_read(
+                query, (start_time, end_time, min_differential)
+            )
+            or []
+        )
+
+    async def get_line_movement_data(
+        self, start_time: datetime, end_time: datetime
+    ) -> list[dict]:
         """Get line movement data for line movement processor"""
         # 🚀 PHASE 2B: Get table name from registry
-        raw_splits_table = self.table_registry.get_table('raw_betting_splits')
-        
+        raw_splits_table = self.table_registry.get_table("raw_betting_splits")
+
         query = f"""
         WITH time_ordered_splits AS (
             SELECT 
@@ -216,14 +229,16 @@ class BettingSignalRepository:
           AND split_value != prev_split_value
         ORDER BY ABS(differential) DESC
         """
-        
+
         return self.coordinator.execute_read(query, (start_time, end_time)) or []
-    
-    async def get_opposing_markets_data(self, start_time: datetime, end_time: datetime) -> List[Dict]:
+
+    async def get_opposing_markets_data(
+        self, start_time: datetime, end_time: datetime
+    ) -> list[dict]:
         """Get opposing markets data where ML and spread signals conflict"""
         # 🚀 PHASE 2B: Get table name from registry
-        raw_splits_table = self.table_registry.get_table('raw_betting_splits')
-        
+        raw_splits_table = self.table_registry.get_table("raw_betting_splits")
+
         query = f"""
         WITH latest_splits AS (
             SELECT 
@@ -294,16 +309,23 @@ class BettingSignalRepository:
         WHERE ml.ml_rec_team != sp.spread_rec_team
         ORDER BY combined_strength DESC
         """
-        
-        max_differential = self.config.get('max_opposing_differential', 40.0)
-        
-        return self.coordinator.execute_read(query, (start_time, end_time, max_differential, max_differential)) or []
-    
-    async def get_book_conflicts_data(self, start_time: datetime, end_time: datetime) -> List[Dict]:
+
+        max_differential = self.config.get("max_opposing_differential", 40.0)
+
+        return (
+            self.coordinator.execute_read(
+                query, (start_time, end_time, max_differential, max_differential)
+            )
+            or []
+        )
+
+    async def get_book_conflicts_data(
+        self, start_time: datetime, end_time: datetime
+    ) -> list[dict]:
         """Get book conflicts data where different books have opposing signals"""
         # 🚀 PHASE 2B: Get table name from registry
-        raw_splits_table = self.table_registry.get_table('raw_betting_splits')
-        
+        raw_splits_table = self.table_registry.get_table("raw_betting_splits")
+
         query = f"""
         WITH latest_splits AS (
             SELECT 
@@ -353,80 +375,91 @@ class BettingSignalRepository:
           AND SIGN(ls1.differential) != SIGN(ls2.differential)  -- Opposing signals
         ORDER BY conflict_strength DESC
         """
-        
-        min_differential = self.config.get('minimum_differential', 10.0)
-        
-        return self.coordinator.execute_read(query, (start_time, end_time, min_differential, min_differential)) or []
-    
-    async def get_strategy_performance_data(self) -> List[Dict]:
+
+        min_differential = self.config.get("minimum_differential", 10.0)
+
+        return (
+            self.coordinator.execute_read(
+                query, (start_time, end_time, min_differential, min_differential)
+            )
+            or []
+        )
+
+    async def get_strategy_performance_data(self) -> list[dict]:
         """Get latest strategy performance data for validation"""
         # 🚀 PHASE 2B: Get table name from registry
-        strategy_performance_table = self.table_registry.get_table('strategy_performance')
-        
+        strategy_performance_table = self.table_registry.get_table(
+            "strategy_performance"
+        )
+
         query = f"""
         SELECT strategy_name, win_rate, roi, total_bets, confidence_score, last_updated
         FROM {strategy_performance_table}
         WHERE backtest_date = (SELECT MAX(backtest_date) FROM {strategy_performance_table})
         ORDER BY roi DESC
         """
-        
+
         return self.coordinator.execute_read(query, []) or []
-    
-    async def get_data_quality_metrics(self) -> Dict[str, Any]:
+
+    async def get_data_quality_metrics(self) -> dict[str, Any]:
         """Get data quality metrics for monitoring"""
         # 🚀 PHASE 2B: Get table name from registry
-        raw_splits_table = self.table_registry.get_table('raw_betting_splits')
-        
+        raw_splits_table = self.table_registry.get_table("raw_betting_splits")
+
         # Get basic counts and quality metrics
         queries = {
-            'total_records': f"SELECT COUNT(*) FROM {raw_splits_table}",
-            'recent_records': f"""
+            "total_records": f"SELECT COUNT(*) FROM {raw_splits_table}",
+            "recent_records": f"""
                 SELECT COUNT(*) FROM {raw_splits_table}
                 WHERE last_updated >= NOW() - INTERVAL '24 hours'
             """,
-            'null_percentages': f"""
+            "null_percentages": f"""
                 SELECT COUNT(*) FROM {raw_splits_table}
                 WHERE home_or_over_stake_percentage IS NULL 
                    OR home_or_over_bets_percentage IS NULL
             """,
-            'zero_values': f"""
+            "zero_values": f"""
                 SELECT COUNT(*) FROM {raw_splits_table}
                 WHERE home_or_over_stake_percentage = 0 
                   AND home_or_over_bets_percentage = 0
             """,
-            'sources': f"""
+            "sources": f"""
                 SELECT source, COUNT(*) as count 
                 FROM {raw_splits_table}
                 WHERE last_updated >= NOW() - INTERVAL '24 hours'
                 GROUP BY source
             """,
-            'split_types': f"""
+            "split_types": f"""
                 SELECT split_type, COUNT(*) as count 
                 FROM {raw_splits_table}
                 WHERE last_updated >= NOW() - INTERVAL '24 hours'
                 GROUP BY split_type
-            """
+            """,
         }
-        
+
         metrics = {}
         for metric_name, query in queries.items():
             try:
                 result = self.coordinator.execute_read(query, [])
-                if metric_name in ['sources', 'split_types']:
-                    metrics[metric_name] = {row[0]: row[1] for row in result} if result else {}
+                if metric_name in ["sources", "split_types"]:
+                    metrics[metric_name] = (
+                        {row[0]: row[1] for row in result} if result else {}
+                    )
                 else:
                     metrics[metric_name] = result[0][0] if result and result[0] else 0
             except Exception as e:
                 self.logger.error(f"Failed to get metric {metric_name}", error=str(e))
                 metrics[metric_name] = 0
-        
+
         return metrics
-    
-    async def get_public_betting_data(self, start_time: datetime, end_time: datetime) -> List[Dict]:
+
+    async def get_public_betting_data(
+        self, start_time: datetime, end_time: datetime
+    ) -> list[dict]:
         """Get public betting data for fade opportunities"""
         # 🚀 PHASE 2B: Get table name from registry
-        raw_splits_table = self.table_registry.get_table('raw_betting_splits')
-        
+        raw_splits_table = self.table_registry.get_table("raw_betting_splits")
+
         query = f"""
         WITH latest_splits AS (
             SELECT 
@@ -463,14 +496,16 @@ class BettingSignalRepository:
         WHERE rn = 1
         ORDER BY ABS(differential) DESC
         """
-        
+
         return self.coordinator.execute_read(query, (start_time, end_time)) or []
 
-    async def get_underdog_value_data(self, start_time: datetime, end_time: datetime) -> List[Dict]:
+    async def get_underdog_value_data(
+        self, start_time: datetime, end_time: datetime
+    ) -> list[dict]:
         """Get underdog value data for underdog value processor"""
         # 🚀 PHASE 2B: Get table name from registry
-        raw_splits_table = self.table_registry.get_table('raw_betting_splits')
-        
+        raw_splits_table = self.table_registry.get_table("raw_betting_splits")
+
         query = f"""
         WITH latest_moneyline AS (
             SELECT 
@@ -501,19 +536,21 @@ class BettingSignalRepository:
         WHERE rn = 1
         ORDER BY ABS(differential) DESC
         """
-        
+
         return self.coordinator.execute_read(query, (start_time, end_time)) or []
 
-    async def get_hybrid_sharp_data(self, start_time: datetime, end_time: datetime) -> List[Dict]:
+    async def get_hybrid_sharp_data(
+        self, start_time: datetime, end_time: datetime
+    ) -> list[dict]:
         """Get hybrid sharp data with line movement calculations"""
         # Ensure minimum_differential has a default value
-        min_diff = getattr(self.config, 'minimum_differential', 10.0)
-        
+        min_diff = getattr(self.config, "minimum_differential", 10.0)
+
         # 🚀 PHASE 2B: Get table names from registry
-        raw_splits_table = self.table_registry.get_table('raw_betting_splits')
-        game_outcomes_table = self.table_registry.get_table('game_outcomes')
-        
-        query = f"""
+        raw_splits_table = self.table_registry.get_table("raw_betting_splits")
+        game_outcomes_table = self.table_registry.get_table("game_outcomes")
+
+        query = rf"""
         WITH comprehensive_data AS (
             SELECT 
                 rmbs.game_id,
@@ -590,16 +627,22 @@ class BettingSignalRepository:
         WHERE ABS(differential) >= %s
         ORDER BY ABS(differential) DESC, ABS(COALESCE(current_line - previous_line, 0)) DESC
         """
-        
-        return self.coordinator.execute_read(query, (start_time, end_time, min_diff)) or []
-    
-    def get_performance_stats(self) -> Dict[str, Any]:
+
+        return (
+            self.coordinator.execute_read(query, (start_time, end_time, min_diff)) or []
+        )
+
+    def get_performance_stats(self) -> dict[str, Any]:
         """Get performance statistics for the repository."""
-        self._call_stats['total_calls'] = self._call_stats['database_calls'] + self._call_stats['cache_hits']
-        cache_hit_rate = (self._call_stats['cache_hits'] / max(self._call_stats['total_calls'], 1)) * 100
-        
+        self._call_stats["total_calls"] = (
+            self._call_stats["database_calls"] + self._call_stats["cache_hits"]
+        )
+        cache_hit_rate = (
+            self._call_stats["cache_hits"] / max(self._call_stats["total_calls"], 1)
+        ) * 100
+
         return {
             **self._call_stats,
-            'cache_hit_rate_percent': round(cache_hit_rate, 2),
-            'cache_size': len(self._cache)
-        } 
+            "cache_hit_rate_percent": round(cache_hit_rate, 2),
+            "cache_size": len(self._cache),
+        }

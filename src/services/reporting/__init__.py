@@ -17,16 +17,16 @@ New Unified Services:
 - PerformanceReportingService: Strategy performance and analytics reporting
 """
 
-from .unified_reporting_service import UnifiedReportingService
 from .dashboard_service import DashboardService
 from .export_service import ExportService
-from .report_scheduling_service import ReportSchedulingService
 from .performance_reporting_service import PerformanceReportingService
+from .report_scheduling_service import ReportSchedulingService
+from .unified_reporting_service import UnifiedReportingService
 
 __all__ = [
-    'UnifiedReportingService',
-    'DashboardService',
-    'ExportService',
-    'ReportSchedulingService',
-    'PerformanceReportingService'
-] 
+    "UnifiedReportingService",
+    "DashboardService",
+    "ExportService",
+    "ReportSchedulingService",
+    "PerformanceReportingService",
+]

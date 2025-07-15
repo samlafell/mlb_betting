@@ -1,14 +1,14 @@
 """Team name mapping utilities."""
 
-from typing import Dict, Optional
+
 from ..models.game import Team
 
 
 class TeamMapper:
     """Utility for mapping team names across different data sources."""
-    
+
     # Team name mappings from various sources
-    TEAM_MAPPINGS: Dict[str, Team] = {
+    TEAM_MAPPINGS: dict[str, Team] = {
         # Team names (full names)
         "yankees": Team.NYY,
         "red sox": Team.BOS,
@@ -40,7 +40,6 @@ class TeamMapper:
         "mets": Team.NYM,
         "reds": Team.CIN,
         "cardinals": Team.STL,
-        
         # Team abbreviations/codes
         "nyy": Team.NYY,
         "bos": Team.BOS,
@@ -74,19 +73,19 @@ class TeamMapper:
         "cin": Team.CIN,
         "stl": Team.STL,
     }
-    
+
     @classmethod
-    def map_team_name(cls, name: str) -> Optional[Team]:
+    def map_team_name(cls, name: str) -> Team | None:
         """Map team name string to Team enum."""
         normalized = name.lower().strip()
         return cls.TEAM_MAPPINGS.get(normalized)
-    
+
     @classmethod
     def get_team_abbreviation(cls, team: Team) -> str:
         """Get standard team abbreviation."""
         # TODO: Implement abbreviation mapping
         return team.name[:3]
-    
+
     @classmethod
     def add_mapping(cls, name: str, team: Team) -> None:
         """Add new team name mapping."""

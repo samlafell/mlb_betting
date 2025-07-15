@@ -15,13 +15,13 @@ New Unified Services:
 """
 
 from .pipeline_orchestration_service import PipelineOrchestrationService
+from .resource_orchestration_service import ResourceOrchestrationService
 from .system_orchestration_service import SystemOrchestrationService
 from .task_orchestration_service import TaskOrchestrationService
-from .resource_orchestration_service import ResourceOrchestrationService
 
 __all__ = [
-    'PipelineOrchestrationService',
-    'SystemOrchestrationService',
-    'TaskOrchestrationService',
-    'ResourceOrchestrationService'
-] 
+    "PipelineOrchestrationService",
+    "SystemOrchestrationService",
+    "TaskOrchestrationService",
+    "ResourceOrchestrationService",
+]

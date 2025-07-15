@@ -15,14 +15,14 @@ New Unified Services:
 - AutomationService: Automated pipeline execution and monitoring
 """
 
-from .scheduler_engine_service import SchedulerEngineService
-from .pre_game_scheduling_service import PreGameSchedulingService
-from .task_scheduling_service import TaskSchedulingService
 from .automation_service import AutomationService
+from .pre_game_scheduling_service import PreGameSchedulingService
+from .scheduler_engine_service import SchedulerEngineService
+from .task_scheduling_service import TaskSchedulingService
 
 __all__ = [
-    'SchedulerEngineService',
-    'PreGameSchedulingService',
-    'TaskSchedulingService',
-    'AutomationService'
-] 
+    "SchedulerEngineService",
+    "PreGameSchedulingService",
+    "TaskSchedulingService",
+    "AutomationService",
+]

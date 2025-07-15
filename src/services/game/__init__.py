@@ -15,14 +15,14 @@ New Unified Services:
 - GameValidationService: Game data validation and quality assurance
 """
 
+from .game_lifecycle_service import GameLifecycleService
 from .game_manager_service import GameManagerService
 from .game_update_service import GameUpdateService
-from .game_lifecycle_service import GameLifecycleService
 from .game_validation_service import GameValidationService
 
 __all__ = [
-    'GameManagerService',
-    'GameUpdateService', 
-    'GameLifecycleService',
-    'GameValidationService'
-] 
+    "GameManagerService",
+    "GameUpdateService",
+    "GameLifecycleService",
+    "GameValidationService",
+]

@@ -2,7 +2,7 @@
 Recommendation-Based Backtesting Engine
 
 Critical improvement: This engine only backtests bets that the system would actually recommend.
-The fundamental principle: If a bet fits a strategy definition, the system recommends it, 
+The fundamental principle: If a bet fits a strategy definition, the system recommends it,
 and that's exactly what gets backtested - no more, no less.
 
 Key improvements:
@@ -21,28 +21,27 @@ Architecture:
 Part of Phase 5D: Critical Business Logic Migration - Recommendation-Based Backtesting
 """
 
-import asyncio
-import uuid
-from typing import Dict, List, Optional, Any, Tuple
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
-from dataclasses import dataclass, field
 from enum import Enum
-import numpy as np
-from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
-from src.core.logging import get_logger, LogComponent
-from src.core.exceptions import BacktestingError
-from src.data.database import UnifiedRepository
-from src.analysis.strategies.base import BaseStrategyProcessor
+import numpy as np
+
 from src.analysis.models.unified_models import (
     UnifiedBettingSignal,
-    UnifiedPerformanceMetrics
 )
+from src.analysis.strategies.base import BaseStrategyProcessor
+from src.core.exceptions import BacktestingError
+from src.core.logging import LogComponent, get_logger
+from src.data.database import UnifiedRepository
 
 
 class BacktestStatus(str, Enum):
     """Backtesting status enumeration"""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -52,6 +51,7 @@ class BacktestStatus(str, Enum):
 
 class BetOutcome(str, Enum):
     """Bet outcome enumeration"""
+
     WIN = "win"
     LOSS = "loss"
     PUSH = "push"
@@ -61,17 +61,20 @@ class BetOutcome(str, Enum):
 @dataclass
 class RecommendationBacktestConfig:
     """Configuration for recommendation-based backtesting"""
+
     backtest_id: str
-    strategy_processors: List[BaseStrategyProcessor]
+    strategy_processors: list[BaseStrategyProcessor]
     start_date: datetime
     end_date: datetime
-    initial_bankroll: Decimal = Decimal('10000')
-    bet_sizing_method: str = 'fixed'  # 'fixed', 'percentage', 'kelly'
-    fixed_bet_size: Decimal = Decimal('100')
+    initial_bankroll: Decimal = Decimal("10000")
+    bet_sizing_method: str = "fixed"  # 'fixed', 'percentage', 'kelly'
+    fixed_bet_size: Decimal = Decimal("100")
     percentage_bet_size: float = 0.02  # 2% of bankroll
-    max_bet_size: Decimal = Decimal('1000')
-    min_bet_size: Decimal = Decimal('10')
-    min_confidence_threshold: float = 0.6  # Only backtest recommendations above this confidence
+    max_bet_size: Decimal = Decimal("1000")
+    min_bet_size: Decimal = Decimal("10")
+    min_confidence_threshold: float = (
+        0.6  # Only backtest recommendations above this confidence
+    )
     enable_compounding: bool = True
     commission_rate: float = 0.0  # Commission per bet
     created_at: datetime = field(default_factory=datetime.now)
@@ -80,76 +83,77 @@ class RecommendationBacktestConfig:
 @dataclass
 class RecommendationBacktestResult:
     """Result of a recommendation-based backtest"""
+
     backtest_id: str
     config: RecommendationBacktestConfig
     status: BacktestStatus
-    
+
     # Core Metrics - What matters for betting
     total_recommendations: int = 0
     recommendations_with_outcomes: int = 0
     winning_bets: int = 0
     losing_bets: int = 0
     push_bets: int = 0
-    
+
     # Financial Performance
-    initial_bankroll: Decimal = Decimal('0')
-    final_bankroll: Decimal = Decimal('0')
-    total_profit: Decimal = Decimal('0')
-    max_bankroll: Decimal = Decimal('0')
-    min_bankroll: Decimal = Decimal('0')
-    
+    initial_bankroll: Decimal = Decimal("0")
+    final_bankroll: Decimal = Decimal("0")
+    total_profit: Decimal = Decimal("0")
+    max_bankroll: Decimal = Decimal("0")
+    min_bankroll: Decimal = Decimal("0")
+
     # Key Performance Metrics
     win_rate: float = 0.0
     roi_percentage: float = 0.0
-    average_win_amount: Decimal = Decimal('0')
-    average_loss_amount: Decimal = Decimal('0')
+    average_win_amount: Decimal = Decimal("0")
+    average_loss_amount: Decimal = Decimal("0")
     profit_factor: float = 0.0  # Gross profit / Gross loss
     max_drawdown_percentage: float = 0.0
     max_consecutive_losses: int = 0
     max_consecutive_wins: int = 0
-    
+
     # Strategy Breakdown
-    strategy_performance: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    
+    strategy_performance: dict[str, dict[str, Any]] = field(default_factory=dict)
+
     # Detailed Results
-    recommendation_history: List[Dict[str, Any]] = field(default_factory=list)
-    daily_performance: List[Dict[str, Any]] = field(default_factory=list)
-    bankroll_history: List[Decimal] = field(default_factory=list)
-    
+    recommendation_history: list[dict[str, Any]] = field(default_factory=list)
+    daily_performance: list[dict[str, Any]] = field(default_factory=list)
+    bankroll_history: list[Decimal] = field(default_factory=list)
+
     # Execution Details
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
     execution_time_seconds: float = 0.0
-    
+
     # Error Information
-    error_message: Optional[str] = None
-    warnings: List[str] = field(default_factory=list)
+    error_message: str | None = None
+    warnings: list[str] = field(default_factory=list)
 
 
 class RecommendationBasedBacktestingEngine:
     """
     Recommendation-Based Backtesting Engine
-    
+
     This engine implements the critical principle: Only backtest what the system would actually recommend.
-    
+
     Key Features:
     1. Uses actual strategy processors to generate historical recommendations
     2. Only tests bets that would have been recommended by the live system
     3. Ensures perfect alignment between backtesting and live performance
     4. Eliminates theoretical strategy testing
     5. Provides realistic performance expectations
-    
+
     The engine works by:
     1. Running strategy processors on historical data exactly as they run on live data
     2. Collecting all recommendations that would have been generated
     3. Determining outcomes for those specific recommendations
     4. Calculating performance based on actual recommendation results
     """
-    
-    def __init__(self, repository: UnifiedRepository, config: Dict[str, Any]):
+
+    def __init__(self, repository: UnifiedRepository, config: dict[str, Any]):
         """
         Initialize the recommendation-based backtesting engine.
-        
+
         Args:
             repository: Unified repository for data access
             config: Engine configuration
@@ -157,145 +161,160 @@ class RecommendationBasedBacktestingEngine:
         self.repository = repository
         self.config = config
         self.logger = get_logger(__name__, LogComponent.BACKTESTING)
-        
+
         # Engine configuration
-        self.max_concurrent_backtests = config.get('max_concurrent_backtests', 2)
-        self.chunk_size = config.get('chunk_size', 100)  # Process games in chunks
+        self.max_concurrent_backtests = config.get("max_concurrent_backtests", 2)
+        self.chunk_size = config.get("chunk_size", 100)  # Process games in chunks
         self.default_odds = -110  # Default American odds for profit calculation
-        
+
         # Active backtests tracking
-        self._active_backtests: Dict[str, RecommendationBacktestResult] = {}
-        self._backtest_history: List[RecommendationBacktestResult] = []
-        
+        self._active_backtests: dict[str, RecommendationBacktestResult] = {}
+        self._backtest_history: list[RecommendationBacktestResult] = []
+
         # Thread pool for CPU-intensive operations
         self._thread_pool = ThreadPoolExecutor(
-            max_workers=config.get('thread_pool_size', 2),
-            thread_name_prefix='recommendation_backtest'
+            max_workers=config.get("thread_pool_size", 2),
+            thread_name_prefix="recommendation_backtest",
         )
-        
-        self.logger.info(f"Initialized RecommendationBasedBacktestingEngine")
-    
-    async def run_recommendation_backtest(self, config: RecommendationBacktestConfig) -> RecommendationBacktestResult:
+
+        self.logger.info("Initialized RecommendationBasedBacktestingEngine")
+
+    async def run_recommendation_backtest(
+        self, config: RecommendationBacktestConfig
+    ) -> RecommendationBacktestResult:
         """
         Run a comprehensive recommendation-based backtest.
-        
+
         This is the core method that implements recommendation-based backtesting:
         1. Get historical data for the period
         2. Run strategy processors to generate recommendations (exactly like live system)
         3. Determine outcomes for each recommendation
         4. Calculate performance metrics
-        
+
         Args:
             config: Backtesting configuration
-            
+
         Returns:
             Comprehensive backtest results
         """
         backtest_id = config.backtest_id
-        
+
         # Initialize result
         result = RecommendationBacktestResult(
             backtest_id=backtest_id,
             config=config,
             status=BacktestStatus.RUNNING,
             initial_bankroll=config.initial_bankroll,
-            start_time=datetime.now()
+            start_time=datetime.now(),
         )
-        
+
         self._active_backtests[backtest_id] = result
-        
+
         self.logger.info(
             f"Starting recommendation-based backtest {backtest_id}",
             extra={
-                'backtest_id': backtest_id,
-                'strategy_count': len(config.strategy_processors),
-                'date_range': f"{config.start_date} to {config.end_date}",
-                'initial_bankroll': float(config.initial_bankroll)
-            }
+                "backtest_id": backtest_id,
+                "strategy_count": len(config.strategy_processors),
+                "date_range": f"{config.start_date} to {config.end_date}",
+                "initial_bankroll": float(config.initial_bankroll),
+            },
         )
-        
+
         try:
             # Step 1: Get historical game data
             historical_games = await self._get_historical_games(config)
-            
+
             if not historical_games:
-                raise BacktestingError(f"No historical games found for period {config.start_date} to {config.end_date}")
-            
+                raise BacktestingError(
+                    f"No historical games found for period {config.start_date} to {config.end_date}"
+                )
+
             self.logger.info(f"Found {len(historical_games)} historical games")
-            
+
             # Step 2: Generate recommendations using actual strategy processors
             all_recommendations = await self._generate_historical_recommendations(
-                config.strategy_processors, 
-                historical_games, 
-                config
+                config.strategy_processors, historical_games, config
             )
-            
+
             if not all_recommendations:
-                self.logger.warning("No recommendations generated from strategy processors")
+                self.logger.warning(
+                    "No recommendations generated from strategy processors"
+                )
                 result.status = BacktestStatus.COMPLETED
                 return result
-            
+
             self.logger.info(f"Generated {len(all_recommendations)} recommendations")
             result.total_recommendations = len(all_recommendations)
-            
+
             # Step 3: Determine outcomes for each recommendation
-            recommendations_with_outcomes = await self._determine_recommendation_outcomes(
-                all_recommendations, 
-                historical_games
+            recommendations_with_outcomes = (
+                await self._determine_recommendation_outcomes(
+                    all_recommendations, historical_games
+                )
             )
-            
+
             result.recommendations_with_outcomes = len(recommendations_with_outcomes)
-            self.logger.info(f"Determined outcomes for {len(recommendations_with_outcomes)} recommendations")
-            
+            self.logger.info(
+                f"Determined outcomes for {len(recommendations_with_outcomes)} recommendations"
+            )
+
             # Step 4: Simulate betting and calculate performance
-            await self._simulate_betting_performance(recommendations_with_outcomes, result)
-            
+            await self._simulate_betting_performance(
+                recommendations_with_outcomes, result
+            )
+
             # Step 5: Calculate comprehensive metrics
             await self._calculate_comprehensive_metrics(result)
-            
+
             # Step 6: Generate strategy breakdown
             await self._generate_strategy_breakdown(result)
-            
+
             result.status = BacktestStatus.COMPLETED
             result.end_time = datetime.now()
-            result.execution_time_seconds = (result.end_time - result.start_time).total_seconds()
-            
+            result.execution_time_seconds = (
+                result.end_time - result.start_time
+            ).total_seconds()
+
             self.logger.info(
                 f"Recommendation backtest {backtest_id} completed successfully",
                 extra={
-                    'backtest_id': backtest_id,
-                    'total_recommendations': result.total_recommendations,
-                    'win_rate': result.win_rate,
-                    'roi_percentage': result.roi_percentage,
-                    'execution_time': result.execution_time_seconds
-                }
+                    "backtest_id": backtest_id,
+                    "total_recommendations": result.total_recommendations,
+                    "win_rate": result.win_rate,
+                    "roi_percentage": result.roi_percentage,
+                    "execution_time": result.execution_time_seconds,
+                },
             )
-            
+
         except Exception as e:
             result.status = BacktestStatus.FAILED
             result.error_message = str(e)
             result.end_time = datetime.now()
-            
+
             self.logger.error(
                 f"Recommendation backtest {backtest_id} failed: {e}",
-                extra={'backtest_id': backtest_id},
-                exc_info=True
+                extra={"backtest_id": backtest_id},
+                exc_info=True,
             )
-            
-            raise BacktestingError(f"Recommendation backtest {backtest_id} failed: {e}") from e
-        
+
+            raise BacktestingError(
+                f"Recommendation backtest {backtest_id} failed: {e}"
+            ) from e
+
         finally:
             # Move to history and clean up
             self._backtest_history.append(result)
             if backtest_id in self._active_backtests:
                 del self._active_backtests[backtest_id]
-        
+
         return result
-    
-    async def _get_historical_games(self, config: RecommendationBacktestConfig) -> List[Dict[str, Any]]:
+
+    async def _get_historical_games(
+        self, config: RecommendationBacktestConfig
+    ) -> list[dict[str, Any]]:
         """
         Get historical game data for the backtest period.
-        
+
         This method retrieves all games and associated data needed for recommendation generation.
         In a full implementation, this would query the unified repository for:
         - Game information (teams, dates, outcomes)
@@ -310,193 +329,217 @@ class RecommendationBasedBacktestingEngine:
             #     end_date=config.end_date,
             #     include_outcomes=True
             # )
-            
+
             # For now, simulate historical data
             historical_games = []
             current_date = config.start_date
-            
+
             while current_date <= config.end_date:
                 # Simulate 5-15 games per day
                 daily_games = np.random.randint(5, 16)
-                
+
                 for game_num in range(daily_games):
                     game_id = f"game_{current_date.strftime('%Y%m%d')}_{game_num:02d}"
-                    
+
                     # Simulate game data
                     home_score = np.random.randint(0, 15)
                     away_score = np.random.randint(0, 15)
-                    
+
                     game_data = {
-                        'game_id': game_id,
-                        'game_date': current_date,
-                        'home_team': f"Team_H_{game_num:02d}",
-                        'away_team': f"Team_A_{game_num:02d}",
-                        'home_score': home_score,
-                        'away_score': away_score,
-                        'game_completed': True,
-                        
+                        "game_id": game_id,
+                        "game_date": current_date,
+                        "home_team": f"Team_H_{game_num:02d}",
+                        "away_team": f"Team_A_{game_num:02d}",
+                        "home_score": home_score,
+                        "away_score": away_score,
+                        "game_completed": True,
                         # Betting data for recommendation generation
-                        'moneyline_home': np.random.randint(-200, 200),
-                        'moneyline_away': np.random.randint(-200, 200),
-                        'spread_home': np.random.uniform(-2.5, 2.5),
-                        'total': np.random.uniform(7.5, 12.5),
-                        
+                        "moneyline_home": np.random.randint(-200, 200),
+                        "moneyline_away": np.random.randint(-200, 200),
+                        "spread_home": np.random.uniform(-2.5, 2.5),
+                        "total": np.random.uniform(7.5, 12.5),
                         # Public betting percentages
-                        'public_money_home': np.random.uniform(20, 80),
-                        'public_bets_home': np.random.uniform(20, 80),
-                        'volume': np.random.randint(100, 5000),
-                        
+                        "public_money_home": np.random.uniform(20, 80),
+                        "public_bets_home": np.random.uniform(20, 80),
+                        "volume": np.random.randint(100, 5000),
                         # Sharp action indicators
-                        'sharp_money_home': np.random.uniform(20, 80),
-                        'line_movement': np.random.uniform(-1.0, 1.0),
-                        
+                        "sharp_money_home": np.random.uniform(20, 80),
+                        "line_movement": np.random.uniform(-1.0, 1.0),
                         # Book information
-                        'book': np.random.choice(['pinnacle', 'circa', 'draftkings', 'fanduel']),
-                        'source': 'historical_backtest'
+                        "book": np.random.choice(
+                            ["pinnacle", "circa", "draftkings", "fanduel"]
+                        ),
+                        "source": "historical_backtest",
                     }
-                    
+
                     historical_games.append(game_data)
-                
+
                 current_date += timedelta(days=1)
-            
+
             return historical_games
-            
+
         except Exception as e:
             self.logger.error(f"Failed to get historical games: {e}")
             return []
-    
-    async def _generate_historical_recommendations(self, 
-                                                 strategy_processors: List[BaseStrategyProcessor],
-                                                 historical_games: List[Dict[str, Any]],
-                                                 config: RecommendationBacktestConfig) -> List[Dict[str, Any]]:
+
+    async def _generate_historical_recommendations(
+        self,
+        strategy_processors: list[BaseStrategyProcessor],
+        historical_games: list[dict[str, Any]],
+        config: RecommendationBacktestConfig,
+    ) -> list[dict[str, Any]]:
         """
         Generate recommendations using actual strategy processors on historical data.
-        
+
         This is the critical method that ensures we only backtest what would actually be recommended.
         It runs the same strategy processors that generate live recommendations.
         """
         all_recommendations = []
-        
+
         # Group games by date for chronological processing
         games_by_date = {}
         for game in historical_games:
-            date = game['game_date'].date()
+            date = game["game_date"].date()
             if date not in games_by_date:
                 games_by_date[date] = []
             games_by_date[date].append(game)
-        
+
         # Process each day chronologically (like live system)
         for date in sorted(games_by_date.keys()):
             daily_games = games_by_date[date]
-            
+
             self.logger.debug(f"Processing {len(daily_games)} games for {date}")
-            
+
             # Run each strategy processor on this day's games
             for processor in strategy_processors:
                 try:
                     # Create context for processor (like live system)
                     context = {
-                        'processing_time': datetime.combine(date, datetime.min.time()),
-                        'minutes_ahead': 1440,  # Process as if 24 hours ahead
-                        'backtest_mode': True
+                        "processing_time": datetime.combine(date, datetime.min.time()),
+                        "minutes_ahead": 1440,  # Process as if 24 hours ahead
+                        "backtest_mode": True,
                     }
-                    
+
                     # Generate signals using the actual processor
                     signals = await processor.process_signals(daily_games, context)
-                    
+
                     # Convert signals to recommendation format
                     for signal in signals:
                         if signal.confidence_score >= config.min_confidence_threshold:
                             recommendation = {
-                                'recommendation_id': signal.signal_id,
-                                'game_id': signal.game_id,
-                                'strategy_processor': processor.__class__.__name__,
-                                'signal': signal,
-                                'game_date': date,
-                                'confidence_score': signal.confidence_score,
-                                'recommended_side': signal.recommended_side,
-                                'bet_type': signal.bet_type,
-                                'processing_time': context['processing_time'],
-                                'original_game_data': next((g for g in daily_games if g['game_id'] == signal.game_id), None)
+                                "recommendation_id": signal.signal_id,
+                                "game_id": signal.game_id,
+                                "strategy_processor": processor.__class__.__name__,
+                                "signal": signal,
+                                "game_date": date,
+                                "confidence_score": signal.confidence_score,
+                                "recommended_side": signal.recommended_side,
+                                "bet_type": signal.bet_type,
+                                "processing_time": context["processing_time"],
+                                "original_game_data": next(
+                                    (
+                                        g
+                                        for g in daily_games
+                                        if g["game_id"] == signal.game_id
+                                    ),
+                                    None,
+                                ),
                             }
                             all_recommendations.append(recommendation)
-                
+
                 except Exception as e:
-                    self.logger.warning(f"Error running {processor.__class__.__name__} on {date}: {e}")
+                    self.logger.warning(
+                        f"Error running {processor.__class__.__name__} on {date}: {e}"
+                    )
                     continue
-        
+
         # Filter recommendations by confidence threshold
         filtered_recommendations = [
-            rec for rec in all_recommendations 
-            if rec['confidence_score'] >= config.min_confidence_threshold
+            rec
+            for rec in all_recommendations
+            if rec["confidence_score"] >= config.min_confidence_threshold
         ]
-        
-        self.logger.info(f"Generated {len(filtered_recommendations)} recommendations above confidence threshold {config.min_confidence_threshold}")
-        
+
+        self.logger.info(
+            f"Generated {len(filtered_recommendations)} recommendations above confidence threshold {config.min_confidence_threshold}"
+        )
+
         return filtered_recommendations
-    
-    async def _determine_recommendation_outcomes(self, 
-                                               recommendations: List[Dict[str, Any]],
-                                               historical_games: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+
+    async def _determine_recommendation_outcomes(
+        self,
+        recommendations: list[dict[str, Any]],
+        historical_games: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """
         Determine the outcome of each recommendation based on actual game results.
         """
         recommendations_with_outcomes = []
-        
+
         # Create lookup for game results
-        game_results = {game['game_id']: game for game in historical_games if game.get('game_completed', False)}
-        
+        game_results = {
+            game["game_id"]: game
+            for game in historical_games
+            if game.get("game_completed", False)
+        }
+
         for recommendation in recommendations:
-            game_id = recommendation['game_id']
-            
+            game_id = recommendation["game_id"]
+
             if game_id not in game_results:
                 # Skip recommendations where we don't have game results
                 continue
-            
+
             game_result = game_results[game_id]
-            signal = recommendation['signal']
-            
+            signal = recommendation["signal"]
+
             # Determine if the recommendation won
             outcome = self._determine_bet_outcome(signal, game_result)
-            
+
             if outcome != BetOutcome.NO_RESULT:
-                recommendation['outcome'] = outcome
-                recommendation['game_result'] = game_result
+                recommendation["outcome"] = outcome
+                recommendation["game_result"] = game_result
                 recommendations_with_outcomes.append(recommendation)
-        
+
         return recommendations_with_outcomes
-    
-    def _determine_bet_outcome(self, signal: UnifiedBettingSignal, game_result: Dict[str, Any]) -> BetOutcome:
+
+    def _determine_bet_outcome(
+        self, signal: UnifiedBettingSignal, game_result: dict[str, Any]
+    ) -> BetOutcome:
         """
         Determine if a specific bet won, lost, or pushed based on game results.
         """
         try:
-            home_score = game_result['home_score']
-            away_score = game_result['away_score']
+            home_score = game_result["home_score"]
+            away_score = game_result["away_score"]
             total_score = home_score + away_score
-            
-            if signal.bet_type.lower() in ['ml', 'moneyline']:
+
+            if signal.bet_type.lower() in ["ml", "moneyline"]:
                 # Moneyline bet
-                if 'home' in signal.recommended_side.lower():
-                    return BetOutcome.WIN if home_score > away_score else BetOutcome.LOSS
+                if "home" in signal.recommended_side.lower():
+                    return (
+                        BetOutcome.WIN if home_score > away_score else BetOutcome.LOSS
+                    )
                 else:
-                    return BetOutcome.WIN if away_score > home_score else BetOutcome.LOSS
-            
-            elif signal.bet_type.lower() in ['spread', 'rl']:
+                    return (
+                        BetOutcome.WIN if away_score > home_score else BetOutcome.LOSS
+                    )
+
+            elif signal.bet_type.lower() in ["spread", "rl"]:
                 # Spread bet (simplified - would need actual spread from game data)
-                spread = game_result.get('spread_home', 0)
+                spread = game_result.get("spread_home", 0)
                 home_covered = (home_score + spread) > away_score
-                
-                if 'home' in signal.recommended_side.lower():
+
+                if "home" in signal.recommended_side.lower():
                     return BetOutcome.WIN if home_covered else BetOutcome.LOSS
                 else:
                     return BetOutcome.WIN if not home_covered else BetOutcome.LOSS
-            
-            elif signal.bet_type.lower() in ['total', 'ou']:
+
+            elif signal.bet_type.lower() in ["total", "ou"]:
                 # Total bet
-                total_line = game_result.get('total', 8.5)
-                
-                if 'over' in signal.recommended_side.lower():
+                total_line = game_result.get("total", 8.5)
+
+                if "over" in signal.recommended_side.lower():
                     if total_score > total_line:
                         return BetOutcome.WIN
                     elif total_score == total_line:
@@ -510,37 +553,43 @@ class RecommendationBasedBacktestingEngine:
                         return BetOutcome.PUSH
                     else:
                         return BetOutcome.LOSS
-            
+
             return BetOutcome.NO_RESULT
-            
+
         except Exception as e:
             self.logger.warning(f"Error determining bet outcome: {e}")
             return BetOutcome.NO_RESULT
-    
-    async def _simulate_betting_performance(self, 
-                                          recommendations_with_outcomes: List[Dict[str, Any]],
-                                          result: RecommendationBacktestResult) -> None:
+
+    async def _simulate_betting_performance(
+        self,
+        recommendations_with_outcomes: list[dict[str, Any]],
+        result: RecommendationBacktestResult,
+    ) -> None:
         """
         Simulate the betting performance based on recommendation outcomes.
         """
         current_bankroll = result.initial_bankroll
         result.max_bankroll = current_bankroll
         result.min_bankroll = current_bankroll
-        
+
         consecutive_wins = 0
         consecutive_losses = 0
         max_consecutive_wins = 0
         max_consecutive_losses = 0
-        
+
         # Sort recommendations by processing time to simulate chronological betting
-        sorted_recommendations = sorted(recommendations_with_outcomes, key=lambda x: x['processing_time'])
-        
+        sorted_recommendations = sorted(
+            recommendations_with_outcomes, key=lambda x: x["processing_time"]
+        )
+
         for recommendation in sorted_recommendations:
             # Calculate bet size
-            bet_size = self._calculate_bet_size(recommendation, result.config, current_bankroll)
-            
+            bet_size = self._calculate_bet_size(
+                recommendation, result.config, current_bankroll
+            )
+
             # Determine profit/loss
-            outcome = recommendation['outcome']
+            outcome = recommendation["outcome"]
             if outcome == BetOutcome.WIN:
                 # Calculate profit based on odds (simplified to -110)
                 profit = bet_size * (100 / 110)  # Standard -110 odds
@@ -549,7 +598,7 @@ class RecommendationBasedBacktestingEngine:
                 consecutive_wins += 1
                 consecutive_losses = 0
                 max_consecutive_wins = max(max_consecutive_wins, consecutive_wins)
-                
+
             elif outcome == BetOutcome.LOSS:
                 # Lose the bet amount
                 current_bankroll -= bet_size
@@ -557,185 +606,207 @@ class RecommendationBasedBacktestingEngine:
                 consecutive_losses += 1
                 consecutive_wins = 0
                 max_consecutive_losses = max(max_consecutive_losses, consecutive_losses)
-                
+
             elif outcome == BetOutcome.PUSH:
                 # No change in bankroll
                 result.push_bets += 1
                 consecutive_wins = 0
                 consecutive_losses = 0
-            
+
             # Apply commission
             current_bankroll -= bet_size * result.config.commission_rate
-            
+
             # Update bankroll tracking
             result.bankroll_history.append(current_bankroll)
             result.max_bankroll = max(result.max_bankroll, current_bankroll)
             result.min_bankroll = min(result.min_bankroll, current_bankroll)
-            
+
             # Record detailed recommendation result
             recommendation_result = {
-                'recommendation_id': recommendation['recommendation_id'],
-                'game_id': recommendation['game_id'],
-                'strategy_processor': recommendation['strategy_processor'],
-                'bet_type': recommendation['bet_type'],
-                'recommended_side': recommendation['recommended_side'],
-                'confidence_score': recommendation['confidence_score'],
-                'bet_size': bet_size,
-                'outcome': outcome.value,
-                'profit_loss': profit if outcome == BetOutcome.WIN else (-bet_size if outcome == BetOutcome.LOSS else 0),
-                'bankroll_after': current_bankroll,
-                'processing_time': recommendation['processing_time']
+                "recommendation_id": recommendation["recommendation_id"],
+                "game_id": recommendation["game_id"],
+                "strategy_processor": recommendation["strategy_processor"],
+                "bet_type": recommendation["bet_type"],
+                "recommended_side": recommendation["recommended_side"],
+                "confidence_score": recommendation["confidence_score"],
+                "bet_size": bet_size,
+                "outcome": outcome.value,
+                "profit_loss": profit
+                if outcome == BetOutcome.WIN
+                else (-bet_size if outcome == BetOutcome.LOSS else 0),
+                "bankroll_after": current_bankroll,
+                "processing_time": recommendation["processing_time"],
             }
             result.recommendation_history.append(recommendation_result)
-        
+
         # Set final values
         result.final_bankroll = current_bankroll
         result.total_profit = current_bankroll - result.initial_bankroll
         result.max_consecutive_wins = max_consecutive_wins
         result.max_consecutive_losses = max_consecutive_losses
-    
-    def _calculate_bet_size(self, 
-                           recommendation: Dict[str, Any], 
-                           config: RecommendationBacktestConfig,
-                           current_bankroll: Decimal) -> Decimal:
+
+    def _calculate_bet_size(
+        self,
+        recommendation: dict[str, Any],
+        config: RecommendationBacktestConfig,
+        current_bankroll: Decimal,
+    ) -> Decimal:
         """Calculate bet size based on configuration and current bankroll."""
-        
-        if config.bet_sizing_method == 'fixed':
+
+        if config.bet_sizing_method == "fixed":
             return config.fixed_bet_size
-        
-        elif config.bet_sizing_method == 'percentage':
+
+        elif config.bet_sizing_method == "percentage":
             bet_size = current_bankroll * Decimal(str(config.percentage_bet_size))
             return max(config.min_bet_size, min(config.max_bet_size, bet_size))
-        
-        elif config.bet_sizing_method == 'kelly':
+
+        elif config.bet_sizing_method == "kelly":
             # Simplified Kelly criterion based on confidence
-            confidence = recommendation['confidence_score']
+            confidence = recommendation["confidence_score"]
             win_prob = confidence  # Use confidence as win probability
             odds = 1.91  # Simplified odds
-            
+
             if win_prob > 0 and odds > 1:
                 kelly_fraction = (odds * win_prob - 1) / (odds - 1)
                 kelly_fraction = max(0, min(kelly_fraction, 0.25))  # Cap at 25%
                 bet_size = current_bankroll * Decimal(str(kelly_fraction))
                 return max(config.min_bet_size, min(config.max_bet_size, bet_size))
-        
+
         return config.fixed_bet_size
-    
-    async def _calculate_comprehensive_metrics(self, result: RecommendationBacktestResult) -> None:
+
+    async def _calculate_comprehensive_metrics(
+        self, result: RecommendationBacktestResult
+    ) -> None:
         """Calculate comprehensive performance metrics."""
-        
+
         if result.recommendations_with_outcomes == 0:
             return
-        
+
         # Basic metrics
         total_decided_bets = result.winning_bets + result.losing_bets
         if total_decided_bets > 0:
             result.win_rate = result.winning_bets / total_decided_bets
-        
+
         if result.initial_bankroll > 0:
-            result.roi_percentage = float(result.total_profit / result.initial_bankroll * 100)
-        
+            result.roi_percentage = float(
+                result.total_profit / result.initial_bankroll * 100
+            )
+
         # Profit/Loss metrics
-        winning_amounts = [rec['profit_loss'] for rec in result.recommendation_history if rec['profit_loss'] > 0]
-        losing_amounts = [abs(rec['profit_loss']) for rec in result.recommendation_history if rec['profit_loss'] < 0]
-        
+        winning_amounts = [
+            rec["profit_loss"]
+            for rec in result.recommendation_history
+            if rec["profit_loss"] > 0
+        ]
+        losing_amounts = [
+            abs(rec["profit_loss"])
+            for rec in result.recommendation_history
+            if rec["profit_loss"] < 0
+        ]
+
         if winning_amounts:
             result.average_win_amount = Decimal(str(np.mean(winning_amounts)))
-        
+
         if losing_amounts:
             result.average_loss_amount = Decimal(str(np.mean(losing_amounts)))
-        
+
         # Profit factor
         gross_profit = sum(winning_amounts) if winning_amounts else 0
         gross_loss = sum(losing_amounts) if losing_amounts else 0
-        
+
         if gross_loss > 0:
             result.profit_factor = gross_profit / gross_loss
-        
+
         # Drawdown calculation
         if result.bankroll_history:
             running_max = result.initial_bankroll
             max_drawdown = 0.0
-            
+
             for bankroll in result.bankroll_history:
                 if bankroll > running_max:
                     running_max = bankroll
                 else:
                     drawdown = float((running_max - bankroll) / running_max)
                     max_drawdown = max(max_drawdown, drawdown)
-            
+
             result.max_drawdown_percentage = max_drawdown * 100
-    
-    async def _generate_strategy_breakdown(self, result: RecommendationBacktestResult) -> None:
+
+    async def _generate_strategy_breakdown(
+        self, result: RecommendationBacktestResult
+    ) -> None:
         """Generate performance breakdown by strategy processor."""
-        
+
         strategy_stats = {}
-        
+
         for rec in result.recommendation_history:
-            strategy = rec['strategy_processor']
-            
+            strategy = rec["strategy_processor"]
+
             if strategy not in strategy_stats:
                 strategy_stats[strategy] = {
-                    'total_recommendations': 0,
-                    'winning_bets': 0,
-                    'losing_bets': 0,
-                    'push_bets': 0,
-                    'total_profit': Decimal('0'),
-                    'win_rate': 0.0,
-                    'roi_percentage': 0.0
+                    "total_recommendations": 0,
+                    "winning_bets": 0,
+                    "losing_bets": 0,
+                    "push_bets": 0,
+                    "total_profit": Decimal("0"),
+                    "win_rate": 0.0,
+                    "roi_percentage": 0.0,
                 }
-            
+
             stats = strategy_stats[strategy]
-            stats['total_recommendations'] += 1
-            
-            if rec['outcome'] == 'win':
-                stats['winning_bets'] += 1
-            elif rec['outcome'] == 'loss':
-                stats['losing_bets'] += 1
-            elif rec['outcome'] == 'push':
-                stats['push_bets'] += 1
-            
-            stats['total_profit'] += Decimal(str(rec['profit_loss']))
-        
+            stats["total_recommendations"] += 1
+
+            if rec["outcome"] == "win":
+                stats["winning_bets"] += 1
+            elif rec["outcome"] == "loss":
+                stats["losing_bets"] += 1
+            elif rec["outcome"] == "push":
+                stats["push_bets"] += 1
+
+            stats["total_profit"] += Decimal(str(rec["profit_loss"]))
+
         # Calculate rates for each strategy
         for strategy, stats in strategy_stats.items():
-            total_decided = stats['winning_bets'] + stats['losing_bets']
+            total_decided = stats["winning_bets"] + stats["losing_bets"]
             if total_decided > 0:
-                stats['win_rate'] = stats['winning_bets'] / total_decided
-            
+                stats["win_rate"] = stats["winning_bets"] / total_decided
+
             # Simplified ROI calculation
-            if stats['total_recommendations'] > 0:
+            if stats["total_recommendations"] > 0:
                 avg_bet_size = result.config.fixed_bet_size  # Simplified
-                total_risked = avg_bet_size * stats['total_recommendations']
+                total_risked = avg_bet_size * stats["total_recommendations"]
                 if total_risked > 0:
-                    stats['roi_percentage'] = float(stats['total_profit'] / total_risked * 100)
-        
+                    stats["roi_percentage"] = float(
+                        stats["total_profit"] / total_risked * 100
+                    )
+
         result.strategy_performance = strategy_stats
-    
+
     # Public interface methods
-    
-    def get_active_backtests(self) -> Dict[str, RecommendationBacktestResult]:
+
+    def get_active_backtests(self) -> dict[str, RecommendationBacktestResult]:
         """Get all active backtests"""
         return self._active_backtests.copy()
-    
-    def get_backtest_history(self, limit: int = 10) -> List[RecommendationBacktestResult]:
+
+    def get_backtest_history(
+        self, limit: int = 10
+    ) -> list[RecommendationBacktestResult]:
         """Get recent backtest history"""
         return self._backtest_history[-limit:]
-    
-    def get_engine_status(self) -> Dict[str, Any]:
+
+    def get_engine_status(self) -> dict[str, Any]:
         """Get engine status"""
         return {
-            'active_backtests': len(self._active_backtests),
-            'completed_backtests': len(self._backtest_history),
-            'max_concurrent_backtests': self.max_concurrent_backtests,
-            'engine_type': 'recommendation_based',
-            'principle': 'Only backtest what the system would actually recommend'
+            "active_backtests": len(self._active_backtests),
+            "completed_backtests": len(self._backtest_history),
+            "max_concurrent_backtests": self.max_concurrent_backtests,
+            "engine_type": "recommendation_based",
+            "principle": "Only backtest what the system would actually recommend",
         }
-    
+
     async def __aenter__(self):
         """Async context manager entry"""
         return self
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit"""
         self._thread_pool.shutdown(wait=True)
@@ -743,14 +814,15 @@ class RecommendationBasedBacktestingEngine:
 
 
 # Factory function for easy instantiation
-def create_recommendation_backtesting_engine(repository: UnifiedRepository, 
-                                           config: Dict[str, Any] = None) -> RecommendationBasedBacktestingEngine:
+def create_recommendation_backtesting_engine(
+    repository: UnifiedRepository, config: dict[str, Any] = None
+) -> RecommendationBasedBacktestingEngine:
     """Create a recommendation-based backtesting engine with default configuration"""
     if config is None:
         config = {
-            'max_concurrent_backtests': 2,
-            'chunk_size': 100,
-            'thread_pool_size': 2
+            "max_concurrent_backtests": 2,
+            "chunk_size": 100,
+            "thread_pool_size": 2,
         }
-    
-    return RecommendationBasedBacktestingEngine(repository, config) 
+
+    return RecommendationBasedBacktestingEngine(repository, config)

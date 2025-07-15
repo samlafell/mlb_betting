@@ -3,7 +3,6 @@ from __future__ import annotations
 """Data quality & deduplication service for SportsbookReview (Phase-3)."""
 
 import logging
-from typing import Dict, List, Set
 
 from ..parsers.validators import GameDataValidator
 
@@ -14,11 +13,11 @@ class DataQualityService:
     """Validate, clean and deduplicate parsed game records."""
 
     def __init__(self) -> None:
-        self._seen_ids: Set[str] = set()
+        self._seen_ids: set[str] = set()
 
-    async def process_games(self, games: List[Dict]) -> List[Dict]:
+    async def process_games(self, games: list[dict]) -> list[dict]:
         """Return list of *validated & unique* game dicts."""
-        cleaned: List[Dict] = []
+        cleaned: list[dict] = []
         for game in games:
             sbr_id = str(game.get("sbr_game_id"))
             if sbr_id in self._seen_ids:
@@ -33,4 +32,4 @@ class DataQualityService:
             self._seen_ids.add(sbr_id)
             cleaned.append(validated.model_dump())
 
-        return cleaned 
+        return cleaned

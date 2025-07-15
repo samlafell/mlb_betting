@@ -33,6 +33,7 @@ dependencies = [
     "asyncpg>=0.30.0",
     "backoff>=2.2.1",
     "brotli>=1.1.0",
+    "ruff>=0.11.13",
 ]
 
 [project.optional-dependencies]
@@ -62,10 +63,6 @@ python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = [
-    "--cov=src/mlb_sharp_betting",
-    "--cov-report=html",
-    "--cov-report=term-missing",
-    "--cov-fail-under=80",
     "-v",
 ]
 
@@ -132,4 +129,9 @@ exclude_lines = [
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.16.0",
 ]

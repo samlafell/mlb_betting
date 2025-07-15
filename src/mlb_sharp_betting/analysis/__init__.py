@@ -8,19 +8,19 @@ This module provides comprehensive sharp action analysis with layered architectu
 """
 
 from .processors.analytical_processor import AnalyticalProcessor
-from .processors.sharpaction_processor import SharpActionProcessor
-from .processors.opposingmarkets_processor import OpposingMarketsProcessor
-from .processors.consensus_processor import ConsensusProcessor
-from .processors.underdogvalue_processor import UnderdogValueProcessor
 from .processors.bookconflict_processor import BookConflictProcessor
-from .processors.publicfade_processor import PublicFadeProcessor
-from .processors.lateflip_processor import LateFlipProcessor
+from .processors.consensus_processor import ConsensusProcessor
 from .processors.hybridsharp_processor import HybridSharpProcessor
-from .processors.timingbased_processor import TimingBasedProcessor
+from .processors.lateflip_processor import LateFlipProcessor
+from .processors.opposingmarkets_processor import OpposingMarketsProcessor
+from .processors.publicfade_processor import PublicFadeProcessor
+from .processors.sharpaction_processor import SharpActionProcessor
 from .processors.strategy_processor_factory import StrategyProcessorFactory
+from .processors.timingbased_processor import TimingBasedProcessor
+from .processors.underdogvalue_processor import UnderdogValueProcessor
 
 __all__ = [
-    "AnalyticalProcessor", 
+    "AnalyticalProcessor",
     "SharpActionProcessor",
     "OpposingMarketsProcessor",
     "ConsensusProcessor",
@@ -31,4 +31,4 @@ __all__ = [
     "HybridSharpProcessor",
     "TimingBasedProcessor",
     "StrategyProcessorFactory",
-] 
+]

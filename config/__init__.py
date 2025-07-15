@@ -1,1 +1,1 @@
-# Configuration package for MLB betting splits project 
+# Configuration package for MLB betting splits project

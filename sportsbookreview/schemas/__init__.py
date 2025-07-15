@@ -6,4 +6,4 @@ scripts for SportsbookReview data storage.
 """
 
 # Imports will be added as schemas are created
-__all__ = [] 
+__all__ = []

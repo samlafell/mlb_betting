@@ -13,6 +13,4 @@ Phase 5A Migration: Simplified Implementation
 
 from .unified_data_service import UnifiedDataService
 
-__all__ = [
-    'UnifiedDataService'
-] 
+__all__ = ["UnifiedDataService"]

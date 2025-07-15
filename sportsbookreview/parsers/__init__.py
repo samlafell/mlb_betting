@@ -6,4 +6,4 @@ from SportsbookReview.com pages with comprehensive validation.
 """
 
 # Imports will be added as parsers are created
-__all__ = [] 
+__all__ = []

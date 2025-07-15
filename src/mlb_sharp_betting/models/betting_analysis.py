@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional, Any
 from enum import Enum
+from typing import Any
 
 
 class ConfidenceLevel(Enum):
@@ -22,7 +22,7 @@ class SignalType(Enum):
     LATE_FLIP = "LATE_FLIP"
     CONSENSUS_MONEYLINE = "CONSENSUS_MONEYLINE"  # New - consensus strategies
     UNDERDOG_VALUE = "UNDERDOG_VALUE"  # New - underdog value strategies
-    LINE_MOVEMENT = "LINE_MOVEMENT"  # New - line movement strategies  
+    LINE_MOVEMENT = "LINE_MOVEMENT"  # New - line movement strategies
     TIMING_BASED = "TIMING_BASED"  # New - timing-based strategies
     HYBRID_SHARP = "HYBRID_SHARP"  # New - hybrid sharp + line movement
     SIGNAL_COMBINATIONS = "SIGNAL_COMBINATIONS"  # New - multi-signal strategies
@@ -31,6 +31,7 @@ class SignalType(Enum):
 @dataclass
 class StrategyThresholds:
     """Centralized configuration for strategy thresholds"""
+
     high_performance_wr: float = 65.0
     high_performance_threshold: float = 20.0
     moderate_performance_wr: float = 60.0
@@ -44,7 +45,10 @@ class StrategyThresholds:
 @dataclass
 class SignalProcessorConfig:
     """Configuration for signal processors"""
-    minimum_differential: float = 0.1  # ✅ FIX: Lowered from 1.0 to capture weak signals
+
+    minimum_differential: float = (
+        0.1  # ✅ FIX: Lowered from 1.0 to capture weak signals
+    )
     maximum_differential: float = 80.0
     data_freshness_hours: int = 2
     steam_move_time_window_hours: int = 4
@@ -54,15 +58,16 @@ class SignalProcessorConfig:
 @dataclass
 class BettingSignal:
     """Individual betting signal with all metadata"""
+
     signal_type: SignalType
     home_team: str
     away_team: str
     game_time: datetime
     minutes_to_game: int
     split_type: str
-    split_value: Optional[str]
+    split_value: str | None
     source: str
-    book: Optional[str]
+    book: str | None
     differential: float
     signal_strength: float
     confidence_score: float
@@ -76,14 +81,14 @@ class BettingSignal:
     roi: float
     total_bets: int
     # Signal-specific metadata
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    
+    metadata: dict[str, Any] = field(default_factory=dict)
+
     @property
     def game_id(self) -> str:
         """Generate a game_id from home_team, away_team, and game_time"""
-        game_date = self.game_time.strftime('%Y-%m-%d')
+        game_date = self.game_time.strftime("%Y-%m-%d")
         return f"{self.away_team}@{self.home_team}_{game_date}"
-    
+
     @property
     def recommended_bet(self) -> str:
         """Extract the recommended bet from the recommendation string"""
@@ -93,28 +98,33 @@ class BettingSignal:
 @dataclass
 class GameAnalysis:
     """Analysis results for a single game"""
+
     home_team: str
     away_team: str
     game_time: datetime
     minutes_to_game: int
-    sharp_signals: List[BettingSignal] = field(default_factory=list)
-    opposing_markets: List[BettingSignal] = field(default_factory=list)
-    steam_moves: List[BettingSignal] = field(default_factory=list)
-    book_conflicts: List[BettingSignal] = field(default_factory=list)
-    
+    sharp_signals: list[BettingSignal] = field(default_factory=list)
+    opposing_markets: list[BettingSignal] = field(default_factory=list)
+    steam_moves: list[BettingSignal] = field(default_factory=list)
+    book_conflicts: list[BettingSignal] = field(default_factory=list)
+
     @property
-    def all_signals(self) -> List[BettingSignal]:
+    def all_signals(self) -> list[BettingSignal]:
         """Get all signals for this game"""
-        return (self.sharp_signals + self.opposing_markets + 
-                self.steam_moves + self.book_conflicts)
-    
+        return (
+            self.sharp_signals
+            + self.opposing_markets
+            + self.steam_moves
+            + self.book_conflicts
+        )
+
     @property
     def total_opportunities(self) -> int:
         """Total number of betting opportunities for this game"""
         return len(self.all_signals)
-    
+
     @property
-    def highest_confidence_signal(self) -> Optional[BettingSignal]:
+    def highest_confidence_signal(self) -> BettingSignal | None:
         """Get the signal with the highest confidence score"""
         if not self.all_signals:
             return None
@@ -124,6 +134,7 @@ class GameAnalysis:
 @dataclass
 class StrategyPerformance:
     """Strategy performance metadata"""
+
     strategy_name: str
     source_book: str
     split_type: str
@@ -138,34 +149,35 @@ class StrategyPerformance:
 @dataclass
 class BettingAnalysisResult:
     """Complete analysis result with all data and metadata"""
-    games: Dict[tuple, GameAnalysis]  # Key: (away_team, home_team, game_time)
-    strategy_performance: List[StrategyPerformance]
-    analysis_metadata: Dict[str, Any]
+
+    games: dict[tuple, GameAnalysis]  # Key: (away_team, home_team, game_time)
+    strategy_performance: list[StrategyPerformance]
+    analysis_metadata: dict[str, Any]
     generated_at: datetime = field(default_factory=datetime.now)
-    
+
     @property
     def total_games(self) -> int:
         """Total number of games analyzed"""
         return len(self.games)
-    
+
     @property
     def total_opportunities(self) -> int:
         """Total number of betting opportunities found"""
         return sum(game.total_opportunities for game in self.games.values())
-    
+
     @property
-    def opportunities_by_type(self) -> Dict[SignalType, int]:
+    def opportunities_by_type(self) -> dict[SignalType, int]:
         """Count of opportunities by signal type"""
-        counts = {signal_type: 0 for signal_type in SignalType}
+        counts = dict.fromkeys(SignalType, 0)
         for game in self.games.values():
             for signal in game.all_signals:
                 counts[signal.signal_type] += 1
         return counts
-    
+
     @property
-    def games_by_confidence(self) -> Dict[ConfidenceLevel, int]:
+    def games_by_confidence(self) -> dict[ConfidenceLevel, int]:
         """Count of games by highest confidence level"""
-        counts = {level: 0 for level in ConfidenceLevel}
+        counts = dict.fromkeys(ConfidenceLevel, 0)
         for game in self.games.values():
             highest_signal = game.highest_confidence_signal
             if highest_signal:
@@ -176,6 +188,7 @@ class BettingAnalysisResult:
 @dataclass
 class ProfitableStrategy:
     """Simplified strategy data for internal use"""
+
     strategy_name: str
     source_book: str
     split_type: str
@@ -185,4 +198,4 @@ class ProfitableStrategy:
     confidence: str
     ci_lower: float = 0.0
     ci_upper: float = 100.0
-    confidence_score: float = 0.5  # Default confidence score as float 
+    confidence_score: float = 0.5  # Default confidence score as float

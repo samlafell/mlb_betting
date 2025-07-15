@@ -15,6 +15,6 @@ from mlb_sharp_betting.core.logging import get_logger
 
 __all__ = [
     "Settings",
-    "MLBSharpBettingError", 
+    "MLBSharpBettingError",
     "get_logger",
-] 
+]

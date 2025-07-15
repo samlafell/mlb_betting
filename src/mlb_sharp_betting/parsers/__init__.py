@@ -6,9 +6,9 @@ structured format for analysis.
 """
 
 from mlb_sharp_betting.parsers.base import BaseParser, ParsingResult
-from mlb_sharp_betting.parsers.vsin import VSINParser
-from mlb_sharp_betting.parsers.sbd import SBDParser
 from mlb_sharp_betting.parsers.pinnacle import PinnacleParser, parse_pinnacle_data
+from mlb_sharp_betting.parsers.sbd import SBDParser
+from mlb_sharp_betting.parsers.vsin import VSINParser
 
 __all__ = [
     "BaseParser",
@@ -17,4 +17,4 @@ __all__ = [
     "SBDParser",
     "PinnacleParser",
     "parse_pinnacle_data",
-] 
+]

@@ -5,21 +5,23 @@ Shows which total flip combinations are approved vs banned for detect-opportunit
 """
 
 import sys
-sys.path.insert(0, '../src')
+
+sys.path.insert(0, "../src")
 
 from mlb_sharp_betting.db.connection import get_db_manager
 
+
 def main():
-    print('🎯 TOTAL FLIP VALIDATION SUMMARY')
-    print('=' * 60)
-    print('📋 Backtested performance for all source/book combinations')
+    print("🎯 TOTAL FLIP VALIDATION SUMMARY")
+    print("=" * 60)
+    print("📋 Backtested performance for all source/book combinations")
     print()
-    
+
     manager = get_db_manager()
-    
+
     try:
         # Run the comprehensive total flip analysis
-        query = '''
+        query = """
         WITH game_signals AS (
             SELECT  
                 s.game_id,
@@ -94,107 +96,132 @@ def main():
         FROM flip_results
         GROUP BY source, book
         ORDER BY total_flips DESC, roi DESC;
-        '''
-        
+        """
+
         import pandas as pd
+
         with manager.get_connection() as conn:
             df = pd.read_sql(query, conn)
-        
+
         if len(df) > 0:
-            print(f'📊 TOTAL FLIP PERFORMANCE ANALYSIS')
-            print(f'   Found {len(df)} source/book combinations with historical data')
+            print("📊 TOTAL FLIP PERFORMANCE ANALYSIS")
+            print(f"   Found {len(df)} source/book combinations with historical data")
             print()
-            
+
             approved_combinations = []
             banned_combinations = []
-            
+
             for _, row in df.iterrows():
-                combo = row['combo']
-                flips = row['total_flips']
-                wins = row['wins']
-                win_rate = row['win_rate']
-                roi = row['roi']
-                early_strength = row['avg_early_strength']
-                late_strength = row['avg_late_strength']
-                over_early = row['over_early']
-                under_early = row['under_early']
-                
+                combo = row["combo"]
+                flips = row["total_flips"]
+                wins = row["wins"]
+                win_rate = row["win_rate"]
+                roi = row["roi"]
+                early_strength = row["avg_early_strength"]
+                late_strength = row["avg_late_strength"]
+                over_early = row["over_early"]
+                under_early = row["under_early"]
+
                 # Determine status
                 if roi > 5:
-                    status = '🔥 HIGHLY PROFITABLE'
+                    status = "🔥 HIGHLY PROFITABLE"
                     approved_combinations.append(combo)
                 elif roi > 0:
-                    status = '✅ PROFITABLE'
+                    status = "✅ PROFITABLE"
                     approved_combinations.append(combo)
                 else:
-                    status = '❌ UNPROFITABLE'
+                    status = "❌ UNPROFITABLE"
                     banned_combinations.append(combo)
-                
-                print(f'{status}: {combo}')
-                print(f'   📊 Performance: {wins}/{flips} ({win_rate:.1%}) | ROI: {roi:.2f}%')
-                print(f'   📈 Signal Strength: Early {early_strength:.1f}% vs Late {late_strength:.1f}%')
-                print(f'   🎯 Direction Bias: {over_early} OVER vs {under_early} UNDER early signals')
+
+                print(f"{status}: {combo}")
+                print(
+                    f"   📊 Performance: {wins}/{flips} ({win_rate:.1%}) | ROI: {roi:.2f}%"
+                )
+                print(
+                    f"   📈 Signal Strength: Early {early_strength:.1f}% vs Late {late_strength:.1f}%"
+                )
+                print(
+                    f"   🎯 Direction Bias: {over_early} OVER vs {under_early} UNDER early signals"
+                )
                 print()
-            
+
             # Show current detector configuration
-            print('⚙️ CROSS-MARKET FLIP DETECTOR CONFIGURATION')
-            print('=' * 60)
-            
+            print("⚙️ CROSS-MARKET FLIP DETECTOR CONFIGURATION")
+            print("=" * 60)
+
             # Read current banned combinations from the detector
-            from mlb_sharp_betting.services.cross_market_flip_detector import CrossMarketFlipDetector
-            
-            print('✅ APPROVED FOR RECOMMENDATIONS:')
+            from mlb_sharp_betting.services.cross_market_flip_detector import (
+                CrossMarketFlipDetector,
+            )
+
+            print("✅ APPROVED FOR RECOMMENDATIONS:")
             if approved_combinations:
                 for combo in approved_combinations:
-                    if combo not in CrossMarketFlipDetector.TOTAL_FLIP_BANNED_COMBINATIONS:
-                        print(f'   • {combo} ✅ Active')
+                    if (
+                        combo
+                        not in CrossMarketFlipDetector.TOTAL_FLIP_BANNED_COMBINATIONS
+                    ):
+                        print(f"   • {combo} ✅ Active")
                     else:
-                        print(f'   • {combo} ⚠️  Should be active but banned in code')
+                        print(f"   • {combo} ⚠️  Should be active but banned in code")
             else:
-                print('   • None found')
+                print("   • None found")
             print()
-            
-            print('❌ BANNED FROM RECOMMENDATIONS:')
+
+            print("❌ BANNED FROM RECOMMENDATIONS:")
             if banned_combinations:
                 for combo in banned_combinations:
                     if combo in CrossMarketFlipDetector.TOTAL_FLIP_BANNED_COMBINATIONS:
-                        print(f'   • {combo} ✅ Correctly banned')
+                        print(f"   • {combo} ✅ Correctly banned")
                     else:
-                        print(f'   • {combo} ⚠️  Should be banned but not in code')
+                        print(f"   • {combo} ⚠️  Should be banned but not in code")
             else:
-                print('   • None found')
+                print("   • None found")
             print()
-            
+
             # Show detect-opportunities command status
-            print('🎯 DETECT-OPPORTUNITIES COMMAND STATUS')
-            print('=' * 60)
-            print('The `uv run python -m mlb_sharp_betting.cli detect-opportunities` command will:')
+            print("🎯 DETECT-OPPORTUNITIES COMMAND STATUS")
+            print("=" * 60)
+            print(
+                "The `uv run python -m mlb_sharp_betting.cli detect-opportunities` command will:"
+            )
             print()
-            
+
             if approved_combinations:
-                print('✅ RECOMMEND total flips from:')
+                print("✅ RECOMMEND total flips from:")
                 for combo in approved_combinations:
-                    if combo not in CrossMarketFlipDetector.TOTAL_FLIP_BANNED_COMBINATIONS:
-                        print(f'   • {combo}')
+                    if (
+                        combo
+                        not in CrossMarketFlipDetector.TOTAL_FLIP_BANNED_COMBINATIONS
+                    ):
+                        print(f"   • {combo}")
                 print()
-            
+
             if banned_combinations:
-                print('❌ REJECT total flips from:')
+                print("❌ REJECT total flips from:")
                 for combo in banned_combinations:
                     if combo in CrossMarketFlipDetector.TOTAL_FLIP_BANNED_COMBINATIONS:
-                        print(f'   • {combo} (backtested performance: {df[df.combo == combo].iloc[0].roi:.1f}% ROI)')
+                        print(
+                            f"   • {combo} (backtested performance: {df[df.combo == combo].iloc[0].roi:.1f}% ROI)"
+                        )
                 print()
-            
-            print('🔍 All recommendations are now backed by historical performance data!')
-            
+
+            print(
+                "🔍 All recommendations are now backed by historical performance data!"
+            )
+
         else:
-            print('❌ No total flip data found')
-            print('💡 This indicates total markets may be more efficient than other bet types')
-            
+            print("❌ No total flip data found")
+            print(
+                "💡 This indicates total markets may be more efficient than other bet types"
+            )
+
     except Exception as e:
         print(f"❌ Analysis failed: {e}")
         import traceback
+
         traceback.print_exc()
 
+
 if __name__ == "__main__":
-    main() 
+    main()

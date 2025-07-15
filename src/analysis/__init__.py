@@ -14,12 +14,6 @@ This package provides:
 Part of Phase 3: Strategy Integration - Unified Architecture Migration
 """
 
-from .strategies import (
-    BaseStrategyProcessor,
-    StrategyOrchestrator,
-    StrategyFactory
-)
-
 # Backtesting imports commented out - modules don't exist yet
 # from .backtesting import (
 #     UnifiedBacktestingEngine,
@@ -27,26 +21,25 @@ from .strategies import (
 #     PerformanceAnalyzer,
 #     StrategyComparator
 # )
-
 from .models import (
+    CrossStrategyComparison,
     UnifiedBettingSignal,
-    UnifiedStrategyData,
     UnifiedPerformanceMetrics,
-    CrossStrategyComparison
+    UnifiedStrategyData,
 )
+from .strategies import BaseStrategyProcessor, StrategyFactory, StrategyOrchestrator
 
 __all__ = [
     # Strategy Processing
     "BaseStrategyProcessor",
-    "StrategyOrchestrator", 
+    "StrategyOrchestrator",
     "StrategyFactory",
-    
     # Models
     "UnifiedBettingSignal",
     "UnifiedStrategyData",
     "UnifiedPerformanceMetrics",
-    "CrossStrategyComparison"
+    "CrossStrategyComparison",
 ]
 
 __version__ = "3.0.0"
-__phase__ = "Phase 3: Strategy Integration" 
+__phase__ = "Phase 3: Strategy Integration"

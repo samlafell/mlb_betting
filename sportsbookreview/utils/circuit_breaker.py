@@ -1,12 +1,14 @@
 """
 Circuit Breaker pattern implementation.
 """
+
+import asyncio
+import logging
 import time
 from functools import wraps
-import logging
-import asyncio
 
 logger = logging.getLogger(__name__)
+
 
 class CircuitBreaker:
     """
@@ -15,7 +17,10 @@ class CircuitBreaker:
     This pattern is used to prevent an application from repeatedly trying to
     execute an operation that is likely to fail.
     """
-    def __init__(self, failure_threshold=5, recovery_timeout=60, expected_exception=Exception):
+
+    def __init__(
+        self, failure_threshold=5, recovery_timeout=60, expected_exception=Exception
+    ):
         """
         Initializes the Circuit Breaker.
 
@@ -29,19 +34,19 @@ class CircuitBreaker:
         self.expected_exception = expected_exception
         self.failure_count = 0
         self.last_failure_time = None
-        self.state = 'CLOSED'  # Can be 'CLOSED', 'OPEN', 'HALF_OPEN'
+        self.state = "CLOSED"  # Can be 'CLOSED', 'OPEN', 'HALF_OPEN'
 
     def __call__(self, func):
         @wraps(func)
         async def async_wrapper(*args, **kwargs):
-            if self.state == 'OPEN':
+            if self.state == "OPEN":
                 if self._should_attempt_reset():
-                    self.state = 'HALF_OPEN'
+                    self.state = "HALF_OPEN"
                     logger.info("Circuit breaker is now HALF_OPEN.")
                 else:
                     logger.warning("Circuit breaker is OPEN. Call is blocked.")
                     raise CircuitBreakerOpenException("Circuit breaker is OPEN")
-            
+
             try:
                 result = await func(*args, **kwargs)
                 self._on_success()
@@ -49,17 +54,17 @@ class CircuitBreaker:
             except self.expected_exception as e:
                 self._on_failure()
                 raise e
-        
+
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
-            if self.state == 'OPEN':
+            if self.state == "OPEN":
                 if self._should_attempt_reset():
-                    self.state = 'HALF_OPEN'
+                    self.state = "HALF_OPEN"
                     logger.info("Circuit breaker is now HALF_OPEN.")
                 else:
                     logger.warning("Circuit breaker is OPEN. Call is blocked.")
                     raise CircuitBreakerOpenException("Circuit breaker is OPEN")
-            
+
             try:
                 result = func(*args, **kwargs)
                 self._on_success()
@@ -67,7 +72,7 @@ class CircuitBreaker:
             except self.expected_exception as e:
                 self._on_failure()
                 raise e
-        
+
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
         else:
@@ -81,8 +86,8 @@ class CircuitBreaker:
 
     def _on_success(self):
         """Handle a successful call."""
-        if self.state == 'HALF_OPEN':
-            self.state = 'CLOSED'
+        if self.state == "HALF_OPEN":
+            self.state = "CLOSED"
             logger.info("Circuit breaker is now CLOSED.")
         self.failure_count = 0
         self.last_failure_time = None
@@ -91,15 +96,19 @@ class CircuitBreaker:
         """Handle a failed call."""
         self.failure_count += 1
         self.last_failure_time = time.time()
-        
-        if self.state == 'HALF_OPEN':
-            self.state = 'OPEN'
-            logger.warning("Call failed in HALF_OPEN state. Circuit breaker is now OPEN.")
+
+        if self.state == "HALF_OPEN":
+            self.state = "OPEN"
+            logger.warning(
+                "Call failed in HALF_OPEN state. Circuit breaker is now OPEN."
+            )
 
         elif self.failure_count >= self.failure_threshold:
-            self.state = 'OPEN'
+            self.state = "OPEN"
             logger.error("Failure threshold reached. Circuit breaker is now OPEN.")
+
 
 class CircuitBreakerOpenException(Exception):
     """Exception raised when the circuit breaker is open."""
-    pass 
+
+    pass

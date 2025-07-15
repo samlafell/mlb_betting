@@ -16,4 +16,4 @@ __version__ = "1.0.0"
 __author__ = "General Balls"
 
 # Package-level exports will be defined as modules are created
-__all__ = [] 
+__all__ = []

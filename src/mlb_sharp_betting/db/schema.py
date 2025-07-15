@@ -6,13 +6,11 @@ to ensure proper storage of BettingSplit objects and related data.
 """
 
 from datetime import datetime
-from pathlib import Path
-from typing import List, Optional
 
 import structlog
 
-from .connection import DatabaseManager
 from ..core.exceptions import DatabaseError
+from .connection import DatabaseManager
 
 logger = structlog.get_logger(__name__)
 
@@ -22,7 +20,7 @@ class SchemaManager:
     Database schema manager for creating and maintaining database structure.
     """
 
-    def __init__(self, db_manager: Optional[DatabaseManager] = None) -> None:
+    def __init__(self, db_manager: DatabaseManager | None = None) -> None:
         """Initialize schema manager."""
         self.db_manager = db_manager or DatabaseManager()
         self.logger = logger.bind(component="SchemaManager")
@@ -76,7 +74,9 @@ class SchemaManager:
                 """)
                 self.logger.info("Created raw_mlb_betting_splits table")
         except Exception as e:
-            self.logger.error("Failed to create raw_mlb_betting_splits table", error=str(e))
+            self.logger.error(
+                "Failed to create raw_mlb_betting_splits table", error=str(e)
+            )
             raise DatabaseError(f"Failed to create raw_mlb_betting_splits table: {e}")
 
     def create_games_table(self) -> None:
@@ -130,22 +130,48 @@ class SchemaManager:
         """Create performance indexes on key fields."""
         indexes = [
             # Raw MLB betting splits indexes
-            ("idx_raw_mlb_betting_splits_game_id", "splits.raw_mlb_betting_splits", "game_id"),
-            ("idx_raw_mlb_betting_splits_datetime", "splits.raw_mlb_betting_splits", "game_datetime"),
-            ("idx_raw_mlb_betting_splits_source_book", "splits.raw_mlb_betting_splits", "source, book"),
-            ("idx_raw_mlb_betting_splits_split_type", "splits.raw_mlb_betting_splits", "split_type"),
-            ("idx_raw_mlb_betting_splits_sharp_action", "splits.raw_mlb_betting_splits", "sharp_action"),
-            ("idx_raw_mlb_betting_splits_last_updated", "splits.raw_mlb_betting_splits", "last_updated"),
-            
+            (
+                "idx_raw_mlb_betting_splits_game_id",
+                "splits.raw_mlb_betting_splits",
+                "game_id",
+            ),
+            (
+                "idx_raw_mlb_betting_splits_datetime",
+                "splits.raw_mlb_betting_splits",
+                "game_datetime",
+            ),
+            (
+                "idx_raw_mlb_betting_splits_source_book",
+                "splits.raw_mlb_betting_splits",
+                "source, book",
+            ),
+            (
+                "idx_raw_mlb_betting_splits_split_type",
+                "splits.raw_mlb_betting_splits",
+                "split_type",
+            ),
+            (
+                "idx_raw_mlb_betting_splits_sharp_action",
+                "splits.raw_mlb_betting_splits",
+                "sharp_action",
+            ),
+            (
+                "idx_raw_mlb_betting_splits_last_updated",
+                "splits.raw_mlb_betting_splits",
+                "last_updated",
+            ),
             # Games indexes
             ("idx_games_game_id", "splits.games", "game_id"),
             ("idx_games_datetime", "splits.games", "game_datetime"),
             ("idx_games_teams", "splits.games", "home_team, away_team"),
             ("idx_games_status", "splits.games", "status"),
-            
             # Sharp actions indexes
             ("idx_sharp_actions_game_id", "splits.sharp_actions", "game_id"),
-            ("idx_sharp_actions_confidence", "splits.sharp_actions", "overall_confidence"),
+            (
+                "idx_sharp_actions_confidence",
+                "splits.sharp_actions",
+                "overall_confidence",
+            ),
             ("idx_sharp_actions_split_type", "splits.sharp_actions", "split_type"),
         ]
 
@@ -156,8 +182,10 @@ class SchemaManager:
                         CREATE INDEX IF NOT EXISTS {index_name} 
                         ON {table_name}({columns})
                     """)
-                    self.logger.debug("Created index", index=index_name, table=table_name)
-                
+                    self.logger.debug(
+                        "Created index", index=index_name, table=table_name
+                    )
+
                 self.logger.info("Created all database indexes")
         except Exception as e:
             self.logger.error("Failed to create indexes", error=str(e))
@@ -183,7 +211,7 @@ class SchemaManager:
                     FOR EACH ROW
                     EXECUTE FUNCTION update_timestamp();
                 """)
-                
+
                 # Update timestamp trigger for games
                 cursor.execute("""
                     DROP TRIGGER IF EXISTS update_games_timestamp ON splits.games;
@@ -192,33 +220,35 @@ class SchemaManager:
                     FOR EACH ROW
                     EXECUTE FUNCTION update_timestamp();
                 """)
-                
+
                 self.logger.info("Created database triggers")
         except Exception as e:
             # PostgreSQL trigger support
-            self.logger.warning("Failed to create triggers (may not be supported)", error=str(e))
+            self.logger.warning(
+                "Failed to create triggers (may not be supported)", error=str(e)
+            )
 
     def setup_complete_schema(self) -> None:
         """Set up the complete database schema."""
         self.logger.info("Setting up complete database schema")
-        
+
         try:
             # Create schema
             self.create_schema()
-            
+
             # Create tables
             self.create_betting_splits_table()
             self.create_games_table()
             self.create_sharp_actions_table()
-            
+
             # Create indexes
             self.create_indexes()
-            
+
             # Create triggers (if supported)
             self.create_triggers()
-            
+
             self.logger.info("Database schema setup completed successfully")
-            
+
         except Exception as e:
             self.logger.error("Failed to setup complete schema", error=str(e))
             raise DatabaseError(f"Failed to setup database schema: {e}")
@@ -227,27 +257,27 @@ class SchemaManager:
         """Verify that the schema is properly set up."""
         required_tables = [
             "splits.raw_mlb_betting_splits",
-            "splits.games", 
-            "splits.sharp_actions"
+            "splits.games",
+            "splits.sharp_actions",
         ]
-        
+
         try:
             with self.db_manager.get_cursor() as cursor:
                 for table in required_tables:
                     cursor.execute(f"""
                         SELECT table_name FROM information_schema.tables 
                         WHERE table_schema = 'splits' 
-                        AND table_name = '{table.split('.')[1]}'
+                        AND table_name = '{table.split(".")[1]}'
                     """)
                     result = cursor.fetchall()
-                    
+
                     if not result:
                         self.logger.error("Missing required table", table=table)
                         return False
-                
+
                 self.logger.info("Schema verification passed")
                 return True
-                
+
         except Exception as e:
             self.logger.error("Schema verification failed", error=str(e))
             return False
@@ -258,17 +288,17 @@ class SchemaManager:
             with self.db_manager.get_cursor() as cursor:
                 # Get table information
                 tables_info = {}
-                
+
                 cursor.execute("""
                     SELECT table_name, table_type 
                     FROM information_schema.tables 
                     WHERE table_schema = 'splits'
                 """)
                 result = cursor.fetchall()
-                
+
                 for row in result:
-                    table_name = row['table_name']
-                    table_type = row['table_type']
+                    table_name = row["table_name"]
+                    table_type = row["table_type"]
                     # Get column info for each table
                     cursor.execute(f"""
                         SELECT column_name, data_type, is_nullable
@@ -278,25 +308,25 @@ class SchemaManager:
                         ORDER BY ordinal_position
                     """)
                     columns = cursor.fetchall()
-                    
+
                     tables_info[table_name] = {
                         "type": table_type,
                         "columns": [
                             {
-                                "name": col['column_name'],
-                                "type": col['data_type'], 
-                                "nullable": col['is_nullable']
+                                "name": col["column_name"],
+                                "type": col["data_type"],
+                                "nullable": col["is_nullable"],
                             }
                             for col in columns
-                        ]
+                        ],
                     }
-                
+
                 return {
                     "schema": "splits",
                     "tables": tables_info,
-                    "verification_time": datetime.now().isoformat()
+                    "verification_time": datetime.now().isoformat(),
                 }
-                
+
         except Exception as e:
             self.logger.error("Failed to get schema info", error=str(e))
             raise DatabaseError(f"Failed to get schema info: {e}")
@@ -304,13 +334,13 @@ class SchemaManager:
     def drop_schema(self, confirm: bool = False) -> None:
         """
         Drop the entire schema (use with caution).
-        
+
         Args:
             confirm: Must be True to actually drop the schema
         """
         if not confirm:
             raise ValueError("Must confirm schema drop with confirm=True")
-            
+
         try:
             with self.db_manager.get_cursor() as cursor:
                 cursor.execute("DROP SCHEMA IF EXISTS splits CASCADE")
@@ -320,18 +350,18 @@ class SchemaManager:
             raise DatabaseError(f"Failed to drop schema: {e}")
 
 
-def get_schema_manager(db_manager: Optional[DatabaseManager] = None) -> SchemaManager:
+def get_schema_manager(db_manager: DatabaseManager | None = None) -> SchemaManager:
     """Get a SchemaManager instance."""
     return SchemaManager(db_manager)
 
 
-def setup_database_schema(db_manager: Optional[DatabaseManager] = None) -> None:
+def setup_database_schema(db_manager: DatabaseManager | None = None) -> None:
     """Convenience function to set up the complete database schema."""
     schema_manager = get_schema_manager(db_manager)
     schema_manager.setup_complete_schema()
 
 
-def verify_database_schema(db_manager: Optional[DatabaseManager] = None) -> bool:
+def verify_database_schema(db_manager: DatabaseManager | None = None) -> bool:
     """Convenience function to verify the database schema."""
     schema_manager = get_schema_manager(db_manager)
-    return schema_manager.verify_schema() 
+    return schema_manager.verify_schema()

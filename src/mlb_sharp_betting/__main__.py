@@ -11,14 +11,14 @@ import sys
 from pathlib import Path
 
 # Import the CLI from the cli.py file (not the cli package)
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Import and run the main CLI
     import importlib.util
-    
+
     cli_path = Path(__file__).parent / "cli.py"
     spec = importlib.util.spec_from_file_location("cli", cli_path)
     cli_module = importlib.util.module_from_spec(spec)
     sys.modules["cli"] = cli_module
     spec.loader.exec_module(cli_module)
-    
-    cli_module.cli() 
+
+    cli_module.cli()

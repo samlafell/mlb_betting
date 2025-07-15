@@ -18,8 +18,4 @@ from .base import BaseStrategyProcessor
 from .factory import StrategyFactory
 from .orchestrator import StrategyOrchestrator
 
-__all__ = [
-    "BaseStrategyProcessor",
-    "StrategyFactory",
-    "StrategyOrchestrator"
-] 
+__all__ = ["BaseStrategyProcessor", "StrategyFactory", "StrategyOrchestrator"]

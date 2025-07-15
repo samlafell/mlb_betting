@@ -9,7 +9,6 @@ but wiring a factory now means the scraper doesn’t need to change when
 new parsers are added later.
 """
 
-import json
 import logging
 from typing import Protocol, runtime_checkable
 
@@ -35,7 +34,7 @@ class SupportsParseBetTypePage(Protocol):
 class ParserFactory:
     """Return an appropriate parser for a given raw HTML blob."""
 
-    _json_hint = "\"gameView\""  # quick heuristic – present in JSON payload
+    _json_hint = '"gameView"'  # quick heuristic – present in JSON payload
 
     def __init__(self):
         # Cache singletons to avoid repeated instantiation cost
@@ -63,4 +62,4 @@ _parser_factory = ParserFactory()
 
 def get_parser(html_content: str) -> SupportsParseBetTypePage:
     """Module-level helper mirroring factory singleton."""
-    return _parser_factory.get_parser(html_content) 
+    return _parser_factory.get_parser(html_content)

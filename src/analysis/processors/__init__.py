@@ -14,25 +14,25 @@ This package contains:
 Part of Phase 3: Strategy Integration - Unified Architecture Migration
 """
 
-from .sharp_action_processor import UnifiedSharpActionProcessor
 from .book_conflict_processor import UnifiedBookConflictProcessor
-from .timing_based_processor import UnifiedTimingBasedProcessor
 from .consensus_processor import UnifiedConsensusProcessor
-from .public_fade_processor import UnifiedPublicFadeProcessor
-from .late_flip_processor import UnifiedLateFlipProcessor
-from .underdog_value_processor import UnifiedUnderdogValueProcessor
-from .line_movement_processor import UnifiedLineMovementProcessor
 from .hybrid_sharp_processor import UnifiedHybridSharpProcessor
+from .late_flip_processor import UnifiedLateFlipProcessor
+from .line_movement_processor import UnifiedLineMovementProcessor
+from .public_fade_processor import UnifiedPublicFadeProcessor
+from .sharp_action_processor import UnifiedSharpActionProcessor
+from .timing_based_processor import UnifiedTimingBasedProcessor
+from .underdog_value_processor import UnifiedUnderdogValueProcessor
 
 # Phase 5C: All processors migrated!
 __all__ = [
     "UnifiedSharpActionProcessor",
-    "UnifiedBookConflictProcessor", 
+    "UnifiedBookConflictProcessor",
     "UnifiedTimingBasedProcessor",
     "UnifiedConsensusProcessor",
     "UnifiedPublicFadeProcessor",
     "UnifiedLateFlipProcessor",
     "UnifiedUnderdogValueProcessor",
     "UnifiedLineMovementProcessor",
-    "UnifiedHybridSharpProcessor"
-] 
+    "UnifiedHybridSharpProcessor",
+]

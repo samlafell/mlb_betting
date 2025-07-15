@@ -18,17 +18,17 @@ Part of Phase 3: Strategy Integration - Unified Architecture Migration
 """
 
 from .engine import (
-    RecommendationBasedBacktestingEngine,
+    BacktestStatus,
+    BetOutcome,
     RecommendationBacktestConfig,
     RecommendationBacktestResult,
-    BacktestStatus,
-    BetOutcome
+    RecommendationBasedBacktestingEngine,
 )
 
 __all__ = [
     "RecommendationBasedBacktestingEngine",
-    "RecommendationBacktestConfig", 
+    "RecommendationBacktestConfig",
     "RecommendationBacktestResult",
     "BacktestStatus",
-    "BetOutcome"
-] 
+    "BetOutcome",
+]

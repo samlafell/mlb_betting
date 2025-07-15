@@ -7,4 +7,4 @@ analytics system, consolidating all CLI functionality from legacy modules.
 
 from .main import cli
 
-__all__ = ['cli'] 
+__all__ = ["cli"]

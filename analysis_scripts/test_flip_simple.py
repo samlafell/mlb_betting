@@ -4,21 +4,23 @@ Simple test script to show cross-market flip results
 """
 
 import sys
-sys.path.append('src')
+
+sys.path.append("src")
 
 from mlb_sharp_betting.db.connection import get_db_manager
 
+
 def main():
     """Run simple flip test."""
-    
+
     manager = get_db_manager()
-    
+
     try:
-        print('🎯 CROSS-MARKET FLIP STRATEGY - PROFITABILITY BACKTEST')
-        print('=' * 65)
-        
+        print("🎯 CROSS-MARKET FLIP STRATEGY - PROFITABILITY BACKTEST")
+        print("=" * 65)
+
         # Working query that we tested successfully
-        query = '''
+        query = """
         WITH early_signals AS (
             SELECT 
                 s.game_id,
@@ -100,57 +102,78 @@ def main():
         FROM strategy_performance
         GROUP BY flip_type
         ORDER BY strategy_roi DESC, total_bets DESC;
-        '''
-        
+        """
+
         with manager.get_connection() as conn:
             import pandas as pd
+
             df = pd.read_sql(query, conn)
-            
+
             if len(df) > 0:
-                print('✅ FLIP STRATEGY RESULTS:')
+                print("✅ FLIP STRATEGY RESULTS:")
                 print()
-                
-                total_bets = df['total_bets'].sum()
-                total_wins = df['strategy_wins'].sum()
-                overall_roi = (df['strategy_roi'] * df['total_bets']).sum() / total_bets if total_bets > 0 else 0
-                
-                print(f'📈 OVERALL: {total_wins}/{total_bets} ({total_wins/total_bets:.1%}) | ROI: {overall_roi:.2f}%')
+
+                total_bets = df["total_bets"].sum()
+                total_wins = df["strategy_wins"].sum()
+                overall_roi = (
+                    (df["strategy_roi"] * df["total_bets"]).sum() / total_bets
+                    if total_bets > 0
+                    else 0
+                )
+
+                print(
+                    f"📈 OVERALL: {total_wins}/{total_bets} ({total_wins / total_bets:.1%}) | ROI: {overall_roi:.2f}%"
+                )
                 print()
-                
+
                 for _, row in df.iterrows():
-                    flip_type = row['flip_type']
-                    bets = row['total_bets']
-                    wins = row['strategy_wins']
-                    win_rate = row['strategy_win_rate']
-                    roi = row['strategy_roi']
-                    
-                    status = '🔥' if roi > 10 else '✅' if roi > 5 else '⚠️' if roi > 0 else '❌'
-                    print(f'{status} {flip_type.replace("_", " ").title()}: {wins}/{bets} ({win_rate:.1%}) | ROI: {roi:.2f}%')
-                
+                    flip_type = row["flip_type"]
+                    bets = row["total_bets"]
+                    wins = row["strategy_wins"]
+                    win_rate = row["strategy_win_rate"]
+                    roi = row["strategy_roi"]
+
+                    status = (
+                        "🔥"
+                        if roi > 10
+                        else "✅"
+                        if roi > 5
+                        else "⚠️"
+                        if roi > 0
+                        else "❌"
+                    )
+                    print(
+                        f"{status} {flip_type.replace('_', ' ').title()}: {wins}/{bets} ({win_rate:.1%}) | ROI: {roi:.2f}%"
+                    )
+
                 # Summary assessment
                 print()
                 if overall_roi > 5.0:
-                    print('🔥 ASSESSMENT: PROFITABLE STRATEGY!')
-                    print(f'   💰 Expected profit: ${overall_roi:.2f} per $100 wagered')
+                    print("🔥 ASSESSMENT: PROFITABLE STRATEGY!")
+                    print(f"   💰 Expected profit: ${overall_roi:.2f} per $100 wagered")
                 elif overall_roi > 0:
-                    print('⚠️  ASSESSMENT: MARGINALLY PROFITABLE')
-                    print(f'   💰 Expected profit: ${overall_roi:.2f} per $100 wagered')
+                    print("⚠️  ASSESSMENT: MARGINALLY PROFITABLE")
+                    print(f"   💰 Expected profit: ${overall_roi:.2f} per $100 wagered")
                 else:
-                    print('❌ ASSESSMENT: NOT PROFITABLE')
-                    print(f'   💸 Expected loss: ${abs(overall_roi):.2f} per $100 wagered')
-                    
+                    print("❌ ASSESSMENT: NOT PROFITABLE")
+                    print(
+                        f"   💸 Expected loss: ${abs(overall_roi):.2f} per $100 wagered"
+                    )
+
                 print()
-                print('✅ SUCCESS: Found properly deduplicated flip results!')
-                print(f'   📊 {total_bets} total bets across {len(df)} flip types')
-                print(f'   🎯 No more 9,000+ bet duplication issue!')
-                
+                print("✅ SUCCESS: Found properly deduplicated flip results!")
+                print(f"   📊 {total_bets} total bets across {len(df)} flip types")
+                print("   🎯 No more 9,000+ bet duplication issue!")
+
             else:
-                print('❌ No flip patterns detected')
-                
+                print("❌ No flip patterns detected")
+
     except Exception as e:
         print(f"❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
 
+
 if __name__ == "__main__":
-    main() 
+    main()

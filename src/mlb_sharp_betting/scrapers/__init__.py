@@ -6,14 +6,14 @@ VSIN, SportsBettingDime, and Pinnacle.
 """
 
 from mlb_sharp_betting.scrapers.base import BaseScraper, ScrapingResult
-from mlb_sharp_betting.scrapers.vsin import VSINScraper
-from mlb_sharp_betting.scrapers.sbd import SBDScraper
 from mlb_sharp_betting.scrapers.pinnacle import PinnacleScraper
+from mlb_sharp_betting.scrapers.sbd import SBDScraper
+from mlb_sharp_betting.scrapers.vsin import VSINScraper
 
 __all__ = [
     "BaseScraper",
     "ScrapingResult",
-    "VSINScraper", 
+    "VSINScraper",
     "SBDScraper",
     "PinnacleScraper",
-] 
+]

@@ -11,7 +11,6 @@ Phase 4 Migration: Interface & Service Consolidation
 - Modern async patterns with proper error handling
 """
 
-import asyncio
 import sys
 from pathlib import Path
 
@@ -36,4 +35,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

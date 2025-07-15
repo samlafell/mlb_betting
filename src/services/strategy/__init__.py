@@ -15,14 +15,14 @@ New Unified Services:
 - StrategyPerformanceService: Strategy performance tracking and optimization
 """
 
+from .strategy_configuration_service import StrategyConfigurationService
 from .strategy_manager_service import StrategyManagerService
 from .strategy_orchestration_service import StrategyOrchestrationService
-from .strategy_configuration_service import StrategyConfigurationService
 from .strategy_performance_service import StrategyPerformanceService
 
 __all__ = [
-    'StrategyManagerService',
-    'StrategyOrchestrationService',
-    'StrategyConfigurationService',
-    'StrategyPerformanceService'
-] 
+    "StrategyManagerService",
+    "StrategyOrchestrationService",
+    "StrategyConfigurationService",
+    "StrategyPerformanceService",
+]

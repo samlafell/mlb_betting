@@ -9,9 +9,9 @@ to implement business workflows.
 # Import specific services when needed
 
 __all__ = [
-    "GameUpdater", 
+    "GameUpdater",
     "OddsAPIService",
     "OddsData",
     "GameOutcomeService",
     "get_game_outcome_service",
-] 
+]

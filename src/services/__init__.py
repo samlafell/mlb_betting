@@ -46,9 +46,7 @@ Phase 4 Migration: Service Consolidation
 """
 
 # Data Services
-from .data import (
-    UnifiedDataService
-)
+from .data import UnifiedDataService
 
 # Analysis Services - Temporarily commented out until implemented
 # from .analysis import (
@@ -87,7 +85,6 @@ from .data import (
 
 __all__ = [
     # Data Services
-    'UnifiedDataService'
-    
+    "UnifiedDataService"
     # Additional services will be uncommented as they are implemented
-] 
+]

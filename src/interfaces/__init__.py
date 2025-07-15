@@ -12,6 +12,4 @@ Phase 4 Migration: Interface & Service Consolidation
 
 from .cli import cli
 
-__all__ = [
-    'cli'
-] 
+__all__ = ["cli"]

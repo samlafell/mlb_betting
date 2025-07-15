@@ -2,7 +2,7 @@
 """
 Daily Betting Report CLI Command
 
-This command generates daily betting performance reports showing the top 5 
+This command generates daily betting performance reports showing the top 5
 betting opportunities that the MLB sharp betting system would have recommended.
 
 Features:
@@ -29,18 +29,15 @@ Examples:
 """
 
 import asyncio
-import argparse
 import json
 import sys
-from datetime import datetime, date, timezone
+from datetime import date, datetime
 from pathlib import Path
-from typing import Optional
 
-import structlog
 import click
+import structlog
 
 from ...services.daily_betting_report_service import DailyBettingReportService
-from ...core.logging import get_logger
 
 logger = structlog.get_logger(__name__)
 
@@ -52,42 +49,69 @@ def daily_report_group():
 
 
 @daily_report_group.command("generate")
-@click.option("--date", "-d", 
-              help="Date to analyze (YYYY-MM-DD format, default: today)")
-@click.option("--format", "-f", 
-              type=click.Choice(["console", "json", "email"]),
-              default="console",
-              help="Output format (default: console)")
-@click.option("--output-file", "-o",
-              type=click.Path(path_type=Path),
-              help="Output file path for JSON format")
-@click.option("--min-confidence", "-c",
-              type=click.FloatRange(0.0, 1.0),
-              default=0.65,
-              help="Minimum confidence threshold (default: 0.65)")
-@click.option("--max-bets", "-m",
-              type=click.IntRange(1, 10),
-              default=3,
-              help="Maximum number of opportunities to return (default: 3)")
-@click.option("--hours-before-game", "-h",
-              type=click.FloatRange(0.5, 12.0),
-              default=4.0,
-              help="Maximum hours before game to consider signals (default: 4.0)")
-@click.option("--minutes-cutoff", 
-              type=click.IntRange(5, 120),
-              default=15,
-              help="Minimum minutes before game start (default: 15)")
-@click.option("--min-signal-strength",
-              type=click.FloatRange(5.0, 50.0),
-              default=15.0,
-              help="Minimum signal strength threshold (default: 15.0)")
-@click.option("--debug", is_flag=True,
-              help="Enable debug logging")
-def generate_report(date: Optional[str], format: str, output_file: Optional[Path],
-                   min_confidence: float, max_bets: int, hours_before_game: float,
-                   minutes_cutoff: int, min_signal_strength: float, debug: bool):
+@click.option(
+    "--date", "-d", help="Date to analyze (YYYY-MM-DD format, default: today)"
+)
+@click.option(
+    "--format",
+    "-f",
+    type=click.Choice(["console", "json", "email"]),
+    default="console",
+    help="Output format (default: console)",
+)
+@click.option(
+    "--output-file",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Output file path for JSON format",
+)
+@click.option(
+    "--min-confidence",
+    "-c",
+    type=click.FloatRange(0.0, 1.0),
+    default=0.65,
+    help="Minimum confidence threshold (default: 0.65)",
+)
+@click.option(
+    "--max-bets",
+    "-m",
+    type=click.IntRange(1, 10),
+    default=3,
+    help="Maximum number of opportunities to return (default: 3)",
+)
+@click.option(
+    "--hours-before-game",
+    "-h",
+    type=click.FloatRange(0.5, 12.0),
+    default=4.0,
+    help="Maximum hours before game to consider signals (default: 4.0)",
+)
+@click.option(
+    "--minutes-cutoff",
+    type=click.IntRange(5, 120),
+    default=15,
+    help="Minimum minutes before game start (default: 15)",
+)
+@click.option(
+    "--min-signal-strength",
+    type=click.FloatRange(5.0, 50.0),
+    default=15.0,
+    help="Minimum signal strength threshold (default: 15.0)",
+)
+@click.option("--debug", is_flag=True, help="Enable debug logging")
+def generate_report(
+    date: str | None,
+    format: str,
+    output_file: Path | None,
+    min_confidence: float,
+    max_bets: int,
+    hours_before_game: float,
+    minutes_cutoff: int,
+    min_signal_strength: float,
+    debug: bool,
+):
     """Generate daily betting performance report."""
-    
+
     # Configure logging
     if debug:
         structlog.configure(
@@ -95,42 +119,46 @@ def generate_report(date: Optional[str], format: str, output_file: Optional[Path
                 structlog.stdlib.filter_by_level,
                 structlog.stdlib.add_logger_name,
                 structlog.stdlib.add_log_level,
-                structlog.dev.ConsoleRenderer(colors=True)
+                structlog.dev.ConsoleRenderer(colors=True),
             ],
             logger_factory=structlog.stdlib.LoggerFactory(),
             wrapper_class=structlog.stdlib.BoundLogger,
             cache_logger_on_first_use=True,
         )
-    
+
     # Parse target date
     target_date = None
     if date:
         try:
             target_date = datetime.strptime(date, "%Y-%m-%d").date()
         except ValueError:
-            click.echo(f"❌ Invalid date format: {date}. Use YYYY-MM-DD format.", err=True)
+            click.echo(
+                f"❌ Invalid date format: {date}. Use YYYY-MM-DD format.", err=True
+            )
             sys.exit(1)
-    
+
     # Run the report generation
     try:
-        report = asyncio.run(_generate_report_async(
-            target_date=target_date,
-            output_format=format,
-            output_file=output_file,
-            min_confidence=min_confidence,
-            max_bets=max_bets,
-            hours_before_game=hours_before_game,
-            minutes_cutoff=minutes_cutoff,
-            min_signal_strength=min_signal_strength
-        ))
-        
+        report = asyncio.run(
+            _generate_report_async(
+                target_date=target_date,
+                output_format=format,
+                output_file=output_file,
+                min_confidence=min_confidence,
+                max_bets=max_bets,
+                hours_before_game=hours_before_game,
+                minutes_cutoff=minutes_cutoff,
+                min_signal_strength=min_signal_strength,
+            )
+        )
+
         if format == "console":
             click.echo("✅ Daily betting report generated successfully!")
         elif format == "json" and output_file:
             click.echo(f"✅ Report saved to: {output_file}")
         else:
             click.echo("✅ Report generated successfully!")
-            
+
     except Exception as e:
         click.echo(f"❌ Failed to generate report: {str(e)}", err=True)
         if debug:
@@ -139,60 +167,76 @@ def generate_report(date: Optional[str], format: str, output_file: Optional[Path
 
 
 @daily_report_group.command("schedule")
-@click.option("--time", "-t",
-              default="23:59",
-              help="Daily execution time in HH:MM format (default: 23:59)")
-@click.option("--timezone", "-z",
-              default="US/Eastern",
-              help="Timezone for scheduled execution (default: US/Eastern)")
-@click.option("--email-recipients",
-              help="Comma-separated email addresses for automated reports")
-@click.option("--debug", is_flag=True,
-              help="Enable debug logging")
-def schedule_daily_reports(time: str, timezone: str, email_recipients: Optional[str], debug: bool):
+@click.option(
+    "--time",
+    "-t",
+    default="23:59",
+    help="Daily execution time in HH:MM format (default: 23:59)",
+)
+@click.option(
+    "--timezone",
+    "-z",
+    default="US/Eastern",
+    help="Timezone for scheduled execution (default: US/Eastern)",
+)
+@click.option(
+    "--email-recipients", help="Comma-separated email addresses for automated reports"
+)
+@click.option("--debug", is_flag=True, help="Enable debug logging")
+def schedule_daily_reports(
+    time: str, timezone: str, email_recipients: str | None, debug: bool
+):
     """Schedule automated daily report generation."""
-    
+
     click.echo("📅 Setting up daily report scheduler...")
-    
+
     try:
         # Validate time format
         hour, minute = map(int, time.split(":"))
         if not (0 <= hour <= 23 and 0 <= minute <= 59):
             raise ValueError("Invalid time format")
-            
+
     except ValueError:
-        click.echo(f"❌ Invalid time format: {time}. Use HH:MM format (24-hour).", err=True)
+        click.echo(
+            f"❌ Invalid time format: {time}. Use HH:MM format (24-hour).", err=True
+        )
         sys.exit(1)
-    
+
     # This would integrate with the existing scheduler
     click.echo(f"⏰ Daily reports scheduled for {time} {timezone}")
     click.echo("📊 Reports will be generated automatically")
-    
+
     if email_recipients:
         emails = [email.strip() for email in email_recipients.split(",")]
         click.echo(f"📧 Email notifications: {', '.join(emails)}")
-    
-    click.echo("\n💡 To integrate with existing scheduler, add this job to your scheduler configuration:")
-    click.echo(f"   Command: uv run -m mlb_sharp_betting.cli daily-report generate --format console")
+
+    click.echo(
+        "\n💡 To integrate with existing scheduler, add this job to your scheduler configuration:"
+    )
+    click.echo(
+        "   Command: uv run -m mlb_sharp_betting.cli daily-report generate --format console"
+    )
     click.echo(f"   Schedule: {time} {timezone} daily")
 
 
 @daily_report_group.command("status")
 def show_status():
     """Show daily report service status and recent reports."""
-    
+
     click.echo("📊 Daily Report Service Status")
     click.echo("=" * 40)
-    
+
     try:
         # Check for recent reports
         reports_dir = Path("reports/daily")
         if reports_dir.exists():
             recent_reports = sorted(reports_dir.glob("daily_report_*.json"))[-5:]
-            
+
             click.echo(f"📁 Reports directory: {reports_dir.absolute()}")
-            click.echo(f"📊 Total reports: {len(list(reports_dir.glob('daily_report_*.json')))}")
-            
+            click.echo(
+                f"📊 Total reports: {len(list(reports_dir.glob('daily_report_*.json')))}"
+            )
+
             if recent_reports:
                 click.echo("\n📈 Recent Reports:")
                 for report_file in recent_reports:
@@ -200,41 +244,42 @@ def show_status():
                     date_str = report_file.stem.replace("daily_report_", "")
                     file_size = report_file.stat().st_size
                     modified_time = datetime.fromtimestamp(report_file.stat().st_mtime)
-                    
-                    click.echo(f"  📅 {date_str} - {file_size:,} bytes - {modified_time.strftime('%H:%M %Z')}")
+
+                    click.echo(
+                        f"  📅 {date_str} - {file_size:,} bytes - {modified_time.strftime('%H:%M %Z')}"
+                    )
             else:
                 click.echo("📭 No reports found")
         else:
             click.echo("📂 Reports directory not found")
-            
+
         # Service configuration
         click.echo("\n⚙️  Configuration:")
         click.echo("   • Max opportunities: 5")
         click.echo("   • Min confidence: 0.65")
         click.echo("   • Supported bet types: Moneyline, Spread, Total")
         click.echo("   • Data sources: VSIN, SBD")
-        
+
     except Exception as e:
         click.echo(f"❌ Failed to get status: {str(e)}", err=True)
 
 
 @daily_report_group.command("validate")
-@click.option("--date", "-d",
-              required=True,
-              help="Date to validate (YYYY-MM-DD format)")
-@click.option("--show-details", is_flag=True,
-              help="Show detailed validation results")
+@click.option(
+    "--date", "-d", required=True, help="Date to validate (YYYY-MM-DD format)"
+)
+@click.option("--show-details", is_flag=True, help="Show detailed validation results")
 def validate_report(date: str, show_details: bool):
     """Validate daily report against actual game outcomes."""
-    
+
     try:
         target_date = datetime.strptime(date, "%Y-%m-%d").date()
     except ValueError:
         click.echo(f"❌ Invalid date format: {date}. Use YYYY-MM-DD format.", err=True)
         sys.exit(1)
-    
+
     click.echo(f"🔍 Validating report for {target_date.strftime('%B %d, %Y')}...")
-    
+
     try:
         # This would implement validation logic
         # For now, show a placeholder
@@ -244,7 +289,7 @@ def validate_report(date: str, show_details: bool):
         click.echo("   • Opportunities validated: 5/5")
         click.echo("   • Actual performance: 3W-2L (60%)")
         click.echo("   • ROI: +12.5%")
-        
+
         if show_details:
             click.echo("\n📋 Detailed Results:")
             click.echo("   1. Pirates @ Tigers ML (+168) - ✅ WIN")
@@ -252,39 +297,44 @@ def validate_report(date: str, show_details: bool):
             click.echo("   3. Dodgers @ Giants ML (-150) - ✅ WIN")
             click.echo("   4. Cubs @ Brewers Over 9.0 - ❌ LOSS")
             click.echo("   5. Astros @ Rangers ML (+125) - ✅ WIN")
-        
+
     except Exception as e:
         click.echo(f"❌ Validation failed: {str(e)}", err=True)
         sys.exit(1)
 
 
-async def _generate_report_async(target_date: Optional[date], output_format: str,
-                               output_file: Optional[Path], min_confidence: float,
-                               max_bets: int, hours_before_game: float,
-                               minutes_cutoff: int, min_signal_strength: float) -> dict:
+async def _generate_report_async(
+    target_date: date | None,
+    output_format: str,
+    output_file: Path | None,
+    min_confidence: float,
+    max_bets: int,
+    hours_before_game: float,
+    minutes_cutoff: int,
+    min_signal_strength: float,
+) -> dict:
     """Async wrapper for report generation."""
-    
+
     # Initialize service
     service = DailyBettingReportService()
-    
+
     # Update configuration from CLI parameters
     service.config["min_confidence_score"] = min_confidence
     service.config["max_opportunities_per_day"] = max_bets
     service.config["max_hours_before_game"] = hours_before_game
     service.config["detection_cutoff_minutes"] = minutes_cutoff
     service.config["min_signal_strength"] = min_signal_strength
-    
+
     # Generate report
     report = await service.generate_daily_report(
-        target_date=target_date,
-        output_format=output_format
+        target_date=target_date, output_format=output_format
     )
-    
+
     # Handle output
     if output_format == "console":
         console_output = service.format_console_report(report)
         click.echo(console_output)
-    
+
     elif output_format == "json":
         report_dict = {
             "report_date": report.report_date.isoformat(),
@@ -306,7 +356,7 @@ async def _generate_report_async(target_date: Optional[date], output_format: str
                     "roi_estimate": opp.roi_estimate,
                     "sportsbook": opp.sportsbook,
                     "detected_at": opp.detected_at.isoformat(),
-                    "minutes_before_game": opp.minutes_before_game
+                    "minutes_before_game": opp.minutes_before_game,
                 }
                 for i, opp in enumerate(report.selected_opportunities)
             ],
@@ -314,22 +364,22 @@ async def _generate_report_async(target_date: Optional[date], output_format: str
                 "execution_time_seconds": report.execution_time_seconds,
                 "generated_at": report.generated_at.isoformat(),
                 "data_completeness_pct": report.data_completeness_pct,
-                "average_confidence_score": report.average_confidence_score
-            }
+                "average_confidence_score": report.average_confidence_score,
+            },
         }
-        
+
         if output_file:
             output_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_file, 'w') as f:
+            with open(output_file, "w") as f:
                 json.dump(report_dict, f, indent=2)
         else:
             click.echo(json.dumps(report_dict, indent=2))
-    
+
     elif output_format == "email":
         # This would implement email sending
         click.echo("📧 Email functionality not yet implemented")
         click.echo("💡 Use console or JSON format for now")
-    
+
     return {"status": "success", "report": report}
 
 
@@ -339,4 +389,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

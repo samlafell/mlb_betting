@@ -5,19 +5,21 @@ Finds and validates profitability of total market flips
 """
 
 import sys
-sys.path.insert(0, '../src')
+
+sys.path.insert(0, "../src")
 
 from mlb_sharp_betting.db.connection import get_db_manager
 
+
 def main():
     manager = get_db_manager()
-    
+
     try:
-        print('🎯 SIMPLE TOTAL MARKET FLIP ANALYSIS')
-        print('=' * 50)
-        
+        print("🎯 SIMPLE TOTAL MARKET FLIP ANALYSIS")
+        print("=" * 50)
+
         # Simple approach: Find games where early and late signals differ
-        query = '''
+        query = """
         WITH game_signals AS (
             SELECT 
                 s.game_id,
@@ -97,54 +99,63 @@ def main():
         FROM flip_results
         GROUP BY source, book
         ORDER BY total_flips DESC;
-        '''
-        
+        """
+
         import pandas as pd
+
         with manager.get_connection() as conn:
             df = pd.read_sql(query, conn)
-        
+
         if len(df) > 0:
-            print(f'🔍 Found {len(df)} source/book combinations with total flips')
+            print(f"🔍 Found {len(df)} source/book combinations with total flips")
             print()
-            
+
             for _, row in df.iterrows():
-                combo = row['combo']
-                flips = row['total_flips']
-                wins = row['wins']
-                win_rate = row['win_rate']
-                roi = row['roi']
-                early_strength = row['avg_early_strength']
-                late_strength = row['avg_late_strength']
-                over_early = row['over_early']
-                under_early = row['under_early']
-                sample_games = row['sample_games']
-                
+                combo = row["combo"]
+                flips = row["total_flips"]
+                wins = row["wins"]
+                win_rate = row["win_rate"]
+                roi = row["roi"]
+                early_strength = row["avg_early_strength"]
+                late_strength = row["avg_late_strength"]
+                over_early = row["over_early"]
+                under_early = row["under_early"]
+                sample_games = row["sample_games"]
+
                 if roi > 5:
-                    status = '🔥 HIGHLY PROFITABLE'
+                    status = "🔥 HIGHLY PROFITABLE"
                 elif roi > 0:
-                    status = '✅ PROFITABLE'
+                    status = "✅ PROFITABLE"
                 else:
-                    status = '❌ UNPROFITABLE'
-                
-                print(f'{status}: {combo}')
-                print(f'   📊 Performance: {wins}/{flips} ({win_rate:.1%}) | ROI: {roi:.2f}%')
-                print(f'   📈 Signal Strength: Early {early_strength:.1f}% vs Late {late_strength:.1f}%')
-                print(f'   🎯 Direction: {over_early} OVER vs {under_early} UNDER early signals')
-                print(f'   🎮 Sample Games: {sample_games[:100]}{"..." if len(sample_games) > 100 else ""}')
+                    status = "❌ UNPROFITABLE"
+
+                print(f"{status}: {combo}")
+                print(
+                    f"   📊 Performance: {wins}/{flips} ({win_rate:.1%}) | ROI: {roi:.2f}%"
+                )
+                print(
+                    f"   📈 Signal Strength: Early {early_strength:.1f}% vs Late {late_strength:.1f}%"
+                )
+                print(
+                    f"   🎯 Direction: {over_early} OVER vs {under_early} UNDER early signals"
+                )
+                print(
+                    f"   🎮 Sample Games: {sample_games[:100]}{'...' if len(sample_games) > 100 else ''}"
+                )
                 print()
-                
+
                 # Recommendation
                 if roi > 0:
-                    print(f'✅ APPROVE {combo} for total flip recommendations')
+                    print(f"✅ APPROVE {combo} for total flip recommendations")
                 else:
-                    print(f'❌ BAN {combo} from total flip recommendations')
+                    print(f"❌ BAN {combo} from total flip recommendations")
                 print()
         else:
-            print('❌ No total flips found for VSIN-Circa')
-            print('💡 Let me check other source/book combinations...')
-            
+            print("❌ No total flips found for VSIN-Circa")
+            print("💡 Let me check other source/book combinations...")
+
             # Check all combinations
-            query_all = '''
+            query_all = """
             WITH game_signals AS (
                 SELECT 
                     s.game_id,
@@ -184,25 +195,29 @@ def main():
                 potential_flips
             FROM flip_counts
             ORDER BY potential_flips DESC;
-            '''
-            
+            """
+
             with manager.get_connection() as conn:
                 df_all = pd.read_sql(query_all, conn)
-                
+
             if len(df_all) > 0:
-                print('📊 TOTAL FLIP POTENTIAL BY SOURCE/BOOK:')
+                print("📊 TOTAL FLIP POTENTIAL BY SOURCE/BOOK:")
                 for _, row in df_all.iterrows():
-                    print(f'   • {row["combo"]}: {row["potential_flips"]} potential flips')
+                    print(
+                        f"   • {row['combo']}: {row['potential_flips']} potential flips"
+                    )
             else:
-                print('❌ No total flips found in any source/book combination')
-                
+                print("❌ No total flips found in any source/book combination")
+
     except Exception as e:
         print(f"❌ Analysis failed: {e}")
         import traceback
+
         traceback.print_exc()
-        
+
     finally:
         manager.close()
 
+
 if __name__ == "__main__":
-    main() 
+    main()
