@@ -741,9 +741,7 @@ class SportsbookReviewParser(SportsbookReviewBaseParser):
 
         return info
 
-    def _extract_sportsbook_name_from_tracker(
-        self, tracker_value: str
-    ) -> str | None:
+    def _extract_sportsbook_name_from_tracker(self, tracker_value: str) -> str | None:
         """Extract sportsbook name from data-aatracker attribute."""
         # The tracker value should end with the sportsbook name
         for key, name in self.sportsbooks.items():
@@ -1295,9 +1293,7 @@ class SportsbookReviewParser(SportsbookReviewBaseParser):
             logger.debug(f"Error parsing total value '{total_text}': {e}")
             return None
 
-    def normalize_sportsbook_name(
-        self, sportsbook_text: str
-    ) -> SportsbookName | None:
+    def normalize_sportsbook_name(self, sportsbook_text: str) -> SportsbookName | None:
         """
         Normalize sportsbook name to SportsbookName enum.
 

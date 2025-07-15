@@ -1067,9 +1067,7 @@ def execute_coordinated_query(
     return service.execute_query(query, parameters, fetch)
 
 
-def execute_coordinated_many(
-    query: str, parameters_list: list[tuple | dict]
-) -> str:
+def execute_coordinated_many(query: str, parameters_list: list[tuple | dict]) -> str:
     """Execute coordinated bulk operation (backward compatibility)."""
     service = get_data_service()
     return service.execute_bulk_insert(query, parameters_list)

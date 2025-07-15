@@ -405,9 +405,7 @@ class StrategyFactory:
                     f"Failed to load legacy bridge strategy {strategy_name}: {e}"
                 )
 
-    async def load_strategy(
-        self, strategy_name: str
-    ) -> BaseStrategyProcessor | None:
+    async def load_strategy(self, strategy_name: str) -> BaseStrategyProcessor | None:
         """
         Load a specific strategy processor.
 

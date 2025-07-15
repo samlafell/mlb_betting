@@ -69,9 +69,7 @@ class SBDParser(BaseParser):
             est_tz = pytz.timezone("US/Eastern")
             return datetime.now(est_tz).replace(tzinfo=None)
 
-    def _normalize_team_name(
-        self, team_name: str, team_code: str = ""
-    ) -> Team | None:
+    def _normalize_team_name(self, team_name: str, team_code: str = "") -> Team | None:
         """
         Normalize team name to Team enum using team mapper.
 

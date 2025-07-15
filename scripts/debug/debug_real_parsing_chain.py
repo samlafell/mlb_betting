@@ -130,9 +130,7 @@ async def debug_real_parsing_chain():
                             print(f"  underOdds: {current_line.get('underOdds')}")
 
                             # Test the _format_odds_line method with this real data
-                            print(
-                                "\n🧪 Testing _format_odds_line with real JSON data:"
-                            )
+                            print("\n🧪 Testing _format_odds_line with real JSON data:")
                             formatted = scraper.parser._format_odds_line(
                                 first_odds_json, "totals"
                             )

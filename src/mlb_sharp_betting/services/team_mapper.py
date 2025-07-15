@@ -1,6 +1,5 @@
 """Team name mapping utilities."""
 
-
 from ..models.game import Team
 
 

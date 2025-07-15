@@ -5,7 +5,6 @@ This version uses the exact headers from a real Firefox browser session
 for maximum compatibility and reduced chance of being blocked.
 """
 
-
 import requests
 import structlog
 

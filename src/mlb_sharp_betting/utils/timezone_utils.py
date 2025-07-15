@@ -99,9 +99,7 @@ def safe_datetime_diff(dt1: datetime, dt2: datetime) -> timedelta:
     return dt1 - dt2
 
 
-def format_est_time(
-    dt: datetime | None, format_str: str = "%Y-%m-%d %H:%M EST"
-) -> str:
+def format_est_time(dt: datetime | None, format_str: str = "%Y-%m-%d %H:%M EST") -> str:
     """
     Format a datetime in EST timezone with the specified format.
 

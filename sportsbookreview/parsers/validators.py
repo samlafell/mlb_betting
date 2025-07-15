@@ -22,9 +22,7 @@ class PublicBettingPercentage(BaseModel):
 
 class OddsDataValidator(BaseModel):
     sportsbook: str
-    bet_type: str | None = (
-        None  # Add bet_type field to preserve it through validation
-    )
+    bet_type: str | None = None  # Add bet_type field to preserve it through validation
 
     # Original field names (from parser)
     moneyline_home: int | None = None

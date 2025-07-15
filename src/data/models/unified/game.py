@@ -688,9 +688,7 @@ class UnifiedGame(UnifiedEntity):
     )
 
     # Venue and environment
-    venue_info: VenueInfo | None = Field(
-        default=None, description="Venue information"
-    )
+    venue_info: VenueInfo | None = Field(default=None, description="Venue information")
 
     weather_data: WeatherData | None = Field(
         default=None, description="Weather conditions at game time"

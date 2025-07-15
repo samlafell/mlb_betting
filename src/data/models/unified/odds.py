@@ -155,9 +155,7 @@ class OddsData(SourcedModel, ValidatedModel):
         default=None, description="Maximum bet limit in USD", ge=0.0
     )
 
-    volume: int | None = Field(
-        default=None, description="Betting volume/handle", ge=0
-    )
+    volume: int | None = Field(default=None, description="Betting volume/handle", ge=0)
 
     # Status and timing
     line_status: LineStatus = Field(

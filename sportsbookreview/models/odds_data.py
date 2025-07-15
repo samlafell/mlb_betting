@@ -174,9 +174,7 @@ class LineMovementData(SportsbookReviewBaseModel):
     )
 
     # Movement analysis
-    opening_odds: OddsSnapshot | None = Field(
-        default=None, description="Opening odds"
-    )
+    opening_odds: OddsSnapshot | None = Field(default=None, description="Opening odds")
 
     current_odds: OddsSnapshot | None = Field(
         default=None, description="Most recent odds"

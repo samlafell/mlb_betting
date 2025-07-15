@@ -197,9 +197,7 @@ class StrategyBetRecreator:
                 print(f"   🎯 Win Rate: {win_rate:.1f}% ({wins}/{wins + losses})")
             else:
                 print(f"   ⏳ Pending: {pending} (games not yet finished)")
-            print(
-                "   🚨 ACTIONABLE WINDOW: Only bets within 20 minutes of first pitch"
-            )
+            print("   🚨 ACTIONABLE WINDOW: Only bets within 20 minutes of first pitch")
             print("   💡 This matches the Phase 3 Orchestrator behavior exactly")
             print("   📈 These are bets that would have been ACTUALLY recommended")
 

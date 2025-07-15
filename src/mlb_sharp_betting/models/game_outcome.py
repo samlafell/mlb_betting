@@ -83,9 +83,7 @@ class GameOutcome(BaseModel):
 
     @field_validator("home_cover_spread")
     @classmethod
-    def validate_spread_cover(
-        cls, v: bool | None, info: ValidationInfo
-    ) -> bool | None:
+    def validate_spread_cover(cls, v: bool | None, info: ValidationInfo) -> bool | None:
         """Validate spread cover calculation if home_spread_line is provided."""
         if (
             v is not None

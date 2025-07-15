@@ -230,9 +230,7 @@ class MLBDataEnrichmentService:
             )
             raise
 
-    async def _correlate_game_id(
-        self, game: EnhancedGame
-    ) -> tuple[str | None, float]:
+    async def _correlate_game_id(self, game: EnhancedGame) -> tuple[str | None, float]:
         """
         Correlate SportsbookReview game with MLB Stats API Game ID.
 
@@ -501,9 +499,7 @@ class MLBDataEnrichmentService:
             )
             return None
 
-    async def _fetch_pitcher_matchup(
-        self, mlb_game_id: str
-    ) -> PitcherMatchup | None:
+    async def _fetch_pitcher_matchup(self, mlb_game_id: str) -> PitcherMatchup | None:
         """
         Fetch starting pitcher information for a game.
 
@@ -589,9 +585,7 @@ class MLBDataEnrichmentService:
             )
             return None
 
-    async def _fetch_context_metrics(
-        self, mlb_game_id: str
-    ) -> dict[str, Any] | None:
+    async def _fetch_context_metrics(self, mlb_game_id: str) -> dict[str, Any] | None:
         """
         Fetch context metrics for a game (user-requested endpoint).
 

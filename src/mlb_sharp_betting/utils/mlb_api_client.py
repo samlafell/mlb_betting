@@ -244,9 +244,7 @@ class MLBStatsAPIClient:
 
         return completed_games
 
-    def extract_game_result(
-        self, game_data: dict[str, Any]
-    ) -> dict[str, Any] | None:
+    def extract_game_result(self, game_data: dict[str, Any]) -> dict[str, Any] | None:
         """
         Extract essential game result information from API response.
 

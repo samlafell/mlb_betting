@@ -849,7 +849,9 @@ class DailyBettingReportService:
                 results = cursor.fetchall()
                 columns = [desc[0] for desc in cursor.description]
 
-                outcomes_dict = {row[0]: dict(zip(columns, row, strict=False)) for row in results}
+                outcomes_dict = {
+                    row[0]: dict(zip(columns, row, strict=False)) for row in results
+                }
 
                 self.logger.info(
                     "Retrieved game outcomes",

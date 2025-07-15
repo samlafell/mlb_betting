@@ -25,9 +25,7 @@ def diagnostics():
 @click.option("--output", type=str, help="Save results to JSON file")
 @click.option("--verbose", is_flag=True, help="Show detailed output")
 @click.option("--checkpoint", type=str, help="Run specific checkpoint only (1-5)")
-def run_full_diagnostic(
-    output: str | None, verbose: bool, checkpoint: str | None
-):
+def run_full_diagnostic(output: str | None, verbose: bool, checkpoint: str | None):
     """
     Run comprehensive 5-checkpoint diagnostic suite.
 

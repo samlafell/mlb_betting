@@ -791,9 +791,7 @@ class PipelineOrchestrationService:
         """Get recent completed pipelines."""
         return self.completed_pipelines[-limit:] if self.completed_pipelines else []
 
-    def get_pipeline_status(
-        self, pipeline_id: str
-    ) -> PipelineExecutionResult | None:
+    def get_pipeline_status(self, pipeline_id: str) -> PipelineExecutionResult | None:
         """Get status of a specific pipeline."""
         # Check active pipelines first
         if pipeline_id in self.active_pipelines:

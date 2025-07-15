@@ -1,4 +1,3 @@
-
 import numpy as np
 import pandas as pd
 
@@ -431,7 +430,9 @@ class AnalyticalProcessor:
                         text=[
                             f"{rate:.1%}<br>n={games}"
                             for rate, games in zip(
-                                win_rate_analysis[outcome], win_rate_analysis["Games"], strict=False
+                                win_rate_analysis[outcome],
+                                win_rate_analysis["Games"],
+                                strict=False,
                             )
                         ],
                         textposition="auto",

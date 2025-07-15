@@ -629,7 +629,8 @@ class BettingSignalRepository:
         """
 
         return (
-            self.coordinator.execute_query(query, (start_time, end_time, min_diff)) or []
+            self.coordinator.execute_query(query, (start_time, end_time, min_diff))
+            or []
         )
 
     async def get_profitable_strategies(self) -> list[dict]:
@@ -637,16 +638,20 @@ class BettingSignalRepository:
         try:
             # Get strategy performance data
             strategy_data = await self.get_strategy_performance_data()
-            
+
             # Filter for profitable strategies (win rate > 52.4% and sufficient bets)
             profitable_strategies = [
-                strategy for strategy in strategy_data
-                if strategy.get('win_rate', 0) > 52.4 and strategy.get('total_bets', 0) >= 5
+                strategy
+                for strategy in strategy_data
+                if strategy.get("win_rate", 0) > 52.4
+                and strategy.get("total_bets", 0) >= 5
             ]
-            
-            self.logger.info(f"Retrieved {len(profitable_strategies)} profitable strategies")
+
+            self.logger.info(
+                f"Retrieved {len(profitable_strategies)} profitable strategies"
+            )
             return profitable_strategies
-            
+
         except Exception as e:
             self.logger.error(f"Error retrieving profitable strategies: {e}")
             return []

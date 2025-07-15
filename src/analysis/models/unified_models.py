@@ -93,9 +93,7 @@ class UnifiedBettingSignal(UnifiedBaseModel):
     recommended_stake: Decimal | None = Field(
         None, description="Recommended stake amount"
     )
-    expected_value: float | None = Field(
-        None, description="Expected value calculation"
-    )
+    expected_value: float | None = Field(None, description="Expected value calculation")
     odds: float | None = Field(None, description="Odds at signal generation")
 
     # Strategy-Specific Data
@@ -322,9 +320,7 @@ class CrossStrategyComparison(UnifiedBaseModel):
     )
 
     # Recommendations
-    recommended_strategy: str | None = Field(
-        None, description="Recommended strategy"
-    )
+    recommended_strategy: str | None = Field(None, description="Recommended strategy")
     recommendation_reason: str | None = Field(
         None, description="Reason for recommendation"
     )

@@ -528,7 +528,9 @@ class PreGameRecommendationTracker:
                         )
 
                     # Convert to list of dicts
-                    recommendations = [dict(zip(columns, row, strict=False)) for row in rows]
+                    recommendations = [
+                        dict(zip(columns, row, strict=False)) for row in rows
+                    ]
 
                     # Calculate basic metrics
                     total_recs = len(recommendations)
@@ -710,7 +712,9 @@ This typically means:
 *General Balls*"""
 
                 # Convert to list of dicts
-                recommendations = [dict(zip(columns, row, strict=False)) for row in rows]
+                recommendations = [
+                    dict(zip(columns, row, strict=False)) for row in rows
+                ]
 
                 # Calculate basic metrics
                 total_recs = len(recommendations)

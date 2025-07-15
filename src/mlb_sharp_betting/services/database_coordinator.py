@@ -620,9 +620,7 @@ def execute_coordinated_query(
         return None
 
 
-def execute_coordinated_many(
-    query: str, parameters_list: list[tuple | dict]
-) -> str:
+def execute_coordinated_many(query: str, parameters_list: list[tuple | dict]) -> str:
     """
     Execute a bulk operation using the unified coordinator.
 

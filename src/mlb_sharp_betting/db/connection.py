@@ -778,9 +778,7 @@ class DatabaseManager:
             )
             return False
 
-    def get_table_info(
-        self, table_name: str, schema: str | None = None
-    ) -> list[dict]:
+    def get_table_info(self, table_name: str, schema: str | None = None) -> list[dict]:
         """
         Get information about a table's columns.
 

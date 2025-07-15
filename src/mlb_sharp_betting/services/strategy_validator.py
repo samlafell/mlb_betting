@@ -17,7 +17,6 @@ MIGRATION GUIDE:
   - Unified interface for all validation operations
 """
 
-
 from ..core.logging import get_logger
 from ..models.betting_analysis import ProfitableStrategy, StrategyThresholds
 
@@ -225,9 +224,7 @@ class StrategyValidator:
         category = signal_to_category.get(signal_type, "GENERAL")
         return self.strategies_by_type.get(category, [])
 
-    def get_best_strategy_for_type(
-        self, signal_type: str
-    ) -> ProfitableStrategy | None:
+    def get_best_strategy_for_type(self, signal_type: str) -> ProfitableStrategy | None:
         """Get the highest ROI strategy for a specific signal type"""
         strategies = self.get_strategies_by_type(signal_type)
         if not strategies:

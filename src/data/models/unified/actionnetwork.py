@@ -36,9 +36,7 @@ class ActionNetworkPrice(BaseModel):
     Contains odds information with decimal and American formats.
     """
 
-    decimal: float | None = Field(
-        default=None, description="Decimal odds format", gt=0
-    )
+    decimal: float | None = Field(default=None, description="Decimal odds format", gt=0)
 
     american: int | None = Field(
         default=None, description="American odds format (e.g., -110, +150)"

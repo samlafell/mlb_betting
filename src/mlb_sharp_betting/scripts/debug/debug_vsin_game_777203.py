@@ -348,9 +348,7 @@ async def test_data_collection_pipeline():
             )
 
             if rejection_rate > 20:
-                print(
-                    "   ⚠️  HIGH REJECTION RATE - Many games may have already started"
-                )
+                print("   ⚠️  HIGH REJECTION RATE - Many games may have already started")
 
     except Exception as e:
         print(f"❌ Pipeline test failed: {e}")
