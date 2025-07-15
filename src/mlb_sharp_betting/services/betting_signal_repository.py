@@ -121,7 +121,7 @@ class BettingSignalRepository:
 
         min_differential = self.config.get("minimum_differential", 10.0)
 
-        results = self.coordinator.execute_read(
+        results = self.coordinator.execute_query(
             query, (start_time, end_time, min_differential)
         )
 
@@ -185,7 +185,7 @@ class BettingSignalRepository:
         """
 
         return (
-            self.coordinator.execute_read(
+            self.coordinator.execute_query(
                 query, (start_time, end_time, min_differential)
             )
             or []
@@ -230,7 +230,7 @@ class BettingSignalRepository:
         ORDER BY ABS(differential) DESC
         """
 
-        return self.coordinator.execute_read(query, (start_time, end_time)) or []
+        return self.coordinator.execute_query(query, (start_time, end_time)) or []
 
     async def get_opposing_markets_data(
         self, start_time: datetime, end_time: datetime
@@ -313,7 +313,7 @@ class BettingSignalRepository:
         max_differential = self.config.get("max_opposing_differential", 40.0)
 
         return (
-            self.coordinator.execute_read(
+            self.coordinator.execute_query(
                 query, (start_time, end_time, max_differential, max_differential)
             )
             or []
@@ -379,7 +379,7 @@ class BettingSignalRepository:
         min_differential = self.config.get("minimum_differential", 10.0)
 
         return (
-            self.coordinator.execute_read(
+            self.coordinator.execute_query(
                 query, (start_time, end_time, min_differential, min_differential)
             )
             or []
@@ -399,7 +399,7 @@ class BettingSignalRepository:
         ORDER BY roi DESC
         """
 
-        return self.coordinator.execute_read(query, []) or []
+        return self.coordinator.execute_query(query, []) or []
 
     async def get_data_quality_metrics(self) -> dict[str, Any]:
         """Get data quality metrics for monitoring"""
@@ -440,7 +440,7 @@ class BettingSignalRepository:
         metrics = {}
         for metric_name, query in queries.items():
             try:
-                result = self.coordinator.execute_read(query, [])
+                result = self.coordinator.execute_query(query, [])
                 if metric_name in ["sources", "split_types"]:
                     metrics[metric_name] = (
                         {row[0]: row[1] for row in result} if result else {}
@@ -497,7 +497,7 @@ class BettingSignalRepository:
         ORDER BY ABS(differential) DESC
         """
 
-        return self.coordinator.execute_read(query, (start_time, end_time)) or []
+        return self.coordinator.execute_query(query, (start_time, end_time)) or []
 
     async def get_underdog_value_data(
         self, start_time: datetime, end_time: datetime
@@ -537,7 +537,7 @@ class BettingSignalRepository:
         ORDER BY ABS(differential) DESC
         """
 
-        return self.coordinator.execute_read(query, (start_time, end_time)) or []
+        return self.coordinator.execute_query(query, (start_time, end_time)) or []
 
     async def get_hybrid_sharp_data(
         self, start_time: datetime, end_time: datetime
@@ -629,8 +629,27 @@ class BettingSignalRepository:
         """
 
         return (
-            self.coordinator.execute_read(query, (start_time, end_time, min_diff)) or []
+            self.coordinator.execute_query(query, (start_time, end_time, min_diff)) or []
         )
+
+    async def get_profitable_strategies(self) -> list[dict]:
+        """Get profitable betting strategies from the database."""
+        try:
+            # Get strategy performance data
+            strategy_data = await self.get_strategy_performance_data()
+            
+            # Filter for profitable strategies (win rate > 52.4% and sufficient bets)
+            profitable_strategies = [
+                strategy for strategy in strategy_data
+                if strategy.get('win_rate', 0) > 52.4 and strategy.get('total_bets', 0) >= 5
+            ]
+            
+            self.logger.info(f"Retrieved {len(profitable_strategies)} profitable strategies")
+            return profitable_strategies
+            
+        except Exception as e:
+            self.logger.error(f"Error retrieving profitable strategies: {e}")
+            return []
 
     def get_performance_stats(self) -> dict[str, Any]:
         """Get performance statistics for the repository."""

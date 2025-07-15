@@ -52,9 +52,10 @@ class BettingAnalyzer:
                 query = f.read()
 
             logger.info(f"Executing {strategy_name} analysis...")
-            result_df = self.conn.execute(query).fetchdf()
+            result_rows = self.db_manager.execute_query(query)
 
-            if len(result_df) > 0:
+            if result_rows:
+                result_df = pd.DataFrame(result_rows)
                 self.results[strategy_name] = result_df
                 logger.info(f"✅ {strategy_name}: {len(result_df)} results found")
                 return result_df
