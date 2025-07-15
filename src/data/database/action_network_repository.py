@@ -161,8 +161,8 @@ class ActionNetworkRepository:
         # We need to check for existing games to avoid duplicates
         existing_game = await conn.fetchval(
             """
-            SELECT id FROM core_betting.games 
-            WHERE home_team = $1 AND away_team = $2 
+            SELECT id FROM core_betting.games
+            WHERE home_team = $1 AND away_team = $2
             AND DATE(game_datetime) = DATE($3)
             ORDER BY ABS(EXTRACT(EPOCH FROM (game_datetime - $3))) ASC
             LIMIT 1
@@ -184,7 +184,7 @@ class ActionNetworkRepository:
             # Update the action_network_game_id if not already set
             await conn.execute(
                 """
-                UPDATE core_betting.games 
+                UPDATE core_betting.games
                 SET action_network_game_id = $1,
                     updated_at = NOW()
                 WHERE id = $2 AND action_network_game_id IS NULL
@@ -221,15 +221,15 @@ class ActionNetworkRepository:
             INSERT INTO core_betting.games (
                 action_network_game_id,
                 mlb_stats_api_game_id,
-                home_team, 
-                away_team, 
+                home_team,
+                away_team,
                 game_date,
-                game_datetime, 
+                game_datetime,
                 season,
                 game_status,
                 data_quality,
                 has_mlb_enrichment,
-                created_at, 
+                created_at,
                 updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW()
@@ -396,6 +396,33 @@ class ActionNetworkRepository:
         )
         return saved_count
 
+    async def resolve_sportsbook_id(
+        self, conn, external_id: str, source: str = "ACTION_NETWORK"
+    ) -> int | None:
+        """Resolve external sportsbook ID to internal database ID using new mapping system."""
+        try:
+            # Use the new sportsbook mapping system
+            sportsbook_id = await conn.fetchval(
+                "SELECT core_betting.resolve_sportsbook_id($1, NULL, $2)",
+                external_id,
+                source,
+            )
+            return sportsbook_id
+        except Exception as e:
+            self.logger.error(
+                "Failed to resolve sportsbook ID",
+                external_id=external_id,
+                source=source,
+                error=str(e),
+            )
+            return None
+
+    def calculate_data_completeness(self, **fields) -> float:
+        """Calculate data completeness score for a record."""
+        total_fields = len(fields)
+        filled_fields = sum(1 for value in fields.values() if value is not None)
+        return filled_fields / total_fields if total_fields > 0 else 0.0
+
     async def _save_moneyline_data(
         self,
         conn,
@@ -431,10 +458,9 @@ class ActionNetworkRepository:
         for book_id, sides_data in sportsbook_data.items():
             sportsbook_name = self.action_network_books[book_id]
 
-            # Get sportsbook_id from database
-            sportsbook_id_result = await conn.fetchval(
-                "SELECT id FROM core_betting.sportsbooks WHERE name = $1",
-                sportsbook_name,
+            # Use new sportsbook ID resolution system
+            sportsbook_id_result = await self.resolve_sportsbook_id(
+                conn, book_id, "ACTION_NETWORK"
             )
 
             # Extract odds from home and away sides
@@ -445,17 +471,30 @@ class ActionNetworkRepository:
                 continue
 
             # Extract betting splits (if available)
-            home_bet_info = (
-                sides_data["home"].get("bet_info", {}) if sides_data["home"] else {}
-            )
-            away_bet_info = (
-                sides_data["away"].get("bet_info", {}) if sides_data["away"] else {}
-            )
+            home_bets_pct = None
+            away_bets_pct = None
+            home_money_pct = None
+            away_money_pct = None
 
-            home_bets_pct = home_bet_info.get("tickets", {}).get("percent")
-            away_bets_pct = away_bet_info.get("tickets", {}).get("percent")
-            home_money_pct = home_bet_info.get("money", {}).get("percent")
-            away_money_pct = away_bet_info.get("money", {}).get("percent")
+            if sides_data["home"]:
+                home_bet_info = sides_data["home"].get("bet_info", {})
+                if home_bet_info:
+                    tickets_info = home_bet_info.get("tickets", {})
+                    money_info = home_bet_info.get("money", {})
+                    if "percent" in tickets_info:
+                        home_bets_pct = tickets_info["percent"]
+                    if "percent" in money_info:
+                        home_money_pct = money_info["percent"]
+
+            if sides_data["away"]:
+                away_bet_info = sides_data["away"].get("bet_info", {})
+                if away_bet_info:
+                    tickets_info = away_bet_info.get("tickets", {})
+                    money_info = away_bet_info.get("money", {})
+                    if "percent" in tickets_info:
+                        away_bets_pct = tickets_info["percent"]
+                    if "percent" in money_info:
+                        away_money_pct = money_info["percent"]
 
             # Get team abbreviations
             home_abbr = self._get_team_abbreviation(historical_data.home_team)
@@ -472,6 +511,10 @@ class ActionNetworkRepository:
                 away_team=f"{historical_data.away_team} -> {away_abbr}",
                 home_odds=home_odds,
                 away_odds=away_odds,
+                home_bets_pct=home_bets_pct,
+                away_bets_pct=away_bets_pct,
+                home_money_pct=home_money_pct,
+                away_money_pct=away_money_pct,
                 odds_timestamp=odds_timestamp,
             )
 
@@ -541,45 +584,99 @@ class ActionNetworkRepository:
 
             sportsbook_name = self.action_network_books[book_id]
 
-            # Get sportsbook_id from database
-            sportsbook_id_result = await conn.fetchval(
-                "SELECT id FROM core_betting.sportsbooks WHERE name = $1",
-                sportsbook_name,
+            # Use new sportsbook ID resolution system
+            sportsbook_id_result = await self.resolve_sportsbook_id(
+                conn, book_id, "ACTION_NETWORK"
             )
 
-            # Extract spread data
+            # Extract spread data - Action Network may provide data per side
             home_spread = market_item.get("home_spread")
             away_spread = market_item.get("away_spread")
-            home_spread_odds = market_item.get("home_spread_odds")
-            away_spread_odds = market_item.get("away_spread_odds")
+            home_spread_price = market_item.get("home_spread_odds")
+            away_spread_price = market_item.get("away_spread_odds")
+
+            # If data is provided per side, extract from side-specific fields
+            side = market_item.get("side", "").lower()
+            if side and not (home_spread or away_spread):
+                spread_value = market_item.get("value") or market_item.get("spread")
+                spread_odds = market_item.get("odds")
+
+                if side == "home":
+                    home_spread = spread_value
+                    home_spread_price = spread_odds
+                elif side == "away":
+                    away_spread = spread_value
+                    away_spread_price = spread_odds
 
             if home_spread is None and away_spread is None:
                 continue
 
-            # Prepare betting splits data
+            # Extract betting percentage data from Action Network format
+            home_bets_pct = None
+            away_bets_pct = None
+            home_money_pct = None
+            away_money_pct = None
+
+            # Try to extract from bet_splits first (legacy format)
             bet_splits = market_item.get("bet_splits", {})
-            home_bets_pct = bet_splits.get("home_bets_percentage")
-            away_bets_pct = bet_splits.get("away_bets_percentage")
-            home_money_pct = bet_splits.get("home_money_percentage")
-            away_money_pct = bet_splits.get("away_money_percentage")
+            if bet_splits:
+                home_bets_pct = bet_splits.get("home_bets_percentage")
+                away_bets_pct = bet_splits.get("away_bets_percentage")
+                home_money_pct = bet_splits.get("home_money_percentage")
+                away_money_pct = bet_splits.get("away_money_percentage")
+
+            # Also try to extract from bet_info structure (Action Network API format)
+            bet_info = market_item.get("bet_info", {})
+            if bet_info:
+                tickets_info = bet_info.get("tickets", {})
+                money_info = bet_info.get("money", {})
+
+                if "percent" in tickets_info:
+                    side = market_item.get("side", "").lower()
+                    if side == "home":
+                        home_bets_pct = tickets_info["percent"]
+                    elif side == "away":
+                        away_bets_pct = tickets_info["percent"]
+
+                if "percent" in money_info:
+                    side = market_item.get("side", "").lower()
+                    if side == "home":
+                        home_money_pct = money_info["percent"]
+                    elif side == "away":
+                        away_money_pct = money_info["percent"]
+
+            # Log the spread data being inserted
+            self.logger.info(
+                "Inserting spread data",
+                game_id=historical_data.game_id,
+                sportsbook=sportsbook_name,
+                home_spread=home_spread,
+                away_spread=away_spread,
+                home_spread_price=home_spread_price,
+                away_spread_price=away_spread_price,
+                home_bets_pct=home_bets_pct,
+                away_bets_pct=away_bets_pct,
+                home_money_pct=home_money_pct,
+                away_money_pct=away_money_pct,
+            )
 
             # Insert into spreads table
             await conn.execute(
                 """
                 INSERT INTO core_betting.betting_lines_spreads (
-                    game_id, sportsbook_id, sportsbook, home_spread, away_spread, 
-                    home_spread_odds, away_spread_odds, odds_timestamp,
+                    game_id, sportsbook_id, sportsbook, home_spread, away_spread,
+                    home_spread_price, away_spread_price, odds_timestamp,
                     home_bets_percentage, away_bets_percentage, home_money_percentage, away_money_percentage,
                     source, data_quality, game_datetime, home_team, away_team
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
                 )
-                ON CONFLICT (game_id, sportsbook_id, odds_timestamp) 
+                ON CONFLICT (game_id, sportsbook_id, odds_timestamp)
                 DO UPDATE SET
                     home_spread = EXCLUDED.home_spread,
                     away_spread = EXCLUDED.away_spread,
-                    home_spread_odds = EXCLUDED.home_spread_odds,
-                    away_spread_odds = EXCLUDED.away_spread_odds,
+                    home_spread_price = EXCLUDED.home_spread_price,
+                    away_spread_price = EXCLUDED.away_spread_price,
                     home_bets_percentage = EXCLUDED.home_bets_percentage,
                     away_bets_percentage = EXCLUDED.away_bets_percentage,
                     home_money_percentage = EXCLUDED.home_money_percentage,
@@ -591,8 +688,8 @@ class ActionNetworkRepository:
                 sportsbook_name,
                 home_spread,
                 away_spread,
-                home_spread_odds,
-                away_spread_odds,
+                home_spread_price,
+                away_spread_price,
                 entry.timestamp,
                 home_bets_pct,
                 away_bets_pct,
@@ -626,10 +723,9 @@ class ActionNetworkRepository:
 
             sportsbook_name = self.action_network_books[book_id]
 
-            # Get sportsbook_id from database
-            sportsbook_id_result = await conn.fetchval(
-                "SELECT id FROM core_betting.sportsbooks WHERE name = $1",
-                sportsbook_name,
+            # Use new sportsbook ID resolution system
+            sportsbook_id_result = await self.resolve_sportsbook_id(
+                conn, book_id, "ACTION_NETWORK"
             )
 
             # Extract total data
@@ -640,28 +736,73 @@ class ActionNetworkRepository:
             if total_line is None:
                 continue
 
-            # Prepare betting splits data
+            # Extract betting percentage data from Action Network format
+            # The market_item structure depends on the data format
+            over_bets_pct = None
+            under_bets_pct = None
+            over_money_pct = None
+            under_money_pct = None
+
+            # Try to extract from bet_splits first (legacy format)
             bet_splits = market_item.get("bet_splits", {})
-            over_bets_pct = bet_splits.get("over_bets_percentage")
-            under_bets_pct = bet_splits.get("under_bets_percentage")
-            over_money_pct = bet_splits.get("over_money_percentage")
-            under_money_pct = bet_splits.get("under_money_percentage")
+            if bet_splits:
+                over_bets_pct = bet_splits.get("over_bets_percentage")
+                under_bets_pct = bet_splits.get("under_bets_percentage")
+                over_money_pct = bet_splits.get("over_money_percentage")
+                under_money_pct = bet_splits.get("under_money_percentage")
+
+            # Also try to extract from bet_info structure (Action Network API format)
+            bet_info = market_item.get("bet_info", {})
+            if bet_info:
+                tickets_info = bet_info.get("tickets", {})
+                money_info = bet_info.get("money", {})
+
+                # For totals, bet_info might contain overall percentages
+                # that need to be split into over/under
+                if "percent" in tickets_info:
+                    # This would be the percentage for this specific side
+                    side = market_item.get("side", "").lower()
+                    if side == "over":
+                        over_bets_pct = tickets_info["percent"]
+                    elif side == "under":
+                        under_bets_pct = tickets_info["percent"]
+
+                if "percent" in money_info:
+                    side = market_item.get("side", "").lower()
+                    if side == "over":
+                        over_money_pct = money_info["percent"]
+                    elif side == "under":
+                        under_money_pct = money_info["percent"]
+
+            # Log the totals data being inserted
+            self.logger.info(
+                "Inserting totals data",
+                game_id=historical_data.game_id,
+                sportsbook=sportsbook_name,
+                total_line=total_line,
+                over_odds=over_odds,
+                under_odds=under_odds,
+                over_bets_pct=over_bets_pct,
+                under_bets_pct=under_bets_pct,
+                over_money_pct=over_money_pct,
+                under_money_pct=under_money_pct,
+            )
 
             # Insert into totals table
             await conn.execute(
                 """
                 INSERT INTO core_betting.betting_lines_totals (
-                    game_id, sportsbook_id, sportsbook, total, over_odds, under_odds, odds_timestamp,
+                    game_id, sportsbook_id, sportsbook, total_line, over_price, under_price, odds_timestamp,
                     over_bets_percentage, under_bets_percentage, over_money_percentage, under_money_percentage,
                     source, data_quality, game_datetime, home_team, away_team
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
                 )
-                ON CONFLICT (game_id, sportsbook_id, odds_timestamp) 
+                ON CONFLICT (game_id, sportsbook_id, odds_timestamp)
                 DO UPDATE SET
-                    total = EXCLUDED.total,
-                    over_odds = EXCLUDED.over_odds,
-                    under_odds = EXCLUDED.under_odds,
+                    total_line = EXCLUDED.total_line,
+                    over_price = EXCLUDED.over_price,
+                    under_price = EXCLUDED.under_price,
                     over_bets_percentage = EXCLUDED.over_bets_percentage,
                     under_bets_percentage = EXCLUDED.under_bets_percentage,
                     over_money_percentage = EXCLUDED.over_money_percentage,
@@ -711,7 +852,7 @@ class ActionNetworkRepository:
             ) VALUES (
                 'ACTION_NETWORK', $1, $2, $3, $4, NOW(), 1, $5, $6, $7, $8
             )
-            ON CONFLICT (source, game_id) 
+            ON CONFLICT (source, game_id)
             DO UPDATE SET
                 last_extracted_at = NOW(),
                 total_extractions = operational.extraction_log.total_extractions + 1,
@@ -736,8 +877,8 @@ class ActionNetworkRepository:
             async with self.connection.get_async_connection() as conn:
                 result = await conn.fetchval(
                     """
-                    SELECT last_extracted_at 
-                    FROM operational.extraction_log 
+                    SELECT last_extracted_at
+                    FROM operational.extraction_log
                     WHERE source = 'ACTION_NETWORK' AND game_id = $1
                 """,
                     game_id,
@@ -768,8 +909,8 @@ class ActionNetworkRepository:
                 # Query moneyline data
                 if not market_type or market_type == "moneyline":
                     query = """
-                        SELECT 'moneyline' as market_type, * 
-                        FROM core_betting.betting_lines_moneyline 
+                        SELECT 'moneyline' as market_type, *
+                        FROM core_betting.betting_lines_moneyline
                         WHERE game_id = $1 AND created_at > $2 AND source = 'ACTION_NETWORK'
                     """
                     if book_id:
@@ -784,8 +925,8 @@ class ActionNetworkRepository:
                 # Query spread data
                 if not market_type or market_type == "spread":
                     query = """
-                        SELECT 'spread' as market_type, * 
-                        FROM core_betting.betting_lines_spreads 
+                        SELECT 'spread' as market_type, *
+                        FROM core_betting.betting_lines_spreads
                         WHERE game_id = $1 AND created_at > $2 AND source = 'ACTION_NETWORK'
                     """
                     if book_id:
@@ -800,8 +941,8 @@ class ActionNetworkRepository:
                 # Query total data
                 if not market_type or market_type == "total":
                     query = """
-                        SELECT 'total' as market_type, * 
-                        FROM core_betting.betting_lines_totals 
+                        SELECT 'total' as market_type, *
+                        FROM core_betting.betting_lines_totals
                         WHERE game_id = $1 AND created_at > $2 AND source = 'ACTION_NETWORK'
                     """
                     if book_id:

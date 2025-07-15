@@ -89,11 +89,17 @@ class UnifiedLogger:
         # Get the underlying structlog logger
         self._logger = structlog.get_logger(name)
 
+        # Filter out reserved keys from extra_context to avoid conflicts
+        filtered_extra_context = {
+            k: v for k, v in self.extra_context.items() 
+            if k not in ['component', 'correlation_id']
+        }
+        
         # Bind common context
         self._logger = self._logger.bind(
             component=component.value,
             correlation_id=self.correlation_id,
-            **self.extra_context,
+            **filtered_extra_context,
         )
 
     def _log(

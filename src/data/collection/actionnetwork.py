@@ -13,6 +13,7 @@ import structlog
 
 from ..collection.base import CollectionResult
 from ..models.unified.actionnetwork import (
+    ActionNetworkBettingInfo,
     ActionNetworkHistoricalData,
     ActionNetworkHistoricalEntry,
     ActionNetworkMarketData,
@@ -67,7 +68,7 @@ class ActionNetworkHistoryParser:
                 if isinstance(response_data, dict)
                 else "N/A",
                 response_length=len(response_data)
-                if isinstance(response_data, (list, dict))
+                if isinstance(response_data, list | dict)
                 else "N/A",
             )
 
@@ -90,7 +91,7 @@ class ActionNetworkHistoryParser:
                         )
                         # Extract historical data from each sportsbook
                         historical_entries = []
-                        for sportsbook_id, sportsbook_data in response_data.items():
+                        for _sportsbook_id, sportsbook_data in response_data.items():
                             if (
                                 isinstance(sportsbook_data, dict)
                                 and "event" in sportsbook_data
@@ -227,6 +228,8 @@ class ActionNetworkHistoryParser:
                 home_price = None
                 away_price = None
                 line_value = None
+                home_bet_info = None
+                away_bet_info = None
 
                 if home_line:
                     home_price = ActionNetworkPrice(
@@ -236,6 +239,14 @@ class ActionNetworkHistoryParser:
                     if market_type in ["spread", "total"]:
                         line_value = home_line.get("value")
 
+                    # Extract betting info for home/over side
+                    bet_info_data = home_line.get("bet_info", {})
+                    if bet_info_data:
+                        home_bet_info = ActionNetworkBettingInfo(
+                            tickets=bet_info_data.get("tickets"),
+                            money=bet_info_data.get("money"),
+                        )
+
                 if away_line:
                     away_price = ActionNetworkPrice(
                         decimal=None,  # Not provided in this format
@@ -244,11 +255,21 @@ class ActionNetworkHistoryParser:
                     if market_type in ["spread", "total"] and not line_value:
                         line_value = away_line.get("value")
 
+                    # Extract betting info for away/under side
+                    bet_info_data = away_line.get("bet_info", {})
+                    if bet_info_data:
+                        away_bet_info = ActionNetworkBettingInfo(
+                            tickets=bet_info_data.get("tickets"),
+                            money=bet_info_data.get("money"),
+                        )
+
             else:
                 # Legacy format: market_data is a dict
                 home_price = None
                 away_price = None
                 line_value = None
+                home_bet_info = None
+                away_bet_info = None
 
                 if market_type == "moneyline":
                     # Moneyline has home and away prices
@@ -293,7 +314,11 @@ class ActionNetworkHistoryParser:
 
             # Create market data object
             return ActionNetworkMarketData(
-                home=home_price, away=away_price, line=line_value
+                home=home_price,
+                away=away_price,
+                line=line_value,
+                home_bet_info=home_bet_info,
+                away_bet_info=away_bet_info
             )
 
         except Exception as e:

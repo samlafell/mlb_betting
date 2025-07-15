@@ -73,16 +73,16 @@ class ActionNetworkURLBuilder:
             )
             sys.path.insert(0, project_root)
 
-            from src.mlb_sharp_betting.core.config import get_settings
+            from src.core.config import get_settings
 
             settings = get_settings()
 
             return {
-                "host": settings.postgres.host,
-                "port": settings.postgres.port,
-                "database": settings.postgres.database,
-                "user": settings.postgres.user,
-                "password": settings.postgres.password,
+                "host": settings.database.host,
+                "port": settings.database.port,
+                "database": settings.database.database,
+                "user": settings.database.user,
+                "password": settings.database.password,
             }
         except ImportError:
             # Fallback to environment variables

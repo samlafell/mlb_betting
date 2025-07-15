@@ -13,56 +13,113 @@ Build a 24/7 sports betting service that will scrape various sources and be pull
 
 ### Testing
 - Run tests: `uv run pytest`
-- Run tests with coverage: `uv run pytest --cov=src/mlb_sharp_betting --cov-report=html --cov-report=term-missing`
+- Run tests with coverage: `uv run pytest --cov=src --cov-report=html --cov-report=term-missing`
 - Run specific test file: `uv run pytest tests/test_basic.py`
+- Run integration tests: `uv run pytest tests/integration/`
+- Run manual tests: `uv run pytest tests/manual/`
 
 ### Code Quality
 - Format code: `uv run ruff format`
 - Lint code: `uv run ruff check`
-- Type checking: `uv run mypy src/mlb_sharp_betting`
+- Type checking: `uv run mypy src/`
 - Fix linting issues: `uv run ruff check --fix`
 
 ### CLI Commands
-The project has a comprehensive CLI system accessible via multiple entry points:
+The project has a unified CLI system accessible via the main entry point:
 
 ```bash
-# Main CLI entry points
-uv run -m mlb_sharp_betting
-uv run -m mlb_sharp_betting.cli
+# Main CLI entry point
+uv run -m src.interfaces.cli --help
 
-# Core analysis and data collection
-uv run -m mlb_sharp_betting.cli.commands.analysis
-uv run -m mlb_sharp_betting.cli.commands.data_collection
-uv run -m mlb_sharp_betting.cli.commands.daily_update
+# Data Collection & Management
+uv run -m src.interfaces.cli data collect --source vsin --real
+uv run -m src.interfaces.cli data collect --source sbd --real
+uv run -m src.interfaces.cli data collect --parallel --real
+uv run -m src.interfaces.cli data status
+uv run -m src.interfaces.cli data test --source vsin --real
 
-# Backtesting and strategy validation
-uv run -m mlb_sharp_betting.cli.commands.backtesting
-uv run -m mlb_sharp_betting.cli.commands.enhanced_backtesting
-uv run -m mlb_sharp_betting.cli.commands.betting_performance
+# Movement Analysis & Strategy Detection (requires historical data)
+uv run -m src.interfaces.cli movement analyze --input-file output/action_network_history.json
+uv run -m src.interfaces.cli movement rlm --input-file output/action_network_history.json --min-movements 50
+uv run -m src.interfaces.cli movement steam --input-file output/action_network_history.json --show-details
 
-# Scheduling and workflow
-uv run -m mlb_sharp_betting.cli.commands.scheduler
-uv run -m mlb_sharp_betting.cli.commands.pre_game
-uv run -m mlb_sharp_betting.cli.commands.pre_game_performance
+# Action Network Pipeline
+uv run -m src.interfaces.cli action-network collect --date today
+uv run -m src.interfaces.cli action-network history --days 30
 
-# System monitoring and diagnostics
-uv run -m mlb_sharp_betting.cli.commands.system_status
-uv run -m mlb_sharp_betting.cli.commands.diagnostics
-uv run -m mlb_sharp_betting.cli.commands.daily_report
+# Backtesting & Performance
+uv run -m src.interfaces.cli backtest run --start-date 2024-06-01 --end-date 2024-06-30 --strategies sharp_action consensus
+uv run -m src.interfaces.cli backtest run --start-date 2024-06-01 --end-date 2024-06-30 --strategies sharp_action --initial-bankroll 10000 --bet-size 100
 
-# Specialized analysis
-uv run -m mlb_sharp_betting.cli.commands.timing_analysis
-uv run -m mlb_sharp_betting.cli.commands.enhanced_detection
+# Database Management
+uv run -m src.interfaces.cli database setup-action-network
+uv run -m src.interfaces.cli database setup-action-network --schema-file sql/custom_schema.sql
+uv run -m src.interfaces.cli database setup-action-network --test-connection
+
+# Game Outcomes
+uv run -m src.interfaces.cli outcomes update --date today
+uv run -m src.interfaces.cli outcomes verify --games recent
+
+# Data Quality (post-reorganization)
+uv run -m src.interfaces.cli data-quality setup
+uv run -m src.interfaces.cli data-quality status
+```
+
+### Utility Scripts
+Standalone utility scripts are available in the `utilities/` folder:
+
+```bash
+# Quick start interface
+uv run python utilities/action_network_quickstart.py
+
+# Data analysis scripts
+uv run python utilities/analyze_existing_data.py
+
+# Pipeline runner
+uv run python utilities/run_action_network_pipeline.py
+
+# Data quality deployment
+uv run python utilities/deploy_data_quality_improvements.py phase1
+uv run python utilities/deploy_data_quality_improvements.py all
+
+# Game outcomes testing
+uv run python utilities/test_game_outcomes.py
 ```
 
 ## Project Architecture
 
-This is a comprehensive MLB betting analysis system with a layered architecture:
+This is a comprehensive MLB betting analysis system with a unified layered architecture:
+
+### Directory Structure
+```
+mlb_betting_program/
+├── config.toml                    # Centralized configuration
+├── src/                           # Unified architecture
+│   ├── core/                      # Core configuration and logging
+│   ├── data/                      # Data collection and models
+│   │   ├── collection/            # Multi-source data collectors
+│   │   ├── database/              # Database management
+│   │   └── models/unified/        # Unified data models
+│   ├── analysis/                  # Strategy processors and analysis
+│   │   ├── processors/            # Strategy processors
+│   │   ├── strategies/            # Strategy orchestration
+│   │   └── backtesting/           # Backtesting engine
+│   ├── interfaces/                # User interfaces
+│   │   └── cli/                   # Command-line interface
+│   └── services/                  # Business logic services
+├── tests/                         # Comprehensive test suite
+├── docs/                          # Documentation
+├── utilities/                     # Standalone utility scripts
+└── sql/                          # Database schemas and migrations
+```
 
 ### Core Components
 
 1. **Data Collection Layer** (`src/data/collection/`)
    - Action Network API integration
+   - SportsBettingDime (SBD) integration
+   - VSIN data collection
+   - MLB Stats API integration
    - Rate-limited data collection
    - Multi-source data validation
 
@@ -70,21 +127,28 @@ This is a comprehensive MLB betting analysis system with a layered architecture:
    - Strategy processors for different betting patterns
    - Backtesting engine for historical validation
    - Movement analysis for line tracking
+   - Sharp action detection
+   - RLM (Reverse Line Movement) detection
 
 3. **Database Layer** (`src/data/database/`)
    - PostgreSQL integration
    - Repository pattern for data access
    - Schema migrations and management
+   - Data quality monitoring
+   - Sportsbook mapping system
 
 4. **Services Layer** (`src/services/`)
    - Orchestration services for complex workflows
    - Monitoring and reporting services
    - Game outcome tracking
+   - Sharp action detection service
+   - Data quality improvement services
 
 5. **CLI Interface** (`src/interfaces/cli/`)
-   - Command-based interface for all operations
+   - Unified command-based interface for all operations
    - Modular command structure
    - Real-time monitoring capabilities
+   - Data quality management commands
 
 ### Key Data Models
 
@@ -112,54 +176,108 @@ The system includes multiple strategy processors located in `src/analysis/proces
 
 ## Development Workflow
 
-1. **Data Collection**: Use CLI commands to collect current game data
-2. **Analysis**: Run strategy processors to identify betting opportunities
-3. **Backtesting**: Validate strategies against historical data
-4. **Monitoring**: Track system performance and data quality
-5. **Reporting**: Generate daily reports and performance summaries
+1. **Initial Setup**: 
+   ```bash
+   uv sync
+   uv run -m src.interfaces.cli database setup-action-network
+   ```
+
+2. **Data Collection**: Use CLI commands to collect current game data
+   ```bash
+   uv run -m src.interfaces.cli data collect --source vsin --real
+   uv run -m src.interfaces.cli data collect --source sbd --real
+   ```
+
+3. **Historical Data Generation**: For movement analysis
+   ```bash
+   uv run -m src.interfaces.cli action-network collect --date today
+   uv run -m src.interfaces.cli data extract-action-network-history --input-file output/action_network_games.json
+   ```
+
+4. **Analysis**: Run strategy processors to identify betting opportunities
+   ```bash
+   uv run -m src.interfaces.cli movement analyze --input-file output/action_network_history.json
+   ```
+
+5. **Backtesting**: Validate strategies against historical data
+   ```bash
+   uv run -m src.interfaces.cli backtest run --start-date 2024-06-01 --end-date 2024-06-30 --strategies sharp_action
+   ```
+
+6. **Monitoring**: Track system performance and data quality
+   ```bash
+   uv run -m src.interfaces.cli data status --detailed
+   uv run -m src.interfaces.cli data-quality status
+   ```
 
 ## Configuration
 
-- Configuration is managed through `config.toml` and environment variables
-- Database connections are configured via environment variables
-- Feature flags control system behavior
-- Rate limiting is configured per data source
+- **Centralized Configuration**: All settings managed through `config.toml`
+- **Database Settings**: PostgreSQL connections via environment variables or config.toml
+- **Data Sources**: SBD, VSIN, Action Network, MLB Stats API, Odds API
+- **Feature Flags**: Control system behavior via config
+- **Rate Limiting**: Configured per data source to respect API limits
 
 ## Key Files to Understand
 
-- `src/core/config.py`: Central configuration management
+- `src/core/config.py`: Central configuration management (unified settings)
 - `src/data/collection/orchestrator.py`: Main data collection orchestrator
 - `src/analysis/strategies/orchestrator.py`: Strategy execution orchestrator
-- `src/services/pipeline_orchestrator.py`: End-to-end pipeline management
+- `src/services/orchestration/pipeline_orchestration_service.py`: End-to-end pipeline management
 - `src/interfaces/cli/main.py`: CLI entry point and command routing
+- `src/services/sharp_action_detection_service.py`: Sharp action detection integration
+- `src/services/game_outcome_service.py`: Game outcome tracking
+- `src/data/database/action_network_repository.py`: Action Network data handling
+- `config.toml`: Centralized configuration file
 
 ## Testing Strategy
 
-- Unit tests for individual components
-- Integration tests for database operations
-- Manual test scripts for specific scenarios
+- Unit tests for individual components (`tests/unit/`)
+- Integration tests for database operations (`tests/integration/`)
+- Manual test scripts for specific scenarios (`tests/manual/`)
 - Coverage reporting with 80% minimum threshold
+- Real-time testing with `--real` flag for live data sources
 
 ## Common Development Tasks
 
 When working on this codebase:
 
 1. **Adding New Strategy**: Create processor in `src/analysis/processors/`
-2. **New Data Source**: Add collector in `src/data/collection/`
-3. **Database Changes**: Update schema and add migration
+2. **New Data Source**: Add collector in `src/data/collection/` and register in orchestrator
+3. **Database Changes**: Update schema in `sql/` and add migration
 4. **New CLI Command**: Add to `src/interfaces/cli/commands/`
-5. **Service Integration**: Add to appropriate service layer
+5. **Service Integration**: Add to appropriate service layer in `src/services/`
+6. **Data Quality Improvements**: Update views and functions in `sql/improvements/`
 
 ## Important Notes
 
 - All timestamps are handled in Eastern Time for consistency
-- The system uses a dual-architecture approach with both legacy and modern components
+- The system uses a unified architecture with the modern `src/` structure
 - Rate limiting is critical for external API integrations
 - Database operations should use the repository pattern
 - All external API calls should include proper error handling and retries
+- Data quality monitoring is integrated with automatic sportsbook ID resolution
+- The system supports multiple data sources with centralized configuration
 
-## No New Work Directories
-Do not build ANY new files in these directories. They are legacy. And the functionality should be replicated in the src/ folder through the various new interfaces we have.
-- /src/mlb_sharp_betting
-- /action/
-- /sportsbookreview/
+## Data Quality Features
+
+The system includes comprehensive data quality improvements:
+
+- **Sportsbook Mapping System**: Automatic resolution of external sportsbook IDs
+- **Data Completeness Scoring**: Real-time quality assessment
+- **Sharp Action Integration**: Automatic population from strategy processors
+- **Quality Monitoring**: Dashboard views and trend analysis
+- **Deployment Scripts**: Available in `utilities/deploy_data_quality_improvements.py`
+
+## Project Organization
+
+- **`docs/`**: All documentation moved here for better organization
+- **`utilities/`**: Standalone utility scripts for quick testing and deployment
+- **`src/`**: Main codebase with unified architecture
+- **`sql/`**: Database schemas, migrations, and improvements
+- **`tests/`**: Comprehensive testing suite
+
+## Legacy Directory Note
+Do not build ANY new files in legacy directories. Use the modern `src/` structure:
+- **Legacy**: `/action/`, `/sportsbookreview/` (deprecated, functionality moved to `src/`)
+- **Modern**: Use `src/data/collection/` for new data collectors and `src/interfaces/cli/` for commands

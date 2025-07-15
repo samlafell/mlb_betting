@@ -632,39 +632,40 @@ class DataCommands:
             service = EnhancedDataService()
 
             # Collect data using enhanced service
-            results = await service.collect_all_sources(sport="mlb")
+            results = await service.collect_and_store_all(sport="mlb")
 
             # Filter results for the specific source
             result = None
-            for collection_result in results:
-                if collection_result.source == data_source:
-                    result = collection_result
-                    break
+            if results.get("success") and results.get("collection_results"):
+                for collection_result in results["collection_results"]:
+                    if collection_result["source"] == data_source.value:
+                        result = collection_result
+                        break
 
-            if result and result.success:
+            if result and result.get("success"):
                 console.print(
                     f"✅ [green]{source_name.upper()} enhanced collection successful[/green]"
                 )
                 summary = (
-                    f"Records collected: {result.records_collected}\n"
-                    f"Records stored: {result.records_stored}\n"
-                    f"Data quality: {result.data_quality.value}\n"
-                    f"Duration: {result.execution_time_seconds:.2f}s"
+                    f"Records collected: {result['records_collected']}\n"
+                    f"Records stored: {result['records_stored']}\n"
+                    f"Data quality: {result['data_quality']}\n"
+                    f"Duration: {result['execution_time']:.2f}s"
                 )
                 return {
                     "status": "success",
                     "output": summary,
-                    "records_collected": result.records_collected,
-                    "records_stored": result.records_stored,
-                    "duration": result.execution_time_seconds,
+                    "records_collected": result['records_collected'],
+                    "records_stored": result['records_stored'],
+                    "duration": result['execution_time'],
                 }
             else:
                 console.print(
                     f"❌ [red]{source_name.upper()} enhanced collection failed[/red]"
                 )
                 error_msg = (
-                    "; ".join(result.errors)
-                    if result and result.errors
+                    "; ".join(result.get("errors", []))
+                    if result and result.get("errors")
                     else f"No data collected for {source_name}"
                 )
                 return {"status": "failed", "error": error_msg}

@@ -36,7 +36,30 @@ def movement():
 @click.option("--show-details", is_flag=True, help="Show detailed movement breakdown")
 @click.option("--rlm-only", is_flag=True, help="Show only games with RLM indicators")
 @click.option("--steam-only", is_flag=True, help="Show only games with steam moves")
-async def analyze(
+def analyze(
+    input_file: str,
+    output_file: str | None,
+    game_id: int | None,
+    min_movements: int,
+    show_details: bool,
+    rlm_only: bool,
+    steam_only: bool,
+):
+    """Perform detailed movement analysis with RLM and steam detection."""
+    return asyncio.run(
+        _analyze_async(
+            input_file,
+            output_file,
+            game_id,
+            min_movements,
+            show_details,
+            rlm_only,
+            steam_only,
+        )
+    )
+
+
+async def _analyze_async(
     input_file: str,
     output_file: str | None,
     game_id: int | None,
@@ -158,7 +181,19 @@ async def analyze(
     help="Filter by market type",
 )
 @click.option("--sportsbook", help="Filter by sportsbook ID")
-async def rlm(
+def rlm(
+    input_file: str,
+    min_rlm_strength: str,
+    market_type: str | None,
+    sportsbook: str | None,
+):
+    """Detect and analyze Reverse Line Movement (RLM) opportunities."""
+    return asyncio.run(
+        _rlm_async(input_file, min_rlm_strength, market_type, sportsbook)
+    )
+
+
+async def _rlm_async(
     input_file: str,
     min_rlm_strength: str,
     market_type: str | None,
@@ -230,7 +265,12 @@ async def rlm(
     type=click.Choice(["moneyline", "spread", "total"]),
     help="Filter by market type",
 )
-async def steam(input_file: str, min_books: int, market_type: str | None):
+def steam(input_file: str, min_books: int, market_type: str | None):
+    """Detect steam moves across multiple sportsbooks."""
+    return asyncio.run(_steam_async(input_file, min_books, market_type))
+
+
+async def _steam_async(input_file: str, min_books: int, market_type: str | None):
     """Detect steam moves across multiple sportsbooks."""
 
     console.print("[bold green]🚂 Steam Move Detection[/bold green]")
@@ -434,19 +474,3 @@ def _get_book_name(sportsbook_id: str) -> str:
         "75": "Barstool",
     }
     return names.get(sportsbook_id, sportsbook_id)
-
-
-# Make commands available for async execution
-def run_analyze(**kwargs):
-    """Run analyze command asynchronously."""
-    return asyncio.run(analyze.callback(**kwargs))
-
-
-def run_rlm(**kwargs):
-    """Run RLM command asynchronously."""
-    return asyncio.run(rlm.callback(**kwargs))
-
-
-def run_steam(**kwargs):
-    """Run steam command asynchronously."""
-    return asyncio.run(steam.callback(**kwargs))

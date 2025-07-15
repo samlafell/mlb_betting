@@ -1,6 +1,0 @@
-/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/.venv/lib/python3.10/site-packages/pydantic/_internal/_config.py:373: UserWarning: Valid config keys have changed in V2:
-* 'schema_extra' has been renamed to 'json_schema_extra'
-  warnings.warn(message, UserWarning)
-/Users/samlafell/Documents/programming_projects/sports_betting_dime_splits/.venv/lib/python3.10/site-packages/pydantic/_internal/_config.py:373: UserWarning: Valid config keys have changed in V2:
-* 'allow_population_by_field_name' has been renamed to 'validate_by_name'
-  warnings.warn(message, UserWarning)

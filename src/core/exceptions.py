@@ -495,7 +495,7 @@ class CircuitBreakerError(UnifiedBettingError):
 
 
 # Legacy exception aliases for backward compatibility
-MLBSharpBettingError = UnifiedBettingError  # For mlb_sharp_betting module compatibility
+# MLBSharpBettingError removed - mlb_sharp_betting directory cleanup
 SportsbookReviewError = UnifiedBettingError  # For sportsbookreview module compatibility
 ActionNetworkError = UnifiedBettingError  # For action module compatibility
 

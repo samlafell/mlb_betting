@@ -57,6 +57,36 @@ class ActionNetworkPrice(BaseModel):
         return v
 
 
+class ActionNetworkBettingInfo(BaseModel):
+    """
+    Model representing betting information from Action Network.
+
+    Contains betting percentage and money percentage data.
+    """
+
+    tickets: dict[str, Any] | None = Field(
+        default=None, description="Ticket percentage data"
+    )
+
+    money: dict[str, Any] | None = Field(
+        default=None, description="Money percentage data"
+    )
+
+    @property
+    def tickets_percent(self) -> float | None:
+        """Extract ticket percentage value."""
+        if self.tickets and "percent" in self.tickets:
+            return self.tickets["percent"]
+        return None
+
+    @property
+    def money_percent(self) -> float | None:
+        """Extract money percentage value."""
+        if self.money and "percent" in self.money:
+            return self.money["percent"]
+        return None
+
+
 class ActionNetworkMarketData(BaseModel):
     """
     Model representing market data from Action Network history.
@@ -78,6 +108,15 @@ class ActionNetworkMarketData(BaseModel):
 
     timestamp: datetime | None = Field(
         default=None, description="Timestamp when this market data was recorded"
+    )
+
+    # Betting information
+    home_bet_info: ActionNetworkBettingInfo | None = Field(
+        default=None, description="Home/over betting information"
+    )
+
+    away_bet_info: ActionNetworkBettingInfo | None = Field(
+        default=None, description="Away/under betting information"
     )
 
 
@@ -233,6 +272,24 @@ class ActionNetworkHistoricalData(IdentifiedModel, ValidatedModel):
 
             summary[market_type]["movements"] = movements
             summary[market_type]["significant_moves"] = significant_moves
+
+        return summary
+
+    @property
+    def betting_splits_summary(self) -> dict[str, Any]:
+        """Get summary of betting splits for all markets."""
+        summary = {
+            "moneyline": {"has_splits": False, "entries_with_splits": 0},
+            "spread": {"has_splits": False, "entries_with_splits": 0},
+            "total": {"has_splits": False, "entries_with_splits": 0},
+        }
+
+        for entry in self.historical_entries:
+            for market_type in ["moneyline", "spread", "total"]:
+                market_data = getattr(entry, market_type, None)
+                if market_data and (market_data.home_bet_info or market_data.away_bet_info):
+                    summary[market_type]["has_splits"] = True
+                    summary[market_type]["entries_with_splits"] += 1
 
         return summary
 
