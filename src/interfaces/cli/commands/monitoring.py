@@ -64,7 +64,8 @@ class MonitoringCommands:
         @monitoring_group.command("health-check")
         @click.option(
             '--collector', 
-            help='Specific collector to check (vsin, sbd, action_network, etc.)'
+            type=click.Choice(['vsin', 'sbd', 'action_network', 'mlb_stats_api', 'odds_api'], case_sensitive=False),
+            help='Specific collector to check'
         )
         @click.option(
             '--detailed', 
@@ -123,12 +124,14 @@ class MonitoringCommands:
         @monitoring_group.command("performance")
         @click.option(
             '--collector', 
+            type=click.Choice(['vsin', 'sbd', 'action_network', 'mlb_stats_api', 'odds_api'], case_sensitive=False),
             help='Filter by specific collector'
         )
         @click.option(
             '--hours', 
             default=24, 
-            help='Hours of performance history to analyze'
+            type=click.IntRange(1, 168),  # 1 hour to 1 week
+            help='Hours of performance history to analyze (1-168 hours)'
         )
         @click.option(
             '--show-trends', 
@@ -169,7 +172,8 @@ class MonitoringCommands:
         @click.option(
             '--interval', 
             default=300, 
-            help='Check interval in seconds (default: 300 = 5 minutes)'
+            type=click.IntRange(30, 3600),  # 30 seconds to 1 hour
+            help='Check interval in seconds (30-3600, default: 300 = 5 minutes)'
         )
         @click.option(
             '--daemon', 
@@ -222,10 +226,12 @@ class MonitoringCommands:
         @click.option(
             '--hours', 
             default=24, 
-            help='Hours of alert history to show'
+            type=click.IntRange(1, 720),  # 1 hour to 30 days
+            help='Hours of alert history to show (1-720 hours)'
         )
         @click.option(
             '--collector', 
+            type=click.Choice(['vsin', 'sbd', 'action_network', 'mlb_stats_api', 'odds_api'], case_sensitive=False),
             help='Filter by specific collector'
         )
         def alert_history(severity: Optional[str], hours: int, collector: Optional[str]):
@@ -256,6 +262,7 @@ class MonitoringCommands:
         @click.option(
             '--collector', 
             required=True,
+            type=click.Choice(['vsin', 'sbd', 'action_network', 'mlb_stats_api', 'odds_api'], case_sensitive=False),
             help='Collector to diagnose'
         )
         @click.option(

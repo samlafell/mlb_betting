@@ -70,6 +70,38 @@ class HealthCheckResult:
 
 
 @dataclass
+class CircuitBreakerState:
+    """Circuit breaker state for collector health monitoring."""
+    failure_count: int = 0
+    failure_threshold: int = 5
+    timeout_duration: timedelta = field(default_factory=lambda: timedelta(minutes=5))
+    last_failure_time: Optional[datetime] = None
+    state: str = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
+    
+    def is_open(self) -> bool:
+        """Check if circuit breaker is open (preventing calls)."""
+        if self.state == "OPEN":
+            if self.last_failure_time and datetime.now() - self.last_failure_time > self.timeout_duration:
+                self.state = "HALF_OPEN"
+                return False
+            return True
+        return False
+    
+    def record_success(self) -> None:
+        """Record a successful operation."""
+        self.failure_count = 0
+        self.state = "CLOSED"
+        self.last_failure_time = None
+    
+    def record_failure(self) -> None:
+        """Record a failed operation."""
+        self.failure_count += 1
+        self.last_failure_time = datetime.now()
+        if self.failure_count >= self.failure_threshold:
+            self.state = "OPEN"
+
+
+@dataclass
 class CollectorHealthStatus:
     """Overall health status for a collector."""
     collector_name: str
@@ -78,6 +110,7 @@ class CollectorHealthStatus:
     last_updated: datetime
     uptime_percentage: float
     performance_score: float
+    circuit_breaker_state: Optional[str] = None
 
 
 class CollectorHealthMonitor:
@@ -93,9 +126,34 @@ class CollectorHealthMonitor:
         self.check_history: List[HealthCheckResult] = []
         self.last_check_time: Optional[datetime] = None
         self.consecutive_failures = 0
+        self.circuit_breaker = CircuitBreakerState()
+        self._max_history_size = config.get('max_history_size', 100)
         
     async def run_all_checks(self) -> CollectorHealthStatus:
-        """Execute all configured health checks for the collector."""
+        """Execute all configured health checks for the collector with circuit breaker protection."""
+        # Check circuit breaker before running checks
+        if self.circuit_breaker.is_open():
+            logger.warning(
+                "Circuit breaker is open, skipping health checks",
+                collector=self.collector.source.value,
+                failure_count=self.circuit_breaker.failure_count,
+                state=self.circuit_breaker.state
+            )
+            
+            return CollectorHealthStatus(
+                collector_name=self.collector.source.value,
+                overall_status=HealthStatus.CRITICAL,
+                checks=[HealthCheckResult(
+                    check_type=CheckType.CONNECTIVITY,
+                    status=HealthStatus.CRITICAL,
+                    error_message="Circuit breaker is OPEN - too many consecutive failures"
+                )],
+                last_updated=datetime.now(),
+                uptime_percentage=0.0,
+                performance_score=0.0,
+                circuit_breaker_state=self.circuit_breaker.state
+            )
+        
         logger.info(
             "Running health checks for collector",
             collector=self.collector.source.value,
@@ -104,21 +162,40 @@ class CollectorHealthMonitor:
         
         checks = []
         
-        # Run all health checks
+        # Run all health checks with parallel execution
         try:
+            # Start with connectivity check
             connectivity_result = await self.check_connectivity()
             checks.append(connectivity_result)
             
-            # Only run parsing/schema checks if connectivity is good
+            # Run remaining checks in parallel if connectivity is good
             if connectivity_result.status != HealthStatus.CRITICAL:
-                parsing_result = await self.check_parsing()
-                checks.append(parsing_result)
+                parallel_tasks = [
+                    asyncio.create_task(self.check_parsing()),
+                    asyncio.create_task(self.check_schema()),
+                    asyncio.create_task(self.check_performance())
+                ]
                 
-                schema_result = await self.check_schema()
-                checks.append(schema_result)
-            
-            performance_result = await self.check_performance()
-            checks.append(performance_result)
+                parallel_results = await asyncio.gather(*parallel_tasks, return_exceptions=True)
+                
+                for result in parallel_results:
+                    if isinstance(result, Exception):
+                        logger.error(
+                            "Parallel health check failed",
+                            collector=self.collector.source.value,
+                            error=str(result)
+                        )
+                        checks.append(HealthCheckResult(
+                            check_type=CheckType.PERFORMANCE,
+                            status=HealthStatus.CRITICAL,
+                            error_message=f"Parallel check failed: {str(result)}"
+                        ))
+                    else:
+                        checks.append(result)
+            else:
+                # Still run performance check even if connectivity fails
+                performance_result = await self.check_performance()
+                checks.append(performance_result)
             
         except Exception as e:
             logger.error(
@@ -135,14 +212,29 @@ class CollectorHealthMonitor:
         # Determine overall status
         overall_status = self._determine_overall_status(checks)
         
-        # Update tracking
+        # Update circuit breaker based on results
+        if overall_status == HealthStatus.CRITICAL:
+            self.circuit_breaker.record_failure()
+            self.consecutive_failures += 1
+        else:
+            self.circuit_breaker.record_success()
+            self.consecutive_failures = 0
+        
+        # Update tracking with resource management
         self.check_history.extend(checks)
         self.last_check_time = datetime.now()
         
-        if overall_status == HealthStatus.CRITICAL:
-            self.consecutive_failures += 1
-        else:
-            self.consecutive_failures = 0
+        # Limit history size to prevent memory leaks
+        if len(self.check_history) > self._max_history_size:
+            # Keep only the most recent entries
+            excess_count = len(self.check_history) - self._max_history_size
+            self.check_history = self.check_history[excess_count:]
+            logger.debug(
+                "Trimmed health check history",
+                collector=self.collector.source.value,
+                removed_entries=excess_count,
+                remaining_entries=len(self.check_history)
+            )
         
         # Calculate performance metrics
         uptime_pct = self._calculate_uptime_percentage()
@@ -154,7 +246,8 @@ class CollectorHealthMonitor:
             checks=checks,
             last_updated=datetime.now(),
             uptime_percentage=uptime_pct,
-            performance_score=performance_score
+            performance_score=performance_score,
+            circuit_breaker_state=self.circuit_breaker.state
         )
     
     async def check_connectivity(self) -> HealthCheckResult:
@@ -224,52 +317,112 @@ class CollectorHealthMonitor:
         Validate that data parsing logic still works correctly.
         
         Performs a test collection with minimal data to verify parsing.
+        Includes automatic retry logic for transient failures.
         """
         start_time = time.time()
+        max_retries = 3
+        retry_delay = 2.0
         
-        try:
-            # Attempt collection with minimal parameters
-            result = await self.collector.collect(
-                timeout_seconds=30
-            )
-            response_time = time.time() - start_time
+        for attempt in range(max_retries):
+            try:
+                # Attempt collection with minimal parameters
+                result = await self.collector.collect(
+                    timeout_seconds=30
+                )
+                response_time = time.time() - start_time
+                
+                if not result.is_successful:
+                    # Check if this is a retryable error
+                    error_msg = '; '.join(result.errors) if result.errors else "Unknown error"
+                    
+                    if attempt < max_retries - 1 and self._is_retryable_error(error_msg):
+                        logger.warning(
+                            "Parsing check failed, retrying",
+                            collector=self.collector.source.value,
+                            attempt=attempt + 1,
+                            error=error_msg
+                        )
+                        await asyncio.sleep(retry_delay * (attempt + 1))  # Exponential backoff
+                        continue
+                    
+                    return HealthCheckResult(
+                        check_type=CheckType.PARSING,
+                        status=HealthStatus.CRITICAL,
+                        response_time=response_time,
+                        error_message=f"Collection failed after {attempt + 1} attempts: {error_msg}",
+                        metadata={"retry_attempts": attempt + 1}
+                    )
+                    
+                elif len(result.data) == 0:
+                    return HealthCheckResult(
+                        check_type=CheckType.PARSING,
+                        status=HealthStatus.DEGRADED,
+                        response_time=response_time,
+                        error_message="No data collected",
+                        metadata={
+                            "records_collected": len(result.data),
+                            "retry_attempts": attempt + 1,
+                            "warnings": getattr(result, 'warnings', [])
+                        }
+                    )
+                else:
+                    return HealthCheckResult(
+                        check_type=CheckType.PARSING,
+                        status=HealthStatus.HEALTHY,
+                        response_time=response_time,
+                        metadata={
+                            "records_collected": len(result.data),
+                            "data_quality_score": getattr(result, 'quality_score', 1.0),
+                            "retry_attempts": attempt + 1
+                        }
+                    )
             
-            if not result.is_successful:
+            except Exception as e:
+                error_msg = str(e)
+                
+                if attempt < max_retries - 1 and self._is_retryable_error(error_msg):
+                    logger.warning(
+                        "Parsing check exception, retrying",
+                        collector=self.collector.source.value,
+                        attempt=attempt + 1,
+                        error=error_msg
+                    )
+                    await asyncio.sleep(retry_delay * (attempt + 1))
+                    continue
+                
                 return HealthCheckResult(
                     check_type=CheckType.PARSING,
                     status=HealthStatus.CRITICAL,
-                    response_time=response_time,
-                    error_message=f"Collection failed: {'; '.join(result.errors)}"
-                )
-            elif len(result.data) == 0:
-                return HealthCheckResult(
-                    check_type=CheckType.PARSING,
-                    status=HealthStatus.DEGRADED,
-                    response_time=response_time,
-                    error_message="Partial collection success",
-                    metadata={
-                        "records_collected": len(result.data),
-                        "warnings": result.warnings
-                    }
-                )
-            else:
-                return HealthCheckResult(
-                    check_type=CheckType.PARSING,
-                    status=HealthStatus.HEALTHY,
-                    response_time=response_time,
-                    metadata={
-                        "records_collected": len(result.data),
-                        "data_quality_score": getattr(result, 'quality_score', 1.0)
-                    }
+                    response_time=time.time() - start_time,
+                    error_message=f"Parsing check failed after {attempt + 1} attempts: {error_msg}",
+                    metadata={"retry_attempts": attempt + 1}
                 )
         
-        except Exception as e:
-            return HealthCheckResult(
-                check_type=CheckType.PARSING,
-                status=HealthStatus.CRITICAL,
-                response_time=time.time() - start_time,
-                error_message=f"Parsing check failed: {str(e)}"
-            )
+        # Should never reach here due to the loop logic, but add as safety
+        return HealthCheckResult(
+            check_type=CheckType.PARSING,
+            status=HealthStatus.CRITICAL,
+            response_time=time.time() - start_time,
+            error_message="Parsing check failed: maximum retries exceeded",
+            metadata={"retry_attempts": max_retries}
+        )
+    
+    def _is_retryable_error(self, error_message: str) -> bool:
+        """Determine if an error is transient and worth retrying."""
+        retryable_patterns = [
+            "timeout",
+            "connection",
+            "network",
+            "temporary",
+            "503",
+            "502",
+            "504",
+            "rate limit",
+            "too many requests"
+        ]
+        
+        error_lower = error_message.lower()
+        return any(pattern in error_lower for pattern in retryable_patterns)
     
     async def check_schema(self) -> HealthCheckResult:
         """

@@ -22,20 +22,31 @@ from uuid import uuid4
 
 from ..core.config import get_settings
 from ..core.logging import get_logger
-from ..core.timing import (
-    DataSynchronizer,
-    TimestampedData,
-    SynchronizationWindow,
-    TimingMetrics,
-    get_est_now,
-    precise_timestamp,
-    calculate_synchronization_quality,
-    get_synchronized_data_for_analysis
-)
-from ..data.collection.orchestrator import CollectionOrchestrator
-from ..data.collection.base import CollectionResult
 
 logger = get_logger(__name__)
+
+try:
+    from ..core.timing import (
+        DataSynchronizer,
+        TimestampedData,
+        SynchronizationWindow,
+        TimingMetrics,
+        get_est_now,
+        precise_timestamp,
+        calculate_synchronization_quality
+    )
+except ImportError as e:
+    logger.critical(
+        "Critical timing module dependencies missing",
+        error=str(e),
+        required_modules=["DataSynchronizer", "TimestampedData", "SynchronizationWindow"]
+    )
+    raise ImportError(
+        "Critical dependency failure: timing module components required for data synchronization. "
+        f"Missing: {str(e)}. Ensure src.core.timing module is properly implemented."
+    ) from e
+from ..data.collection.orchestrator import CollectionOrchestrator
+from ..data.collection.base import CollectionResult
 
 
 @dataclass
@@ -154,7 +165,6 @@ class DataSynchronizationService:
                 collection_tasks.append(task)
             
             # Wait for collections with timeout
-            start_time = get_est_now()
             collected_data: Dict[str, CollectionResult] = {}
             
             # Wait for all tasks to complete or timeout
@@ -392,8 +402,6 @@ class DataSynchronizationService:
     def cleanup_old_data(self, max_age_seconds: float = 3600.0) -> int:
         """Remove old synchronized data from cache."""
         cutoff_time = get_est_now() - timedelta(seconds=max_age_seconds)
-        
-        initial_count = len(self.synchronized_data_cache)
         
         # Remove old entries
         expired_keys = [
