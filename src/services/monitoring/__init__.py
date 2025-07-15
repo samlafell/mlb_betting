@@ -1,32 +1,27 @@
 """
-Unified Monitoring Services Package
+Data Collector Monitoring Services
 
-Consolidates all monitoring functionality from legacy modules:
+Provides comprehensive health monitoring and alerting capabilities for data collectors.
 
-Legacy Service Mappings:
-- src/mlb_sharp_betting/services/alert_service.py → AlertService
-- Various health check scripts → UnifiedMonitoringService
-- Performance tracking utilities → MetricsCollectionService
-- System status commands → SystemHealthService
-
-New Unified Services:
-- UnifiedMonitoringService: Main monitoring engine with health checks and performance tracking
-- AlertService: Notifications and alerting system
-- MetricsCollectionService: Metrics collection and aggregation
-- SystemHealthService: System health monitoring and diagnostics
-- PerformanceMonitoringService: Performance monitoring and optimization
+Addresses the inherent brittleness of web scraping through:
+- Multi-type health checks (connectivity, parsing, schema, performance)
+- Intelligent alerting with escalation policies
+- Automatic recovery mechanisms
+- Performance analytics and trend analysis
 """
 
-from .alert_service import AlertService
-from .metrics_collection_service import MetricsCollectionService
-from .performance_monitoring_service import PerformanceMonitoringService
-from .system_health_service import SystemHealthService
-from .unified_monitoring_service import UnifiedMonitoringService
+from .collector_health_service import (
+    HealthMonitoringOrchestrator,
+    CollectorHealthMonitor,
+    HealthStatus,
+    AlertSeverity,
+    CollectorHealthStatus
+)
 
 __all__ = [
-    "UnifiedMonitoringService",
-    "AlertService",
-    "MetricsCollectionService",
-    "SystemHealthService",
-    "PerformanceMonitoringService",
+    'HealthMonitoringOrchestrator',
+    'CollectorHealthMonitor', 
+    'HealthStatus',
+    'AlertSeverity',
+    'CollectorHealthStatus'
 ]
