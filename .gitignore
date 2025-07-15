@@ -49,3 +49,14 @@ data/mlb_api_cache/**.json
 **line_movement**.json
 **game_urls**.json
 **betting_opportunities**.json
+# Claude Code exclusions
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+output/
+analysis_results/
+analysis_scripts/
+logs/
+backups/
+*.lock
+*.log

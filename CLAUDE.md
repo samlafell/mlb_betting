@@ -5,6 +5,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Goals
 Build a 24/7 sports betting service that will scrape various sources and be pulling down line information from these sources. Then, evaluate them pre-game against a system of strategies that have been developed. These strategies should have backtested historical performance attached to them so whenever we evaluate pre-game lines, it should only be using proven profitable systems.
 
+## Project Organization
+
+- **`docs/`**: All documentation (.md files) should be placed here for optimal organization.
+- **`utilities/`**: Standalone utility scripts for quick testing and deployment
+- **`src/`**: Main codebase with unified architecture
+- **`sql/`**: Database schemas, migrations, and improvements
+- **`tests/`**: Comprehensive testing suite
+
+
 ## Development Commands
 
 ### Package Management
@@ -268,16 +277,3 @@ The system includes comprehensive data quality improvements:
 - **Sharp Action Integration**: Automatic population from strategy processors
 - **Quality Monitoring**: Dashboard views and trend analysis
 - **Deployment Scripts**: Available in `utilities/deploy_data_quality_improvements.py`
-
-## Project Organization
-
-- **`docs/`**: All documentation moved here for better organization
-- **`utilities/`**: Standalone utility scripts for quick testing and deployment
-- **`src/`**: Main codebase with unified architecture
-- **`sql/`**: Database schemas, migrations, and improvements
-- **`tests/`**: Comprehensive testing suite
-
-## Legacy Directory Note
-Do not build ANY new files in legacy directories. Use the modern `src/` structure:
-- **Legacy**: `/action/`, `/sportsbookreview/` (deprecated, functionality moved to `src/`)
-- **Modern**: Use `src/data/collection/` for new data collectors and `src/interfaces/cli/` for commands
