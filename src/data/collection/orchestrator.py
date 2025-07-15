@@ -13,6 +13,7 @@ Coordinates all data collectors with:
 import asyncio
 import time
 import uuid
+from uuid import uuid4
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -32,6 +33,23 @@ from .collectors import (
 )
 from .rate_limiter import get_rate_limiter
 from .validators import DataQualityValidator
+from ...services.monitoring.collector_health_service import (
+    HealthMonitoringOrchestrator,
+    HealthStatus
+)
+
+# Import timing utilities for synchronization
+try:
+    from ...core.timing import TimingMetrics
+except ImportError:
+    # Fallback for backward compatibility
+    from pydantic import BaseModel, Field
+    
+    class TimingMetrics(BaseModel):
+        total_data_points: int = 0
+        sources_count: int = 0
+        time_span_seconds: float = 0.0
+        synchronization_success_rate: float = 0.0
 
 logger = get_logger(__name__, LogComponent.CORE)
 
@@ -162,6 +180,11 @@ class CollectionPlan:
     successful_tasks: int = 0
     failed_tasks: int = 0
     total_items_collected: int = 0
+    
+    # Synchronization tracking
+    synchronization_window_id: str = field(default_factory=lambda: str(uuid4()))
+    timing_metrics: TimingMetrics = field(default_factory=TimingMetrics)
+    sources_synchronized: bool = False
 
     @property
     def is_completed(self) -> bool:
@@ -220,6 +243,7 @@ class CollectionOrchestrator:
         # Services
         self.rate_limiter = get_rate_limiter()
         self.validator = DataQualityValidator()
+        self.health_monitor = HealthMonitoringOrchestrator(self.settings)
 
         # Metrics
         self.metrics = {
@@ -233,6 +257,9 @@ class CollectionOrchestrator:
 
         # Initialize default source configurations
         self._initialize_default_sources()
+        
+        # Will register collectors for health monitoring after initialization
+        self._collectors_registered_for_health = False
 
         self.logger.info(
             "Collection orchestrator initialized", sources=len(self.source_configs)
@@ -352,7 +379,7 @@ class CollectionOrchestrator:
         Returns:
             CollectionPlan instance
         """
-        plan_id = str(uuid.uuid4())
+        plan_id = str(uuid4())
         plan = CollectionPlan(
             id=plan_id,
             name=name,
@@ -386,7 +413,7 @@ class CollectionOrchestrator:
 
             # Create task
             task = CollectionTask(
-                id=str(uuid.uuid4()),
+                id=str(uuid4()),
                 source_name=source_name,
                 collection_type=collection_type,
                 priority=config.priority,
@@ -637,7 +664,10 @@ class CollectionOrchestrator:
         if source_name not in self.collectors:
             config = self.source_configs[source_name]
             self.collectors[source_name] = config.collector_class()
-
+            
+            # Register collector for health monitoring
+            self.health_monitor.register_collector(self.collectors[source_name])
+            
         return self.collectors[source_name]
 
     async def _store_collection_result(self, result: CollectionResult) -> None:
@@ -749,6 +779,8 @@ class CollectionOrchestrator:
                 [c for c in self.source_configs.values() if c.enabled]
             ),
             "rate_limiter_metrics": self.rate_limiter.get_global_metrics(),
+            "health_monitoring_enabled": True,
+            "registered_health_monitors": len(self.health_monitor.monitors),
         }
 
     def get_source_status(self) -> dict[str, Any]:
@@ -770,8 +802,48 @@ class CollectionOrchestrator:
 
         return status
 
+    async def initialize_collectors(self) -> None:
+        """Initialize all collectors and register them for health monitoring."""
+        if self._collectors_registered_for_health:
+            return
+            
+        # Create all collectors
+        for source_name, config in self.source_configs.items():
+            if config.enabled:
+                await self._get_collector(source_name)
+        
+        self._collectors_registered_for_health = True
+        self.logger.info(
+            "All collectors initialized and registered for health monitoring",
+            collector_count=len(self.collectors)
+        )
+    
+    async def get_health_status(self) -> dict[str, Any]:
+        """Get health status of all collectors."""
+        await self.initialize_collectors()
+        return await self.health_monitor.check_all_collectors()
+    
+    async def get_collector_health(self, collector_name: str) -> Any:
+        """Get health status of a specific collector."""
+        await self.initialize_collectors()
+        return await self.health_monitor.check_specific_collector(collector_name)
+    
+    async def start_health_monitoring(self) -> None:
+        """Start continuous health monitoring."""
+        await self.initialize_collectors()
+        await self.health_monitor.start_monitoring()
+        self.logger.info("Health monitoring started")
+    
+    async def stop_health_monitoring(self) -> None:
+        """Stop health monitoring."""
+        await self.health_monitor.stop_monitoring()
+        self.logger.info("Health monitoring stopped")
+
     async def cleanup(self) -> None:
         """Clean up resources."""
+        # Stop health monitoring
+        await self.stop_health_monitoring()
+        
         for collector in self.collectors.values():
             if hasattr(collector, "_cleanup"):
                 await collector._cleanup()

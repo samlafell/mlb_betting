@@ -99,7 +99,7 @@ class CollectorConfig(BaseModel):
 
 @dataclass
 class CollectionResult:
-    """Result of a data collection operation."""
+    """Result of a data collection operation with synchronization support."""
 
     success: bool
     data: list[Any]
@@ -109,11 +109,21 @@ class CollectionResult:
     metadata: dict[str, Any] | None = None
     request_count: int = 0
     response_time_ms: float = 0.0
+    
+    # Synchronization metadata for handling timing mismatches
+    collection_window_id: str | None = None
+    sync_quality_score: float = 1.0  # 0.0 = poor sync, 1.0 = perfect sync
+    is_synchronized: bool = False  # Whether this data is part of synchronized collection
 
     @property
     def has_data(self) -> bool:
         """Check if collection result contains data."""
         return self.success and bool(self.data)
+    
+    @property
+    def is_successful(self) -> bool:
+        """Check if collection was successful."""
+        return self.success
 
     @property
     def error_count(self) -> int:
@@ -124,6 +134,17 @@ class CollectionResult:
     def data_count(self) -> int:
         """Get number of data items collected."""
         return len(self.data)
+    
+    def set_synchronization_metadata(
+        self, 
+        window_id: str, 
+        quality_score: float, 
+        is_synchronized: bool = True
+    ) -> None:
+        """Set synchronization metadata for this collection result."""
+        self.collection_window_id = window_id
+        self.sync_quality_score = quality_score
+        self.is_synchronized = is_synchronized
 
 
 @dataclass
@@ -195,6 +216,70 @@ class BaseCollector(ABC):
             List of raw data records
         """
         pass
+    
+    async def collect(self, **params) -> CollectionResult:
+        """
+        Main collection method that wraps collect_data with error handling.
+        
+        Args:
+            **params: Collection parameters
+            
+        Returns:
+            CollectionResult with data and metadata
+        """
+        start_time = datetime.now()
+        
+        try:
+            # Create collection request from params
+            request = CollectionRequest(
+                source=self.source,
+                **{k: v for k, v in params.items() if hasattr(CollectionRequest, k)}
+            )
+            
+            # Collect data
+            raw_data = await self.collect_data(request)
+            
+            # Validate and normalize data
+            validated_data = []
+            for record in raw_data:
+                if self.validate_record(record):
+                    normalized_record = self.normalize_record(record)
+                    validated_data.append(normalized_record)
+            
+            # Create result
+            result = CollectionResult(
+                success=True,
+                data=validated_data,
+                source=self.source.value,
+                timestamp=start_time,
+                request_count=1,
+                response_time_ms=(datetime.now() - start_time).total_seconds() * 1000
+            )
+            
+            self.metrics.records_collected = len(raw_data)
+            self.metrics.records_valid = len(validated_data)
+            self.metrics.status = CollectionStatus.SUCCESS
+            self.metrics.end_time = datetime.now()
+            
+            return result
+            
+        except Exception as e:
+            error_message = str(e)
+            self.logger.error("Collection failed", error=error_message)
+            
+            self.metrics.errors.append(error_message)
+            self.metrics.status = CollectionStatus.FAILED
+            self.metrics.end_time = datetime.now()
+            
+            return CollectionResult(
+                success=False,
+                data=[],
+                source=self.source.value,
+                timestamp=start_time,
+                errors=[error_message],
+                request_count=1,
+                response_time_ms=(datetime.now() - start_time).total_seconds() * 1000
+            )
 
     @abstractmethod
     def validate_record(self, record: dict[str, Any]) -> bool:
@@ -214,11 +299,13 @@ class BaseCollector(ABC):
         """
         Normalize a data record to standard format.
 
+        Implementation should add precise EST timestamps and source metadata.
+
         Args:
             record: Raw data record
 
         Returns:
-            Normalized data record
+            Normalized data record with collection metadata
         """
         pass
 
@@ -242,6 +329,17 @@ class BaseCollector(ABC):
     def get_metrics(self) -> CollectionMetrics:
         """Get current collection metrics."""
         return self.metrics
+    
+    def get_metrics_summary(self) -> dict[str, Any]:
+        """Get summary of collection metrics."""
+        return {
+            "total_collections": self.metrics.records_collected,
+            "success_rate": self.metrics.success_rate,
+            "last_status": self.metrics.status.value,
+            "last_duration_seconds": self.metrics.duration,
+            "error_count": len(self.metrics.errors),
+            "last_errors": self.metrics.errors[-3:] if self.metrics.errors else []
+        }
 
     def reset_metrics(self) -> None:
         """Reset collection metrics."""
@@ -303,9 +401,19 @@ class MockCollector(BaseCollector):
         return True
 
     def normalize_record(self, record: dict[str, Any]) -> dict[str, Any]:
-        """Mock data is already normalized."""
+        """Mock data is already normalized with precise EST timestamps."""
+        # Import timing utilities for precise timestamps
+        try:
+            from ...core.timing import precise_timestamp
+        except ImportError:
+            # Fallback for backward compatibility
+            import pytz
+            EST = pytz.timezone('US/Eastern')
+            def precise_timestamp():
+                return datetime.now(EST)
+        
         record["source"] = self.source.value
-        record["collected_at"] = datetime.now().isoformat()
+        record["collected_at_est"] = precise_timestamp()
         return record
 
     def _get_vsin_mock_data(self) -> list[dict[str, Any]]:

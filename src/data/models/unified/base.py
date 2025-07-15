@@ -11,6 +11,22 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+# Import precise timing utilities
+try:
+    from ...core.timing import get_est_now, to_est, precise_timestamp
+except ImportError:
+    # Fallback for backward compatibility
+    import pytz
+    EST = pytz.timezone('US/Eastern')
+    def get_est_now() -> datetime:
+        return datetime.now(EST)
+    def to_est(dt: datetime) -> datetime:
+        if dt.tzinfo is None:
+            return EST.localize(dt)
+        return dt.astimezone(EST)
+    def precise_timestamp() -> datetime:
+        return get_est_now()
+
 T = TypeVar("T", bound="UnifiedBaseModel")
 
 
@@ -86,20 +102,20 @@ class TimestampedModel(UnifiedBaseModel):
     """
 
     created_at: datetime = Field(
-        default_factory=datetime.now,
-        description="When the record was created (EST)",
+        default_factory=precise_timestamp,
+        description="When the record was created (EST with precise timing)",
         frozen=True,
     )
 
     updated_at: datetime = Field(
-        default_factory=datetime.now,
-        description="When the record was last updated (EST)",
+        default_factory=precise_timestamp,
+        description="When the record was last updated (EST with precise timing)",
     )
 
     def touch_updated_at(self) -> None:
-        """Update the updated_at timestamp to current time."""
+        """Update the updated_at timestamp to current time with precision."""
         # Note: This requires model_config validate_assignment=True
-        self.updated_at = datetime.now()
+        self.updated_at = precise_timestamp()
 
 
 class IdentifiedModel(UnifiedBaseModel):
@@ -185,7 +201,12 @@ class SourcedModel(UnifiedBaseModel):
     )
 
     source_timestamp: datetime | None = Field(
-        default=None, description="When data was retrieved from source (EST)"
+        default=None, description="When data was retrieved from source (EST with precise timing)"
+    )
+    
+    collected_at_est: datetime = Field(
+        default_factory=precise_timestamp,
+        description="Precise collection timestamp in EST for data synchronization"
     )
 
     @field_validator("source")
