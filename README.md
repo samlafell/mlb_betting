@@ -13,21 +13,21 @@ The project has been completely reorganized with a unified CLI structure providi
 uv run -m src.interfaces.cli --help
 
 # Data Collection & Management
+uv run -m src.interfaces.cli data collect --source action_network --real  # NEW: Primary data source
 uv run -m src.interfaces.cli data collect --source vsin --real
 uv run -m src.interfaces.cli data collect --source sbd --real
 uv run -m src.interfaces.cli data collect --parallel --real
 uv run -m src.interfaces.cli data status
-uv run -m src.interfaces.cli data test --source vsin --real
+uv run -m src.interfaces.cli data test --source action_network --real
+
+# Action Network Pipeline (Enhanced Integration)
+uv run -m src.interfaces.cli action-network collect --date today
+uv run -m src.interfaces.cli action-network history --days 30
 
 # Movement Analysis & Strategy Detection
-# Note: Requires historical data input file (generated from Action Network)
 uv run -m src.interfaces.cli movement analyze --input-file output/action_network_history.json
 uv run -m src.interfaces.cli movement rlm --input-file output/action_network_history.json --min-movements 50
 uv run -m src.interfaces.cli movement steam --input-file output/action_network_history.json --show-details
-
-# Action Network Pipeline
-uv run -m src.interfaces.cli action-network collect --date today
-uv run -m src.interfaces.cli action-network history --days 30
 
 # Backtesting & Performance
 uv run -m src.interfaces.cli backtest run --start-date 2024-06-01 --end-date 2024-06-30 --strategies sharp_action consensus
@@ -37,6 +37,10 @@ uv run -m src.interfaces.cli backtest run --start-date 2024-06-01 --end-date 202
 uv run -m src.interfaces.cli database setup-action-network
 uv run -m src.interfaces.cli database setup-action-network --schema-file sql/custom_schema.sql
 uv run -m src.interfaces.cli database setup-action-network --test-connection
+
+# Data Quality Management
+uv run -m src.interfaces.cli data-quality deploy
+uv run -m src.interfaces.cli data-quality status
 
 # Game Outcomes
 uv run -m src.interfaces.cli outcomes update --date today
@@ -93,31 +97,65 @@ mlb_betting_program/
 ├── config.toml                    # Centralized configuration
 ├── src/                           # Unified architecture
 │   ├── core/                      # Core configuration and logging
-│   │   ├── config.py
-│   │   ├── logging.py
-│   │   └── exceptions.py
+│   │   ├── config.py              # Central configuration (Pydantic v2)
+│   │   ├── logging.py             # Structured logging
+│   │   ├── datetime_utils.py      # Timezone handling (EST/EDT)
+│   │   ├── team_utils.py          # MLB team normalization
+│   │   └── sportsbook_utils.py    # Sportsbook ID resolution
 │   ├── data/                      # Data collection and models
 │   │   ├── collection/            # Multi-source data collectors
+│   │   │   ├── consolidated_action_network_collector.py  # Primary Action Network collector
+│   │   │   ├── smart_line_movement_filter.py            # Noise reduction filter
+│   │   │   ├── action_network_unified_collector.py      # Enhanced Action Network
+│   │   │   ├── sbd_unified_collector.py                 # SportsBettingDime collector
+│   │   │   ├── vsin_unified_collector.py                # VSIN collector
+│   │   │   ├── orchestrator.py                          # Collection orchestration
+│   │   │   └── base.py                                  # Base collector classes
 │   │   ├── database/              # Database management
-│   │   └── models/unified/        # Unified data models
+│   │   │   ├── repositories/      # Repository pattern implementations
+│   │   │   └── migrations/        # Database schema migrations
+│   │   └── models/unified/        # Unified data models (Pydantic v2)
+│   │       ├── game.py            # Game data models
+│   │       ├── betting_analysis.py # Betting analysis models
+│   │       ├── movement_analysis.py # Line movement models
+│   │       └── base.py            # Base model classes
 │   ├── analysis/                  # Strategy processors and analysis
 │   │   ├── processors/            # Strategy processors
+│   │   │   ├── action/            # Action Network specific processors
+│   │   │   ├── sharp_action_processor.py
+│   │   │   ├── line_movement_processor.py
+│   │   │   └── consensus_processor.py
 │   │   ├── strategies/            # Strategy orchestration
-│   │   └── backtesting/           # Backtesting engine
+│   │   ├── backtesting/           # Backtesting engine
+│   │   └── models/                # Analysis models
 │   ├── interfaces/                # User interfaces
 │   │   └── cli/                   # Command-line interface
 │   │       ├── main.py            # Main CLI entry point
 │   │       └── commands/          # CLI command modules
+│   │           ├── data.py        # Data collection commands
+│   │           ├── action_network.py # Action Network commands
+│   │           ├── movement.py    # Movement analysis commands
+│   │           ├── backtest.py    # Backtesting commands
+│   │           └── database.py    # Database management commands
 │   └── services/                  # Business logic services
 │       ├── data/                  # Data services
 │       ├── game/                  # Game management
 │       ├── orchestration/         # Pipeline orchestration
+│       ├── monitoring/            # System monitoring
+│       ├── reporting/             # Report generation
+│       ├── scheduling/            # Task scheduling
+│       ├── strategy/              # Strategy services
 │       └── workflow/              # Workflow management
 ├── tests/                         # Comprehensive test suite
-│   ├── integration/
-│   ├── manual/
-│   └── unit/
+│   ├── integration/               # Integration tests
+│   ├── manual/                    # Manual test scripts
+│   └── unit/                      # Unit tests
 ├── docs/                          # Documentation
+├── sql/                           # Database schemas and migrations
+│   ├── improvements/              # Data quality improvements
+│   └── schemas/                   # Core database schemas
+├── utilities/                     # Standalone utility scripts
+├── logs/                          # Application logs
 └── legacy/                        # Legacy code (deprecated)
     ├── action/                    # Action Network integration
     ├── sportsbookreview/          # SportsbookReview integration
@@ -362,12 +400,33 @@ uv run -m src.interfaces.cli data enable --all
 uv run -m src.interfaces.cli data disable --source vsin
 ```
 
+## Recent Improvements ✨
+
+### Pydantic v2 Migration (July 2025)
+- **Full Pydantic v2 compatibility**: All models upgraded to use latest validation features
+- **Improved performance**: Faster model validation and serialization
+- **Enhanced type safety**: Better error handling and field validation
+- **Modern syntax**: Using `@field_validator` and `ValidationInfo` patterns
+
+### Action Network Integration Enhancement
+- **Consolidated collector**: New `consolidated_action_network_collector.py` for unified data collection
+- **Smart line movement filtering**: Intelligent noise reduction with `smart_line_movement_filter.py`
+- **Comprehensive data coverage**: 8+ sportsbooks with real-time line tracking
+- **Database optimization**: Improved storage efficiency and duplicate prevention
+- **Multi-mode collection**: Support for current, historical, and comprehensive data modes
+
+### Data Quality Improvements
+- **Sportsbook ID resolution**: Automatic mapping of external sportsbook identifiers
+- **Quality scoring**: Real-time data completeness assessment
+- **Duplicate prevention**: Enhanced external source ID management
+- **Time zone consistency**: Proper EST/EDT handling across all timestamps
+
 ## Development
 
 The project follows modern Python best practices with:
 - **Unified Architecture**: Clean separation of concerns with modular services
 - **Async-First Design**: Comprehensive async support for better performance
-- **Type Safety**: Extensive type hints and Pydantic models
+- **Type Safety**: Extensive type hints and Pydantic v2 models
 - **Centralized Configuration**: Single source of truth for all settings
 - **Comprehensive Testing**: Unit, integration, and performance tests
 - **CLI-First Interface**: Complete command-line interface for all operations

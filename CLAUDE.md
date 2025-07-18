@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Tooling
+### Pydantic
+- Only use V2
+
+### Python
+- Ruff
+- UV
+- PyTest
+- MyPy
+
 ## Project Goals
 Build a 24/7 sports betting service that will scrape various sources and be pulling down line information from these sources. Then, evaluate them pre-game against a system of strategies that have been developed. These strategies should have backtested historical performance attached to them so whenever we evaluate pre-game lines, it should only be using proven profitable systems.
 
@@ -40,67 +50,42 @@ The project has a unified CLI system accessible via the main entry point:
 # Main CLI entry point
 uv run -m src.interfaces.cli --help
 
-# Data Collection & Management
+# Data collection (primary workflow)
+uv run -m src.interfaces.cli data collect --source action_network --real
 uv run -m src.interfaces.cli data collect --source vsin --real
 uv run -m src.interfaces.cli data collect --source sbd --real
-uv run -m src.interfaces.cli data collect --parallel --real
 uv run -m src.interfaces.cli data status
-uv run -m src.interfaces.cli data test --source vsin --real
 
-# Movement Analysis & Strategy Detection (requires historical data)
-uv run -m src.interfaces.cli movement analyze --input-file output/action_network_history.json
-uv run -m src.interfaces.cli movement rlm --input-file output/action_network_history.json --min-movements 50
-uv run -m src.interfaces.cli movement steam --input-file output/action_network_history.json --show-details
-
-# Action Network Pipeline
+# Action Network pipeline
 uv run -m src.interfaces.cli action-network collect --date today
 uv run -m src.interfaces.cli action-network history --days 30
 
-# Backtesting & Performance
-uv run -m src.interfaces.cli backtest run --start-date 2024-06-01 --end-date 2024-06-30 --strategies sharp_action consensus
-uv run -m src.interfaces.cli backtest run --start-date 2024-06-01 --end-date 2024-06-30 --strategies sharp_action --initial-bankroll 10000 --bet-size 100
+# Movement analysis
+uv run -m src.interfaces.cli movement analyze --input-file output/action_network_history.json
+uv run -m src.interfaces.cli movement rlm --input-file output/action_network_history.json
+uv run -m src.interfaces.cli movement steam --input-file output/action_network_history.json
 
-# Database Management
+# Backtesting
+uv run -m src.interfaces.cli backtest run --start-date 2024-06-01 --end-date 2024-06-30 --strategies sharp_action
+
+# Database management
 uv run -m src.interfaces.cli database setup-action-network
-uv run -m src.interfaces.cli database setup-action-network --schema-file sql/custom_schema.sql
 uv run -m src.interfaces.cli database setup-action-network --test-connection
 
-# Game Outcomes
-uv run -m src.interfaces.cli outcomes update --date today
-uv run -m src.interfaces.cli outcomes verify --games recent
-
-# Data Quality (post-reorganization)
-uv run -m src.interfaces.cli data-quality setup
+# Data quality
+uv run -m src.interfaces.cli data-quality deploy
 uv run -m src.interfaces.cli data-quality status
 
-# Historical Line Movement Collection (Optimized Performance)
-uv run -m src.interfaces.cli batch-collection collect-range --start-date 2025-03-15 --end-date 2025-03-20
-uv run -m src.interfaces.cli batch-collection collect-season --start-date 2025-03-15 --end-date 2025-07-15
-uv run -m src.interfaces.cli batch-collection collect-season --dry-run
-uv run -m src.interfaces.cli batch-collection list-batches
-uv run -m src.interfaces.cli batch-collection retry-failed --batch-id abc123-def456
+# Game outcomes
+uv run -m src.interfaces.cli outcomes update --date today
 ```
 
 ### Utility Scripts
 Standalone utility scripts are available in the `utilities/` folder:
+- **Data quality deployment**: `utilities/deploy_data_quality_improvements.py`
+- **Database setup utilities**: Various setup and migration scripts
+- **Testing utilities**: Development and debugging tools
 
-```bash
-# Quick start interface
-uv run python utilities/action_network_quickstart.py
-
-# Data analysis scripts
-uv run python utilities/analyze_existing_data.py
-
-# Pipeline runner
-uv run python utilities/run_action_network_pipeline.py
-
-# Data quality deployment
-uv run python utilities/deploy_data_quality_improvements.py phase1
-uv run python utilities/deploy_data_quality_improvements.py all
-
-# Game outcomes testing
-uv run python utilities/test_game_outcomes.py
-```
 
 ## Project Architecture
 
@@ -112,21 +97,52 @@ mlb_betting_program/
 ├── config.toml                    # Centralized configuration
 ├── src/                           # Unified architecture
 │   ├── core/                      # Core configuration and logging
+│   │   ├── config.py              # Central configuration (Pydantic v2)
+│   │   ├── datetime_utils.py      # Timezone handling (EST/EDT)
+│   │   ├── team_utils.py          # MLB team normalization
+│   │   └── sportsbook_utils.py    # Sportsbook ID resolution
 │   ├── data/                      # Data collection and models
 │   │   ├── collection/            # Multi-source data collectors
+│   │   │   ├── consolidated_action_network_collector.py  # Primary Action Network
+│   │   │   ├── smart_line_movement_filter.py            # Noise reduction
+│   │   │   ├── orchestrator.py                          # Collection orchestration
+│   │   │   └── base.py                                  # Base collector classes
 │   │   ├── database/              # Database management
-│   │   └── models/unified/        # Unified data models
+│   │   │   ├── repositories/      # Repository pattern
+│   │   │   └── migrations/        # Schema migrations
+│   │   └── models/unified/        # Unified data models (Pydantic v2)
+│   │       ├── game.py            # Game data models
+│   │       ├── betting_analysis.py # Betting analysis models
+│   │       └── base.py            # Base model classes
 │   ├── analysis/                  # Strategy processors and analysis
 │   │   ├── processors/            # Strategy processors
+│   │   │   └── action/            # Action Network specific processors
 │   │   ├── strategies/            # Strategy orchestration
-│   │   └── backtesting/           # Backtesting engine
+│   │   ├── backtesting/           # Backtesting engine
+│   │   └── models/                # Analysis models
 │   ├── interfaces/                # User interfaces
 │   │   └── cli/                   # Command-line interface
+│   │       ├── main.py            # Main CLI entry point
+│   │       └── commands/          # CLI command modules
+│   │           ├── data.py        # Data collection commands
+│   │           ├── action_network.py # Action Network commands
+│   │           ├── movement.py    # Movement analysis commands
+│   │           └── database.py    # Database management commands
 │   └── services/                  # Business logic services
+│       ├── orchestration/         # Pipeline orchestration
+│       ├── monitoring/            # System monitoring
+│       ├── reporting/             # Report generation
+│       └── workflow/              # Workflow management
 ├── tests/                         # Comprehensive test suite
+│   ├── integration/               # Integration tests
+│   ├── manual/                    # Manual test scripts
+│   └── unit/                      # Unit tests
 ├── docs/                          # Documentation
+├── sql/                           # Database schemas and migrations
+│   ├── improvements/              # Data quality improvements
+│   └── schemas/                   # Core database schemas
 ├── utilities/                     # Standalone utility scripts
-└── sql/                          # Database schemas and migrations
+└── logs/                          # Application logs
 ```
 
 ### Core Components
@@ -136,6 +152,7 @@ mlb_betting_program/
    - SportsBettingDime (SBD) integration
    - VSIN data collection
    - MLB Stats API integration
+   - Sports Book Report (SBR) integration
    - Rate-limited data collection
    - Multi-source data validation
 
@@ -190,41 +207,52 @@ The system includes multiple strategy processors located in `src/analysis/proces
 - Comprehensive indexing for performance
 - Migration system for schema evolution
 
+## Recent Improvements (July 2025)
+
+### Pydantic v2 Migration
+- **Complete migration**: All models updated to use Pydantic v2 syntax
+- **Field validators**: Updated to use `@field_validator` decorator
+- **ValidationInfo**: Using modern `ValidationInfo` instead of legacy `values` parameter
+- **Settings import**: Proper `pydantic_settings.BaseSettings` import structure
+- **Type safety**: Enhanced validation and error handling
+
+### Action Network Integration Enhancement
+- **Consolidated collector**: New unified `consolidated_action_network_collector.py`
+- **Smart filtering**: Intelligent line movement noise reduction with `smart_line_movement_filter.py`
+- **Multi-mode support**: Current, historical, and comprehensive collection modes
+- **Comprehensive coverage**: 8+ major sportsbooks (DraftKings, FanDuel, BetMGM, etc.)
+- **Database optimization**: Improved storage efficiency and duplicate prevention
+- **Real-time validation**: Live data testing with 15 games and 402+ records successfully processed
+
+### Database & Data Quality
+- **Sportsbook ID resolution**: Automatic mapping of external sportsbook identifiers
+- **Quality scoring**: Real-time data completeness assessment
+- **Duplicate prevention**: Enhanced external source ID management with timestamp precision
+- **EST/EDT handling**: Proper timezone consistency across all operations
+- **Schema improvements**: Better indexing and performance optimization
+
+### CLI System Enhancement
+- **Command structure**: Comprehensive CLI with data, action-network, movement, backtest, database commands
+- **Testing integration**: Built-in test modes with `--real` flag for live data validation
+- **Status monitoring**: Real-time collection status and diagnostics
+- **Error handling**: Improved error reporting and recovery mechanisms
+
 ## Development Workflow
 
-1. **Initial Setup**: 
-   ```bash
-   uv sync
-   uv run -m src.interfaces.cli database setup-action-network
-   ```
+### Primary Development Commands
+```bash
+# Setup and testing
+uv sync                                                    # Install dependencies
+uv run -m src.interfaces.cli data test --source action_network --real  # Test Action Network
+uv run pytest                                             # Run test suite
 
-2. **Data Collection**: Use CLI commands to collect current game data
-   ```bash
-   uv run -m src.interfaces.cli data collect --source vsin --real
-   uv run -m src.interfaces.cli data collect --source sbd --real
-   ```
+# Data collection workflow
+uv run -m src.interfaces.cli data collect --source action_network --real
+uv run -m src.interfaces.cli data status --detailed
 
-3. **Historical Data Generation**: For movement analysis
-   ```bash
-   uv run -m src.interfaces.cli action-network collect --date today
-   uv run -m src.interfaces.cli data extract-action-network-history --input-file output/action_network_games.json
-   ```
-
-4. **Analysis**: Run strategy processors to identify betting opportunities
-   ```bash
-   uv run -m src.interfaces.cli movement analyze --input-file output/action_network_history.json
-   ```
-
-5. **Backtesting**: Validate strategies against historical data
-   ```bash
-   uv run -m src.interfaces.cli backtest run --start-date 2024-06-01 --end-date 2024-06-30 --strategies sharp_action
-   ```
-
-6. **Monitoring**: Track system performance and data quality
-   ```bash
-   uv run -m src.interfaces.cli data status --detailed
-   uv run -m src.interfaces.cli data-quality status
-   ```
+# Code quality
+uv run ruff format && uv run ruff check && uv run mypy src/
+```
 
 ## Configuration
 
@@ -236,15 +264,40 @@ The system includes multiple strategy processors located in `src/analysis/proces
 
 ## Key Files to Understand
 
-- `src/core/config.py`: Central configuration management (unified settings)
-- `src/data/collection/orchestrator.py`: Main data collection orchestrator
-- `src/analysis/strategies/orchestrator.py`: Strategy execution orchestrator
-- `src/services/orchestration/pipeline_orchestration_service.py`: End-to-end pipeline management
+### Core Configuration & Utilities
+- `src/core/config.py`: Central configuration management (Pydantic v2, unified settings)
+- `src/core/datetime_utils.py`: Timezone handling utilities (EST/EDT conversion)
+- `src/core/team_utils.py`: MLB team name normalization and mapping
+- `src/core/sportsbook_utils.py`: Sportsbook ID resolution and mapping
+- `config.toml`: Centralized configuration file
+
+### Data Collection (Primary Focus)
+- `src/data/collection/consolidated_action_network_collector.py`: **Primary Action Network collector** (recommended for new development)
+- `src/data/collection/smart_line_movement_filter.py`: Intelligent noise reduction for line movements
+- `src/data/collection/orchestrator.py`: Main data collection orchestration
+- `src/data/collection/base.py`: Base collector classes and common functionality
+
+### Database & Models
+- `src/data/models/unified/game.py`: Game data models (Pydantic v2)
+- `src/data/models/unified/betting_analysis.py`: Betting analysis models (Pydantic v2)
+- `src/data/models/unified/base.py`: Base model classes with validation
+- `src/data/database/`: Repository pattern implementations
+
+### CLI Interface
 - `src/interfaces/cli/main.py`: CLI entry point and command routing
+- `src/interfaces/cli/commands/data.py`: Data collection commands
+- `src/interfaces/cli/commands/action_network.py`: Action Network specific commands
+- `src/interfaces/cli/commands/movement.py`: Movement analysis commands
+
+### Analysis & Strategy
+- `src/analysis/strategies/orchestrator.py`: Strategy execution orchestrator
+- `src/analysis/processors/`: Strategy processors for different betting patterns
+- `src/services/orchestration/pipeline_orchestration_service.py`: End-to-end pipeline management
+
+### Services
 - `src/services/sharp_action_detection_service.py`: Sharp action detection integration
 - `src/services/game_outcome_service.py`: Game outcome tracking
-- `src/data/database/action_network_repository.py`: Action Network data handling
-- `config.toml`: Centralized configuration file
+- `src/services/monitoring/`: System monitoring and health checks
 
 ## Testing Strategy
 
