@@ -58,7 +58,7 @@ async def demonstrate_data_sources():
         "Action Network", "🟢 Production Ready", "✅ Unified", "90%", "✅ Complete"
     )
     table.add_row(
-        "Sports Betting Report", "🟡 Partial", "✅ Unified", "40%", "🔄 In Progress"
+        "Sports Book Review (SBR)", "🟡 Partial", "✅ Unified", "40%", "🔄 In Progress"
     )
     table.add_row(
         "MLB Stats API", "🟢 Production Ready", "✅ Unified", "85%", "✅ Complete"
