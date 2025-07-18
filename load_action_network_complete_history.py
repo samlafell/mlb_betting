@@ -384,21 +384,29 @@ class CompleteHistoryCollector:
             timestamp_str = odds_timestamp.strftime("%Y%m%d_%H%M%S_%f")
             external_source_id = f"AN_{action_network_game_id}_{action_network_book_id}_ML_{timestamp_str}"
             
-            await conn.execute("""
-                INSERT INTO core_betting.betting_lines_moneyline (
-                    game_id, external_source_id, sportsbook_id, sportsbook,
-                    home_team, away_team, home_ml, away_ml, odds_timestamp,
-                    collection_method, source, game_datetime, created_at, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-            """,
-            game_id, external_source_id, sportsbook_id, sportsbook_name,
-            home_team, away_team, home_odds, away_odds,
-            prepare_for_postgres(odds_timestamp), "API", "ACTION_NETWORK",
-            prepare_for_postgres(game_datetime), now_est(), prepare_for_postgres(odds_timestamp)
-            )
+            # Check if record already exists to avoid duplicates
+            existing = await conn.fetchval("""
+                SELECT id FROM core_betting.betting_lines_moneyline 
+                WHERE game_id = $1 AND sportsbook_id = $2 AND home_ml = $3 AND away_ml = $4 
+                AND ABS(EXTRACT(EPOCH FROM (odds_timestamp - $5))) < 60
+            """, game_id, sportsbook_id, home_odds, away_odds, prepare_for_postgres(odds_timestamp))
             
-            self.stats["moneyline_inserted"] += 1
-            self.stats["total_inserted"] += 1
+            if not existing:
+                await conn.execute("""
+                    INSERT INTO core_betting.betting_lines_moneyline (
+                        game_id, external_source_id, sportsbook_id, sportsbook,
+                        home_team, away_team, home_ml, away_ml, odds_timestamp,
+                        collection_method, source, game_datetime, created_at, updated_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                """,
+                game_id, external_source_id, sportsbook_id, sportsbook_name,
+                home_team, away_team, home_odds, away_odds,
+                prepare_for_postgres(odds_timestamp), "API", "ACTION_NETWORK",
+                prepare_for_postgres(game_datetime), now_est(), prepare_for_postgres(odds_timestamp)
+                )
+                
+                self.stats["moneyline_inserted"] += 1
+                self.stats["total_inserted"] += 1
             
             await conn.close()
             
@@ -467,21 +475,29 @@ class CompleteHistoryCollector:
             timestamp_str = odds_timestamp.strftime("%Y%m%d_%H%M%S_%f")
             external_source_id = f"AN_{action_network_game_id}_{action_network_book_id}_SP_{timestamp_str}"
             
-            await conn.execute("""
-                INSERT INTO core_betting.betting_lines_spread (
-                    game_id, external_source_id, sportsbook_id, sportsbook,
-                    home_team, away_team, spread_line, home_spread_price, away_spread_price,
-                    odds_timestamp, collection_method, source, game_datetime, created_at, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-            """,
-            game_id, external_source_id, sportsbook_id, sportsbook_name,
-            home_team, away_team, spread_line, spread_price, -110,  # Default away price
-            prepare_for_postgres(odds_timestamp), "API", "ACTION_NETWORK",
-            prepare_for_postgres(game_datetime), now_est(), prepare_for_postgres(odds_timestamp)
-            )
+            # Check if record already exists to avoid duplicates
+            existing = await conn.fetchval("""
+                SELECT id FROM core_betting.betting_lines_spread 
+                WHERE game_id = $1 AND sportsbook_id = $2 AND spread_line = $3 AND home_spread_price = $4
+                AND ABS(EXTRACT(EPOCH FROM (odds_timestamp - $5))) < 60
+            """, game_id, sportsbook_id, spread_line, spread_price, prepare_for_postgres(odds_timestamp))
             
-            self.stats["spread_inserted"] += 1
-            self.stats["total_inserted"] += 1
+            if not existing:
+                await conn.execute("""
+                    INSERT INTO core_betting.betting_lines_spread (
+                        game_id, external_source_id, sportsbook_id, sportsbook,
+                        home_team, away_team, spread_line, home_spread_price, away_spread_price,
+                        odds_timestamp, collection_method, source, game_datetime, created_at, updated_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                """,
+                game_id, external_source_id, sportsbook_id, sportsbook_name,
+                home_team, away_team, spread_line, spread_price, -110,  # Default away price
+                prepare_for_postgres(odds_timestamp), "API", "ACTION_NETWORK",
+                prepare_for_postgres(game_datetime), now_est(), prepare_for_postgres(odds_timestamp)
+                )
+                
+                self.stats["spread_inserted"] += 1
+                self.stats["total_inserted"] += 1
             
             await conn.close()
             
@@ -550,21 +566,29 @@ class CompleteHistoryCollector:
             timestamp_str = odds_timestamp.strftime("%Y%m%d_%H%M%S_%f")
             external_source_id = f"AN_{action_network_game_id}_{action_network_book_id}_TO_{timestamp_str}"
             
-            await conn.execute("""
-                INSERT INTO core_betting.betting_lines_totals (
-                    game_id, external_source_id, sportsbook_id, sportsbook,
-                    home_team, away_team, total_line, over_price, under_price,
-                    odds_timestamp, collection_method, source, game_datetime, created_at, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-            """,
-            game_id, external_source_id, sportsbook_id, sportsbook_name,
-            home_team, away_team, total_line, total_price, -110,  # Default under price
-            prepare_for_postgres(odds_timestamp), "API", "ACTION_NETWORK",
-            prepare_for_postgres(game_datetime), now_est(), prepare_for_postgres(odds_timestamp)
-            )
+            # Check if record already exists to avoid duplicates
+            existing = await conn.fetchval("""
+                SELECT id FROM core_betting.betting_lines_totals 
+                WHERE game_id = $1 AND sportsbook_id = $2 AND total_line = $3 AND over_price = $4
+                AND ABS(EXTRACT(EPOCH FROM (odds_timestamp - $5))) < 60
+            """, game_id, sportsbook_id, total_line, total_price, prepare_for_postgres(odds_timestamp))
             
-            self.stats["totals_inserted"] += 1
-            self.stats["total_inserted"] += 1
+            if not existing:
+                await conn.execute("""
+                    INSERT INTO core_betting.betting_lines_totals (
+                        game_id, external_source_id, sportsbook_id, sportsbook,
+                        home_team, away_team, total_line, over_price, under_price,
+                        odds_timestamp, collection_method, source, game_datetime, created_at, updated_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                """,
+                game_id, external_source_id, sportsbook_id, sportsbook_name,
+                home_team, away_team, total_line, total_price, -110,  # Default under price
+                prepare_for_postgres(odds_timestamp), "API", "ACTION_NETWORK",
+                prepare_for_postgres(game_datetime), now_est(), prepare_for_postgres(odds_timestamp)
+                )
+                
+                self.stats["totals_inserted"] += 1
+                self.stats["total_inserted"] += 1
             
             await conn.close()
             
