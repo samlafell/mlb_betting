@@ -17,7 +17,7 @@ Key Features:
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from uuid import uuid4
 
 from ..core.config import get_settings
@@ -28,12 +28,12 @@ logger = get_logger(__name__)
 try:
     from ..core.timing import (
         DataSynchronizer,
-        TimestampedData,
         SynchronizationWindow,
+        TimestampedData,
         TimingMetrics,
+        calculate_synchronization_quality,
         get_est_now,
         precise_timestamp,
-        calculate_synchronization_quality
     )
 except ImportError as e:
     logger.critical(
@@ -45,28 +45,28 @@ except ImportError as e:
         "Critical dependency failure: timing module components required for data synchronization. "
         f"Missing: {str(e)}. Ensure src.core.timing module is properly implemented."
     ) from e
-from ..data.collection.orchestrator import CollectionOrchestrator
 from ..data.collection.base import CollectionResult
+from ..data.collection.orchestrator import CollectionOrchestrator
 
 
 @dataclass
 class SynchronizedDataSet:
     """Container for synchronized data from multiple sources."""
-    
+
     sync_id: str
     window_center_est: datetime
     window_seconds: float
-    sources: List[str]
-    data: Dict[str, Any]
+    sources: list[str]
+    data: dict[str, Any]
     quality_score: float
-    timing_anomalies: List[str] = field(default_factory=list)
+    timing_anomalies: list[str] = field(default_factory=list)
     created_at_est: datetime = field(default_factory=precise_timestamp)
-    
+
     @property
     def is_high_quality(self) -> bool:
         """Check if synchronization quality is acceptable for analysis."""
         return self.quality_score >= 0.7 and len(self.timing_anomalies) == 0
-    
+
     @property
     def time_spread_seconds(self) -> float:
         """Calculate time spread across all data sources."""
@@ -76,10 +76,10 @@ class SynchronizedDataSet:
                 timestamps.append(source_data.collected_at_est)
             elif hasattr(source_data, 'timestamp'):
                 timestamps.append(source_data.timestamp)
-        
+
         if len(timestamps) < 2:
             return 0.0
-            
+
         return (max(timestamps) - min(timestamps)).total_seconds()
 
 
@@ -90,37 +90,37 @@ class DataSynchronizationService:
     Ensures that analysis models receive time-aligned data to prevent incorrect
     conclusions from timing mismatches between sources.
     """
-    
+
     def __init__(self, orchestrator: CollectionOrchestrator):
         self.orchestrator = orchestrator
         self.settings = get_settings()
         self.logger = logger.bind(service="DataSynchronizationService")
-        
+
         # Core synchronizer
         self.synchronizer = DataSynchronizer(
             default_window_seconds=60.0,  # 1-minute default window
             max_skew_seconds=300.0,       # 5-minute max acceptable skew
             require_all_sources=False
         )
-        
+
         # Timing metrics
         self.timing_metrics = TimingMetrics()
-        
+
         # Active synchronization windows
-        self.active_windows: Dict[str, SynchronizationWindow] = {}
-        
+        self.active_windows: dict[str, SynchronizationWindow] = {}
+
         # Synchronized data cache
-        self.synchronized_data_cache: Dict[str, SynchronizedDataSet] = {}
-        
+        self.synchronized_data_cache: dict[str, SynchronizedDataSet] = {}
+
         self.logger.info("Data synchronization service initialized")
-    
+
     async def collect_synchronized_data(
         self,
-        sources: List[str],
+        sources: list[str],
         window_seconds: float = 60.0,
         max_wait_seconds: float = 120.0,
         require_all_sources: bool = False
-    ) -> Optional[SynchronizedDataSet]:
+    ) -> SynchronizedDataSet | None:
         """
         Collect data from multiple sources within a synchronized time window.
         
@@ -137,7 +137,7 @@ class DataSynchronizationService:
         """
         sync_id = str(uuid4())
         center_time = get_est_now()
-        
+
         self.logger.info(
             "Starting synchronized data collection",
             sync_id=sync_id,
@@ -145,16 +145,16 @@ class DataSynchronizationService:
             window_seconds=window_seconds,
             center_time=center_time.isoformat()
         )
-        
+
         # Create synchronization window
         window = SynchronizationWindow(
             center_time_est=center_time,
             window_seconds=window_seconds,
             max_acceptable_skew_seconds=300.0
         )
-        
+
         self.active_windows[sync_id] = window
-        
+
         try:
             # Trigger parallel collection from all sources
             collection_tasks = []
@@ -163,28 +163,28 @@ class DataSynchronizationService:
                     self._collect_from_source(source, sync_id)
                 )
                 collection_tasks.append(task)
-            
+
             # Wait for collections with timeout
-            collected_data: Dict[str, CollectionResult] = {}
-            
+            collected_data: dict[str, CollectionResult] = {}
+
             # Wait for all tasks to complete or timeout
             done, pending = await asyncio.wait(
                 collection_tasks,
                 timeout=max_wait_seconds,
                 return_when=asyncio.ALL_COMPLETED if require_all_sources else asyncio.FIRST_COMPLETED
             )
-            
+
             # Cancel any pending tasks
             for task in pending:
                 task.cancel()
-            
+
             # Collect results
             for task in done:
                 try:
                     source, result = await task
                     if result and result.success:
                         collected_data[source] = result
-                        
+
                         # Add to synchronizer buffer
                         for item in result.data:
                             self.synchronizer.add_data(
@@ -205,7 +205,7 @@ class DataSynchronizationService:
                         error=str(e),
                         sync_id=sync_id
                     )
-            
+
             # Check if we have minimum required data
             if require_all_sources and len(collected_data) < len(sources):
                 missing_sources = set(sources) - set(collected_data.keys())
@@ -215,7 +215,7 @@ class DataSynchronizationService:
                     sync_id=sync_id
                 )
                 return None
-            
+
             if len(collected_data) < 2:
                 self.logger.warning(
                     "Insufficient sources for synchronization",
@@ -223,7 +223,7 @@ class DataSynchronizationService:
                     sync_id=sync_id
                 )
                 return None
-            
+
             # Find time-aligned data
             timestamped_data = {}
             for source, result in collected_data.items():
@@ -236,12 +236,12 @@ class DataSynchronizationService:
                     )
                     for item in result.data
                 ]
-            
+
             best_alignment = self.synchronizer.find_best_time_alignment(
                 timestamped_data,
                 max_time_diff_seconds=180.0  # 3-minute max difference
             )
-            
+
             if not best_alignment:
                 self.logger.warning(
                     "Could not find acceptable time alignment",
@@ -249,11 +249,11 @@ class DataSynchronizationService:
                     sources=list(collected_data.keys())
                 )
                 return None
-            
+
             # Calculate synchronization quality
             timestamps = [item.collected_at_est for item in best_alignment.values()]
             quality_score = calculate_synchronization_quality(timestamps, window_seconds)
-            
+
             # Create synchronized data set
             sync_data = SynchronizedDataSet(
                 sync_id=sync_id,
@@ -263,7 +263,7 @@ class DataSynchronizationService:
                 data={source: item.data for source, item in best_alignment.items()},
                 quality_score=quality_score
             )
-            
+
             # Check for timing anomalies
             time_spread = sync_data.time_spread_seconds
             if time_spread > 180.0:  # 3-minute threshold
@@ -274,18 +274,18 @@ class DataSynchronizationService:
                     description=anomaly,
                     timestamp=center_time
                 )
-            
+
             # Update metrics
             self.timing_metrics.total_data_points += len(best_alignment)
             self.timing_metrics.sources_count = len(best_alignment)
             self.timing_metrics.time_span_seconds = time_spread
-            
+
             if quality_score >= 0.7:
                 self.timing_metrics.synchronization_success_rate += 1
-            
+
             # Cache the synchronized data
             self.synchronized_data_cache[sync_id] = sync_data
-            
+
             self.logger.info(
                 "Synchronized data collection completed",
                 sync_id=sync_id,
@@ -294,9 +294,9 @@ class DataSynchronizationService:
                 time_spread_seconds=time_spread,
                 is_high_quality=sync_data.is_high_quality
             )
-            
+
             return sync_data
-            
+
         except Exception as e:
             self.logger.error(
                 "Synchronized collection failed",
@@ -305,22 +305,22 @@ class DataSynchronizationService:
                 exc_info=True
             )
             return None
-            
+
         finally:
             # Cleanup
             if sync_id in self.active_windows:
                 del self.active_windows[sync_id]
-    
+
     async def _collect_from_source(
-        self, 
-        source: str, 
+        self,
+        source: str,
         sync_id: str
-    ) -> Tuple[str, Optional[CollectionResult]]:
+    ) -> tuple[str, CollectionResult | None]:
         """Collect data from a single source."""
         try:
             # Use the orchestrator to collect from the specific source
             result = await self.orchestrator.collect_source(source)
-            
+
             # Add synchronization metadata
             if result and result.success:
                 result.set_synchronization_metadata(
@@ -328,9 +328,9 @@ class DataSynchronizationService:
                     quality_score=1.0,  # Will be updated after synchronization
                     is_synchronized=True
                 )
-            
+
             return source, result
-            
+
         except Exception as e:
             self.logger.error(
                 "Source collection failed",
@@ -339,12 +339,12 @@ class DataSynchronizationService:
                 error=str(e)
             )
             return source, None
-    
+
     def get_synchronized_data_for_analysis(
         self,
-        sources: List[str],
+        sources: list[str],
         max_age_seconds: float = 300.0
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Get the most recent synchronized data for analysis.
         
@@ -358,26 +358,26 @@ class DataSynchronizationService:
             Synchronized data dictionary or None
         """
         cutoff_time = get_est_now() - timedelta(seconds=max_age_seconds)
-        
+
         # Find the most recent high-quality synchronized data
         best_data = None
         best_timestamp = None
-        
+
         for sync_data in self.synchronized_data_cache.values():
             if sync_data.created_at_est < cutoff_time:
                 continue
-                
+
             if not sync_data.is_high_quality:
                 continue
-                
+
             # Check if it has all required sources
             if not all(source in sync_data.sources for source in sources):
                 continue
-                
+
             if best_timestamp is None or sync_data.created_at_est > best_timestamp:
                 best_data = sync_data
                 best_timestamp = sync_data.created_at_est
-        
+
         if best_data:
             self.logger.debug(
                 "Retrieved synchronized data for analysis",
@@ -387,36 +387,36 @@ class DataSynchronizationService:
                 age_seconds=(get_est_now() - best_data.created_at_est).total_seconds()
             )
             return best_data.data
-        
+
         self.logger.warning(
             "No suitable synchronized data found for analysis",
             required_sources=sources,
             max_age_seconds=max_age_seconds
         )
         return None
-    
+
     def get_timing_metrics(self) -> TimingMetrics:
         """Get current timing and synchronization metrics."""
         return self.timing_metrics
-    
+
     def cleanup_old_data(self, max_age_seconds: float = 3600.0) -> int:
         """Remove old synchronized data from cache."""
         cutoff_time = get_est_now() - timedelta(seconds=max_age_seconds)
-        
+
         # Remove old entries
         expired_keys = [
             sync_id for sync_id, sync_data in self.synchronized_data_cache.items()
             if sync_data.created_at_est < cutoff_time
         ]
-        
+
         for sync_id in expired_keys:
             del self.synchronized_data_cache[sync_id]
-        
+
         # Also cleanup the synchronizer buffer
         removed_from_buffer = self.synchronizer.cleanup_old_data(max_age_seconds)
-        
+
         removed_count = len(expired_keys)
-        
+
         if removed_count > 0:
             self.logger.info(
                 "Cleaned up old synchronized data",
@@ -424,14 +424,14 @@ class DataSynchronizationService:
                 removed_buffer_items=removed_from_buffer,
                 remaining_cache_entries=len(self.synchronized_data_cache)
             )
-        
+
         return removed_count
-    
+
     async def validate_timing_consistency(
         self,
-        data_sources: Dict[str, List[Any]],
+        data_sources: dict[str, list[Any]],
         max_acceptable_skew_seconds: float = 180.0
-    ) -> Tuple[bool, List[str]]:
+    ) -> tuple[bool, list[str]]:
         """
         Validate that data from multiple sources has acceptable timing consistency.
         
@@ -443,10 +443,10 @@ class DataSynchronizationService:
             Tuple of (is_consistent, list_of_timing_issues)
         """
         timing_issues = []
-        
+
         if len(data_sources) < 2:
             return True, timing_issues
-        
+
         # Extract timestamps from each source
         source_timestamps = {}
         for source, data_list in data_sources.items():
@@ -455,72 +455,72 @@ class DataSynchronizationService:
                 timestamp = getattr(item, 'collected_at_est', None) or getattr(item, 'timestamp', None)
                 if timestamp:
                     timestamps.append(timestamp)
-            
+
             if timestamps:
                 source_timestamps[source] = timestamps
-        
+
         if len(source_timestamps) < 2:
             timing_issues.append("Insufficient timestamp data for validation")
             return False, timing_issues
-        
+
         # Compare timestamps between sources
         sources = list(source_timestamps.keys())
         for i, source_a in enumerate(sources):
             for source_b in sources[i+1:]:
                 timestamps_a = source_timestamps[source_a]
                 timestamps_b = source_timestamps[source_b]
-                
+
                 # Find the minimum time difference between any timestamps
                 min_diff = float('inf')
                 for ts_a in timestamps_a:
                     for ts_b in timestamps_b:
                         diff = abs((ts_a - ts_b).total_seconds())
                         min_diff = min(min_diff, diff)
-                
+
                 if min_diff > max_acceptable_skew_seconds:
                     issue = (
                         f"Large time skew between {source_a} and {source_b}: "
                         f"{min_diff:.1f} seconds (max: {max_acceptable_skew_seconds})"
                     )
                     timing_issues.append(issue)
-        
+
         is_consistent = len(timing_issues) == 0
-        
+
         if not is_consistent:
             self.logger.warning(
                 "Timing consistency validation failed",
                 issues=timing_issues,
                 sources=list(data_sources.keys())
             )
-        
+
         return is_consistent, timing_issues
 
 
 # Global service instance
-_synchronization_service: Optional[DataSynchronizationService] = None
+_synchronization_service: DataSynchronizationService | None = None
 
 
-def get_synchronization_service(orchestrator: Optional[CollectionOrchestrator] = None) -> DataSynchronizationService:
+def get_synchronization_service(orchestrator: CollectionOrchestrator | None = None) -> DataSynchronizationService:
     """Get or create the global data synchronization service."""
     global _synchronization_service
-    
+
     if _synchronization_service is None:
         if orchestrator is None:
             # Create a default orchestrator if none provided
             from ..data.collection.orchestrator import CollectionOrchestrator
             orchestrator = CollectionOrchestrator()
-        
+
         _synchronization_service = DataSynchronizationService(orchestrator)
-    
+
     return _synchronization_service
 
 
 # Convenience function for analysis models
 async def get_time_aligned_data(
-    sources: List[str],
+    sources: list[str],
     max_age_seconds: float = 300.0,
     window_seconds: float = 60.0
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Convenience function to get time-aligned data for analysis.
     
@@ -537,27 +537,27 @@ async def get_time_aligned_data(
         Time-aligned data dictionary or None
     """
     service = get_synchronization_service()
-    
+
     # First try to get cached synchronized data
     sync_data = service.get_synchronized_data_for_analysis(sources, max_age_seconds)
-    
+
     if sync_data:
         return sync_data
-    
+
     # If no cached data, trigger new synchronized collection
     logger.info(
         "No cached synchronized data available, triggering new collection",
         sources=sources
     )
-    
+
     new_sync_data = await service.collect_synchronized_data(
         sources=sources,
         window_seconds=window_seconds,
         max_wait_seconds=120.0,
         require_all_sources=False
     )
-    
+
     if new_sync_data and new_sync_data.is_high_quality:
         return new_sync_data.data
-    
+
     return None

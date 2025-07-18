@@ -11,16 +11,16 @@ Addresses the inherent brittleness of web scraping through:
 """
 
 from .collector_health_service import (
-    HealthMonitoringOrchestrator,
-    CollectorHealthMonitor,
-    HealthStatus,
     AlertSeverity,
-    CollectorHealthStatus
+    CollectorHealthMonitor,
+    CollectorHealthStatus,
+    HealthMonitoringOrchestrator,
+    HealthStatus,
 )
 
 __all__ = [
     'HealthMonitoringOrchestrator',
-    'CollectorHealthMonitor', 
+    'CollectorHealthMonitor',
     'HealthStatus',
     'AlertSeverity',
     'CollectorHealthStatus'
