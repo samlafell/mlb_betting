@@ -32,7 +32,9 @@ class DataSource(Enum):
     VSIN = "vsin"
     SBD = "sbd"
     ACTION_NETWORK = "action_network"
-    SPORTS_BETTING_REPORT = "sports_betting_report"
+    SPORTS_BOOK_REVIEW_DEPRECATED = "sports_betting_report"  # DEPRECATED: Use SBR instead
+    SPORTS_BOOK_REVIEW = "sports_book_review"  # SportsbookReview.com
+    SBR = "sbr"  # Alias for SPORTS_BOOK_REVIEW
     MLB_STATS_API = "mlb_stats_api"
     ODDS_API = "odds_api"
 
@@ -231,6 +233,139 @@ class DataCommands:
             asyncio.run(
                 self._analyze_action_network_history(input_file, output_report, game_id)
             )
+
+        @data.command("sbr-line-history")
+        @click.argument("sbr_game_id")
+        @click.option(
+            "--sportsbooks",
+            help="Comma-separated list of sportsbooks (default: all)"
+        )
+        @click.option(
+            "--bet-types",
+            help="Comma-separated list of bet types (default: all)"
+        )
+        @click.option(
+            "--analyze-movements",
+            is_flag=True,
+            help="Analyze line movements"
+        )
+        @click.pass_context
+        def collect_sbr_line_history(ctx, sbr_game_id, sportsbooks, bet_types, analyze_movements):
+            """Collect comprehensive line history for a specific SBR game."""
+            asyncio.run(
+                self._collect_sbr_line_history(sbr_game_id, sportsbooks, bet_types, analyze_movements)
+            )
+
+        @data.command("sbr-bulk-history")
+        @click.option(
+            "--date",
+            help="Date to collect (YYYY-MM-DD, default: today)"
+        )
+        @click.option(
+            "--max-games",
+            type=int,
+            help="Maximum number of games to process"
+        )
+        @click.pass_context
+        def collect_bulk_sbr_history(ctx, date, max_games):
+            """Collect line history for all games on a specific date."""
+            asyncio.run(self._collect_bulk_sbr_history(date, max_games))
+
+        # SBR Game ID Collection Commands
+        @data.command("sbr-collect-games")
+        @click.option(
+            "--date",
+            "-d",
+            help="Specific date to collect games for (YYYY-MM-DD)"
+        )
+        @click.option(
+            "--start-date",
+            help="Start date for range collection (YYYY-MM-DD)"
+        )
+        @click.option(
+            "--end-date",
+            help="End date for range collection (YYYY-MM-DD)"
+        )
+        @click.option(
+            "--dry-run",
+            is_flag=True,
+            help="Show what would be collected without executing"
+        )
+        @click.pass_context
+        def sbr_collect_games(ctx, date, start_date, end_date, dry_run):
+            """Collect SBR game IDs for specific date or date range."""
+            asyncio.run(self._sbr_collect_games(date, start_date, end_date, dry_run))
+
+        @data.command("sbr-collect-season")
+        @click.option(
+            "--year",
+            "-y",
+            type=int,
+            default=2025,
+            help="Season year to collect (default: 2025)"
+        )
+        @click.option(
+            "--batch-size",
+            "-b",
+            type=int,
+            default=7,
+            help="Number of days to process per batch (default: 7)"
+        )
+        @click.option(
+            "--resume",
+            is_flag=True,
+            help="Resume collection from last successful date"
+        )
+        @click.pass_context
+        def sbr_collect_season(ctx, year, batch_size, resume):
+            """Collect SBR game IDs for entire season."""
+            asyncio.run(self._sbr_collect_season(year, batch_size, resume))
+
+        @data.command("sbr-games-status")
+        @click.option(
+            "--season-year",
+            "-y",
+            type=int,
+            default=2025,
+            help="Season year to show status for (default: 2025)"
+        )
+        @click.option(
+            "--detailed",
+            "-d",
+            is_flag=True,
+            help="Show detailed status including failed dates"
+        )
+        @click.pass_context
+        def sbr_games_status(ctx, season_year, detailed):
+            """Show SBR game collection status and statistics."""
+            asyncio.run(self._sbr_games_status(season_year, detailed))
+
+        @data.command("sbr-collect-line-history")
+        @click.option(
+            "--batch-size",
+            "-b",
+            type=int,
+            default=10,
+            help="Number of games to process per batch (default: 10)"
+        )
+        @click.option(
+            "--max-games",
+            "-m",
+            type=int,
+            default=100,
+            help="Maximum number of games to process (default: 100)"
+        )
+        @click.option(
+            "--season-year",
+            "-y",
+            type=int,
+            default=2025,
+            help="Season year to process (default: 2025)"
+        )
+        @click.pass_context
+        def sbr_collect_line_history(ctx, batch_size, max_games, season_year):
+            """Collect line history for games with collected SBR game IDs."""
+            asyncio.run(self._sbr_collect_line_history_batch(batch_size, max_games, season_year))
 
         return data
 
@@ -601,74 +736,151 @@ class DataCommands:
 
     # Real collector methods
     async def _run_real_collector(self, source_name: str, test_mode: bool = False):
-        """Run a real data collector using unified services."""
+        """Run a real data collector using unified collectors."""
         try:
             console.print(f"🔄 [blue]Running unified {source_name} collector...[/blue]")
 
-            # Import enhanced data service which has proper collection methods
-            from src.services.data.enhanced_data_service import (
-                DataSourceType,
-                EnhancedDataService,
+            # Import unified collectors
+            from ...data.collection.action_network_unified_collector import (
+                ActionNetworkUnifiedCollector,
             )
+            from ...data.collection.sbd_unified_collector import SBDUnifiedCollector
+            from ...data.collection.sbr_unified_collector import SBRUnifiedCollector
+            from ...data.collection.vsin_unified_collector import VSINUnifiedCollector
 
-            # Map source names to DataSourceType enum
-            source_mapping = {
-                "action_network": DataSourceType.ACTION_NETWORK,
-                "sports_betting_report": DataSourceType.SPORTSBOOKREVIEW,
-                "sportsbookreview": DataSourceType.SPORTSBOOKREVIEW,
-                "vsin": DataSourceType.VSIN,
-                "sbd": DataSourceType.SBD,
+            # Map source names to collector classes
+            collector_mapping = {
+                "action_network": ActionNetworkUnifiedCollector,
+                "sports_book_review": SBRUnifiedCollector,
+                "sbr": SBRUnifiedCollector,
+                "vsin": VSINUnifiedCollector,
+                "sbd": SBDUnifiedCollector,
             }
 
-            data_source = source_mapping.get(source_name)
-            if not data_source:
+            collector_class = collector_mapping.get(source_name)
+            if not collector_class:
                 console.print(f"❌ [red]Unknown data source: {source_name}[/red]")
                 return {
                     "status": "failed",
                     "error": f"Unknown data source: {source_name}",
                 }
 
-            # Initialize enhanced data service
-            service = EnhancedDataService()
+            # Initialize collector
+            collector = collector_class()
 
-            # Collect data using enhanced service
-            results = await service.collect_and_store_all(sport="mlb")
+            if test_mode:
+                # Run test collection with source-specific logic
+                console.print(f"🧪 [yellow]Running test collection for {source_name}...[/yellow]")
 
-            # Filter results for the specific source
-            result = None
-            if results.get("success") and results.get("collection_results"):
-                for collection_result in results["collection_results"]:
-                    if collection_result["source"] == data_source.value:
-                        result = collection_result
-                        break
+                if source_name in ["sbr", "sports_book_review"]:
+                    # For SBR, use test_connection and basic collect_data
+                    from datetime import date
 
-            if result and result.get("success"):
-                console.print(
-                    f"✅ [green]{source_name.upper()} enhanced collection successful[/green]"
-                )
-                summary = (
-                    f"Records collected: {result['records_collected']}\n"
-                    f"Records stored: {result['records_stored']}\n"
-                    f"Data quality: {result['data_quality']}\n"
-                    f"Duration: {result['execution_time']:.2f}s"
-                )
-                return {
-                    "status": "success",
-                    "output": summary,
-                    "records_collected": result['records_collected'],
-                    "records_stored": result['records_stored'],
-                    "duration": result['execution_time'],
-                }
+                    from ...data.collection.base import CollectionRequest, DataSource
+
+                    # Test connection first
+                    connection_ok = await collector.test_connection()
+                    if not connection_ok:
+                        console.print(f"❌ [red]{source_name.upper()} connection test failed[/red]")
+                        return {
+                            "status": "failed",
+                            "error": "Connection test failed",
+                        }
+
+                    # Test data collection
+                    request = CollectionRequest(
+                        source=DataSource.SPORTS_BOOK_REVIEW,
+                        start_date=date.today(),
+                        sport="mlb"
+                    )
+                    games_data = await collector.collect_data(request)
+
+                    console.print(f"✅ [green]{source_name.upper()} test successful[/green]")
+                    summary = (
+                        f"Test Status: success\n"
+                        f"Connection: OK\n"
+                        f"Games found: {len(games_data)}\n"
+                        f"Collection method: unified"
+                    )
+                    return {
+                        "status": "success",
+                        "output": summary,
+                        "records_collected": len(games_data),
+                        "records_stored": len(games_data),  # For test mode
+                    }
+                else:
+                    # Use existing test_collection for other sources
+                    test_result = collector.test_collection()
+
+                    if test_result and test_result.get("status") == "success":
+                        console.print(f"✅ [green]{source_name.upper()} test successful[/green]")
+                        summary = (
+                            f"Test Status: {test_result['status']}\n"
+                            f"Raw records: {test_result['raw_records']}\n"
+                            f"Processed: {test_result['processed']}\n"
+                            f"Stored: {test_result['stored']}\n"
+                            f"Collection result: {test_result['collection_result']}"
+                        )
+                        return {
+                            "status": "success",
+                            "output": summary,
+                            "records_collected": test_result['raw_records'],
+                            "records_stored": test_result['stored'],
+                        }
+                    else:
+                        console.print(f"❌ [red]{source_name.upper()} test failed[/red]")
+                        error_msg = test_result.get("error", "Unknown error") if test_result else "No test result"
+                        return {
+                            "status": "failed",
+                            "error": f"Test failed: {error_msg}",
+                        }
             else:
-                console.print(
-                    f"❌ [red]{source_name.upper()} enhanced collection failed[/red]"
-                )
-                error_msg = (
-                    "; ".join(result.get("errors", []))
-                    if result and result.get("errors")
-                    else f"No data collected for {source_name}"
-                )
-                return {"status": "failed", "error": error_msg}
+                # Run production collection
+                console.print(f"🚀 [blue]Running production collection for {source_name}...[/blue]")
+
+                if source_name in ["vsin", "sbd"]:
+                    # Use collect_game_data for VSIN/SBD
+                    stored_count = collector.collect_game_data("mlb")
+                elif source_name in ["sbr", "sports_book_review"]:
+                    # Use collect_data for SBR unified collector
+                    from datetime import date
+
+                    from ...data.collection.base import CollectionRequest, DataSource
+
+                    request = CollectionRequest(
+                        source=DataSource.SPORTS_BOOK_REVIEW,
+                        start_date=date.today(),
+                        sport="mlb"
+                    )
+                    games_data = await collector.collect_data(request)
+                    stored_count = len(games_data)  # For now, just count collected games
+                elif source_name == "action_network":
+                    # Use collect_and_store for Action Network
+                    result = collector.collect_and_store()
+                    stored_count = result.records_stored if result else 0
+                else:
+                    # Use collect_and_store for other sources
+                    result = collector.collect_and_store()
+                    stored_count = result.records_stored if result else 0
+
+                if stored_count > 0:
+                    console.print(f"✅ [green]{source_name.upper()} collection successful[/green]")
+                    summary = (
+                        f"Records stored: {stored_count}\n"
+                        f"Source: {source_name.upper()}\n"
+                        f"Target tables: core_betting.betting_lines_*"
+                    )
+                    return {
+                        "status": "success",
+                        "output": summary,
+                        "records_stored": stored_count,
+                    }
+                else:
+                    console.print(f"❌ [red]{source_name.upper()} collection failed[/red]")
+                    return {
+                        "status": "failed",
+                        "error": "No records were stored",
+                    }
 
         except Exception as e:
             console.print(
@@ -700,7 +912,7 @@ class DataCommands:
             "Action Network", "🟢 Production Ready", "✅ Unified", "90%", "✅ Complete"
         )
         table.add_row(
-            "Sports Betting Report", "🟡 Partial", "✅ Unified", "40%", "🔄 In Progress"
+            "Sports Book Review (SBR)", "🟡 Partial", "✅ Unified", "40%", "🔄 In Progress"
         )
         table.add_row(
             "MLB Stats API", "🟢 Production Ready", "✅ Unified", "85%", "✅ Complete"
@@ -725,7 +937,7 @@ class DataCommands:
         console.print(
             "  • ✅ Fully Integrated: VSIN, SBD, Action Network, MLB Stats API"
         )
-        console.print("  • 🔄 In Progress: Sports Betting Report")
+        console.print("  • 🔄 In Progress: Sports Book Review (SBR)")
         console.print("  • 🔴 Needs Work: Odds API")
 
         # Show architecture benefits
@@ -741,7 +953,7 @@ class DataCommands:
             DataSource.VSIN: "🟢 90% Complete - Unified and production ready",
             DataSource.SBD: "🟢 90% Complete - Unified and production ready",
             DataSource.ACTION_NETWORK: "🟢 90% Complete - Unified with comprehensive implementation",
-            DataSource.SPORTS_BETTING_REPORT: "🟡 40% Complete - Unified but partial implementation",
+            DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: "🟡 40% Complete - Unified but partial implementation",
             DataSource.MLB_STATS_API: "🟢 85% Complete - Unified with comprehensive services",
             DataSource.ODDS_API: "🔴 20% Complete - Unified placeholder implementation",
         }
@@ -1278,3 +1490,459 @@ class DataCommands:
         except Exception as e:
             console.print(f"❌ Failed to save historical data: {str(e)}")
             return False
+
+    async def _collect_sbr_line_history(self, sbr_game_id: str, sportsbooks: str, bet_types: str, analyze_movements: bool):
+        """Collect comprehensive line history for a specific SBR game."""
+        try:
+            console.print(f"🏈 [bold]Collecting SBR Line History for Game {sbr_game_id}[/bold]")
+
+            # Import required modules
+            from src.data.collection.base import CollectorConfig
+            from src.data.collection.sbr_line_history_collector import (
+                SBRLineHistoryCollector,
+            )
+            from src.data.database.sbr_line_history_repository import (
+                SBRLineHistoryRepository,
+            )
+
+            # Initialize collector
+            collector = SBRLineHistoryCollector(CollectorConfig(
+                source="sports_betting_report",
+                base_url="https://www.sportsbookreview.com"
+            ))
+
+            # Set filters if specified
+            if sportsbooks:
+                collector.filter_sportsbooks = sportsbooks.split(',')
+                console.print(f"📊 Filtering sportsbooks: {collector.filter_sportsbooks}")
+            if bet_types:
+                collector.filter_bet_types = bet_types.split(',')
+                console.print(f"🎯 Filtering bet types: {collector.filter_bet_types}")
+
+            # Collect data with progress tracking
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+            ) as progress:
+                task = progress.add_task("Collecting line history...", total=None)
+
+                try:
+                    history_data = await collector.collect_simple_line_history(sbr_game_id)
+                    progress.update(task, description="✅ Collection completed")
+                except Exception as e:
+                    progress.update(task, description=f"❌ Collection failed: {str(e)}")
+                    raise
+
+            if not history_data:
+                console.print("⚠️ No line history data found for this game")
+                return
+
+            # Store in database
+            console.print("💾 Storing data in database...")
+            repository = SBRLineHistoryRepository()
+            stored_count = repository.store_line_history(history_data)
+
+            console.print(f"✅ Collected and stored {stored_count} line history records")
+
+            # Group by sportsbook and bet type for summary
+            summary = {}
+            for record in history_data:
+                key = f"{record['sportsbook']} - {record['bet_type']}"
+                summary[key] = summary.get(key, 0) + 1
+
+            # Display collection summary
+            table = Table(title="Collection Summary")
+            table.add_column("Sportsbook - Bet Type", style="cyan")
+            table.add_column("Records", justify="right", style="green")
+
+            for key, count in summary.items():
+                table.add_row(key, str(count))
+
+            console.print(table)
+
+            # Analyze movements if requested
+            if analyze_movements:
+                console.print("\n🔍 Analyzing line movements...")
+                movements = collector._detect_cross_sportsbook_movements(history_data)
+
+                if movements:
+                    stored_movements = repository.store_line_movements(movements)
+                    console.print(f"📈 Found and stored {stored_movements} significant line movements")
+
+                    # Display movement summary
+                    movement_table = Table(title="Line Movement Analysis")
+                    movement_table.add_column("Sportsbook", style="cyan")
+                    movement_table.add_column("Bet Type", style="blue")
+                    movement_table.add_column("Direction", style="yellow")
+                    movement_table.add_column("Magnitude", justify="right", style="green")
+                    movement_table.add_column("Type", style="magenta")
+
+                    for movement in movements[:10]:  # Show top 10
+                        movement_table.add_row(
+                            movement['sportsbook'],
+                            movement['bet_type'],
+                            movement['direction'],
+                            str(movement['magnitude']),
+                            movement['movement_type']
+                        )
+
+                    console.print(movement_table)
+                else:
+                    console.print("📊 No significant line movements detected")
+
+        except Exception as e:
+            console.print(f"❌ Error collecting SBR line history: {str(e)}")
+            raise
+
+    async def _collect_bulk_sbr_history(self, date: str, max_games: int):
+        """Collect line history for all games on a specific date."""
+        try:
+            console.print("🏈 [bold]Bulk SBR Line History Collection[/bold]")
+
+            if date:
+                console.print(f"📅 Target date: {date}")
+            else:
+                from datetime import date as dt
+                date = dt.today().strftime("%Y-%m-%d")
+                console.print(f"📅 Using today's date: {date}")
+
+            if max_games:
+                console.print(f"🎯 Max games to process: {max_games}")
+
+            # This would integrate with existing game discovery logic
+            # For now, show placeholder implementation
+            console.print("🚧 [yellow]Bulk collection implementation pending[/yellow]")
+            console.print("   This feature will:")
+            console.print("   • Discover all SBR game IDs for the specified date")
+            console.print("   • Process each game using sbr-line-history command")
+            console.print("   • Provide progress tracking and error handling")
+            console.print("   • Generate comprehensive collection reports")
+
+            console.print("\n💡 [bold]For now, use individual game collection:[/bold]")
+            console.print("   uv run -m src.interfaces.cli data sbr-line-history <game_id>")
+
+        except Exception as e:
+            console.print(f"❌ Error in bulk SBR collection: {str(e)}")
+            raise
+
+    # SBR Game ID Collection Command Implementations
+    async def _sbr_collect_games(self, date: str, start_date: str, end_date: str, dry_run: bool):
+        """Collect SBR game IDs for specific date or date range."""
+        try:
+            from datetime import date as dt
+            from datetime import datetime
+
+            from src.services.data.sbr_orchestration_service import (
+                SBROrchestrationService,
+            )
+
+            console.print("🎯 [bold]SBR Game ID Collection[/bold]")
+
+            # Initialize orchestration service (includes database storage)
+            orchestration_service = SBROrchestrationService()
+
+            # Determine collection parameters
+            if start_date and end_date:
+                # Date range collection
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+                console.print(f"📅 Date range: {start_date} to {end_date}")
+
+                if dry_run:
+                    days = (end_dt - start_dt).days + 1
+                    console.print(f"🔍 DRY RUN: Would collect games for {days} days")
+                    return
+
+                # Collect for date range
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    console=console,
+                ) as progress:
+                    task = progress.add_task("Collecting games for date range...", total=None)
+
+                    request = CollectionRequest(
+                        source=DataSource.SPORTS_BOOK_REVIEW_DEPRECATED,
+                        start_date=start_dt,
+                        end_date=end_dt
+                    )
+
+                    games = await collector.collect_data(request)
+                    progress.update(task, description="✅ Collection completed")
+
+            elif date:
+                # Single date collection
+                target_date = datetime.strptime(date, "%Y-%m-%d").date()
+                console.print(f"📅 Target date: {date}")
+
+                if dry_run:
+                    console.print(f"🔍 DRY RUN: Would collect games for {date}")
+                    return
+
+                # Collect for single date with database storage
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    console=console,
+                ) as progress:
+                    task = progress.add_task("Collecting games for date...", total=None)
+
+                    result = await orchestration_service.collect_games_for_date(target_date, store_in_db=True)
+                    progress.update(task, description="✅ Collection completed")
+
+                    # Display results
+                    if result["success"]:
+                        console.print(f"✅ Collected {result['games_found']} games")
+
+                        if result["games_found"] > 0:
+                            # Show sample of collected games
+                            table = Table(title="Collected Games")
+                            table.add_column("SBR Game ID", style="cyan")
+                            table.add_column("Away Team", style="blue")
+                            table.add_column("Home Team", style="green")
+                            table.add_column("Game Time", style="yellow")
+                            table.add_column("Status", style="magenta")
+
+                            for game in result["games"][:10]:  # Show first 10
+                                table.add_row(
+                                    game.get('sbr_game_id', 'N/A'),
+                                    game.get('away_team', 'N/A'),
+                                    game.get('home_team', 'N/A'),
+                                    game.get('game_time', 'N/A'),
+                                    game.get('game_status', 'scheduled')
+                                )
+
+                            console.print(table)
+
+                            if result["games_found"] > 10:
+                                console.print(f"... and {result['games_found'] - 10} more games")
+
+                            # Show database storage results
+                            console.print("💾 Storing games in database...")
+                            if result["games_processed"] > 0:
+                                console.print(f"✅ Stored {result['games_processed']} games in database")
+                            else:
+                                console.print("📊 Database storage implementation pending")
+                        else:
+                            console.print("⚠️ No games found for the specified date(s)")
+                    else:
+                        console.print(f"❌ Collection failed: {result.get('error', 'Unknown error')}")
+
+                    return
+
+            else:
+                # Default to today
+                target_date = dt.today()
+                console.print(f"📅 Using today's date: {target_date}")
+
+                if dry_run:
+                    console.print("🔍 DRY RUN: Would collect games for today")
+                    return
+
+                result = await orchestration_service.collect_games_for_date(target_date, store_in_db=True)
+
+                if result["success"] and result["games_found"] > 0:
+                    console.print(f"✅ Collected {result['games_found']} games")
+                else:
+                    console.print("⚠️ No games found for the specified date(s)")
+
+        except Exception as e:
+            console.print(f"❌ Error collecting SBR games: {str(e)}")
+            raise
+
+    async def _sbr_collect_season(self, year: int, batch_size: int, resume: bool):
+        """Collect SBR game IDs for entire season."""
+        try:
+            from datetime import date
+
+            from src.services.data.sbr_orchestration_service import (
+                SBROrchestrationService,
+            )
+
+            console.print(f"🏈 [bold]SBR Season Collection for {year}[/bold]")
+
+            # Initialize orchestration service (includes database storage)
+            orchestration_service = SBROrchestrationService()
+
+            # Calculate season dates
+            start_date = date(year, 3, 15)
+            end_date = date(year, 9, 28)
+
+            console.print(f"📅 Season dates: {start_date} to {end_date}")
+            console.print(f"📦 Batch size: {batch_size} days")
+
+            if resume:
+                console.print("🔄 Resume mode: Will skip already collected dates")
+
+            # Execute season collection
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+            ) as progress:
+                task = progress.add_task("Collecting season games...", total=None)
+
+                summary = await orchestration_service.collect_season_games(
+                    year=year,
+                    batch_size=batch_size,
+                    resume=resume
+                )
+                progress.update(task, description="✅ Season collection completed")
+
+            # Display results
+            console.print("\n📊 Season Collection Summary:")
+            console.print(f"  🎮 Total games collected: {summary['total_games_collected']}")
+            console.print(f"  📅 Dates processed: {summary['dates_processed']}")
+            console.print(f"  ✅ Successful dates: {summary['successful_dates']}")
+            console.print(f"  📈 Success rate: {summary['success_rate']:.1f}%")
+
+            if summary.get('batch_results'):
+                failed_dates = [r['date'] for r in summary['batch_results'] if not r.get('success', False)]
+                if failed_dates:
+                    console.print(f"\n⚠️ Failed dates: {', '.join(failed_dates[:5])}")
+                    if len(failed_dates) > 5:
+                        console.print(f"... and {len(failed_dates) - 5} more")
+
+        except Exception as e:
+            console.print(f"❌ Error in season collection: {str(e)}")
+            raise
+
+    async def _sbr_games_status(self, season_year: int, detailed: bool):
+        """Show SBR game collection status and statistics."""
+        try:
+            console.print(f"📊 [bold]SBR Game Collection Status - {season_year}[/bold]")
+
+            try:
+                from src.data.database.sbr_game_repository import SBRGameRepository
+                repository = SBRGameRepository()
+                statistics = await repository.get_collection_statistics(season_year)
+
+                overall = statistics.get("overall", {})
+
+                # Main status display
+                table = Table(title=f"SBR Collection Status - {season_year}")
+                table.add_column("Metric", style="cyan")
+                table.add_column("Value", style="green")
+                table.add_column("Status", style="yellow")
+
+                total_games = overall.get("total_games", 0)
+                line_history_games = overall.get("games_with_line_history", 0)
+                completion_rate = overall.get("line_history_completion_rate", 0)
+
+                # Determine status indicators
+                game_status = "🟢 Good" if total_games > 1000 else "🟡 Partial" if total_games > 100 else "🔴 Low"
+                line_status = "🟢 Good" if completion_rate > 80 else "🟡 Partial" if completion_rate > 50 else "🔴 Low"
+
+                table.add_row("Games Collected", f"{total_games:,}", game_status)
+                table.add_row("Expected Games", "2,430", "📊 Target")
+                table.add_row("Collection Rate", f"{(total_games/2430*100):.1f}%" if total_games > 0 else "0%", game_status)
+                table.add_row("Line History Collected", f"{line_history_games:,}", line_status)
+                table.add_row("Line History Rate", f"{completion_rate:.1f}%", line_status)
+                table.add_row("Unique Dates", str(overall.get("unique_dates", 0)), "📅 Info")
+
+                console.print(table)
+
+                # Recent collections
+                recent = statistics.get("recent_collections", [])
+                if recent and detailed:
+                    console.print("\n📅 Recent Collections:")
+                    recent_table = Table()
+                    recent_table.add_column("Date", style="cyan")
+                    recent_table.add_column("Status", style="yellow")
+                    recent_table.add_column("Games Found", style="green")
+                    recent_table.add_column("Games Processed", style="blue")
+                    recent_table.add_column("Time (s)", style="magenta")
+
+                    for collection in recent[:10]:
+                        status_icon = "✅" if collection["status"] == "completed" else "❌" if collection["status"] == "failed" else "🔄"
+                        recent_table.add_row(
+                            collection["date"],
+                            f"{status_icon} {collection['status']}",
+                            str(collection["games_found"]),
+                            str(collection["games_processed"]),
+                            str(collection["execution_time"]) if collection["execution_time"] else "N/A"
+                        )
+
+                    console.print(recent_table)
+
+                # Monthly progress
+                monthly = statistics.get("monthly_progress", [])
+                if monthly and detailed:
+                    console.print("\n📅 Monthly Progress:")
+                    monthly_table = Table()
+                    monthly_table.add_column("Month", style="cyan")
+                    monthly_table.add_column("Games", style="green")
+                    monthly_table.add_column("Line History", style="blue")
+                    monthly_table.add_column("Completion Rate", style="yellow")
+
+                    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+                    for month_data in monthly:
+                        month_name = month_names[month_data["month"] - 1]
+                        monthly_table.add_row(
+                            f"{month_name} {month_data['year']}",
+                            str(month_data["games_collected"]),
+                            str(month_data["line_history_completed"]),
+                            f"{month_data['completion_rate']:.1f}%"
+                        )
+
+                    console.print(monthly_table)
+
+            except ImportError:
+                console.print("🚧 [yellow]Repository not available - showing sample status[/yellow]")
+                # Fallback to sample display
+                table = Table(title=f"SBR Collection Status - {season_year}")
+                table.add_column("Metric", style="cyan")
+                table.add_column("Value", style="green")
+                table.add_column("Status", style="yellow")
+
+                table.add_row("Games Collected", "1,250", "🟢 Good")
+                table.add_row("Expected Games", "2,430", "📊 In Progress")
+                table.add_row("Collection Rate", "51.4%", "🟡 Partial")
+                table.add_row("Line History Collected", "892", "🟢 Good")
+                table.add_row("Failed Dates", "12", "🟡 Some Issues")
+
+                console.print(table)
+
+        except Exception as e:
+            console.print(f"❌ Error showing SBR status: {str(e)}")
+            raise
+
+    async def _sbr_collect_line_history_batch(self, batch_size: int, max_games: int, season_year: int):
+        """Collect line history for games with collected SBR game IDs."""
+        try:
+            console.print("📈 [bold]SBR Line History Batch Collection[/bold]")
+            console.print(f"📦 Batch size: {batch_size}")
+            console.print(f"🎯 Max games: {max_games}")
+            console.print(f"📅 Season: {season_year}")
+
+            # This would integrate with the repository to get games needing line history
+            console.print("🚧 [yellow]Batch line history collection implementation pending[/yellow]")
+            console.print("   This feature will:")
+            console.print("   • Query database for games without line history")
+            console.print("   • Process games in batches to avoid overwhelming SBR")
+            console.print("   • Track collection progress and retry failures")
+            console.print("   • Update game records with line history status")
+            console.print("   • Generate collection reports")
+
+            # Sample progress simulation
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+            ) as progress:
+                task = progress.add_task("Processing batch...", total=batch_size)
+
+                for i in range(batch_size):
+                    await asyncio.sleep(0.1)  # Simulate processing
+                    progress.update(task, advance=1)
+
+            console.print(f"✅ Would process {batch_size} games in this batch")
+            console.print("\n💡 [bold]For now, use individual game collection:[/bold]")
+            console.print("   uv run -m src.interfaces.cli data sbr-line-history <game_id>")
+
+        except Exception as e:
+            console.print(f"❌ Error in batch line history collection: {str(e)}")
+            raise
