@@ -14,7 +14,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import Field, computed_field, field_validator
+from pydantic import Field, computed_field, field_validator, ValidationInfo
 
 from .base import AnalysisEntity, ValidatedModel
 from .odds import BookType, MarketType, OddsData
@@ -188,9 +188,9 @@ class BettingAnalysis(AnalysisEntity):
         return v
 
     @field_validator("primary_signal")
-    @classmethod
+    @classmethod  
     def validate_primary_signal(
-        cls, v: BettingSignalType | None, info
+        cls, v: BettingSignalType | None, info: ValidationInfo
     ) -> BettingSignalType | None:
         """Ensure primary signal is in signals detected list."""
         if v is not None and info.data:
@@ -200,31 +200,26 @@ class BettingAnalysis(AnalysisEntity):
         return v
 
     # Computed properties
-    @computed_field
     @property
     def is_actionable(self) -> bool:
         """Check if analysis is actionable (has recommendation other than hold)."""
         return self.recommendation != BettingRecommendation.HOLD
 
-    @computed_field
     @property
     def is_high_confidence(self) -> bool:
         """Check if analysis is high confidence."""
         return self.confidence_score >= 0.75
 
-    @computed_field
     @property
     def is_strong_signal(self) -> bool:
         """Check if analysis has strong signal strength."""
         return self.signal_strength in [SignalStrength.STRONG, SignalStrength.EXTREME]
 
-    @computed_field
     @property
     def signal_count(self) -> int:
         """Get number of signals detected."""
         return len(self.signals_detected)
 
-    @computed_field
     @property
     def is_expired(self) -> bool:
         """Check if analysis has expired."""
@@ -232,7 +227,6 @@ class BettingAnalysis(AnalysisEntity):
             return False
         return datetime.now() > self.expires_at
 
-    @computed_field
     @property
     def minutes_until_expiry(self) -> int | None:
         """Get minutes until analysis expires."""
@@ -401,13 +395,11 @@ class SharpAction(ValidatedModel):
     )
 
     # Computed properties
-    @computed_field
     @property
     def is_high_confidence(self) -> bool:
         """Check if sharp action is high confidence."""
         return self.sharp_confidence >= 0.8
 
-    @computed_field
     @property
     def has_multiple_indicators(self) -> bool:
         """Check if multiple sharp indicators are present."""
@@ -419,7 +411,6 @@ class SharpAction(ValidatedModel):
         ]
         return sum(indicators) >= 2
 
-    @computed_field
     @property
     def is_late_sharp_action(self) -> bool:
         """Check if this is late sharp action (within 2 hours of game)."""
@@ -525,7 +516,6 @@ class BettingSplit(ValidatedModel):
     )
 
     # Computed properties
-    @computed_field
     @property
     def public_sharp_divergence(self) -> float | None:
         """Calculate divergence between public and sharp money."""
@@ -534,7 +524,6 @@ class BettingSplit(ValidatedModel):
 
         return abs(self.public_money_percentage - self.sharp_money_percentage)
 
-    @computed_field
     @property
     def is_contrarian_opportunity(self) -> bool:
         """Check if this represents a contrarian betting opportunity."""
@@ -544,7 +533,6 @@ class BettingSplit(ValidatedModel):
         # Significant divergence suggests contrarian opportunity
         return self.public_sharp_divergence >= 0.3
 
-    @computed_field
     @property
     def public_heavy_side(self) -> str | None:
         """Get the side heavily favored by public."""
@@ -558,7 +546,6 @@ class BettingSplit(ValidatedModel):
         else:
             return "balanced"
 
-    @computed_field
     @property
     def sharp_heavy_side(self) -> str | None:
         """Get the side heavily favored by sharp money."""

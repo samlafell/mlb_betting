@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator, ValidationInfo, ConfigDict
 
 
 class MovementDirection(str, Enum):
@@ -45,8 +45,7 @@ class BettingPercentageSnapshot(BaseModel):
     tickets_count: int | None = None
     money_amount: Decimal | None = None
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class LineMovementDetail(BaseModel):
@@ -64,20 +63,22 @@ class LineMovementDetail(BaseModel):
     movement_amount: Decimal | None = None  # Absolute change
     movement_percentage: Decimal | None = None  # Percentage change
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
-    @validator("magnitude", pre=True, always=True)
-    def determine_magnitude(cls, v, values):
+    @field_validator("magnitude")
+    @classmethod
+    def determine_magnitude(cls, v, info: ValidationInfo):
         """Automatically determine movement magnitude based on market type and change."""
         if v is not None:
             return v
 
-        market_type = values.get("market_type")
-        prev_odds = values.get("previous_odds")
-        new_odds = values.get("new_odds")
-        prev_value = values.get("previous_value")
-        new_value = values.get("new_value")
+        if not info.data:
+            return v
+        market_type = info.data.get("market_type")
+        prev_odds = info.data.get("previous_odds")
+        new_odds = info.data.get("new_odds")
+        prev_value = info.data.get("previous_value")
+        new_value = info.data.get("new_value")
 
         if market_type == MarketType.MONEYLINE and prev_odds and new_odds:
             change = abs(new_odds - prev_odds)
@@ -121,27 +122,32 @@ class RLMIndicator(BaseModel):
     line_movement_amount: Decimal | None = None
     confidence_score: Decimal | None = None
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
-    @validator("is_rlm", pre=True, always=True)
-    def determine_rlm(cls, v, values):
+    @field_validator("is_rlm")
+    @classmethod
+    def determine_rlm(cls, v, info: ValidationInfo):
         """Determine if this is reverse line movement."""
-        line_dir = values.get("line_direction")
-        public_dir = values.get("public_betting_direction")
+        if not info.data:
+            return v
+        line_dir = info.data.get("line_direction")
+        public_dir = info.data.get("public_betting_direction")
 
         if line_dir and public_dir:
             return line_dir != public_dir and line_dir != MovementDirection.STABLE
         return False
 
-    @validator("rlm_strength", pre=True, always=True)
-    def determine_rlm_strength(cls, v, values):
+    @field_validator("rlm_strength")
+    @classmethod
+    def determine_rlm_strength(cls, v, info: ValidationInfo):
         """Determine RLM strength based on public percentage and line movement."""
-        if not values.get("is_rlm"):
+        if not info.data:
+            return v
+        if not info.data.get("is_rlm"):
             return None
 
-        public_pct = values.get("public_percentage", 50)
-        line_amount = values.get("line_movement_amount", 0)
+        public_pct = info.data.get("public_percentage", 50)
+        line_amount = info.data.get("line_movement_amount", 0)
 
         # Strong RLM: High public percentage but line moves opposite significantly
         if public_pct > 70 and line_amount > 1.0:
@@ -166,21 +172,24 @@ class CrossBookMovement(BaseModel):
     average_movement: Decimal | None = None
     movement_range: dict[str, Decimal] | None = None
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
-    @validator("consensus_direction", pre=True, always=True)
-    def determine_consensus(cls, v, values):
+    @field_validator("consensus_direction")
+    @classmethod
+    def determine_consensus(cls, v, info: ValidationInfo):
         """Determine consensus direction based on participating books."""
         # This would be calculated based on the actual movement data
         # For now, return the provided value
         return v
 
-    @validator("steam_move_detected", pre=True, always=True)
-    def detect_steam_move(cls, v, values):
+    @field_validator("steam_move_detected")
+    @classmethod
+    def detect_steam_move(cls, v, info: ValidationInfo):
         """Detect if this is a steam move (rapid movement across multiple books)."""
-        participating = values.get("participating_books", [])
-        consensus = values.get("consensus_direction")
+        if not info.data:
+            return v
+        participating = info.data.get("participating_books", [])
+        consensus = info.data.get("consensus_direction")
 
         # Steam move: 3+ books moving in same direction with significant movement
         if len(participating) >= 3 and consensus != MovementDirection.STABLE:
@@ -203,8 +212,7 @@ class MarketMovementSummary(BaseModel):
         None  # Percentage of books moving same direction
     )
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class GameMovementAnalysis(BaseModel):
@@ -233,13 +241,15 @@ class GameMovementAnalysis(BaseModel):
     arbitrage_opportunities: list[dict] = []
     recommended_actions: list[str] = []
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
-    @validator("total_movements", pre=True, always=True)
-    def calculate_total_movements(cls, v, values):
+    @field_validator("total_movements")
+    @classmethod
+    def calculate_total_movements(cls, v, info: ValidationInfo):
         """Calculate total movements from detailed movements."""
-        movements = values.get("line_movements", [])
+        if not info.data:
+            return v
+        movements = info.data.get("line_movements", [])
         return len(movements)
 
 
@@ -265,8 +275,11 @@ class MovementAnalysisReport(BaseModel):
     top_steam_moves: list[dict] = []
     top_arbitrage_opportunities: list[dict] = []
 
-    @validator("total_movements", pre=True, always=True)
-    def calculate_totals(cls, v, values):
+    @field_validator("total_movements")
+    @classmethod
+    def calculate_totals(cls, v, info: ValidationInfo):
         """Calculate summary statistics from game analyses."""
-        games = values.get("game_analyses", [])
+        if not info.data:
+            return v
+        games = info.data.get("game_analyses", [])
         return sum(game.total_movements for game in games)

@@ -13,7 +13,7 @@ from datetime import date, datetime, time
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import Field, computed_field, field_validator
+from pydantic import Field, computed_field, field_validator, ValidationInfo, ConfigDict
 
 from .base import UnifiedEntity, ValidatedModel
 
@@ -580,7 +580,6 @@ class PitcherMatchup(ValidatedModel):
         default=None, description="Away team starting pitcher"
     )
 
-    @computed_field
     @property
     def handedness_matchup(self) -> str | None:
         """Get handedness matchup description."""
@@ -728,14 +727,14 @@ class UnifiedGame(UnifiedEntity):
     # Model validation
     @field_validator("home_team", "away_team")
     @classmethod
-    def validate_teams_different(cls, v: Team, info) -> Team:
+    def validate_teams_different(cls, v: Team, info: ValidationInfo) -> Team:
         """Ensure home and away teams are different."""
         if info.data and "home_team" in info.data:
-            if info.data["home_team"] == v and info.field_name == "away_team":
+            if info.data["home_team"] == v:
                 raise ValueError("Home and away teams must be different")
         return v
 
-    @field_validator("game_datetime", mode="before")
+    @field_validator("game_datetime")
     @classmethod
     def parse_game_datetime(cls, v: Any) -> datetime:
         """Parse game datetime ensuring EST timezone."""
@@ -764,26 +763,23 @@ class UnifiedGame(UnifiedEntity):
 
     @field_validator("winning_team")
     @classmethod
-    def validate_winning_team(cls, v: Team | None, info) -> Team | None:
+    def validate_winning_team(cls, v: Team | None, info: ValidationInfo) -> Team | None:
         """Validate winning team is one of the game participants."""
         if v is None:
             return v
 
-        data = info.data
-        if data and "home_team" in data and "away_team" in data:
-            if v not in [data["home_team"], data["away_team"]]:
+        if info.data and "home_team" in info.data and "away_team" in info.data:
+            if v not in [info.data["home_team"], info.data["away_team"]]:
                 raise ValueError("Winning team must be either home or away team")
 
         return v
 
     # Computed properties
-    @computed_field
     @property
     def matchup_display(self) -> str:
         """Get formatted matchup display."""
         return f"{self.away_team.value} @ {self.home_team.value}"
 
-    @computed_field
     @property
     def is_completed(self) -> bool:
         """Check if game is completed."""
@@ -793,19 +789,16 @@ class UnifiedGame(UnifiedEntity):
             and self.away_score is not None
         )
 
-    @computed_field
     @property
     def is_in_progress(self) -> bool:
         """Check if game is currently in progress."""
         return self.game_status == GameStatus.LIVE
 
-    @computed_field
     @property
     def is_scheduled(self) -> bool:
         """Check if game is scheduled."""
         return self.game_status == GameStatus.SCHEDULED
 
-    @computed_field
     @property
     def has_mlb_enrichment(self) -> bool:
         """Check if game has MLB Stats API enrichment data."""
@@ -819,7 +812,6 @@ class UnifiedGame(UnifiedEntity):
             )
         )
 
-    @computed_field
     @property
     def is_doubleheader(self) -> bool:
         """Check if this is part of a doubleheader."""
@@ -912,8 +904,7 @@ class UnifiedGame(UnifiedEntity):
 
         self.touch_updated_at()
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(json_schema_extra={
             "example": {
                 "game_id": "2025-07-01-NYY-BOS",
                 "mlb_game_id": "12345",
@@ -928,4 +919,5 @@ class UnifiedGame(UnifiedEntity):
                     "state": "MA",
                 },
             }
-        }
+        })
+

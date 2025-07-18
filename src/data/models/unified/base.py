@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any, TypeVar
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 # Import precise timing utilities
 try:
@@ -45,14 +45,8 @@ class UnifiedBaseModel(BaseModel):
         validate_assignment=True,
         use_enum_values=True,
         arbitrary_types_allowed=False,
-        # Serialization settings
-        ser_json_timedelta="float",
-        ser_json_bytes="base64",
         # Extra fields handling
-        extra="forbid",
-        # Performance settings
-        validate_default=True,
-        revalidate_instances="never",
+        extra="forbid"
     )
 
     def model_dump_json_safe(self) -> dict[str, Any]:
@@ -62,7 +56,7 @@ class UnifiedBaseModel(BaseModel):
         Returns:
             Dictionary representation safe for JSON serialization
         """
-        return self.model_dump(mode="json", exclude_none=True, by_alias=True)
+        return self.model_dump(exclude_none=True, by_alias=True)
 
     def model_copy_with_changes(self: T, **changes: Any) -> T:
         """

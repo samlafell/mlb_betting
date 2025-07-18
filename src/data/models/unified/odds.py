@@ -187,7 +187,6 @@ class OddsData(SourcedModel, ValidatedModel):
 
         return v
 
-    @computed_field
     @property
     def primary_odds_format(self) -> OddsFormat:
         """Determine the primary odds format available."""
@@ -282,19 +281,16 @@ class OddsSnapshot(ValidatedModel):
         default_factory=list, description="Market types available in snapshot"
     )
 
-    @computed_field
     @property
     def has_moneyline(self) -> bool:
         """Check if snapshot contains moneyline odds."""
         return MarketType.MONEYLINE in self.markets_available
 
-    @computed_field
     @property
     def has_spread(self) -> bool:
         """Check if snapshot contains spread odds."""
         return MarketType.SPREAD in self.markets_available
 
-    @computed_field
     @property
     def has_total(self) -> bool:
         """Check if snapshot contains total odds."""
@@ -376,7 +372,6 @@ class LineMovement(UnifiedEntity):
         default=False, description="Whether there was a volume spike"
     )
 
-    @computed_field
     @property
     def movement_direction(self) -> str:
         """Get human-readable movement direction."""
@@ -387,7 +382,6 @@ class LineMovement(UnifiedEntity):
         else:
             return "No change"
 
-    @computed_field
     @property
     def is_significant_movement(self) -> bool:
         """Check if movement is considered significant."""
@@ -504,13 +498,11 @@ class MarketConsensus(ValidatedModel):
 
     book_count: int = Field(default=0, description="Number of books in consensus", ge=0)
 
-    @computed_field
     @property
     def has_sufficient_data(self) -> bool:
         """Check if consensus has sufficient data for analysis."""
         return self.book_count >= 3
 
-    @computed_field
     @property
     def market_agreement_level(self) -> str:
         """Get market agreement level description."""
@@ -625,13 +617,11 @@ class BettingMarket(UnifiedEntity):
         ..., description="When market was last updated (EST)"
     )
 
-    @computed_field
     @property
     def available_books(self) -> list[BookType]:
         """Get list of books currently offering odds."""
         return list(set(odds.sportsbook for odds in self.current_odds))
 
-    @computed_field
     @property
     def has_recent_movement(self) -> bool:
         """Check if market has recent line movement."""

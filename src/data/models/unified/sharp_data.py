@@ -14,7 +14,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import Field, computed_field, field_validator
+from pydantic import Field, computed_field, field_validator, ValidationInfo
 
 from .base import AnalysisEntity, ValidatedModel
 from .odds import BookType, MarketType
@@ -188,7 +188,7 @@ class SharpSignal(AnalysisEntity):
     # Validation
     @field_validator("confidence_score")
     @classmethod
-    def validate_confidence_score(cls, v: float, info) -> float:
+    def validate_confidence_score(cls, v: float, info: ValidationInfo) -> float:
         """Ensure confidence score matches confidence level."""
         if info.data and "confidence_level" in info.data:
             level = info.data["confidence_level"]
@@ -206,7 +206,7 @@ class SharpSignal(AnalysisEntity):
 
     @field_validator("is_late_signal")
     @classmethod
-    def validate_late_signal(cls, v: bool, info) -> bool:
+    def validate_late_signal(cls, v: bool, info: ValidationInfo) -> bool:
         """Ensure late signal flag matches time to game."""
         if info.data and "time_to_game" in info.data:
             time_to_game = info.data["time_to_game"]
@@ -218,7 +218,6 @@ class SharpSignal(AnalysisEntity):
         return v
 
     # Computed properties
-    @computed_field
     @property
     def is_high_confidence(self) -> bool:
         """Check if signal is high confidence."""
@@ -227,31 +226,26 @@ class SharpSignal(AnalysisEntity):
             ConfidenceLevel.VERY_HIGH,
         ]
 
-    @computed_field
     @property
     def is_strong_signal(self) -> bool:
         """Check if signal is strong."""
         return self.signal_strength >= 0.7
 
-    @computed_field
     @property
     def has_supporting_evidence(self) -> bool:
         """Check if signal has supporting evidence."""
         return len(self.supporting_indicators) > 0
 
-    @computed_field
     @property
     def has_contradicting_evidence(self) -> bool:
         """Check if signal has contradicting evidence."""
         return len(self.contradicting_indicators) > 0
 
-    @computed_field
     @property
     def net_indicator_score(self) -> int:
         """Calculate net indicator score (supporting - contradicting)."""
         return len(self.supporting_indicators) - len(self.contradicting_indicators)
 
-    @computed_field
     @property
     def book_consensus(self) -> float:
         """Calculate book consensus (sharp books / total books)."""
@@ -261,13 +255,11 @@ class SharpSignal(AnalysisEntity):
 
         return len(self.sharp_books) / total_books
 
-    @computed_field
     @property
     def is_coordinated_move(self) -> bool:
         """Check if this represents a coordinated move across books."""
         return len(self.sharp_books) >= 3 and self.book_consensus >= 0.7
 
-    @computed_field
     @property
     def public_sharp_divergence(self) -> float | None:
         """Calculate divergence between public and sharp percentages."""
@@ -477,13 +469,11 @@ class SharpMoney(ValidatedModel):
     )
 
     # Computed properties
-    @computed_field
     @property
     def is_high_probability(self) -> bool:
         """Check if sharp money is high probability."""
         return self.sharp_probability >= 0.8
 
-    @computed_field
     @property
     def is_significant_amount(self) -> bool:
         """Check if amount is significant."""
@@ -491,7 +481,6 @@ class SharpMoney(ValidatedModel):
             self.percentage_of_handle is not None and self.percentage_of_handle >= 0.1
         )
 
-    @computed_field
     @property
     def is_late_money(self) -> bool:
         """Check if this is late sharp money."""
@@ -596,13 +585,11 @@ class SharpConsensus(AnalysisEntity):
     )
 
     # Computed properties
-    @computed_field
     @property
     def is_high_quality(self) -> bool:
         """Check if consensus is high quality."""
         return self.consensus_quality in ["HIGH", "EXCELLENT"]
 
-    @computed_field
     @property
     def is_strong_consensus(self) -> bool:
         """Check if consensus is strong."""
@@ -612,7 +599,6 @@ class SharpConsensus(AnalysisEntity):
             and self.signal_count >= 3
         )
 
-    @computed_field
     @property
     def has_outliers(self) -> bool:
         """Check if consensus has outlier signals."""

@@ -9,7 +9,7 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 from .base import IdentifiedModel, ValidatedModel
 
@@ -42,14 +42,16 @@ class ActionNetworkPrice(BaseModel):
         default=None, description="American odds format (e.g., -110, +150)"
     )
 
-    @validator("decimal")
+    @field_validator("decimal")
+    @classmethod
     def validate_decimal_odds(cls, v):
         """Validate decimal odds are reasonable."""
         if v is not None and (v < 1.0 or v > 50.0):
             raise ValueError("Decimal odds must be between 1.0 and 50.0")
         return v
 
-    @validator("american")
+    @field_validator("american")
+    @classmethod
     def validate_american_odds(cls, v):
         """Validate American odds are reasonable."""
         if v is not None and (v < -10000 or v > 10000):
@@ -153,7 +155,8 @@ class ActionNetworkHistoricalEntry(BaseModel):
         default=None, description="Total market data"
     )
 
-    @validator("event")
+    @field_validator("event")
+    @classmethod
     def validate_event_structure(cls, v):
         """Validate event contains required market data."""
         if not isinstance(v, dict):
@@ -208,7 +211,8 @@ class ActionNetworkHistoricalData(IdentifiedModel, ValidatedModel):
 
     live_entries: int = Field(default=0, description="Number of live entries", ge=0)
 
-    @validator("historical_entries")
+    @field_validator("historical_entries")
+    @classmethod
     def validate_historical_entries(cls, v):
         """Validate historical entries are properly ordered."""
         if len(v) > 1:
@@ -422,7 +426,8 @@ class ActionNetworkTeam(IdentifiedModel, ValidatedModel):
         max_length=100,
     )
 
-    @validator("primary_color", "secondary_color")
+    @field_validator("primary_color", "secondary_color")
+    @classmethod
     def validate_color_format(cls, v):
         """Validate color is a valid hex code."""
         if not v.isalnum():
@@ -431,7 +436,8 @@ class ActionNetworkTeam(IdentifiedModel, ValidatedModel):
             )
         return v.upper()
 
-    @validator("conference_type", "division_type")
+    @field_validator("conference_type", "division_type")
+    @classmethod
     def validate_league_info(cls, v):
         """Validate league information is uppercase."""
         return v.upper()
@@ -495,12 +501,14 @@ class ActionNetworkGame(IdentifiedModel, ValidatedModel):
         max_length=1000,
     )
 
-    @validator("status", "real_status")
+    @field_validator("status", "real_status")
+    @classmethod
     def validate_status(cls, v):
         """Ensure status is lowercase."""
         return v.lower()
 
-    @validator("league_name")
+    @field_validator("league_name")
+    @classmethod
     def validate_league_name(cls, v):
         """Ensure league name is lowercase."""
         return v.lower()
