@@ -34,6 +34,7 @@ dependencies = [
     "backoff>=2.2.1",
     "brotli>=1.1.0",
     "ruff>=0.11.13",
+    "playwright>=1.40.0",
 ]
 
 [project.optional-dependencies]

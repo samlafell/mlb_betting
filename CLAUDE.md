@@ -72,6 +72,13 @@ uv run -m src.interfaces.cli outcomes verify --games recent
 # Data Quality (post-reorganization)
 uv run -m src.interfaces.cli data-quality setup
 uv run -m src.interfaces.cli data-quality status
+
+# Historical Line Movement Collection (Optimized Performance)
+uv run -m src.interfaces.cli batch-collection collect-range --start-date 2025-03-15 --end-date 2025-03-20
+uv run -m src.interfaces.cli batch-collection collect-season --start-date 2025-03-15 --end-date 2025-07-15
+uv run -m src.interfaces.cli batch-collection collect-season --dry-run
+uv run -m src.interfaces.cli batch-collection list-batches
+uv run -m src.interfaces.cli batch-collection retry-failed --batch-id abc123-def456
 ```
 
 ### Utility Scripts
