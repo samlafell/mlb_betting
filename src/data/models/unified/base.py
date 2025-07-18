@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # Import precise timing utilities
 try:
-    from ...core.timing import get_est_now, to_est, precise_timestamp
+    from ...core.timing import get_est_now, precise_timestamp, to_est
 except ImportError:
     # Fallback for backward compatibility
     import pytz
@@ -203,7 +203,7 @@ class SourcedModel(UnifiedBaseModel):
     source_timestamp: datetime | None = Field(
         default=None, description="When data was retrieved from source (EST with precise timing)"
     )
-    
+
     collected_at_est: datetime = Field(
         default_factory=precise_timestamp,
         description="Precise collection timestamp in EST for data synchronization"

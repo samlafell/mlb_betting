@@ -19,7 +19,7 @@ from .collectors import (
     MLBStatsAPICollector,
     OddsAPICollector,
     SBDCollector,
-    SportsBettingReportCollector,
+    SportsBettingReportCollector,  # DEPRECATED: Use SBRUnifiedCollector instead
     VSINCollector,
 )
 from .orchestrator import (
@@ -62,7 +62,7 @@ __all__ = [
     # Source collectors
     "VSINCollector",
     "SBDCollector",
-    "SportsBettingReportCollector",
+    "SportsBettingReportCollector",  # DEPRECATED: Use SBRUnifiedCollector instead
     "ActionNetworkCollector",
     "MLBStatsAPICollector",
     "OddsAPICollector",

@@ -6,7 +6,8 @@ This module contains the actual implementations of data collectors for each
 supported source. Collectors are organized by completion status:
 
 🟢 VSIN/SBD Collector (90% complete) - Ready for production testing
-🟡 Sports Betting Report Collector (40% complete) - Partial implementation
+🟢 SportsbookReview Collector (95% complete) - Playwright-based, production ready
+🟡 Sports Book Review (SBR) Collector (40% complete) - Partial implementation
 🟠 Action Network Collector (25% complete) - Basic structure
 🔴 MLB Stats API Collector (Needs work) - Placeholder
 🔴 Odds API Collector (Needs work) - Placeholder
@@ -225,18 +226,25 @@ class SBDCollector(BaseCollector):
 
 class SportsBettingReportCollector(BaseCollector):
     """
-    Sports Betting Report Collector
+    Sports Book Review (SBR) Collector (DEPRECATED)
 
-    Status: 🟡 40% Complete - Partial implementation
-    Basic structure in place, needs enhancement.
+    Status: 🔴 DEPRECATED - Use SBRUnifiedCollector instead
+    This collector is kept for backward compatibility only.
+    
+    Use the new SBRUnifiedCollector from sbr_unified_collector.py
+    which provides Playwright-based collection with full functionality.
     """
 
     def __init__(self, config: CollectorConfig):
         super().__init__(config)
         self.base_url = config.base_url or "https://www.sportsbookreview.com"
+        self.logger.warning(
+            "SportsBettingReportCollector is deprecated. "
+            "Use SBRUnifiedCollector from sbr_unified_collector.py instead."
+        )
 
     async def collect_data(self, request: CollectionRequest) -> list[dict[str, Any]]:
-        """Collect data from Sports Betting Report."""
+        """Collect data from Sports Book Review (SBR)."""
         self.metrics.status = CollectionStatus.IN_PROGRESS
         self.logger.info("Starting SBR data collection")
 
@@ -293,7 +301,7 @@ class SportsBettingReportCollector(BaseCollector):
     def normalize_record(self, record: dict[str, Any]) -> dict[str, Any]:
         """Normalize SBR record to standard format."""
         normalized = record.copy()
-        normalized["source"] = DataSource.SPORTS_BETTING_REPORT.value
+        normalized["source"] = DataSource.SPORTS_BOOK_REVIEW_DEPRECATED.value
         normalized["collected_at"] = datetime.now().isoformat()
         return normalized
 
@@ -1207,7 +1215,7 @@ CollectorFactory.register_collector(DataSource.VSIN, VSINCollector)
 CollectorFactory.register_collector(DataSource.SBD, SBDCollector)
 CollectorFactory.register_collector(DataSource.ACTION_NETWORK, ActionNetworkCollector)
 CollectorFactory.register_collector(
-    DataSource.SPORTS_BETTING_REPORT, SportsBettingReportCollector
+    DataSource.SPORTS_BOOK_REVIEW_DEPRECATED, SportsBettingReportCollector
 )
 CollectorFactory.register_collector(DataSource.MLB_STATS_API, MLBStatsAPICollector)
 CollectorFactory.register_collector(DataSource.ODDS_API, OddsAPICollector)

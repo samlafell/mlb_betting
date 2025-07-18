@@ -33,8 +33,11 @@ class DataSource(Enum):
 
     VSIN = "vsin"
     SBD = "sbd"  # Sports Betting Dime
+    SPORTS_BETTING_DIME = "sports_betting_dime"  # Alternative name for SBD
     ACTION_NETWORK = "action_network"
-    SPORTS_BETTING_REPORT = "sports_betting_report"
+    SPORTS_BOOK_REVIEW_DEPRECATED = "SPORTS_BOOK_REVIEW"  # DEPRECATED: Use SBR instead - matches DB enum
+    SPORTS_BOOK_REVIEW = "sports_book_review"  # SportsbookReview.com
+    SBR = "sbr"  # Alias for SPORTS_BOOK_REVIEW
     MLB_STATS_API = "mlb_stats_api"
     ODDS_API = "odds_api"
 
@@ -109,7 +112,7 @@ class CollectionResult:
     metadata: dict[str, Any] | None = None
     request_count: int = 0
     response_time_ms: float = 0.0
-    
+
     # Synchronization metadata for handling timing mismatches
     collection_window_id: str | None = None
     sync_quality_score: float = 1.0  # 0.0 = poor sync, 1.0 = perfect sync
@@ -119,7 +122,7 @@ class CollectionResult:
     def has_data(self) -> bool:
         """Check if collection result contains data."""
         return self.success and bool(self.data)
-    
+
     @property
     def is_successful(self) -> bool:
         """Check if collection was successful."""
@@ -134,11 +137,11 @@ class CollectionResult:
     def data_count(self) -> int:
         """Get number of data items collected."""
         return len(self.data)
-    
+
     def set_synchronization_metadata(
-        self, 
-        window_id: str, 
-        quality_score: float, 
+        self,
+        window_id: str,
+        quality_score: float,
         is_synchronized: bool = True
     ) -> None:
         """Set synchronization metadata for this collection result."""
@@ -216,7 +219,7 @@ class BaseCollector(ABC):
             List of raw data records
         """
         pass
-    
+
     async def collect(self, **params) -> CollectionResult:
         """
         Main collection method that wraps collect_data with error handling.
@@ -228,24 +231,24 @@ class BaseCollector(ABC):
             CollectionResult with data and metadata
         """
         start_time = datetime.now()
-        
+
         try:
             # Create collection request from params
             request = CollectionRequest(
                 source=self.source,
                 **{k: v for k, v in params.items() if hasattr(CollectionRequest, k)}
             )
-            
+
             # Collect data
             raw_data = await self.collect_data(request)
-            
+
             # Validate and normalize data
             validated_data = []
             for record in raw_data:
                 if self.validate_record(record):
                     normalized_record = self.normalize_record(record)
                     validated_data.append(normalized_record)
-            
+
             # Create result
             result = CollectionResult(
                 success=True,
@@ -255,22 +258,22 @@ class BaseCollector(ABC):
                 request_count=1,
                 response_time_ms=(datetime.now() - start_time).total_seconds() * 1000
             )
-            
+
             self.metrics.records_collected = len(raw_data)
             self.metrics.records_valid = len(validated_data)
             self.metrics.status = CollectionStatus.SUCCESS
             self.metrics.end_time = datetime.now()
-            
+
             return result
-            
+
         except Exception as e:
             error_message = str(e)
             self.logger.error("Collection failed", error=error_message)
-            
+
             self.metrics.errors.append(error_message)
             self.metrics.status = CollectionStatus.FAILED
             self.metrics.end_time = datetime.now()
-            
+
             return CollectionResult(
                 success=False,
                 data=[],
@@ -329,7 +332,7 @@ class BaseCollector(ABC):
     def get_metrics(self) -> CollectionMetrics:
         """Get current collection metrics."""
         return self.metrics
-    
+
     def get_metrics_summary(self) -> dict[str, Any]:
         """Get summary of collection metrics."""
         return {
@@ -359,7 +362,7 @@ class MockCollector(BaseCollector):
             DataSource.VSIN: self._get_vsin_mock_data,
             DataSource.SBD: self._get_sbd_mock_data,
             DataSource.ACTION_NETWORK: self._get_action_network_mock_data,
-            DataSource.SPORTS_BETTING_REPORT: self._get_sbr_mock_data,
+            DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: self._get_sbr_mock_data,
             DataSource.MLB_STATS_API: self._get_mlb_api_mock_data,
             DataSource.ODDS_API: self._get_odds_api_mock_data,
         }
@@ -411,7 +414,7 @@ class MockCollector(BaseCollector):
             EST = pytz.timezone('US/Eastern')
             def precise_timestamp():
                 return datetime.now(EST)
-        
+
         record["source"] = self.source.value
         record["collected_at_est"] = precise_timestamp()
         return record
@@ -476,7 +479,7 @@ class MockCollector(BaseCollector):
         ]
 
     def _get_sbr_mock_data(self) -> list[dict[str, Any]]:
-        """Generate Sports Betting Report-style mock data."""
+        """Generate Sports Book Review (SBR)-style mock data."""
         return [
             {
                 "event": "Phillies vs Braves",
@@ -537,7 +540,9 @@ class CollectorFactory:
         DataSource.VSIN: None,  # Will be implemented
         DataSource.SBD: None,  # Will be implemented
         DataSource.ACTION_NETWORK: None,  # Will be implemented
-        DataSource.SPORTS_BETTING_REPORT: None,  # Will be implemented
+        DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: None,  # DEPRECATED: Use SBR instead
+        DataSource.SPORTS_BOOK_REVIEW: None,  # Will be implemented - SBRUnifiedCollector
+        DataSource.SBR: None,  # Alias for SPORTS_BOOK_REVIEW
         DataSource.MLB_STATS_API: None,  # Will be implemented
         DataSource.ODDS_API: None,  # Will be implemented
     }
@@ -559,10 +564,20 @@ class CollectorFactory:
         if mock:
             return MockCollector(config)
 
-        collector_class = cls._collectors.get(config.source)
+        # Handle both enum objects and string values from CollectorConfig
+        source_key = config.source
+        if isinstance(config.source, str):
+            # Convert string back to enum for lookup
+            try:
+                source_key = DataSource(config.source)
+            except ValueError:
+                source_key = config.source
+
+        collector_class = cls._collectors.get(source_key)
         if not collector_class:
+            source_value = config.source if isinstance(config.source, str) else config.source.value
             logger.warning(
-                "Real collector not implemented, using mock", source=config.source.value
+                "Real collector not implemented, using mock", source=source_value
             )
             return MockCollector(config)
 
