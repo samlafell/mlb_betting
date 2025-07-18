@@ -28,12 +28,12 @@ from ..database.repositories import UnifiedRepository
 # Import SBR registry to ensure collector registration
 from .base import BaseCollector, CollectionResult, CollectionStatus
 from .collectors import (
-    ActionNetworkCollector,
     MLBStatsAPICollector,
     OddsAPICollector,
     SBDCollector,
     VSINCollector,
 )
+from .consolidated_action_network_collector import ActionNetworkCollector
 from .rate_limiter import get_rate_limiter
 from .validators import DataQualityValidator
 

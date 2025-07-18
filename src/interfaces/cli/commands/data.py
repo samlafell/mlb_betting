@@ -741,16 +741,17 @@ class DataCommands:
             console.print(f"🔄 [blue]Running unified {source_name} collector...[/blue]")
 
             # Import unified collectors
-            from ...data.collection.action_network_unified_collector import (
-                ActionNetworkUnifiedCollector,
+            from ....data.collection.consolidated_action_network_collector import (
+                ActionNetworkCollector,
+                CollectionMode,
             )
-            from ...data.collection.sbd_unified_collector import SBDUnifiedCollector
-            from ...data.collection.sbr_unified_collector import SBRUnifiedCollector
-            from ...data.collection.vsin_unified_collector import VSINUnifiedCollector
+            from ....data.collection.sbd_unified_collector import SBDUnifiedCollector
+            from ....data.collection.sbr_unified_collector import SBRUnifiedCollector
+            from ....data.collection.vsin_unified_collector import VSINUnifiedCollector
 
             # Map source names to collector classes
             collector_mapping = {
-                "action_network": ActionNetworkUnifiedCollector,
+                "action_network": ActionNetworkCollector,  # Use consolidated collector
                 "sports_book_review": SBRUnifiedCollector,
                 "sbr": SBRUnifiedCollector,
                 "vsin": VSINUnifiedCollector,
@@ -766,7 +767,13 @@ class DataCommands:
                 }
 
             # Initialize collector
-            collector = collector_class()
+            if source_name == "action_network":
+                # Use consolidated collector with comprehensive mode
+                from ....data.collection.base import CollectorConfig, DataSource
+                config = CollectorConfig(source=DataSource.ACTION_NETWORK, enabled=True)
+                collector = collector_class(config, CollectionMode.COMPREHENSIVE)
+            else:
+                collector = collector_class()
 
             if test_mode:
                 # Run test collection with source-specific logic
@@ -776,7 +783,7 @@ class DataCommands:
                     # For SBR, use test_connection and basic collect_data
                     from datetime import date
 
-                    from ...data.collection.base import CollectionRequest, DataSource
+                    from ....data.collection.base import CollectionRequest, DataSource
 
                     # Test connection first
                     connection_ok = await collector.test_connection()
@@ -808,6 +815,41 @@ class DataCommands:
                         "records_collected": len(games_data),
                         "records_stored": len(games_data),  # For test mode
                     }
+                elif source_name == "action_network":
+                    # Use consolidated collector test method
+                    from datetime import datetime, date
+                    from ....data.collection.base import CollectionRequest
+                    
+                    request = CollectionRequest(
+                        source=DataSource.ACTION_NETWORK,
+                        start_date=date.today()
+                    )
+                    
+                    try:
+                        test_data = await collector.collect_data(request)
+                        stats = collector.get_stats()
+                        
+                        console.print(f"✅ [green]{source_name.upper()} test successful[/green]")
+                        summary = (
+                            f"Test Status: success\n"
+                            f"Collection Mode: {collector.mode.value}\n"
+                            f"Games found: {stats['games_found']}\n"
+                            f"Games processed: {stats['games_processed']}\n"
+                            f"Total records: {stats['total_inserted']}\n"
+                            f"Smart filtering: {stats['filtered_movements']} movements filtered"
+                        )
+                        return {
+                            "status": "success",
+                            "output": summary,
+                            "records_collected": stats['games_found'],
+                            "records_stored": stats['total_inserted'],
+                        }
+                    except Exception as e:
+                        console.print(f"❌ [red]{source_name.upper()} test failed[/red]")
+                        return {
+                            "status": "failed",
+                            "error": f"Test failed: {str(e)}",
+                        }
                 else:
                     # Use existing test_collection for other sources
                     test_result = collector.test_collection()
@@ -845,7 +887,7 @@ class DataCommands:
                     # Use collect_data for SBR unified collector
                     from datetime import date
 
-                    from ...data.collection.base import CollectionRequest, DataSource
+                    from ....data.collection.base import CollectionRequest, DataSource
 
                     request = CollectionRequest(
                         source=DataSource.SPORTS_BOOK_REVIEW,
@@ -855,9 +897,18 @@ class DataCommands:
                     games_data = await collector.collect_data(request)
                     stored_count = len(games_data)  # For now, just count collected games
                 elif source_name == "action_network":
-                    # Use collect_and_store for Action Network
-                    result = collector.collect_and_store()
-                    stored_count = result.records_stored if result else 0
+                    # Use consolidated collector for Action Network
+                    from datetime import date
+                    from ....data.collection.base import CollectionRequest
+                    
+                    request = CollectionRequest(
+                        source=DataSource.ACTION_NETWORK,
+                        start_date=date.today()
+                    )
+                    
+                    await collector.collect_data(request)
+                    stats = collector.get_stats()
+                    stored_count = stats['total_inserted']
                 else:
                     # Use collect_and_store for other sources
                     result = collector.collect_and_store()
@@ -883,9 +934,12 @@ class DataCommands:
                     }
 
         except Exception as e:
+            import traceback
             console.print(
                 f"❌ [red]Error running unified {source_name} collector: {e}[/red]"
             )
+            console.print(f"[red]Full traceback:[/red]")
+            console.print(traceback.format_exc())
             return {"status": "error", "error": str(e)}
 
     async def _show_status(self, detailed: bool):
