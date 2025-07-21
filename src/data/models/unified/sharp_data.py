@@ -14,7 +14,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import Field, computed_field, field_validator, ValidationInfo
+from pydantic import Field
+from ....core.pydantic_compat import computed_field, field_validator, ValidationInfo
 
 from .base import AnalysisEntity, ValidatedModel
 from .odds import BookType, MarketType

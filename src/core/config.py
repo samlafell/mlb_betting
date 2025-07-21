@@ -17,7 +17,8 @@ from pathlib import Path
 from typing import Any
 
 import toml
-from pydantic import Field, computed_field, field_validator, model_validator
+from pydantic import BaseModel, Field
+from .pydantic_compat import computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 from .exceptions import ConfigurationError
@@ -132,7 +133,20 @@ class DatabaseSettings(BaseSettings):
 class SchemaSettings(BaseSettings):
     """Database schema configuration."""
 
-    # Raw data schemas
+    # Pipeline zone schemas
+    raw: str = Field(
+        default="raw_data", description="RAW zone schema for raw external data"
+    )
+    
+    staging: str = Field(
+        default="staging", description="STAGING zone schema for processed data"
+    )
+    
+    curated: str = Field(
+        default="curated", description="CURATED zone schema for validated data"
+    )
+    
+    # Raw data schemas (legacy)
     raw_data_schema: str = Field(
         default="raw_data", description="Schema for raw external data"
     )
@@ -510,6 +524,28 @@ class NotificationSettings(BaseSettings):
         return [email.strip() for email in self.email_to_addresses.split(",")]
 
 
+class PipelineSettings(BaseSettings):
+    """Data pipeline configuration."""
+
+    # Zone enablement flags
+    class ZoneSettings(BaseModel):
+        raw_enabled: bool = Field(default=True, description="Enable RAW zone processing")
+        staging_enabled: bool = Field(default=True, description="Enable STAGING zone processing")
+        curated_enabled: bool = Field(default=False, description="Enable CURATED zone processing (not implemented)")
+
+    zones: ZoneSettings = Field(default_factory=ZoneSettings)
+    
+    # Pipeline behavior settings
+    validation_enabled: bool = Field(default=True, description="Enable pipeline validation")
+    auto_promotion: bool = Field(default=True, description="Enable automatic zone promotion")
+    quality_threshold: float = Field(default=0.7, ge=0.0, le=1.0, description="Minimum quality threshold")
+    
+    # Processing settings
+    max_concurrent_batches: int = Field(default=3, ge=1, le=10, description="Maximum concurrent batch processing")
+    retry_attempts: int = Field(default=3, ge=0, le=10, description="Number of retry attempts for failed records")
+    batch_timeout_seconds: int = Field(default=300, ge=30, le=1800, description="Batch processing timeout")
+
+
 class FeatureFlags(BaseSettings):
     """Feature flag configuration for gradual rollouts."""
 
@@ -623,6 +659,7 @@ class UnifiedSettings(BaseSettings):
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     betting: BettingSettings = Field(default_factory=BettingSettings)
     notifications: NotificationSettings = Field(default_factory=NotificationSettings)
+    pipeline: PipelineSettings = Field(default_factory=PipelineSettings)
     features: FeatureFlags = Field(default_factory=FeatureFlags)
 
     class Config:

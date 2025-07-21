@@ -2,16 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Tooling
-### Pydantic
-- Only use V2
-
-### Python
-- Ruff
-- UV
-- PyTest
-- MyPy
-
 ## Project Goals
 Build a 24/7 sports betting service that will scrape various sources and be pulling down line information from these sources. Then, evaluate them pre-game against a system of strategies that have been developed. These strategies should have backtested historical performance attached to them so whenever we evaluate pre-game lines, it should only be using proven profitable systems.
 
@@ -23,6 +13,43 @@ Build a 24/7 sports betting service that will scrape various sources and be pull
 - **`sql/`**: Database schemas, migrations, and improvements
 - **`tests/`**: Comprehensive testing suite
 
+## TEST EVERYTHIGN
+every time you create a new feature, test it.
+Run integration tests and unit tests.
+
+Only once you confirm via Integration and Unit tests that a service is functional, can you say it is a success and document the success.
+
+## DOCUMENT EVERYTHING
+When you create a new service/functionality, document it!
+
+if it's major, it should be documented in README.md and CLAUDE.md.
+
+Every child folder should have their own CLAUDE.md to leave for autonomous AI agents later that are accessing the same folder for them to evaluate the CLAUDE.md and its contents to know how to work in this directory.
+
+Every major piece of the project should be thoroughly documented in docs/.
+- Data Collection, and each sub-module should be clear what's happening and how it works (this incldues scraping + parsing)
+   - VSIN
+   - Action Network
+   - SBD
+- Data Persistence
+- Technical details - which tooling is used (uv/postgres/python, etc)
+- Logging should be in root/logs/ and should be consistent across modules
+- Recommendation Generation
+
+## REUSE and CENTRALIZATION
+- reuse when possible but only when it makes sense
+- WET (write everything twice), KISS concepts apply.
+
+
+## Tooling
+### Pydantic
+- Only use V2
+
+### Python
+- Ruff
+- UV
+- PyTest
+- MyPy
 
 ## Development Commands
 

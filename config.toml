@@ -2,9 +2,26 @@
 # Database file path
 # path = "data/raw/mlb_betting.duckdb"  # Migrated to PostgreSQL
 
-[schema]
-# Schema name
-name = "splits"
+[schemas]
+# Pipeline zone schemas
+raw = "raw_data"
+staging = "staging"
+curated = "curated"
+# Legacy schema
+legacy = "splits"
+
+[pipeline]
+# Pipeline configuration
+enable_staging = true
+enable_curated = true
+auto_promotion = true  # Auto-move data through pipeline stages
+validation_enabled = true
+quality_threshold = 0.8  # Minimum quality score for promotion
+
+[pipeline.zones]
+raw_enabled = true
+staging_enabled = true
+curated_enabled = false  # Enable after testing
 
 [tables]
 # Main table for MLB betting splits
