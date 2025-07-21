@@ -84,8 +84,8 @@ uv run -m src.interfaces.cli data collect --source sbd --real
 uv run -m src.interfaces.cli data status
 
 # Action Network pipeline
-uv run -m src.interfaces.cli action-network collect --date today
-uv run -m src.interfaces.cli action-network history --days 30
+uv run -m src.interfaces.cli action-network pipeline
+uv run -m src.interfaces.cli action-network opportunities
 
 # Movement analysis
 uv run -m src.interfaces.cli movement analyze --input-file output/action_network_history.json

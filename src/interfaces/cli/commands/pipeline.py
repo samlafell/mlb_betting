@@ -56,7 +56,12 @@ def pipeline_group():
               help="Data source to process")
 @click.option("--batch-size", type=int, default=1000, help="Batch size for processing")
 @click.option("--dry-run", is_flag=True, help="Show what would be processed without executing")
-async def run_pipeline(zone: str, mode: str, source: Optional[str], batch_size: int, dry_run: bool):
+def run_pipeline(zone: str, mode: str, source: Optional[str], batch_size: int, dry_run: bool):
+    """Pipeline run command wrapper that runs async function."""
+    asyncio.run(_run_pipeline_async(zone, mode, source, batch_size, dry_run))
+
+
+async def _run_pipeline_async(zone: str, mode: str, source: Optional[str], batch_size: int, dry_run: bool):
     """
     Run the data pipeline for processing betting data.
     
@@ -140,7 +145,12 @@ async def run_pipeline(zone: str, mode: str, source: Optional[str], batch_size: 
               help="Zone status to check")
 @click.option("--detailed", is_flag=True, help="Show detailed status information")
 @click.option("--execution-id", help="Check specific execution status")
-async def pipeline_status(zone: str, detailed: bool, execution_id: Optional[str]):
+def pipeline_status(zone: str, detailed: bool, execution_id: Optional[str]):
+    """Status command wrapper that runs async function."""
+    asyncio.run(_pipeline_status_async(zone, detailed, execution_id))
+
+
+async def _pipeline_status_async(zone: str, detailed: bool, execution_id: Optional[str]):
     """
     Check pipeline status and health.
     
@@ -205,7 +215,12 @@ async def pipeline_status(zone: str, detailed: bool, execution_id: Optional[str]
 @click.option("--migrate-data", is_flag=True, help="Migrate existing data to RAW zone")
 @click.option("--source-table", help="Source table to migrate from")
 @click.option("--dry-run", is_flag=True, help="Show migration plan without executing")
-async def migrate_pipeline(create_schemas: bool, migrate_data: bool, source_table: Optional[str], dry_run: bool):
+def migrate_pipeline(create_schemas: bool, migrate_data: bool, source_table: Optional[str], dry_run: bool):
+    """Pipeline migrate command wrapper that runs async function."""
+    asyncio.run(_migrate_pipeline_async(create_schemas, migrate_data, source_table, dry_run))
+
+
+async def _migrate_pipeline_async(create_schemas: bool, migrate_data: bool, source_table: Optional[str], dry_run: bool):
     """
     Migrate existing system to use pipeline zones.
     

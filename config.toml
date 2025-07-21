@@ -21,7 +21,7 @@ quality_threshold = 0.8  # Minimum quality score for promotion
 [pipeline.zones]
 raw_enabled = true
 staging_enabled = true
-curated_enabled = false  # Enable after testing
+curated_enabled = true  # Now enabled for full pipeline
 
 [tables]
 # Main table for MLB betting splits

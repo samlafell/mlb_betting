@@ -531,7 +531,7 @@ class PipelineSettings(BaseSettings):
     class ZoneSettings(BaseModel):
         raw_enabled: bool = Field(default=True, description="Enable RAW zone processing")
         staging_enabled: bool = Field(default=True, description="Enable STAGING zone processing")
-        curated_enabled: bool = Field(default=False, description="Enable CURATED zone processing (not implemented)")
+        curated_enabled: bool = Field(default=True, description="Enable CURATED zone processing")
 
     zones: ZoneSettings = Field(default_factory=ZoneSettings)
     

@@ -21,8 +21,8 @@ uv run -m src.interfaces.cli data status
 uv run -m src.interfaces.cli data test --source action_network --real
 
 # Action Network Pipeline (Enhanced Integration)
-uv run -m src.interfaces.cli action-network collect --date today
-uv run -m src.interfaces.cli action-network history --days 30
+uv run -m src.interfaces.cli action-network pipeline
+uv run -m src.interfaces.cli action-network opportunities
 
 # Movement Analysis & Strategy Detection
 uv run -m src.interfaces.cli movement analyze --input-file output/action_network_history.json
@@ -281,8 +281,8 @@ uv run -m src.interfaces.cli data status --detailed
 
 ### 3. Generate Historical Data for Analysis
 ```bash
-# Collect Action Network data (creates games file)
-uv run -m src.interfaces.cli action-network collect --date today
+# Run Action Network pipeline (creates games file)
+uv run -m src.interfaces.cli action-network pipeline
 
 # Extract historical line movement data
 uv run -m src.interfaces.cli data extract-action-network-history \
@@ -360,7 +360,7 @@ All timestamps are automatically converted from UTC (API format) to Eastern Time
 
 4. **Generate Historical Data for Analysis**:
    ```bash
-   uv run -m src.interfaces.cli action-network collect --date today
+   uv run -m src.interfaces.cli action-network pipeline
    uv run -m src.interfaces.cli data extract-action-network-history --input-file output/action_network_games.json
    ```
 

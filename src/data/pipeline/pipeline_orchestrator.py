@@ -131,8 +131,7 @@ class DataPipelineOrchestrator:
                     quality_threshold=self.settings.pipeline.quality_threshold,
                     validation_enabled=self.settings.pipeline.validation_enabled
                 )
-                # Note: CURATED zone will be registered when implemented
-                # self.zones[ZoneType.CURATED] = ZoneFactory.create_zone(ZoneType.CURATED, curated_config)
+                self.zones[ZoneType.CURATED] = ZoneFactory.create_zone(ZoneType.CURATED, curated_config)
 
             logger.info(f"Initialized pipeline zones: {list(self.zones.keys())}")
 

@@ -125,11 +125,11 @@ uv run -m src.interfaces.cli data test --source vsin --real
 
 **Common Commands**:
 ```bash
-# Collect current day's data
-uv run -m src.interfaces.cli action-network collect --date today
+# Run complete Action Network pipeline
+uv run -m src.interfaces.cli action-network pipeline
 
-# Collect historical data
-uv run -m src.interfaces.cli action-network history --days <number>
+# Display betting opportunities
+uv run -m src.interfaces.cli action-network opportunities
 
 # Process collected data
 uv run -m src.interfaces.cli action-network process --batch-size 1000
@@ -137,14 +137,11 @@ uv run -m src.interfaces.cli action-network process --batch-size 1000
 
 **Examples**:
 ```bash
-# Get today's Action Network data
-uv run -m src.interfaces.cli action-network collect --date today
+# Run complete Action Network pipeline
+uv run -m src.interfaces.cli action-network pipeline
 
-# Get last 30 days of historical data
-uv run -m src.interfaces.cli action-network history --days 30
-
-# Get data for specific date range
-uv run -m src.interfaces.cli action-network collect --date 2025-07-15 --end-date 2025-07-20
+# Display current betting opportunities
+uv run -m src.interfaces.cli action-network opportunities
 ```
 
 #### `pipeline` - Data Pipeline Management
@@ -372,9 +369,9 @@ echo "🎉 Morning collection complete!"
 **Goal**: Analyze recent data and test strategies
 
 ```bash
-# 1. Collect recent historical data
-echo "📈 Collecting recent Action Network history..."
-uv run -m src.interfaces.cli action-network history --days 7
+# 1. Run Action Network pipeline
+echo "📈 Running Action Network pipeline..."
+uv run -m src.interfaces.cli action-network pipeline
 
 # 2. Analyze line movements
 echo "📊 Analyzing line movements..."
@@ -584,8 +581,8 @@ uv run -m src.interfaces.cli pipeline run --zone raw --batch-size 100
 # Use smaller batch sizes
 uv run -m src.interfaces.cli pipeline run --batch-size 500
 
-# Process data in smaller chunks
-uv run -m src.interfaces.cli action-network collect --date 2025-07-15  # Single day
+# Process data using pipeline
+uv run -m src.interfaces.cli action-network pipeline
 ```
 
 ### Debug Mode
@@ -615,8 +612,8 @@ System logs are stored in:
 # 1. Check what data was collected
 uv run -m src.interfaces.cli data status --detailed
 
-# 2. Re-run collection for specific date
-uv run -m src.interfaces.cli action-network collect --date <failed_date>
+# 2. Re-run pipeline
+uv run -m src.interfaces.cli action-network pipeline
 
 # 3. Verify collection completed
 uv run -m src.interfaces.cli data status --source action_network

@@ -127,7 +127,7 @@ All files within `/src/mlb_sharp_betting/` will be removed, so internal imports 
    ```bash
    # Test main service workflows
    uv run -m src.interfaces.cli.main data status
-   uv run -m src.interfaces.cli.main action-network collect --dry-run
+   uv run -m src.interfaces.cli.main action-network pipeline --dry-run
    uv run -m src.interfaces.cli.main movement analyze --date today
    ```
 
