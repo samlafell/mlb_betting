@@ -10,6 +10,7 @@ from src.data.database.connection import initialize_connections
 from src.interfaces.cli.commands.action_network_pipeline import action_network
 from src.interfaces.cli.commands.backtesting import backtesting_group
 from src.interfaces.cli.commands.batch_collection import batch_collection
+from src.interfaces.cli.commands.cleanup import cleanup
 from src.interfaces.cli.commands.data import DataCommands
 from src.interfaces.cli.commands.data_quality_improvement import data_quality_group
 from src.interfaces.cli.commands.game_outcomes import outcomes
@@ -49,6 +50,7 @@ cli.add_command(database)  # Add the database setup and management commands
 cli.add_command(backtesting_group)  # Add the backtesting commands
 cli.add_command(data_quality_group)  # Add the data quality improvement commands
 cli.add_command(pipeline)  # Add the pipeline management commands
+cli.add_command(cleanup)  # Add the output folder cleanup command
 
 
 if __name__ == "__main__":

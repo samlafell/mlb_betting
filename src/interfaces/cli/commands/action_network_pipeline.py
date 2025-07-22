@@ -20,6 +20,7 @@ from rich.table import Table
 
 from src.analysis.processors.movement_analyzer import MovementAnalyzer
 from src.data.models.unified.movement_analysis import MovementAnalysisReport
+from src.data.database.repositories.analysis_reports_repository import AnalysisReportsRepository
 
 console = Console()
 
@@ -619,59 +620,53 @@ async def _collect_historical_data(
 async def _analyze_opportunities(
     history_file: Path, analysis_file: Path, opportunities_file: Path, verbose: bool
 ) -> dict:
-    """Analyze historical data for betting opportunities."""
+    """Analyze historical data for betting opportunities and save to database."""
     try:
         # Load historical data
         with open(history_file) as f:
             data = json.load(f)
 
-        historical_data = data.get("historical_data", [])
+        historical_data = data.get("games", [])  # Updated to match new structure
 
-        # Initialize analyzer
+        # Initialize analyzer and repository
         analyzer = MovementAnalyzer()
+        reports_repo = AnalysisReportsRepository()
 
+        # Generate pipeline run ID for this analysis
+        pipeline_run_id = f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
         # Analyze each game
         game_analyses = []
-        rlm_opportunities = []
-        steam_moves = []
-        arbitrage_opportunities = []
+        total_rlm = 0
+        total_steam = 0
+        total_arbitrage = 0
 
         for game_data in historical_data:
             try:
-                analysis = await analyzer.analyze_game_movements(game_data)
+                # Extract historical data from the new structure
+                historical_entries = game_data.get("historical_data", {})
+                if not historical_entries:
+                    continue
+                    
+                analysis = await analyzer.analyze_game_movements({
+                    "game_id": game_data.get("game_id"),
+                    "home_team": game_data.get("home_team"),
+                    "away_team": game_data.get("away_team"),
+                    "game_datetime": game_data.get("game_datetime"),
+                    "raw_data": historical_entries  # Pass the historical data
+                })
                 game_analyses.append(analysis)
 
-                # Collect opportunities
+                # Count opportunities
                 if analysis.rlm_indicators:
-                    for rlm in analysis.rlm_indicators:
-                        rlm_opportunities.append(
-                            {
-                                "game_id": analysis.game_id,
-                                "teams": f"{analysis.away_team} @ {analysis.home_team}",
-                                "rlm": rlm.dict(),
-                            }
-                        )
-
+                    total_rlm += len(analysis.rlm_indicators)
+                    
                 if analysis.cross_book_movements:
-                    for steam in analysis.cross_book_movements:
-                        if steam.steam_move_detected:
-                            steam_moves.append(
-                                {
-                                    "game_id": analysis.game_id,
-                                    "teams": f"{analysis.away_team} @ {analysis.home_team}",
-                                    "steam": steam.dict(),
-                                }
-                            )
-
+                    steam_count = len([c for c in analysis.cross_book_movements if c.steam_move_detected])
+                    total_steam += steam_count
+                    
                 if analysis.arbitrage_opportunities:
-                    for arb in analysis.arbitrage_opportunities:
-                        arbitrage_opportunities.append(
-                            {
-                                "game_id": analysis.game_id,
-                                "teams": f"{analysis.away_team} @ {analysis.home_team}",
-                                "arbitrage": arb.dict(),
-                            }
-                        )
+                    total_arbitrage += len(analysis.arbitrage_opportunities)
 
             except Exception as e:
                 if verbose:
@@ -697,40 +692,68 @@ async def _analyze_opportunities(
             game_analyses=game_analyses,
         )
 
-        # Save detailed analysis
-        with open(analysis_file, "w") as f:
-            json.dump(report.dict(), f, indent=2, default=str)
+        # Save to database instead of JSON files
+        try:
+            analysis_report_id = await reports_repo.save_complete_analysis(
+                pipeline_run_id=pipeline_run_id,
+                analysis_report=report,
+            )
+            
+            console.print(f"[green]✅ Saved analysis report to database (ID: {analysis_report_id})[/green]")
+            
+            # Optional: Still save minimal JSON for debugging (but don't duplicate data)
+            if verbose:
+                debug_summary = {
+                    "analysis_timestamp": report.analysis_timestamp.isoformat(),
+                    "total_games_analyzed": report.total_games_analyzed,
+                    "total_opportunities": total_rlm + total_steam + total_arbitrage,
+                    "database_report_id": analysis_report_id,
+                    "note": "Full analysis data saved to PostgreSQL database"
+                }
+                
+                with open(analysis_file, "w") as f:
+                    json.dump(debug_summary, f, indent=2)
+                    
+                with open(opportunities_file, "w") as f:
+                    json.dump({
+                        "generated_at": datetime.now().isoformat(),
+                        "database_report_id": analysis_report_id,
+                        "summary": {
+                            "total_rlm_opportunities": total_rlm,
+                            "total_steam_moves": total_steam,
+                            "total_arbitrage_opportunities": total_arbitrage,
+                        },
+                        "note": "Detailed opportunities saved to PostgreSQL. Use CLI 'opportunities' command to view."
+                    }, f, indent=2)
+            
+        except Exception as db_error:
+            console.print(f"[red]⚠️  Database save failed: {db_error}[/red]")
+            console.print("[yellow]Falling back to JSON file storage...[/yellow]")
+            
+            # Fallback to original JSON storage if database fails
+            with open(analysis_file, "w") as f:
+                json.dump(report.dict(), f, indent=2, default=str)
 
-        # Save opportunities summary
-        opportunities_summary = {
-            "generated_at": datetime.now().isoformat(),
-            "total_games": len(game_analyses),
-            "rlm_opportunities": rlm_opportunities,
-            "steam_moves": steam_moves,
-            "arbitrage_opportunities": arbitrage_opportunities,
-            "summary": {
-                "total_rlm_opportunities": len(rlm_opportunities),
-                "total_steam_moves": len(steam_moves),
-                "total_arbitrage_opportunities": len(arbitrage_opportunities),
-                "games_with_opportunities": len(
-                    set(
-                        [opp["game_id"] for opp in rlm_opportunities]
-                        + [opp["game_id"] for opp in steam_moves]
-                        + [opp["game_id"] for opp in arbitrage_opportunities]
-                    )
-                ),
-            },
-        }
+            opportunities_summary = {
+                "generated_at": datetime.now().isoformat(),
+                "total_games": len(game_analyses),
+                "summary": {
+                    "total_rlm_opportunities": total_rlm,
+                    "total_steam_moves": total_steam,
+                    "total_arbitrage_opportunities": total_arbitrage,
+                },
+                "note": "Database storage failed, using JSON fallback"
+            }
 
-        with open(opportunities_file, "w") as f:
-            json.dump(opportunities_summary, f, indent=2)
+            with open(opportunities_file, "w") as f:
+                json.dump(opportunities_summary, f, indent=2)
 
         return {
             "success": True,
             "games_analyzed": len(game_analyses),
-            "rlm_opportunities": len(rlm_opportunities),
-            "steam_moves": len(steam_moves),
-            "arbitrage_opportunities": len(arbitrage_opportunities),
+            "rlm_opportunities": total_rlm,
+            "steam_moves": total_steam,
+            "arbitrage_opportunities": total_arbitrage,
             "analysis_file": str(analysis_file),
             "opportunities_file": str(opportunities_file),
         }
@@ -866,92 +889,175 @@ def _display_pipeline_summary(pipeline_results: dict, analysis_result: dict):
 
 @action_network.command()
 @click.option(
-    "--output-dir",
-    "-o",
-    type=click.Path(path_type=Path),
-    default=Path("output"),
-    help="Directory to search for files",
+    "--hours",
+    "-h",
+    type=int,
+    default=24,
+    help="Hours to look back for opportunities (default: 24)",
 )
 @click.option(
-    "--pattern",
-    "-p",
-    default="betting_opportunities_*.json",
-    help="File pattern to search for",
+    "--limit",
+    "-l",
+    type=int,
+    default=20,
+    help="Maximum number of opportunities to display (default: 20)",
 )
-def opportunities(output_dir: Path, pattern: str):
-    """Display the latest betting opportunities from pipeline results."""
-
-    latest_file = _find_most_recent_file(output_dir, pattern)
-
-    if not latest_file:
-        console.print(
-            f"[red]❌ No opportunities file found matching pattern: {pattern}[/red]"
-        )
-        return
+@click.option(
+    "--fallback-json",
+    is_flag=True,
+    help="Fallback to JSON files if database is unavailable",
+)
+def opportunities(hours: int, limit: int, fallback_json: bool):
+    """Display the latest betting opportunities from database or JSON fallback."""
 
     try:
-        with open(latest_file) as f:
-            data = json.load(f)
-
-        console.print(
-            Panel.fit(
-                f"[bold blue]🎯 Latest Betting Opportunities[/bold blue]\n"
-                f"File: [yellow]{latest_file.name}[/yellow]\n"
-                f"Generated: [yellow]{data.get('generated_at', 'Unknown')}[/yellow]",
-                title="Opportunities Report",
+        # Try to get opportunities from database first
+        reports_repo = AnalysisReportsRepository()
+        opportunities_data = asyncio.run(reports_repo.get_latest_opportunities(hours=hours))
+        
+        if opportunities_data:
+            console.print(
+                Panel.fit(
+                    f"[bold blue]🎯 Latest Betting Opportunities[/bold blue]\n"
+                    f"Source: [yellow]PostgreSQL Database[/yellow]\n"
+                    f"Last {hours} hours: [yellow]{len(opportunities_data)} opportunities[/yellow]",
+                    title="Opportunities Report",
+                )
             )
-        )
 
-        summary = data.get("summary", {})
+            # Group opportunities by type
+            rlm_opps = [o for o in opportunities_data if o['opportunity_type'] == 'rlm']
+            steam_opps = [o for o in opportunities_data if o['opportunity_type'] == 'steam']
+            arb_opps = [o for o in opportunities_data if o['opportunity_type'] == 'arbitrage']
 
-        # Summary table
-        table = Table(title="Opportunities Summary")
-        table.add_column("Type", style="cyan")
-        table.add_column("Count", style="green", justify="right")
-        table.add_column("Description", style="yellow")
+            # Summary table
+            table = Table(title="Opportunities Summary")
+            table.add_column("Type", style="cyan")
+            table.add_column("Count", style="green", justify="right")
+            table.add_column("Description", style="yellow")
 
-        table.add_row(
-            "RLM Opportunities",
-            str(summary.get("total_rlm_opportunities", 0)),
-            "Reverse Line Movement",
-        )
-        table.add_row(
-            "Steam Moves",
-            str(summary.get("total_steam_moves", 0)),
-            "Cross-book consensus",
-        )
-        table.add_row(
-            "Arbitrage",
-            str(summary.get("total_arbitrage_opportunities", 0)),
-            "Risk-free profit",
-        )
-        table.add_row(
-            "Games with Opportunities",
-            str(summary.get("games_with_opportunities", 0)),
-            "Unique games",
-        )
+            table.add_row(
+                "RLM Opportunities",
+                str(len(rlm_opps)),
+                "Reverse Line Movement",
+            )
+            table.add_row(
+                "Steam Moves",
+                str(len(steam_opps)),
+                "Cross-book consensus",
+            )
+            table.add_row(
+                "Arbitrage",
+                str(len(arb_opps)),
+                "Risk-free profit",
+            )
 
-        console.print(table)
+            console.print(table)
 
-        # Display top opportunities
-        rlm_opportunities = data.get("rlm_opportunities", [])
-        if rlm_opportunities:
-            console.print("\n[bold red]🔄 RLM Opportunities:[/bold red]")
-            for i, opp in enumerate(rlm_opportunities[:5], 1):  # Show top 5
-                console.print(
-                    f"{i}. {opp['teams']} - {opp['rlm']['market_type']} ({opp['rlm']['strength']})"
+            # Display top opportunities by type
+            if rlm_opps:
+                console.print("\n[bold red]🔄 RLM Opportunities:[/bold red]")
+                for i, opp in enumerate(rlm_opps[:limit//3], 1):
+                    console.print(
+                        f"{i}. {opp['away_team']} @ {opp['home_team']} - {opp['market_type']} ({opp['strength']})"
+                    )
+
+            if steam_opps:
+                console.print("\n[bold green]🚂 Steam Moves:[/bold green]")
+                for i, move in enumerate(steam_opps[:limit//3], 1):
+                    console.print(
+                        f"{i}. {move['away_team']} @ {move['home_team']} - {move['market_type']} ({move['strength']})"
+                    )
+
+            if arb_opps:
+                console.print("\n[bold yellow]💰 Arbitrage Opportunities:[/bold yellow]")
+                for i, arb in enumerate(arb_opps[:limit//3], 1):
+                    profit = f"{arb.get('profit_potential', 0):.2f}%" if arb.get('profit_potential') else "TBD"
+                    console.print(
+                        f"{i}. {arb['away_team']} @ {arb['home_team']} - {arb['market_type']} (Profit: {profit})"
+                    )
+
+            return
+
+    except Exception as db_error:
+        console.print(f"[red]⚠️ Database error: {db_error}[/red]")
+        if not fallback_json:
+            console.print("[yellow]Use --fallback-json flag to try JSON files instead[/yellow]")
+            return
+
+    # Fallback to JSON files
+    if fallback_json or True:  # Always fallback for now during transition
+        console.print("[yellow]Falling back to JSON file search...[/yellow]")
+        
+        output_dir = Path("output")
+        pattern = "betting_opportunities_*.json"
+        latest_file = _find_most_recent_file(output_dir, pattern)
+
+        if not latest_file:
+            console.print(
+                f"[red]❌ No opportunities found in database or JSON files[/red]"
+            )
+            return
+
+        try:
+            with open(latest_file) as f:
+                data = json.load(f)
+
+            console.print(
+                Panel.fit(
+                    f"[bold blue]🎯 Latest Betting Opportunities[/bold blue]\n"
+                    f"Source: [yellow]JSON File (Fallback)[/yellow]\n"
+                    f"File: [yellow]{latest_file.name}[/yellow]\n"
+                    f"Generated: [yellow]{data.get('generated_at', 'Unknown')}[/yellow]",
+                    title="Opportunities Report",
                 )
+            )
 
-        steam_moves = data.get("steam_moves", [])
-        if steam_moves:
-            console.print("\n[bold green]🚂 Steam Moves:[/bold green]")
-            for i, move in enumerate(steam_moves[:5], 1):  # Show top 5
-                console.print(
-                    f"{i}. {move['teams']} - {move['steam']['market_type']} ({len(move['steam']['participating_books'])} books)"
-                )
+            summary = data.get("summary", {})
 
-    except Exception as e:
-        console.print(f"[red]❌ Error reading opportunities file: {e}[/red]")
+            # Summary table
+            table = Table(title="Opportunities Summary")
+            table.add_column("Type", style="cyan")
+            table.add_column("Count", style="green", justify="right")
+            table.add_column("Description", style="yellow")
+
+            table.add_row(
+                "RLM Opportunities",
+                str(summary.get("total_rlm_opportunities", 0)),
+                "Reverse Line Movement",
+            )
+            table.add_row(
+                "Steam Moves",
+                str(summary.get("total_steam_moves", 0)),
+                "Cross-book consensus",
+            )
+            table.add_row(
+                "Arbitrage",
+                str(summary.get("total_arbitrage_opportunities", 0)),
+                "Risk-free profit",
+            )
+
+            console.print(table)
+
+            # Display top opportunities from JSON
+            rlm_opportunities = data.get("rlm_opportunities", [])
+            if rlm_opportunities:
+                console.print("\n[bold red]🔄 RLM Opportunities:[/bold red]")
+                for i, opp in enumerate(rlm_opportunities[:5], 1):  # Show top 5
+                    console.print(
+                        f"{i}. {opp['teams']} - {opp['rlm']['market_type']} ({opp['rlm']['strength']})"
+                    )
+
+            steam_moves = data.get("steam_moves", [])
+            if steam_moves:
+                console.print("\n[bold green]🚂 Steam Moves:[/bold green]")
+                for i, move in enumerate(steam_moves[:5], 1):  # Show top 5
+                    console.print(
+                        f"{i}. {move['teams']} - {move['steam']['market_type']} ({len(move['steam']['participating_books'])} books)"
+                    )
+
+        except Exception as e:
+            console.print(f"[red]❌ Error reading opportunities file: {e}[/red]")
 
 
 if __name__ == "__main__":

@@ -745,7 +745,7 @@ class DataCommands:
                 ActionNetworkCollector,
                 CollectionMode,
             )
-            from ....data.collection.sbd_unified_collector import SBDUnifiedCollector
+            from ....data.collection.sbd_unified_collector_api import SBDUnifiedCollectorAPI as SBDUnifiedCollector
             from ....data.collection.sbr_unified_collector import SBRUnifiedCollector
             from ....data.collection.vsin_unified_collector import VSINUnifiedCollector
 
