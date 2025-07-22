@@ -87,7 +87,7 @@ If this completes successfully, your system is ready for production use!
 
 ## 📚 Command Reference
 
-The CLI system is organized into 8 main command groups:
+The CLI system is organized into 9 main command groups:
 
 ### Core Data Operations
 
@@ -843,10 +843,36 @@ tail -100 logs/mlb_betting.log
 
 # 5. Test simple operation
 uv run -m src.interfaces.cli data test --source action_network
+
+# 6. Clean up output folder if needed
+uv run -m src.interfaces.cli cleanup --dry-run
 ```
+
+### Maintenance Commands
+
+#### Output Folder Cleanup
+The system now uses PostgreSQL for analysis results instead of JSON files. Clean up accumulated files:
+
+```bash
+# Analyze what would be cleaned (no changes)
+uv run -m src.interfaces.cli cleanup --dry-run
+
+# Clean up output folder
+uv run -m src.interfaces.cli cleanup
+
+# Keep more URL files for manual evaluation  
+uv run -m src.interfaces.cli cleanup --keep-recent 10
+```
+
+**What cleanup does**:
+- Archives old analysis reports and opportunities files
+- Keeps recent URL files for manual evaluation
+- Shows potential space savings (typically 30-50%)
+- Organizes files in `output/archive/` with timestamps
 
 ---
 
 **Last Updated**: July 21, 2025  
-**CLI Version**: 1.0  
-**Pipeline Status**: Production Ready ✅
+**CLI Version**: 1.1  
+**Pipeline Status**: Production Ready ✅ 
+**Database-First**: Analysis results now stored in PostgreSQL 📊

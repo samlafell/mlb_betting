@@ -61,12 +61,15 @@ graph TB
         SDM[Sharp Data Models<br/>sharp_data.py]
     end
     
-    subgraph "Database Layer (PostgreSQL)"
-        REPO[Repository Pattern<br/>src/data/database/repositories.py]
+    subgraph "Database Layer (Three-Tier Pipeline)"
+        RAW_SCHEMA[RAW Zone<br/>raw_data schema]
+        STAGING_SCHEMA[STAGING Zone<br/>staging schema]
+        CURATED_SCHEMA[CURATED Zone<br/>curated schema]
+        REPO[Repository Pattern<br/>src/data/database/repositories/]
         CONN[Database Connection<br/>connection.py]
-        SCHEMA[Schema Management]
         MIGR[Migrations<br/>sql/migrations/]
         DQI[Data Quality Improvements<br/>sql/improvements/]
+        ANALYSIS_SCHEMA[Analysis Reports<br/>curated.analysis_reports]
     end
     
     subgraph "Analysis & Strategy Layer"
@@ -89,9 +92,10 @@ graph TB
     end
     
     subgraph "Storage & Output"
-        PG[(PostgreSQL Database)]
+        PG[(PostgreSQL Database<br/>RAW → STAGING → CURATED)]
         LOGS[Application Logs<br/>logs/]
-        OUTPUT[Analysis Output<br/>output/, analysis_results/]
+        OUTPUT[JSON Output<br/>output/ (URLs only)]
+        DB_ANALYSIS[Database Analysis<br/>curated.analysis_reports]
         REPORTS[Daily Reports<br/>reports/daily/]
     end
     
@@ -128,6 +132,10 @@ graph TB
     OM --> REPO
     SDM --> REPO
     
+    REPO --> RAW_SCHEMA
+    RAW_SCHEMA --> STAGING_SCHEMA
+    STAGING_SCHEMA --> CURATED_SCHEMA
+    CURATED_SCHEMA --> ANALYSIS_SCHEMA
     REPO --> CONN
     CONN --> PG
     
@@ -153,9 +161,11 @@ graph TB
     UMS --> LOGS
     URS --> REPORTS
     
-    BE --> OUTPUT
+    BE --> DB_ANALYSIS
+    SO --> DB_ANALYSIS
     SO --> OUTPUT
     PG --> REPORTS
+    DB_ANALYSIS --> PG
     
     %% Styling
     classDef external fill:#e1f5fe
@@ -173,10 +183,10 @@ graph TB
     class ORCH,ANC_COL,SBD_COL,VSIN_COL,MLB_COL,SMF,RL,VAL collection
     class CFG,DTU,TU,SBU,LOG core
     class GM,BAM,MM,OM,SDM models
-    class REPO,CONN,SCHEMA,MIGR,DQI database
+    class RAW_SCHEMA,STAGING_SCHEMA,CURATED_SCHEMA,REPO,CONN,MIGR,DQI,ANALYSIS_SCHEMA database
     class SO,SAP,LMP,CP,LFP,HSP,BE analysis
     class POS,SADS,GOS,UDS,UMS,URS services
-    class PG,LOGS,OUTPUT,REPORTS storage
+    class PG,LOGS,OUTPUT,DB_ANALYSIS,REPORTS storage
 ```
 
 ## Detailed Component Architecture
@@ -240,12 +250,18 @@ graph TB
 - **Odds Models** (`odds.py`): Odds representation and validation
 - **Sharp Data Models** (`sharp_data.py`): Professional betting indicators
 
-### 5. Database Layer (`src/data/database/`)
+### 5. Database Layer - Three-Tier Pipeline (`src/data/database/`)
+
+**Three-Tier Architecture (RAW → STAGING → CURATED)**:
+- **RAW Zone** (`raw_data` schema): Unprocessed external data exactly as received
+- **STAGING Zone** (`staging` schema): Cleaned, normalized, and validated data
+- **CURATED Zone** (`curated` schema): Feature-enriched, analysis-ready datasets
+- **Analysis Reports** (`curated.analysis_reports`): Database-first analysis storage
 
 **PostgreSQL Integration**:
-- **Repository Pattern** (`repositories.py`): Data access abstraction
+- **Repository Pattern** (`repositories/`): Modular data access with zone-specific repositories
 - **Connection Management** (`connection.py`): Database connection pooling
-- **Schema Management**: Structured database schemas with proper relationships
+- **Schema Management**: Multi-zone database schemas with proper data lineage
 - **Migrations** (`sql/migrations/`): Version-controlled schema evolution
 - **Data Quality Improvements** (`sql/improvements/`): Enhanced data integrity
 
@@ -284,20 +300,23 @@ graph TB
 
 ### 8. Storage & Output
 
-**PostgreSQL Database**:
-- Normalized schema with proper foreign key relationships
-- Comprehensive indexing for performance
-- Data quality constraints and validation
-- Historical data preservation
+**PostgreSQL Database (Three-Tier Pipeline)**:
+- **RAW Zone**: External data exactly as received from APIs
+- **STAGING Zone**: Cleaned and normalized data with quality scoring
+- **CURATED Zone**: Analysis-ready datasets with ML features and enhanced data
+- **Analysis Reports**: Database-first storage for all analysis results
+- Comprehensive indexing for performance across all zones
+- Data quality constraints and validation at each tier
+- Complete data lineage from source to analysis
 
 **File-based Storage**:
 - **Application Logs** (`logs/`): Structured application logging
-- **Analysis Output** (`output/`, `analysis_results/`): Strategy results and analysis
+- **JSON Output** (`output/`): URLs and manual evaluation files only
 - **Daily Reports** (`reports/daily/`): Automated daily performance reports
 
 ## Data Flow Architecture
 
-### Primary Data Collection Flow
+### Primary Data Collection Flow (Three-Tier Pipeline)
 
 ```mermaid
 sequenceDiagram
@@ -305,18 +324,22 @@ sequenceDiagram
     participant ORCH as Collection Orchestrator
     participant AC as Action Network Collector
     participant SMF as Smart Movement Filter
-    participant REPO as Repository Layer
+    participant RAW as RAW Zone
+    participant STAGING as STAGING Zone
+    participant CURATED as CURATED Zone
     participant PG as PostgreSQL Database
     
     CLI->>ORCH: Initiate data collection
     ORCH->>AC: Collect betting data
     AC->>SMF: Filter line movements
-    SMF->>REPO: Store validated data
-    REPO->>PG: Persist to database
-    PG-->>CLI: Collection status
+    SMF->>RAW: Store raw data (raw_data schema)
+    RAW->>STAGING: Clean & normalize (staging schema)
+    STAGING->>CURATED: Feature engineering (curated schema)
+    CURATED->>PG: Complete pipeline
+    PG-->>CLI: Collection status with zone metrics
 ```
 
-### Strategy Analysis Flow
+### Strategy Analysis Flow (Database-First)
 
 ```mermaid
 sequenceDiagram
@@ -324,15 +347,17 @@ sequenceDiagram
     participant SAP as Sharp Action Processor
     participant LMP as Line Movement Processor
     participant BE as Backtesting Engine
-    participant REPO as Repository
-    participant OUTPUT as Output Files
+    participant CURATED as CURATED Zone
+    participant DB_ANALYSIS as Analysis Reports DB
+    participant OUTPUT as JSON Output (URLs only)
     
-    SO->>REPO: Fetch historical data
+    SO->>CURATED: Fetch analysis-ready data
     SO->>SAP: Process sharp action signals
     SO->>LMP: Analyze line movements
     SAP->>BE: Validate strategy performance
     LMP->>BE: Historical backtesting
-    BE->>OUTPUT: Generate analysis reports
+    BE->>DB_ANALYSIS: Store analysis in curated.analysis_reports
+    BE->>OUTPUT: Store URLs for manual evaluation
 ```
 
 ## Technology Stack
@@ -365,7 +390,9 @@ sequenceDiagram
 # Primary development commands
 uv sync                                                    # Install dependencies
 uv run -m src.interfaces.cli data collect --source action_network --real  # Live data collection
+uv run -m src.interfaces.cli action-network pipeline      # Action Network pipeline with database storage
 uv run -m src.interfaces.cli data status --detailed       # System status
+uv run -m src.interfaces.cli cleanup --dry-run           # Output folder management
 uv run pytest --cov=src                                   # Testing with coverage
 uv run ruff format && uv run ruff check && uv run mypy src/  # Code quality
 ```
@@ -376,6 +403,24 @@ uv run ruff format && uv run ruff check && uv run mypy src/  # Code quality
 - **Error Recovery**: Automatic retry mechanisms and graceful degradation
 - **Data Quality**: Real-time validation and quality monitoring
 - **Performance Monitoring**: Comprehensive system health tracking
+
+## Recent Architecture Enhancements (July 2025)
+
+### Database-First Analysis Architecture
+- **Analysis Results Storage**: All automated analysis results now stored in `curated.analysis_reports` schema instead of JSON files
+- **JSON Output Optimization**: Output folder now contains only URLs and manual evaluation files (48% space reduction)
+- **Three-Tier Pipeline**: Complete implementation of RAW → STAGING → CURATED data zones
+- **Analysis Tables**: 
+  - `curated.analysis_reports` - Main analysis metadata and execution logs
+  - `curated.rlm_opportunities` - Reverse line movement detection results
+  - `curated.steam_moves` - Cross-book consensus movement tracking
+  - `curated.arbitrage_opportunities` - Price discrepancy identification
+  - `curated.pipeline_runs` - Pipeline execution tracking and performance metrics
+
+### Repository Pattern Enhancement
+- **Zone-Specific Repositories**: Separate repository classes for each pipeline zone
+- **Analysis Reports Repository**: New `AnalysisReportsRepository` for database-first analysis storage
+- **Unified Data Access**: Clean abstraction across all three pipeline zones
 
 ## Key Architectural Patterns
 
@@ -462,12 +507,14 @@ uv run ruff format && uv run ruff check && uv run mypy src/  # Code quality
 4. Start with data collection: `uv run -m src.interfaces.cli data test --source action_network --real`
 
 ### For Analysts
-1. Review analysis output in `output/` and `analysis_results/` directories
-2. Examine strategy processors in `src/analysis/processors/`
-3. Run backtesting: `uv run -m src.interfaces.cli backtest run --start-date 2024-06-01 --end-date 2024-06-30`
-4. Generate reports: `uv run -m src.interfaces.cli data status --detailed`
+1. Review analysis results in PostgreSQL database (`curated.analysis_reports` and related tables)
+2. Review manual evaluation files in `output/` directory (URLs only)
+3. Examine strategy processors in `src/analysis/processors/`
+4. Run backtesting: `uv run -m src.interfaces.cli backtest run --start-date 2024-06-01 --end-date 2024-06-30`
+5. Generate reports: `uv run -m src.interfaces.cli data status --detailed`
+6. Query analysis data: Connect to PostgreSQL and query `curated.latest_opportunities` view
 
 ---
 
 *Generated: July 21, 2025*
-*System Version: Post-Pydantic v2 Migration with Enhanced Action Network Integration*
+*System Version: Three-Tier Pipeline with Database-First Analysis Architecture*
