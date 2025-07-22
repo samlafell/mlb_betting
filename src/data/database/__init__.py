@@ -26,7 +26,7 @@ from .connection import (
     get_connection,
     get_connection_pool,
 )
-from .repositories import (
+from .repositories_legacy import (
     BettingAnalysisCreateSchema,
     BettingAnalysisRepository,
     BettingAnalysisUpdateSchema,
