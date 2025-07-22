@@ -32,6 +32,7 @@ from ....data.pipeline.zone_interface import (
     ProcessingStatus
 )
 from ....data.pipeline.raw_zone_adapter import create_raw_zone_adapter
+from ....data.pipeline.sbd_staging_processor import SBDStagingProcessor
 
 logger = get_logger(__name__, LogComponent.CORE)
 console = Console()
@@ -414,6 +415,279 @@ def _display_zone_status(zone_type: ZoneType, health: Dict[str, Any], detailed: 
     
     if detailed and 'error' in health:
         console.print(f"[red]Error: {health['error']}[/red]")
+
+
+# SBD-Specific Pipeline Commands
+
+@pipeline_group.command("sbd-staging")
+@click.option("--limit", type=int, help="Limit number of records to process (for testing)")
+@click.option("--dry-run", is_flag=True, help="Show what would be processed without executing")
+@click.option("--stats", is_flag=True, help="Show processing statistics")
+def sbd_staging_command(limit: Optional[int], dry_run: bool, stats: bool):
+    """SBD staging command wrapper that runs async function."""
+    asyncio.run(_sbd_staging_async(limit, dry_run, stats))
+
+
+async def _sbd_staging_async(limit: Optional[int], dry_run: bool, stats: bool):
+    """
+    Process SBD raw data into staging format.
+    
+    Transforms complex SBD JSON data into business-readable staging tables.
+    
+    Examples:
+    \b
+        # Process all unprocessed SBD records
+        uv run -m src.interfaces.cli pipeline sbd-staging
+        
+        # Test with 10 records
+        uv run -m src.interfaces.cli pipeline sbd-staging --limit 10
+        
+        # Show statistics only
+        uv run -m src.interfaces.cli pipeline sbd-staging --stats
+        
+        # Dry run to see what would be processed
+        uv run -m src.interfaces.cli pipeline sbd-staging --dry-run
+    """
+    try:
+        console.print("[blue]SBD Raw-to-Staging Pipeline[/blue]")
+        
+        # Create SBD staging processor
+        from ....data.pipeline.zone_interface import create_zone_config, ZoneType
+        settings = get_settings()
+        
+        config = create_zone_config(ZoneType.STAGING, settings.schemas.staging)
+        processor = SBDStagingProcessor(config)
+        
+        # Show stats if requested
+        if stats:
+            console.print("[blue]Getting SBD processing statistics...[/blue]")
+            stats_data = await processor.get_processing_stats()
+            
+            # Create stats table
+            stats_table = Table(title="SBD Processing Statistics")
+            stats_table.add_column("Metric", style="cyan")
+            stats_table.add_column("Value", style="magenta")
+            
+            for key, value in stats_data.items():
+                stats_table.add_row(key.replace('_', ' ').title(), str(value))
+            
+            console.print(stats_table)
+            return
+        
+        # Dry run mode
+        if dry_run:
+            console.print("[yellow]DRY RUN MODE - No actual processing will occur[/yellow]")
+            
+            # Count unprocessed records
+            from ....data.database.connection import get_connection
+            db_connection = get_connection()
+            
+            async with db_connection.get_async_connection() as connection:
+                count_query = """
+                    SELECT COUNT(*) as unprocessed
+                    FROM raw_data.sbd_betting_splits 
+                    WHERE processed_at IS NULL
+                """
+                if limit:
+                    count_query += f" LIMIT {limit}"
+                    
+                result = await connection.fetchrow(count_query)
+                unprocessed_count = result['unprocessed'] if result else 0
+                
+                console.print(f"[blue]Would process {unprocessed_count} unprocessed SBD records[/blue]")
+                if limit:
+                    console.print(f"[yellow]Limited to {limit} records for testing[/yellow]")
+            
+            return
+        
+        # Process SBD records
+        console.print("[blue]Starting SBD staging processing...[/blue]")
+        if limit:
+            console.print(f"[yellow]Processing limited to {limit} records[/yellow]")
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TimeRemainingColumn(),
+            console=console
+        ) as progress:
+            task = progress.add_task("Processing SBD records...", total=None)
+            
+            # Run the processor
+            result = await processor.process_sbd_raw_records(limit=limit)
+            
+            progress.update(task, completed=result.records_processed)
+        
+        # Show results
+        if result.status == ProcessingStatus.COMPLETED:
+            console.print(f"[green]✅ SBD processing completed successfully[/green]")
+            console.print(f"[blue]Records processed: {result.records_processed}[/blue]")
+            console.print(f"[green]Records successful: {result.records_successful}[/green]")
+            
+            if result.records_processed > result.records_successful:
+                failed_count = result.records_processed - result.records_successful
+                console.print(f"[red]Records failed: {failed_count}[/red]")
+                
+                if result.errors:
+                    console.print("[red]Errors encountered:[/red]")
+                    for error in result.errors[:5]:  # Show first 5 errors
+                        console.print(f"  • {error}")
+                    if len(result.errors) > 5:
+                        console.print(f"  ... and {len(result.errors) - 5} more errors")
+        else:
+            console.print(f"[red]❌ SBD processing failed[/red]")
+            if result.errors:
+                for error in result.errors:
+                    console.print(f"[red]Error: {error}[/red]")
+        
+        # Show final stats
+        console.print("\n[blue]Final Statistics:[/blue]")
+        final_stats = await processor.get_processing_stats()
+        
+        stats_table = Table(title="SBD Processing Results")
+        stats_table.add_column("Metric", style="cyan")
+        stats_table.add_column("Value", style="magenta")
+        
+        for key, value in final_stats.items():
+            if key != 'error':
+                stats_table.add_row(key.replace('_', ' ').title(), str(value))
+        
+        console.print(stats_table)
+        
+    except Exception as e:
+        console.print(f"[red]SBD staging processing failed: {e}[/red]")
+        logger.error(f"SBD staging error: {e}")
+        raise click.ClickException(str(e))
+
+
+@pipeline_group.command("sbd-test")
+@click.option("--limit", type=int, default=5, help="Number of records to test with")
+def sbd_test_command(limit: int):
+    """SBD test command wrapper that runs async function."""
+    asyncio.run(_sbd_test_async(limit))
+
+
+async def _sbd_test_async(limit: int):
+    """
+    Test SBD staging processor with a small sample of data.
+    
+    Examples:
+    \b
+        # Test with 5 records (default)
+        uv run -m src.interfaces.cli pipeline sbd-test
+        
+        # Test with 10 records
+        uv run -m src.interfaces.cli pipeline sbd-test --limit 10
+    """
+    try:
+        console.print(f"[blue]Testing SBD Staging Processor with {limit} records[/blue]")
+        
+        # Show raw data sample
+        from ....data.database.connection import get_connection
+        db_connection = get_connection()
+        
+        async with db_connection.get_async_connection() as connection:
+            raw_sample = await connection.fetch(f"""
+                SELECT id, external_matchup_id, 
+                       raw_response->'game_data'->>'game_name' as game_name,
+                       raw_response->'betting_record'->>'sportsbook' as sportsbook,
+                       raw_response->'betting_record'->>'bet_type' as bet_type,
+                       collected_at
+                FROM raw_data.sbd_betting_splits 
+                WHERE processed_at IS NULL
+                ORDER BY collected_at DESC 
+                LIMIT {limit}
+            """)
+        
+        if not raw_sample:
+            console.print("[yellow]No unprocessed SBD records found for testing[/yellow]")
+            return
+        
+        # Show sample data
+        raw_table = Table(title=f"Raw SBD Data Sample ({len(raw_sample)} records)")
+        raw_table.add_column("ID", style="cyan")
+        raw_table.add_column("Game", style="green")
+        raw_table.add_column("Sportsbook", style="magenta")
+        raw_table.add_column("Bet Type", style="yellow")
+        raw_table.add_column("Collected", style="blue")
+        
+        for record in raw_sample:
+            raw_table.add_row(
+                str(record['id']),
+                record['game_name'] or 'N/A',
+                record['sportsbook'] or 'N/A',
+                record['bet_type'] or 'N/A',
+                record['collected_at'].strftime('%H:%M:%S') if record['collected_at'] else 'N/A'
+            )
+        
+        console.print(raw_table)
+        
+        # Process with SBD staging processor
+        console.print(f"\n[blue]Processing {limit} records through SBD staging processor...[/blue]")
+        
+        from ....data.pipeline.zone_interface import create_zone_config, ZoneType
+        settings = get_settings()
+        
+        config = create_zone_config(ZoneType.STAGING, settings.schemas.staging)
+        processor = SBDStagingProcessor(config)
+        
+        result = await processor.process_sbd_raw_records(limit=limit)
+        
+        # Show results
+        if result.status == ProcessingStatus.COMPLETED:
+            console.print(f"[green]✅ Test completed successfully[/green]")
+            console.print(f"[blue]Records processed: {result.records_processed}[/blue]")
+            console.print(f"[green]Records successful: {result.records_successful}[/green]")
+            
+            # Show processed staging data
+            db_connection = get_connection()
+            async with db_connection.get_async_connection() as connection:
+                staging_sample = await connection.fetch("""
+                    SELECT g.home_team_normalized, g.away_team_normalized, 
+                           bs.sportsbook_name, bs.bet_type, 
+                           bs.public_bet_percentage, bs.public_money_percentage,
+                           bs.sharp_bet_percentage, bs.data_source
+                    FROM staging.betting_splits bs
+                    JOIN staging.games g ON bs.game_id = g.id
+                    ORDER BY bs.created_at DESC
+                    LIMIT $1
+                """, limit)
+                
+                if staging_sample:
+                    staging_table = Table(title="Processed Staging Data")
+                    staging_table.add_column("Game", style="green")
+                    staging_table.add_column("Book", style="magenta")
+                    staging_table.add_column("Type", style="yellow")
+                    staging_table.add_column("Bets %", style="cyan")
+                    staging_table.add_column("Money %", style="blue")
+                    staging_table.add_column("Sharp %", style="red")
+                    staging_table.add_column("Source", style="bright_black")
+                    
+                    for record in staging_sample:
+                        game = f"{record['away_team_normalized']} @ {record['home_team_normalized']}"
+                        staging_table.add_row(
+                            game,
+                            record['sportsbook_name'],
+                            record['bet_type'],
+                            f"{record['public_bet_percentage']:.1f}" if record['public_bet_percentage'] else 'N/A',
+                            f"{record['public_money_percentage']:.1f}" if record['public_money_percentage'] else 'N/A',
+                            f"{record['sharp_bet_percentage']:.1f}" if record['sharp_bet_percentage'] else '0.0',
+                            record['data_source'] or 'unknown'
+                        )
+                    
+                    console.print(staging_table)
+            
+        else:
+            console.print(f"[red]❌ Test failed[/red]")
+            if result.errors:
+                for error in result.errors:
+                    console.print(f"[red]Error: {error}[/red]")
+                    
+    except Exception as e:
+        console.print(f"[red]SBD test failed: {e}[/red]")
+        logger.error(f"SBD test error: {e}")
+        raise click.ClickException(str(e))
 
 
 # Make the command available for import
