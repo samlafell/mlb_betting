@@ -84,8 +84,8 @@ uv run -m src.interfaces.cli data collect --source sbd --real
 uv run -m src.interfaces.cli data status
 
 # Action Network pipeline
-uv run -m src.interfaces.cli action-network pipeline
-uv run -m src.interfaces.cli action-network opportunities
+uv run -m src.interfaces.cli action-network collect --date today
+uv run -m src.interfaces.cli action-network history --days 30
 
 # Movement analysis
 uv run -m src.interfaces.cli movement analyze --input-file output/action_network_history.json
@@ -105,10 +105,12 @@ uv run -m src.interfaces.cli data-quality status
 
 # Game outcomes
 uv run -m src.interfaces.cli outcomes update --date today
+uv run -m src.interfaces.cli outcomes verify --games recent
 ```
 
 ### Utility Scripts
 Standalone utility scripts are available in the `utilities/` folder:
+- **Migration scripts**: Phase 2, 3, and 4 pipeline migration utilities
 - **Data quality deployment**: `utilities/deploy_data_quality_improvements.py`
 - **Database setup utilities**: Various setup and migration scripts
 - **Testing utilities**: Development and debugging tools
@@ -152,9 +154,13 @@ mlb_betting_program/
 │   │       ├── main.py            # Main CLI entry point
 │   │       └── commands/          # CLI command modules
 │   │           ├── data.py        # Data collection commands
-│   │           ├── action_network.py # Action Network commands
-│   │           ├── movement.py    # Movement analysis commands
-│   │           └── database.py    # Database management commands
+│   │           ├── action_network_pipeline.py # Action Network commands
+│   │           ├── movement_analysis.py    # Movement analysis commands
+│   │           ├── backtesting.py # Backtesting commands
+│   │           ├── game_outcomes.py # Game outcome commands
+│   │           ├── data_quality_improvement.py # Data quality commands
+│   │           ├── pipeline.py    # Pipeline management
+│   │           └── setup_database.py    # Database management commands
 │   └── services/                  # Business logic services
 │       ├── orchestration/         # Pipeline orchestration
 │       ├── monitoring/            # System monitoring
@@ -176,8 +182,8 @@ mlb_betting_program/
 
 1. **Data Collection Layer** (`src/data/collection/`)
    - Action Network API integration
-   - SportsBettingDime (SBD) integration
-   - VSIN data collection
+   - SportsBettingDime (SBD) WordPress JSON API integration with 9+ sportsbooks
+   - VSIN data collection with enhanced HTML parsing and sharp action detection
    - MLB Stats API integration
    - Sports Book Report (SBR) integration
    - Rate-limited data collection
@@ -285,7 +291,7 @@ uv run ruff format && uv run ruff check && uv run mypy src/
 
 - **Centralized Configuration**: All settings managed through `config.toml`
 - **Database Settings**: PostgreSQL connections via environment variables or config.toml
-- **Data Sources**: SBD, VSIN, Action Network, MLB Stats API, Odds API
+- **Data Sources**: SBD (WordPress JSON API), VSIN, Action Network, MLB Stats API, Odds API
 - **Feature Flags**: Control system behavior via config
 - **Rate Limiting**: Configured per data source to respect API limits
 
@@ -300,6 +306,8 @@ uv run ruff format && uv run ruff check && uv run mypy src/
 
 ### Data Collection (Primary Focus)
 - `src/data/collection/consolidated_action_network_collector.py`: **Primary Action Network collector** (recommended for new development)
+- `src/data/collection/sbd_unified_collector_api.py`: **SBD WordPress JSON API collector** - real-time data from 9+ major sportsbooks
+- `src/data/collection/vsin_unified_collector.py`: **Enhanced VSIN collector** with live HTML parsing, sharp action detection, and three-tier pipeline integration
 - `src/data/collection/smart_line_movement_filter.py`: Intelligent noise reduction for line movements
 - `src/data/collection/orchestrator.py`: Main data collection orchestration
 - `src/data/collection/base.py`: Base collector classes and common functionality

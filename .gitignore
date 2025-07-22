@@ -60,3 +60,8 @@ logs/
 backups/
 *.lock
 *.log
+
+docs/july21_collection_enhancements/
+
+## Original VSIN project ignore
+original_vsin/
