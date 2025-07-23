@@ -8,6 +8,7 @@ Reference: docs/SYSTEM_DESIGN_ANALYSIS.md
 """
 
 import asyncio
+import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -325,8 +326,6 @@ class DataPipelineOrchestrator:
             # For now, return empty list as placeholder
             # In real implementation, query the zone's output tables
             
-            db_connection = get_connection()
-            
             if current_zone == ZoneType.RAW:
                 # Query source-specific raw_data tables for recently processed records
                 # Use Action Network as primary source for pipeline flow
@@ -348,7 +347,7 @@ class DataPipelineOrchestrator:
                 return []
             
             # Execute query and convert to DataRecord objects
-            async with db_connection.get_async_connection() as connection:
+            async with get_connection() as connection:
                 rows = await connection.fetch(query, limit)
             
             # Convert rows to DataRecord objects (simplified)
@@ -474,8 +473,6 @@ class DataPipelineOrchestrator:
     ) -> None:
         """Log pipeline execution to database."""
         try:
-            db_connection = get_connection()
-            
             query = """
             INSERT INTO public.pipeline_execution_log 
             (execution_id, pipeline_stage, start_time, end_time, status, 
@@ -483,7 +480,7 @@ class DataPipelineOrchestrator:
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             """
             
-            async with db_connection.get_async_connection() as connection:
+            async with get_connection() as connection:
                 await connection.execute(
                     query,
                     execution.execution_id,
@@ -494,7 +491,7 @@ class DataPipelineOrchestrator:
                     execution.metrics.total_records,
                     execution.metrics.successful_records,
                     execution.metrics.failed_records,
-                    execution.metadata
+                    json.dumps(execution.metadata) if execution.metadata else '{}'
                 )
             
         except Exception as e:

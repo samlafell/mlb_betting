@@ -1937,6 +1937,7 @@ dev = [
 [package.dev-dependencies]
 dev = [
     { name = "mypy" },
+    { name = "pytest-asyncio" },
 ]
 
 [package.metadata]
@@ -1986,7 +1987,10 @@ requires-dist = [
 provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "mypy", specifier = ">=1.16.0" }]
+dev = [
+    { name = "mypy", specifier = ">=1.16.0" },
+    { name = "pytest-asyncio", specifier = ">=1.0.0" },
+]
 
 [[package]]
 name = "sqlalchemy"

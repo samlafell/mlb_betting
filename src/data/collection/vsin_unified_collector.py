@@ -1790,77 +1790,36 @@ class VSINUnifiedCollector(UnifiedBettingLinesCollector):
 
     def _process_and_store_record_with_game_id(self, record: dict[str, Any], batch_id: uuid.UUID, game_id: int) -> bool:
         """
-        Enhanced VSIN storage that writes to both core_betting schema and three-tier pipeline.
+        Enhanced VSIN storage using three-tier raw_data pipeline only.
         
         Args:
             record: VSIN betting line record with sharp action data
             batch_id: Collection batch identifier  
-            game_id: Pre-resolved game ID from core_betting.games
+            game_id: Game identifier (for reference only)
             
         Returns:
-            True if stored successfully in at least one schema
+            True if stored successfully in raw_data schema
         """
         try:
-            # Store in legacy core_betting schema (current production)
-            legacy_success = self._store_in_core_betting_schema(record, game_id)
-            
-            # Store in new three-tier pipeline (future analytics)
+            # Store in three-tier pipeline only (raw_data schema)
             pipeline_success = self._store_in_three_tier_pipeline(record, batch_id)
             
-            # Consider successful if either storage method works (during transition)
-            success = legacy_success or pipeline_success
-            
-            if success:
+            if pipeline_success:
                 self.performance_metrics.successful_records += 1
             else:
                 self.performance_metrics.failed_records += 1
                 
-            return success
+            return pipeline_success
             
         except Exception as e:
-            self.logger.error("Error in dual schema storage", error=str(e))
+            self.logger.error("Error storing to raw_data schema", error=str(e))
             self.performance_metrics.failed_records += 1
             return False
 
-    def _store_in_core_betting_schema(self, record: dict[str, Any], game_id: int) -> bool:
-        """Store VSIN data in legacy core_betting schema for compatibility."""
-        try:
-            raw_response = record.get('raw_response', {})
-            betting_data = raw_response.get('betting_data', {})
-            
-            # Extract sportsbook information
-            sportsbook_name = raw_response.get('sportsbook', 'VSIN')
-            
-            # Store moneyline data if available
-            if betting_data.get('away_ml') and betting_data.get('home_ml'):
-                moneyline_success = self._store_moneyline_legacy(
-                    game_id, sportsbook_name, betting_data, record
-                )
-            else:
-                moneyline_success = True  # No moneyline data to store
-            
-            # Store spread data if available  
-            spread_key = 'away_rl' if 'away_rl' in betting_data else 'away_spread'
-            if betting_data.get(spread_key):
-                spread_success = self._store_spread_legacy(
-                    game_id, sportsbook_name, betting_data, record, spread_key
-                )
-            else:
-                spread_success = True  # No spread data to store
-            
-            # Store totals data if available
-            if betting_data.get('total_line'):
-                totals_success = self._store_totals_legacy(
-                    game_id, sportsbook_name, betting_data, record
-                )
-            else:
-                totals_success = True  # No totals data to store
-            
-            return moneyline_success and spread_success and totals_success
-            
-        except Exception as e:
-            self.logger.error("Error storing in core_betting schema", error=str(e))
-            return False
+    def _store_in_core_betting_schema(self, *args, **kwargs) -> bool:
+        """DEPRECATED: Legacy method - use raw_data storage instead."""
+        logger.warning("_store_in_core_betting_schema is deprecated. All VSIN data should be stored in raw_data schema.")
+        return False  # Always return False to force use of raw_data storage
 
     def _store_in_three_tier_pipeline(self, record: dict[str, Any], batch_id: uuid.UUID) -> bool:
         """Store VSIN data in new three-tier pipeline for future analytics."""
@@ -1909,49 +1868,15 @@ class VSINUnifiedCollector(UnifiedBettingLinesCollector):
                             external_id=record.get('external_source_id'))
             return False
 
-    def _store_moneyline_legacy(self, game_id: int, sportsbook: str, betting_data: dict, record: dict) -> bool:
-        """Store moneyline data in core_betting.betting_lines_moneyline."""
-        try:
-            with self.connection_pool.get_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("""
-                        INSERT INTO core_betting.betting_lines_moneyline (
-                            game_id, sportsbook, home_ml, away_ml,
-                            home_money_percentage, away_money_percentage,
-                            home_bets_percentage, away_bets_percentage,
-                            sharp_action, odds_timestamp, source, data_quality,
-                            created_at, updated_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (game_id, sportsbook, odds_timestamp) DO UPDATE SET
-                            home_ml = EXCLUDED.home_ml,
-                            away_ml = EXCLUDED.away_ml,
-                            home_money_percentage = EXCLUDED.home_money_percentage,
-                            away_money_percentage = EXCLUDED.away_money_percentage,
-                            sharp_action = EXCLUDED.sharp_action,
-                            updated_at = EXCLUDED.updated_at
-                    """, (
-                        game_id, sportsbook,
-                        self._parse_odds(betting_data.get('home_ml')),
-                        self._parse_odds(betting_data.get('away_ml')),
-                        betting_data.get('home_ml_handle_pct'),
-                        betting_data.get('away_ml_handle_pct'),
-                        betting_data.get('home_ml_bets_pct'),
-                        betting_data.get('away_ml_bets_pct'),
-                        record.get('sharp_action'),
-                        datetime.now(),
-                        'VSIN',
-                        'HIGH',  # VSIN has high data quality
-                        datetime.now(),
-                        datetime.now()
-                    ))
-                    conn.commit()
-                    return True
-        except Exception as e:
-            self.logger.error("Error storing moneyline in legacy schema", error=str(e))
-            return False
+    def _store_moneyline_legacy(self, *args, **kwargs) -> bool:
+        """DEPRECATED: Legacy method - use raw_data storage instead."""
+        logger.warning("_store_moneyline_legacy is deprecated. All VSIN data should be stored in raw_data schema.")
+        return False
 
-    def _store_spread_legacy(self, game_id: int, sportsbook: str, betting_data: dict, record: dict, spread_key: str) -> bool:
-        """Store spread/run line data in core_betting.betting_lines_spreads."""
+    def _store_spread_legacy(self, *args, **kwargs) -> bool:
+        """DEPRECATED: Legacy method - use raw_data storage instead."""
+        logger.warning("_store_spread_legacy is deprecated. All VSIN data should be stored in raw_data schema.")
+        return False
         try:
             with self.connection_pool.get_connection() as conn:
                 with conn.cursor() as cur:
@@ -1994,7 +1919,7 @@ class VSINUnifiedCollector(UnifiedBettingLinesCollector):
             self.logger.error("Error storing spread in legacy schema", error=str(e))
             return False
 
-    def _store_totals_legacy(self, game_id: int, sportsbook: str, betting_data: dict, record: dict) -> bool:
+    def _store_totals_legacy(self, *args, **kwargs) -> bool:
         """Store totals data in core_betting.betting_lines_totals."""
         try:
             with self.connection_pool.get_connection() as conn:

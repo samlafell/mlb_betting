@@ -169,8 +169,6 @@ class RawZoneProcessor(BaseZoneProcessor):
             records: List of processed raw records to store
         """
         try:
-            db_connection = await self.get_connection()
-            
             # Group records by table/source type
             records_by_table = {}
             
@@ -181,7 +179,8 @@ class RawZoneProcessor(BaseZoneProcessor):
                 records_by_table[table_name].append(record)
             
             # Insert records for each table
-            async with db_connection.get_async_connection() as connection:
+            from ...data.database.connection import get_connection
+            async with get_connection() as connection:
                 for table_name, table_records in records_by_table.items():
                     await self._insert_records_to_table(connection, table_name, table_records)
             
@@ -282,6 +281,75 @@ class RawZoneProcessor(BaseZoneProcessor):
                 record.processed_at or datetime.now(timezone.utc)
             )
 
+    async def _insert_action_network_odds(self, connection, records: List[DataRecord]) -> None:
+        """Insert Action Network odds records."""
+        query = """
+        INSERT INTO raw_data.action_network_odds 
+        (external_game_id, sportsbook_key, raw_odds, collected_at)
+        VALUES ($1, $2, $3, $4)
+        """
+        
+        for record in records:
+            await connection.execute(
+                query,
+                record.external_id,
+                getattr(record, 'sportsbook_key', 'unknown'),
+                json.dumps(record.raw_data) if record.raw_data else '{}',
+                record.processed_at or datetime.now(timezone.utc)
+            )
+
+    async def _insert_vsin_data(self, connection, records: List[DataRecord]) -> None:
+        """Insert VSIN data records."""
+        query = """
+        INSERT INTO raw_data.vsin_data 
+        (external_id, raw_response, collected_at, created_at)
+        VALUES ($1, $2, $3, $4)
+        """
+        
+        for record in records:
+            await connection.execute(
+                query,
+                record.external_id,
+                json.dumps(record.raw_data) if record.raw_data else '{}',
+                record.processed_at or datetime.now(timezone.utc),
+                record.created_at or datetime.now(timezone.utc)
+            )
+
+    async def _insert_mlb_stats_api(self, connection, records: List[DataRecord]) -> None:
+        """Insert MLB Stats API records."""
+        query = """
+        INSERT INTO raw_data.mlb_stats_api_games 
+        (external_game_id, game_pk, raw_response, endpoint_url, response_status, 
+         game_date, season, season_type, home_team, away_team, game_datetime, 
+         venue_id, venue_name, game_status, collected_at, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        ON CONFLICT (external_game_id) DO UPDATE SET
+            raw_response = EXCLUDED.raw_response,
+            game_status = EXCLUDED.game_status,
+            collected_at = EXCLUDED.collected_at
+        """
+        
+        for record in records:
+            await connection.execute(
+                query,
+                record.external_id,
+                getattr(record, 'game_pk', None),
+                json.dumps(record.raw_data) if record.raw_data else '{}',
+                getattr(record, 'endpoint_url', None),
+                getattr(record, 'response_status', 200),
+                getattr(record, 'game_date', None) or datetime.now(timezone.utc).date(),  # Default to today's date
+                getattr(record, 'season', None),
+                getattr(record, 'season_type', None),
+                getattr(record, 'home_team', None),
+                getattr(record, 'away_team', None),
+                getattr(record, 'game_datetime', None),
+                getattr(record, 'venue_id', None),
+                getattr(record, 'venue_name', None),
+                getattr(record, 'game_status', None),
+                record.processed_at or datetime.now(timezone.utc),
+                record.created_at or datetime.now(timezone.utc)
+            )
+
     async def validate_record_custom(self, record: DataRecord) -> bool:
         """
         RAW zone specific validation.
@@ -363,11 +431,11 @@ class RawZoneProcessor(BaseZoneProcessor):
     async def health_check(self) -> Dict[str, Any]:
         """Get RAW zone health and status information."""
         try:
-            db_connection = await self.get_connection()
             # Basic health check - verify we can connect
             connection_healthy = False
             try:
-                async with db_connection.get_async_connection() as connection:
+                from ...data.database.connection import get_connection
+                async with get_connection() as connection:
                     await connection.fetchval("SELECT 1")
                     connection_healthy = True
             except Exception:

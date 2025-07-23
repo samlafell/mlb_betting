@@ -136,4 +136,5 @@ exclude_lines = [
 [dependency-groups]
 dev = [
     "mypy>=1.16.0",
+    "pytest-asyncio>=1.0.0",
 ]

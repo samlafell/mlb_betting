@@ -39,7 +39,6 @@ class AnalysisReportsRepository:
         data_source: str = "action_network",
     ) -> int:
         """Create a new analysis report and return its ID."""
-        db_connection = get_connection()
         
         query = """
         INSERT INTO curated.analysis_reports (
@@ -51,20 +50,20 @@ class AnalysisReportsRepository:
         RETURNING id
         """
         
-        result = await db_connection.execute_async(
-            query,
-            report_type,
-            analysis_timestamp,
-            pipeline_run_id,
-            total_games_analyzed,
-            games_with_rlm,
-            games_with_steam_moves,
-            games_with_arbitrage,
-            total_movements,
-            execution_time_seconds,
-            data_source,
-            fetch="one"
-        )
+        async with get_connection() as conn:
+            result = await conn.fetchrow(
+                query,
+                report_type,
+                analysis_timestamp,
+                pipeline_run_id,
+                total_games_analyzed,
+                games_with_rlm,
+                games_with_steam_moves,
+                games_with_arbitrage,
+                total_movements,
+                execution_time_seconds,
+                data_source,
+            )
         
         return result['id'] if result else None
 
@@ -75,7 +74,6 @@ class AnalysisReportsRepository:
         game_data: dict,
     ) -> List[int]:
         """Save RLM opportunities to the database."""
-        conn = get_connection()
         
         opportunities = []
         for rlm in rlm_indicators:
@@ -113,9 +111,10 @@ class AnalysisReportsRepository:
         """
         
         results = []
-        for opp in opportunities:
-            result = await conn.execute_async(query, *opp, fetch="one")
-            results.append(result['id'] if result else None)
+        async with get_connection() as conn:
+            for opp in opportunities:
+                result = await conn.fetchrow(query, *opp)
+                results.append(result['id'] if result else None)
             
         return results
 
@@ -126,8 +125,6 @@ class AnalysisReportsRepository:
         game_data: dict,
     ) -> List[int]:
         """Save steam moves to the database."""
-        conn = get_connection()
-        
         steam_moves = []
         for movement in cross_book_movements:
             if movement.steam_move_detected:
@@ -162,9 +159,10 @@ class AnalysisReportsRepository:
         """
         
         results = []
-        for steam in steam_moves:
-            result = await conn.execute_async(query, *steam, fetch="one")
-            results.append(result['id'] if result else None)
+        async with get_connection() as conn:
+            for steam in steam_moves:
+                result = await conn.fetchrow(query, *steam)
+                results.append(result['id'] if result else None)
             
         return results
 
@@ -175,8 +173,6 @@ class AnalysisReportsRepository:
         game_data: dict,
     ) -> List[int]:
         """Save arbitrage opportunities to the database."""
-        conn = get_connection()
-        
         if not arbitrage_opportunities:
             return []
             
@@ -210,9 +206,10 @@ class AnalysisReportsRepository:
         """
         
         results = []
-        for opp in opportunities:
-            result = await conn.execute_async(query, *opp, fetch="one")
-            results.append(result['id'] if result else None)
+        async with get_connection() as conn:
+            for opp in opportunities:
+                result = await conn.fetchrow(query, *opp)
+                results.append(result['id'] if result else None)
             
         return results
 
@@ -226,8 +223,6 @@ class AnalysisReportsRepository:
         analyze_only: bool = False,
     ) -> int:
         """Create a pipeline run record."""
-        conn = get_connection()
-        
         query = """
         INSERT INTO curated.pipeline_runs (
             run_id, command_type, status, date_target,
@@ -236,17 +231,17 @@ class AnalysisReportsRepository:
         RETURNING id
         """
         
-        result = await conn.execute_async(
-            query,
-            run_id,
-            command_type,
-            date_target,
-            max_games,
-            skip_history,
-            analyze_only,
-            datetime.now(),
-            fetch="one"
-        )
+        async with get_connection() as conn:
+            result = await conn.fetchrow(
+                query,
+                run_id,
+                command_type,
+                date_target,
+                max_games,
+                skip_history,
+                analyze_only,
+                datetime.now(),
+            )
         
         return result['id'] if result else None
 
@@ -263,8 +258,6 @@ class AnalysisReportsRepository:
         warnings: Optional[List[str]] = None,
     ) -> bool:
         """Update pipeline run with results."""
-        conn = get_connection()
-        
         query = """
         UPDATE curated.pipeline_runs SET
             status = $2,
@@ -279,26 +272,25 @@ class AnalysisReportsRepository:
         WHERE run_id = $1
         """
         
-        result = await conn.execute_async(
-            query,
-            run_id,
-            status,
-            games_extracted,
-            games_analyzed,
-            total_movements,
-            total_opportunities,
-            execution_time_seconds,
-            error_message,
-            warnings,
-            datetime.now()
-        )
+        async with get_connection() as conn:
+            result = await conn.execute(
+                query,
+                run_id,
+                status,
+                games_extracted,
+                games_analyzed,
+                total_movements,
+                total_opportunities,
+                execution_time_seconds,
+                error_message,
+                warnings,
+                datetime.now()
+            )
         
         return "UPDATE" in str(result) if result else False
 
     async def get_latest_opportunities(self, hours: int = 24) -> List[dict]:
         """Get latest opportunities from the database view."""
-        conn = get_connection()
-        
         query = """
         SELECT 
             opportunity_type,
@@ -316,13 +308,13 @@ class AnalysisReportsRepository:
         LIMIT 50
         """.format(hours)
         
-        rows = await conn.execute_async(query, fetch="all")
+        async with get_connection() as conn:
+            rows = await conn.fetch(query)
+        
         return [dict(row) for row in rows] if rows else []
 
     async def get_daily_summary(self, days: int = 7) -> List[dict]:
         """Get daily opportunities summary."""
-        conn = get_connection()
-        
         query = """
         SELECT *
         FROM curated.daily_opportunities_summary
@@ -330,7 +322,9 @@ class AnalysisReportsRepository:
         ORDER BY analysis_date DESC
         """.format(days)
         
-        rows = await conn.execute_async(query, fetch="all")
+        async with get_connection() as conn:
+            rows = await conn.fetch(query)
+        
         return [dict(row) for row in rows] if rows else []
 
     async def save_complete_analysis(
@@ -390,14 +384,13 @@ class AnalysisReportsRepository:
 
     async def cleanup_old_reports(self, days_to_keep: int = 30) -> int:
         """Clean up old analysis reports to prevent database bloat."""
-        conn = get_connection()
-        
         query = """
         DELETE FROM curated.analysis_reports
         WHERE analysis_timestamp < NOW() - INTERVAL '{} days'
         """.format(days_to_keep)
         
-        result = await conn.execute_async(query)
+        async with get_connection() as conn:
+            result = await conn.execute(query)
         
         # Extract number of deleted rows
         result_str = str(result) if result else ""

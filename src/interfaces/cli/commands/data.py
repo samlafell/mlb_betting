@@ -776,6 +776,7 @@ class DataCommands:
             from ....data.collection.sbd_unified_collector_api import SBDUnifiedCollectorAPI as SBDUnifiedCollector
             from ....data.collection.sbr_unified_collector import SBRUnifiedCollector
             from ....data.collection.vsin_unified_collector import VSINUnifiedCollector
+            from ....data.collection.mlb_stats_api_collector import MLBStatsAPICollector
 
             # Map source names to collector classes
             collector_mapping = {
@@ -784,6 +785,7 @@ class DataCommands:
                 "sbr": SBRUnifiedCollector,
                 "vsin": VSINUnifiedCollector,
                 "sbd": SBDUnifiedCollector,
+                "mlb_stats_api": MLBStatsAPICollector,
             }
 
             collector_class = collector_mapping.get(source_name)
@@ -800,6 +802,11 @@ class DataCommands:
                 from ....data.collection.base import CollectorConfig, DataSource
                 config = CollectorConfig(source=DataSource.ACTION_NETWORK, enabled=True)
                 collector = collector_class(config, CollectionMode.COMPREHENSIVE)
+            elif source_name == "mlb_stats_api":
+                # Use MLB Stats API collector with proper config
+                from ....data.collection.base import CollectorConfig, DataSource
+                config = CollectorConfig(source=DataSource.MLB_STATS_API, enabled=True)
+                collector = collector_class(config)
             else:
                 collector = collector_class()
 
@@ -876,6 +883,40 @@ class DataCommands:
                         console.print(f"❌ [red]{source_name.upper()} test failed[/red]")
                         return {
                             "status": "failed",
+                            "error": str(e),
+                        }
+                elif source_name == "mlb_stats_api":
+                    # Use MLB Stats API collector test method  
+                    from datetime import datetime, date
+                    from ....data.collection.base import CollectionRequest
+                    
+                    request = CollectionRequest(
+                        source=DataSource.MLB_STATS_API,
+                        start_date=date.today()
+                    )
+                    
+                    try:
+                        test_data = await collector.collect_data(request)
+                        stats = collector.get_stats()
+                        
+                        console.print(f"✅ [green]{source_name.upper()} test successful[/green]")
+                        summary = (
+                            f"Test Status: success\n"
+                            f"Games found: {stats['games_found']}\n"
+                            f"Games processed: {stats['games_processed']}\n"
+                            f"Games stored: {stats['games_stored']}\n"
+                            f"Success rate: {stats['success_rate']:.1f}%"
+                        )
+                        return {
+                            "status": "success",
+                            "output": summary,
+                            "records_collected": stats['games_found'],
+                            "records_stored": stats['games_stored'],
+                        }
+                    except Exception as e:
+                        console.print(f"❌ [red]{source_name.upper()} test failed[/red]")
+                        return {
+                            "status": "failed",
                             "error": f"Test failed: {str(e)}",
                         }
                 else:
@@ -937,6 +978,19 @@ class DataCommands:
                     await collector.collect_data(request)
                     stats = collector.get_stats()
                     stored_count = stats['total_inserted']
+                elif source_name == "mlb_stats_api":
+                    # Use MLB Stats API collector for real collection
+                    from datetime import date
+                    from ....data.collection.base import CollectionRequest
+                    
+                    request = CollectionRequest(
+                        source=DataSource.MLB_STATS_API,
+                        start_date=date.today()
+                    )
+                    
+                    await collector.collect_data(request)
+                    stats = collector.get_stats()
+                    stored_count = stats['games_stored']
                 else:
                     # Use collect_and_store for other sources
                     result = collector.collect_and_store()

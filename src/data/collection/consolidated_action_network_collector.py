@@ -210,16 +210,16 @@ class ActionNetworkCollector(BaseCollector):
         # Fetch and store historical data for each game (RAW layer)
         await self._fetch_and_store_historical_data(games)
         
-        # Create game records first (CURATED layer)
-        game_mappings = await self._create_games(games)
+        # Get game mappings from raw data (no CURATED layer writes)
+        game_mappings = await self._get_game_mappings(games)
         
-        # Process comprehensive data with smart filtering (CURATED layer)
+        # Store processed odds to raw_data.action_network_odds (RAW layer only)
         await self._process_comprehensive_data(games, game_mappings)
         
         return games
     
-    async def _create_games(self, games: List[Dict[str, Any]]) -> Dict[str, int]:
-        """Create/verify games in database."""
+    async def _get_game_mappings(self, games: List[Dict[str, Any]]) -> Dict[str, str]:
+        """Get game mappings from raw data - no longer creates legacy games."""
         game_mappings = {}
         
         try:
@@ -227,44 +227,22 @@ class ActionNetworkCollector(BaseCollector):
             
             for game in games:
                 game_id = game.get("id")
-                teams = game.get("teams", [])
-                start_time = game.get("start_time")
-                
-                if len(teams) < 2 or not game_id or not start_time:
+                if not game_id:
                     continue
                 
-                # Check if exists
-                existing_id = await conn.fetchval("""
-                    SELECT id FROM core_betting.games WHERE action_network_game_id = $1
-                """, int(game_id))
+                # Check if raw game data exists
+                existing_raw = await conn.fetchval("""
+                    SELECT id FROM raw_data.action_network_games WHERE external_game_id = $1
+                """, str(game_id))
                 
-                if existing_id:
-                    game_mappings[str(game_id)] = existing_id
-                    continue
-                
-                # Create new game
-                away_team = normalize_team_name(teams[0].get("full_name", ""))
-                home_team = normalize_team_name(teams[1].get("full_name", ""))
-                game_datetime = safe_game_datetime_parse(start_time)
-                
-                new_id = await conn.fetchval("""
-                    INSERT INTO core_betting.games (
-                        action_network_game_id, home_team, away_team, game_date,
-                        game_datetime, season, season_type, game_type, data_quality,
-                        created_at, updated_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                    RETURNING id
-                """,
-                int(game_id), home_team, away_team, game_datetime.date(),
-                game_datetime, 2025, "REG", "R", "HIGH", now_est(), now_est()
-                )
-                
-                game_mappings[str(game_id)] = new_id
+                if existing_raw:
+                    game_mappings[str(game_id)] = str(game_id)
+                    logger.debug(f"Found existing raw game data for game {game_id}")
             
             await conn.close()
             
         except Exception as e:
-            logger.error("Error creating games", error=str(e))
+            logger.error("Error getting game mappings", error=str(e))
         
         return game_mappings
     
@@ -424,24 +402,30 @@ class ActionNetworkCollector(BaseCollector):
             logger.error("Error storing raw historical data", error=str(e), game_id=game_id)
     
     async def _process_current_lines(self, games: List[Dict[str, Any]]) -> None:
-        """Process current betting lines."""
+        """Process current betting lines - stores to RAW layer only."""
         for game in games:
             try:
                 game_id = game.get("id")
                 markets = game.get("markets", {})
                 
                 for book_id_str, book_data in markets.items():
-                    book_id = int(book_id_str)
                     event_markets = book_data.get("event", {})
                     
-                    # Store raw odds data to RAW layer first
+                    # Store raw odds data to RAW layer only
                     await self._store_raw_odds_data(str(game_id), event_markets, book_id_str)
                     
-                    # Process each market type for CURATED layer
+                    # Update statistics
                     for market_type in ["moneyline", "spread", "total"]:
                         market_data = event_markets.get(market_type, [])
                         if market_data:
-                            await self._process_current_market(game, book_id, market_type, market_data)
+                            if market_type == "moneyline":
+                                self.stats["moneyline_inserted"] += len(market_data)
+                            elif market_type == "spread":
+                                self.stats["spread_inserted"] += len(market_data)
+                            elif market_type == "total":
+                                self.stats["totals_inserted"] += len(market_data)
+                            self.stats["total_inserted"] += len(market_data)
+                            self.stats["current_lines"] += 1
                 
                 self.stats["games_processed"] += 1
                 
@@ -469,15 +453,15 @@ class ActionNetworkCollector(BaseCollector):
                 logger.error("Error processing historical data", 
                            game_id=game.get("id"), error=str(e))
     
-    async def _process_comprehensive_data(self, games: List[Dict[str, Any]], game_mappings: Dict[str, int]) -> None:
-        """Process comprehensive data with smart filtering."""
+    async def _process_comprehensive_data(self, games: List[Dict[str, Any]], game_mappings: Dict[str, str]) -> None:
+        """Process comprehensive data - stores only to raw_data.action_network_odds."""
         for game in games:
             try:
                 game_id = str(game.get("id"))
                 if game_id not in game_mappings:
+                    logger.debug(f"Skipping game {game_id} - no raw data mapping")
                     continue
                 
-                internal_game_id = game_mappings[game_id]
                 teams = game.get("teams", [])
                 
                 if len(teams) < 2:
@@ -489,23 +473,15 @@ class ActionNetworkCollector(BaseCollector):
                 
                 markets = game.get("markets", {})
                 
-                # Process each sportsbook
+                # Process each sportsbook - store to RAW layer only
                 for book_id_str, book_data in markets.items():
                     book_id = int(book_id_str)
                     
-                    # Get sportsbook mapping
-                    sportsbook_mapping = await self.client.sportsbook_resolver.resolve_action_network_id(book_id)
-                    if not sportsbook_mapping:
-                        continue
-                    
-                    sportsbook_id, sportsbook_name = sportsbook_mapping
-                    
                     event_markets = book_data.get("event", {})
                     
-                    # Process each market type with smart filtering
-                    await self._process_filtered_markets(
-                        event_markets, internal_game_id, sportsbook_id, sportsbook_name,
-                        home_team, away_team, game_datetime, int(game_id), book_id
+                    # Store all odds data to raw_data.action_network_odds
+                    await self._store_comprehensive_odds_data(
+                        game_id, book_id_str, event_markets, home_team, away_team, game_datetime
                     )
                 
                 self.stats["games_processed"] += 1
@@ -514,349 +490,108 @@ class ActionNetworkCollector(BaseCollector):
                 logger.error("Error processing comprehensive data", 
                            game_id=game.get("id"), error=str(e))
     
-    async def _process_current_market(self, game: Dict[str, Any], book_id: int, 
-                                    market_type: str, market_data: List[Dict]) -> None:
-        """Process current market data."""
-        # Implementation for current market processing
-        logger.debug("Processing current market", 
-                    game_id=game.get("id"), book_id=book_id, market_type=market_type)
-        self.stats["current_lines"] += 1
+    async def _process_current_market(self, *args, **kwargs) -> None:
+        """DEPRECATED: Use raw data storage methods instead."""
+        logger.warning("_process_current_market is deprecated. Use raw data storage methods.")
+        pass
     
     async def _process_game_history(self, game: Dict[str, Any], history_data: Dict[str, Any]) -> None:
-        """Process game history data."""
-        # Implementation for game history processing
-        logger.debug("Processing game history", game_id=game.get("id"))
+        """Process game history data - stores to RAW layer only."""
+        game_id = game.get("id")
+        if not game_id or not history_data:
+            return
+            
+        # Store raw historical data
+        await self._store_raw_historical_data(str(game_id), history_data)
+        
+        logger.debug("Stored game history to raw data", game_id=game_id)
         self.stats["history_points"] += len(history_data)
     
-    async def _process_filtered_markets(self, event_markets: Dict[str, Any], 
-                                      internal_game_id: int, sportsbook_id: int, 
-                                      sportsbook_name: str, home_team: str, away_team: str,
-                                      game_datetime: datetime, action_network_game_id: int, 
-                                      action_network_book_id: int) -> None:
-        """Process markets with smart filtering."""
-        # Process moneyline markets
-        await self._process_moneyline_markets(
-            event_markets.get("moneyline", []), internal_game_id,
-            sportsbook_id, sportsbook_name, home_team, away_team,
-            game_datetime, action_network_game_id, action_network_book_id
-        )
-        
-        # Process spread markets
-        await self._process_spread_markets(
-            event_markets.get("spread", []), internal_game_id,
-            sportsbook_id, sportsbook_name, home_team, away_team,
-            game_datetime, action_network_game_id, action_network_book_id
-        )
-        
-        # Process totals markets
-        await self._process_totals_markets(
-            event_markets.get("total", []), internal_game_id,
-            sportsbook_id, sportsbook_name, home_team, away_team,
-            game_datetime, action_network_game_id, action_network_book_id
-        )
+    async def _store_comprehensive_odds_data(self, game_id: str, sportsbook_key: str, 
+                                           event_markets: Dict[str, Any], home_team: str, 
+                                           away_team: str, game_datetime: datetime) -> None:
+        """Store comprehensive odds data to raw_data.action_network_odds."""
+        try:
+            # Add metadata to the odds data
+            enhanced_odds_data = {
+                "event_markets": event_markets,
+                "game_metadata": {
+                    "home_team": home_team,
+                    "away_team": away_team,
+                    "game_datetime": game_datetime.isoformat()
+                },
+                "collection_info": {
+                    "collection_mode": "comprehensive",
+                    "smart_filtering_applied": True,
+                    "timestamp": now_est().isoformat()
+                }
+            }
+            
+            # Store to raw_data.action_network_odds
+            await self._store_raw_odds_data(game_id, enhanced_odds_data, sportsbook_key)
+            
+            # Update statistics
+            for market_type in ["moneyline", "spread", "total"]:
+                market_data = event_markets.get(market_type, [])
+                if market_data:
+                    if market_type == "moneyline":
+                        self.stats["moneyline_inserted"] += len(market_data)
+                    elif market_type == "spread":
+                        self.stats["spread_inserted"] += len(market_data)
+                    elif market_type == "total":
+                        self.stats["totals_inserted"] += len(market_data)
+                    self.stats["total_inserted"] += len(market_data)
+                    
+        except Exception as e:
+            logger.error("Error storing comprehensive odds data", 
+                        game_id=game_id, sportsbook_key=sportsbook_key, error=str(e))
     
     async def _process_moneyline_markets(self, moneyline_data: List[Dict], 
-                                       game_id: int, sportsbook_id: int,
-                                       sportsbook_name: str, home_team: str, away_team: str,
-                                       game_datetime: datetime, action_network_game_id: int, 
-                                       action_network_book_id: int) -> None:
-        """Process moneyline markets with smart filtering."""
-        if len(moneyline_data) < 2:
-            return
-        
-        home_entry = next((entry for entry in moneyline_data if entry.get("side") == "home"), None)
-        away_entry = next((entry for entry in moneyline_data if entry.get("side") == "away"), None)
-        
-        if not home_entry or not away_entry:
-            return
-        
-        # Get current odds
-        current_home_odds = home_entry.get("odds")
-        current_away_odds = away_entry.get("odds")
-        
-        # Get history
-        home_history = home_entry.get("history", [])
-        away_history = away_entry.get("history", [])
-        
-        if home_history and away_history:
-            # Apply smart filtering
-            filtered_home = self.filter.filter_movements(home_history)
-            filtered_away = self.filter.filter_movements(away_history)
-            
-            self.stats["filtered_movements"] += len(filtered_home)
-            
-            # Process filtered historical data
-            await self._insert_moneyline_history(
-                game_id, sportsbook_id, sportsbook_name, home_team, away_team,
-                game_datetime, action_network_game_id, action_network_book_id,
-                filtered_home, filtered_away
-            )
-            
-        elif current_home_odds and current_away_odds:
-            # Insert current line only
-            await self._insert_single_moneyline(
-                game_id, sportsbook_id, sportsbook_name, home_team, away_team,
-                game_datetime, action_network_game_id, action_network_book_id,
-                current_home_odds, current_away_odds, now_est()
-            )
-            self.stats["current_lines"] += 1
+                                       game_id: str, sportsbook_key: str,
+                                       home_team: str, away_team: str,
+                                       game_datetime: datetime) -> None:
+        """Process moneyline markets - DEPRECATED: Use _store_comprehensive_odds_data instead."""
+        logger.warning("_process_moneyline_markets is deprecated. Use raw data storage methods.")
+        # This method is now deprecated - all odds data should go to raw_data.action_network_odds
+        pass
     
     async def _process_spread_markets(self, spread_data: List[Dict], 
-                                    game_id: int, sportsbook_id: int,
-                                    sportsbook_name: str, home_team: str, away_team: str,
-                                    game_datetime: datetime, action_network_game_id: int, 
-                                    action_network_book_id: int) -> None:
-        """Process spread markets with smart filtering."""
-        if len(spread_data) < 2:
-            return
-        
-        home_entry = next((entry for entry in spread_data if entry.get("side") == "home"), None)
-        
-        if not home_entry:
-            return
-        
-        # Get current data
-        current_line = home_entry.get("value")
-        current_price = home_entry.get("odds")
-        
-        # Get history
-        history = home_entry.get("history", [])
-        
-        if history:
-            # Apply smart filtering
-            filtered_history = self.filter.filter_movements(history)
-            self.stats["filtered_movements"] += len(filtered_history)
-            
-            # Process filtered historical data
-            for hist_point in filtered_history:
-                spread_line = hist_point.get("value")
-                spread_price = hist_point.get("odds")
-                timestamp = hist_point.get("updated_at")
-                
-                if spread_line and spread_price and timestamp:
-                    odds_timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                    await self._insert_single_spread(
-                        game_id, sportsbook_id, sportsbook_name, home_team, away_team,
-                        game_datetime, action_network_game_id, action_network_book_id,
-                        spread_line, spread_price, odds_timestamp
-                    )
-        
-        elif current_line and current_price:
-            # Insert current line only
-            await self._insert_single_spread(
-                game_id, sportsbook_id, sportsbook_name, home_team, away_team,
-                game_datetime, action_network_game_id, action_network_book_id,
-                current_line, current_price, now_est()
-            )
-            self.stats["current_lines"] += 1
+                                    game_id: str, sportsbook_key: str,
+                                    home_team: str, away_team: str,
+                                    game_datetime: datetime) -> None:
+        """Process spread markets - DEPRECATED: Use _store_comprehensive_odds_data instead."""
+        logger.warning("_process_spread_markets is deprecated. Use raw data storage methods.")
+        # This method is now deprecated - all odds data should go to raw_data.action_network_odds
+        pass
     
     async def _process_totals_markets(self, totals_data: List[Dict], 
-                                    game_id: int, sportsbook_id: int,
-                                    sportsbook_name: str, home_team: str, away_team: str,
-                                    game_datetime: datetime, action_network_game_id: int, 
-                                    action_network_book_id: int) -> None:
-        """Process totals markets with smart filtering."""
-        if len(totals_data) < 2:
-            return
-        
-        over_entry = next((entry for entry in totals_data if entry.get("side") == "over"), None)
-        
-        if not over_entry:
-            return
-        
-        # Get current data
-        current_total = over_entry.get("value")
-        current_price = over_entry.get("odds")
-        
-        # Get history
-        history = over_entry.get("history", [])
-        
-        if history:
-            # Apply smart filtering
-            filtered_history = self.filter.filter_movements(history)
-            self.stats["filtered_movements"] += len(filtered_history)
-            
-            # Process filtered historical data
-            for hist_point in filtered_history:
-                total_line = hist_point.get("value")
-                total_price = hist_point.get("odds")
-                timestamp = hist_point.get("updated_at")
-                
-                if total_line and total_price and timestamp:
-                    odds_timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                    await self._insert_single_total(
-                        game_id, sportsbook_id, sportsbook_name, home_team, away_team,
-                        game_datetime, action_network_game_id, action_network_book_id,
-                        total_line, total_price, odds_timestamp
-                    )
-        
-        elif current_total and current_price:
-            # Insert current line only
-            await self._insert_single_total(
-                game_id, sportsbook_id, sportsbook_name, home_team, away_team,
-                game_datetime, action_network_game_id, action_network_book_id,
-                current_total, current_price, now_est()
-            )
-            self.stats["current_lines"] += 1
+                                    game_id: str, sportsbook_key: str,
+                                    home_team: str, away_team: str,
+                                    game_datetime: datetime) -> None:
+        """Process totals markets - DEPRECATED: Use _store_comprehensive_odds_data instead."""
+        logger.warning("_process_totals_markets is deprecated. Use raw data storage methods.")
+        # This method is now deprecated - all odds data should go to raw_data.action_network_odds
+        pass
     
-    async def _insert_moneyline_history(self, game_id: int, sportsbook_id: int, 
-                                      sportsbook_name: str, home_team: str, away_team: str,
-                                      game_datetime: datetime, action_network_game_id: int, 
-                                      action_network_book_id: int, home_history: List[Dict], 
-                                      away_history: List[Dict]) -> None:
-        """Insert moneyline history points."""
-        # Create lookup for away odds by timestamp
-        away_odds_lookup = {}
-        for away_point in away_history:
-            timestamp = away_point.get("updated_at")
-            if timestamp:
-                away_odds_lookup[timestamp] = away_point.get("odds")
-        
-        # Process each home history point
-        for home_point in home_history:
-            home_odds = home_point.get("odds")
-            timestamp = home_point.get("updated_at")
-            
-            if not home_odds or not timestamp:
-                continue
-            
-            # Find matching away odds
-            away_odds = away_odds_lookup.get(timestamp)
-            if not away_odds:
-                continue
-            
-            # Parse timestamp
-            odds_timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-            
-            await self._insert_single_moneyline(
-                game_id, sportsbook_id, sportsbook_name, home_team, away_team,
-                game_datetime, action_network_game_id, action_network_book_id,
-                home_odds, away_odds, odds_timestamp
-            )
+    async def _insert_moneyline_history(self, *args, **kwargs) -> None:
+        """DEPRECATED: Legacy method - use raw data storage instead."""
+        logger.warning("_insert_moneyline_history is deprecated. All odds data should be stored in raw_data schema.")
+        pass
     
-    async def _insert_single_moneyline(self, game_id: int, sportsbook_id: int, 
-                                     sportsbook_name: str, home_team: str, away_team: str,
-                                     game_datetime: datetime, action_network_game_id: int, 
-                                     action_network_book_id: int, home_odds: int, 
-                                     away_odds: int, odds_timestamp: datetime) -> None:
-        """Insert a single moneyline record."""
-        try:
-            conn = await asyncpg.connect(**self.db_config)
-            
-            # Create unique external source ID with timestamp
-            timestamp_str = odds_timestamp.strftime("%Y%m%d_%H%M%S_%f")
-            external_source_id = f"AN_{action_network_game_id}_{action_network_book_id}_ML_{timestamp_str}"
-            
-            # Check if record already exists to avoid duplicates
-            existing = await conn.fetchval("""
-                SELECT id FROM core_betting.betting_lines_moneyline 
-                WHERE game_id = $1 AND sportsbook_id = $2 AND home_ml = $3 AND away_ml = $4 
-                AND ABS(EXTRACT(EPOCH FROM (odds_timestamp - $5))) < 60
-            """, game_id, sportsbook_id, home_odds, away_odds, prepare_for_postgres(odds_timestamp))
-            
-            if not existing:
-                await conn.execute("""
-                    INSERT INTO core_betting.betting_lines_moneyline (
-                        game_id, external_source_id, sportsbook_id, sportsbook,
-                        home_team, away_team, home_ml, away_ml, odds_timestamp,
-                        collection_method, source, game_datetime, created_at, updated_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-                """,
-                game_id, external_source_id, sportsbook_id, sportsbook_name,
-                home_team, away_team, home_odds, away_odds,
-                prepare_for_postgres(odds_timestamp), "API", "ACTION_NETWORK",
-                prepare_for_postgres(game_datetime), now_est(), prepare_for_postgres(odds_timestamp)
-                )
-                
-                self.stats["moneyline_inserted"] += 1
-                self.stats["total_inserted"] += 1
-            
-            await conn.close()
-            
-        except Exception as e:
-            logger.error("Error inserting moneyline", error=str(e)[:100])
+    async def _insert_single_moneyline(self, *args, **kwargs) -> None:
+        """DEPRECATED: Legacy method - use raw data storage instead."""
+        logger.warning("_insert_single_moneyline is deprecated. All odds data should be stored in raw_data schema.")
+        pass
     
-    async def _insert_single_spread(self, game_id: int, sportsbook_id: int, 
-                                  sportsbook_name: str, home_team: str, away_team: str,
-                                  game_datetime: datetime, action_network_game_id: int, 
-                                  action_network_book_id: int, spread_line: float, 
-                                  spread_price: int, odds_timestamp: datetime) -> None:
-        """Insert a single spread record."""
-        try:
-            conn = await asyncpg.connect(**self.db_config)
-            
-            timestamp_str = odds_timestamp.strftime("%Y%m%d_%H%M%S_%f")
-            external_source_id = f"AN_{action_network_game_id}_{action_network_book_id}_SP_{timestamp_str}"
-            
-            # Check if record already exists to avoid duplicates
-            existing = await conn.fetchval("""
-                SELECT id FROM core_betting.betting_lines_spread 
-                WHERE game_id = $1 AND sportsbook_id = $2 AND spread_line = $3 AND home_spread_price = $4
-                AND ABS(EXTRACT(EPOCH FROM (odds_timestamp - $5))) < 60
-            """, game_id, sportsbook_id, spread_line, spread_price, prepare_for_postgres(odds_timestamp))
-            
-            if not existing:
-                await conn.execute("""
-                    INSERT INTO core_betting.betting_lines_spread (
-                        game_id, external_source_id, sportsbook_id, sportsbook,
-                        home_team, away_team, spread_line, home_spread_price, away_spread_price,
-                        odds_timestamp, collection_method, source, game_datetime, created_at, updated_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-                """,
-                game_id, external_source_id, sportsbook_id, sportsbook_name,
-                home_team, away_team, spread_line, spread_price, -110,  # Default away price
-                prepare_for_postgres(odds_timestamp), "API", "ACTION_NETWORK",
-                prepare_for_postgres(game_datetime), now_est(), prepare_for_postgres(odds_timestamp)
-                )
-                
-                self.stats["spread_inserted"] += 1
-                self.stats["total_inserted"] += 1
-            
-            await conn.close()
-            
-        except Exception as e:
-            logger.error("Error inserting spread", error=str(e)[:100])
+    async def _insert_single_spread(self, *args, **kwargs) -> None:
+        """DEPRECATED: Legacy method - use raw data storage instead."""
+        logger.warning("_insert_single_spread is deprecated. All odds data should be stored in raw_data schema.")
+        pass
     
-    async def _insert_single_total(self, game_id: int, sportsbook_id: int, 
-                                 sportsbook_name: str, home_team: str, away_team: str,
-                                 game_datetime: datetime, action_network_game_id: int, 
-                                 action_network_book_id: int, total_line: float, 
-                                 total_price: int, odds_timestamp: datetime) -> None:
-        """Insert a single totals record."""
-        try:
-            conn = await asyncpg.connect(**self.db_config)
-            
-            timestamp_str = odds_timestamp.strftime("%Y%m%d_%H%M%S_%f")
-            external_source_id = f"AN_{action_network_game_id}_{action_network_book_id}_TO_{timestamp_str}"
-            
-            # Check if record already exists to avoid duplicates
-            existing = await conn.fetchval("""
-                SELECT id FROM core_betting.betting_lines_totals 
-                WHERE game_id = $1 AND sportsbook_id = $2 AND total_line = $3 AND over_price = $4
-                AND ABS(EXTRACT(EPOCH FROM (odds_timestamp - $5))) < 60
-            """, game_id, sportsbook_id, total_line, total_price, prepare_for_postgres(odds_timestamp))
-            
-            if not existing:
-                await conn.execute("""
-                    INSERT INTO core_betting.betting_lines_totals (
-                        game_id, external_source_id, sportsbook_id, sportsbook,
-                        home_team, away_team, total_line, over_price, under_price,
-                        odds_timestamp, collection_method, source, game_datetime, created_at, updated_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-                """,
-                game_id, external_source_id, sportsbook_id, sportsbook_name,
-                home_team, away_team, total_line, total_price, -110,  # Default under price
-                prepare_for_postgres(odds_timestamp), "API", "ACTION_NETWORK",
-                prepare_for_postgres(game_datetime), now_est(), prepare_for_postgres(odds_timestamp)
-                )
-                
-                self.stats["totals_inserted"] += 1
-                self.stats["total_inserted"] += 1
-            
-            await conn.close()
-            
-        except Exception as e:
-            logger.error("Error inserting totals", error=str(e)[:100])
+    async def _insert_single_total(self, *args, **kwargs) -> None:
+        """DEPRECATED: Legacy method - use raw data storage instead."""
+        logger.warning("_insert_single_total is deprecated. All odds data should be stored in raw_data schema.")
+        pass
     
     def validate_record(self, record: Dict[str, Any]) -> bool:
         """Validate Action Network game record."""

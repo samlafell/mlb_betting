@@ -375,7 +375,8 @@ class StagingZoneProcessor(BaseZoneProcessor):
                     records_by_type['generic'].append(record)
             
             # Insert records for each type
-            async with db_connection.get_async_connection() as connection:
+            from ...data.database.connection import get_connection
+            async with get_connection() as connection:
                 for bet_type, type_records in records_by_type.items():
                     if not type_records:
                         continue

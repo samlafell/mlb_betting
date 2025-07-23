@@ -121,7 +121,7 @@ async def _run_pipeline_async(zone: str, mode: str, source: Optional[str], batch
                 })
             else:
                 zone_type = ZoneType(zone)
-                execution = await orchestrator.run_zone_pipeline(zone_type, records, {
+                execution = await orchestrator.run_single_zone_pipeline(zone_type, records, {
                     'source': source,
                     'batch_size': batch_size,
                     'cli_initiated': True
@@ -274,10 +274,19 @@ async def _get_sample_records(source: Optional[str], limit: int) -> list[DataRec
     
     sample_records = []
     
+    # Use valid sources that have table mappings
+    valid_sources = ['action_network', 'sbd', 'vsin', 'mlb_stats_api']
+    
     for i in range(min(limit, 5)):  # Limit to 5 for demo
+        # If no source specified or 'all', cycle through valid sources
+        if source == 'all' or source is None:
+            record_source = valid_sources[i % len(valid_sources)]
+        else:
+            record_source = source
+        
         record = DataRecord(
-            external_id=f"sample_{source or 'generic'}_{i}",
-            source=source or 'generic',
+            external_id=f"sample_{record_source}_{i}",
+            source=record_source,
             raw_data={
                 'game_id': f'game_{i}',
                 'home_team': 'Sample Home Team',
