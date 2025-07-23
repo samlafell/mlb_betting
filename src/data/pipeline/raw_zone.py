@@ -169,7 +169,7 @@ class RawZoneProcessor(BaseZoneProcessor):
             records: List of processed raw records to store
         """
         try:
-            connection = await self.get_connection()
+            db_connection = await self.get_connection()
             
             # Group records by table/source type
             records_by_table = {}
@@ -181,8 +181,9 @@ class RawZoneProcessor(BaseZoneProcessor):
                 records_by_table[table_name].append(record)
             
             # Insert records for each table
-            for table_name, table_records in records_by_table.items():
-                await self._insert_records_to_table(connection, table_name, table_records)
+            async with db_connection.get_async_connection() as connection:
+                for table_name, table_records in records_by_table.items():
+                    await self._insert_records_to_table(connection, table_name, table_records)
             
             logger.info(f"Stored {len(records)} raw records across {len(records_by_table)} tables")
             
@@ -207,19 +208,9 @@ class RawZoneProcessor(BaseZoneProcessor):
         elif source == 'mlb_stats_api' or source == 'mlb':
             return 'raw_data.mlb_stats_api'
         else:
-            # Default to generic betting lines table
-            bet_type = getattr(record, 'bet_type', None)
-            bet_type = bet_type.lower() if bet_type else ''
-            if bet_type == 'moneyline':
-                return 'raw_data.moneylines_raw'
-            elif bet_type == 'spread':
-                return 'raw_data.spreads_raw'
-            elif bet_type == 'total':
-                return 'raw_data.totals_raw'
-            elif bet_type == 'line_movement':
-                return 'raw_data.line_movements_raw'
-            else:
-                return 'raw_data.betting_lines_raw'
+            # No generic tables - all data must have a specific source
+            logger.error(f"Unknown source '{source}' for record - no source-specific table available")
+            raise ValueError(f"No table mapping available for source: {source}")
 
     async def _insert_records_to_table(
         self, 
@@ -240,16 +231,9 @@ class RawZoneProcessor(BaseZoneProcessor):
                 await self._insert_vsin_data(connection, records)
             elif 'mlb_stats_api' in table_name:
                 await self._insert_mlb_stats_api(connection, records)
-            elif 'moneylines_raw' in table_name:
-                await self._insert_moneylines_raw(connection, records)
-            elif 'spreads_raw' in table_name:
-                await self._insert_spreads_raw(connection, records)
-            elif 'totals_raw' in table_name:
-                await self._insert_totals_raw(connection, records)
-            elif 'line_movements_raw' in table_name:
-                await self._insert_line_movements_raw(connection, records)
             else:
-                await self._insert_betting_lines_raw(connection, records)
+                logger.error(f"No insertion method available for table: {table_name}")
+                raise ValueError(f"No insertion method for table: {table_name}")
                 
         except Exception as e:
             logger.error(f"Error inserting records to {table_name}: {e}")
@@ -280,30 +264,7 @@ class RawZoneProcessor(BaseZoneProcessor):
                 getattr(record, 'game_date', None)
             )
 
-    async def _insert_betting_lines_raw(self, connection, records: List[DataRecord]) -> None:
-        """Insert generic betting lines records."""
-        query = """
-        INSERT INTO raw_data.betting_lines_raw 
-        (external_id, source, game_external_id, sportsbook_id, sportsbook_name, 
-         bet_type, raw_data, collected_at, game_date)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        """
-        
-        for record in records:
-            await connection.execute(
-                query,
-                record.external_id,
-                record.source,
-                getattr(record, 'game_external_id', None),
-                getattr(record, 'sportsbook_id', None),
-                getattr(record, 'sportsbook_name', None),
-                getattr(record, 'bet_type', None),
-                json.dumps(record.raw_data) if record.raw_data else None,
-                record.processed_at or datetime.now(timezone.utc),
-                getattr(record, 'game_date', None)
-            )
-
-    # Additional insert methods for other table types...
+    # Source-specific insert methods only - no generic tables
     async def _insert_sbd_betting_splits(self, connection, records: List[DataRecord]) -> None:
         """Insert SBD betting splits records."""
         query = """
@@ -402,13 +363,21 @@ class RawZoneProcessor(BaseZoneProcessor):
     async def health_check(self) -> Dict[str, Any]:
         """Get RAW zone health and status information."""
         try:
-            connection = await self.get_connection()
+            db_connection = await self.get_connection()
             # Basic health check - verify we can connect
+            connection_healthy = False
+            try:
+                async with db_connection.get_async_connection() as connection:
+                    await connection.fetchval("SELECT 1")
+                    connection_healthy = True
+            except Exception:
+                connection_healthy = False
+                
             return {
                 "zone_type": self.zone_type.value,
                 "schema_name": self.schema_name,
-                "status": "healthy",
-                "connection_status": "connected" if connection else "disconnected",
+                "status": "healthy" if connection_healthy else "unhealthy",
+                "connection_status": "connected" if connection_healthy else "disconnected",
                 "table_mappings": len(self.table_mappings),
                 "metrics": {
                     "records_processed": self._metrics.records_processed,

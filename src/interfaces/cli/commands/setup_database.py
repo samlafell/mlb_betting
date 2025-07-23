@@ -104,7 +104,7 @@ async def _setup_action_network_async(
 
     finally:
         if connection:
-            await connection.close()
+            await connection.disconnect()
 
 
 async def _test_action_network_connection(connection, verbose: bool):
@@ -283,7 +283,7 @@ async def _check_data_async(
 
     finally:
         if connection:
-            await connection.close()
+            await connection.disconnect()
 
 
 @database.command()
@@ -322,7 +322,7 @@ async def _test_connection_async(verbose: bool):
 
     finally:
         if connection:
-            await connection.close()
+            await connection.disconnect()
 
 
 if __name__ == "__main__":

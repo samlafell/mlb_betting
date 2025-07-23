@@ -357,7 +357,7 @@ class StagingZoneProcessor(BaseZoneProcessor):
             records: List of processed staging records to store
         """
         try:
-            connection = await self.get_connection()
+            db_connection = await self.get_connection()
             
             # Group records by bet type
             records_by_type = {
@@ -375,18 +375,19 @@ class StagingZoneProcessor(BaseZoneProcessor):
                     records_by_type['generic'].append(record)
             
             # Insert records for each type
-            for bet_type, type_records in records_by_type.items():
-                if not type_records:
-                    continue
-                    
-                if bet_type == 'moneyline':
-                    await self._insert_moneylines(connection, type_records)
-                elif bet_type == 'spread':
-                    await self._insert_spreads(connection, type_records)
-                elif bet_type == 'total':
-                    await self._insert_totals(connection, type_records)
-                else:
-                    await self._insert_betting_lines(connection, type_records)
+            async with db_connection.get_async_connection() as connection:
+                for bet_type, type_records in records_by_type.items():
+                    if not type_records:
+                        continue
+                        
+                    if bet_type == 'moneyline':
+                        await self._insert_moneylines(connection, type_records)
+                    elif bet_type == 'spread':
+                        await self._insert_spreads(connection, type_records)
+                    elif bet_type == 'total':
+                        await self._insert_totals(connection, type_records)
+                    else:
+                        await self._insert_betting_lines(connection, type_records)
             
             logger.info(f"Stored {len(records)} staging records")
             

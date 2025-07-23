@@ -49,7 +49,7 @@ class BaseZoneProcessor(DataZone):
     async def get_connection(self):
         """Get database connection."""
         if not self._connection:
-            self._connection = await get_connection()
+            self._connection = get_connection()
         return self._connection
 
     async def process_batch(

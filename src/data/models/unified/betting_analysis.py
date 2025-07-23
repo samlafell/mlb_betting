@@ -15,8 +15,8 @@ from enum import Enum
 from typing import Any
 
 from pydantic import Field
-from ....core.pydantic_compat import computed_field, field_validator, ValidationInfo
 
+from ....core.pydantic_compat import ValidationInfo, field_validator
 from .base import AnalysisEntity, ValidatedModel
 from .odds import BookType, MarketType, OddsData
 
@@ -189,7 +189,7 @@ class BettingAnalysis(AnalysisEntity):
         return v
 
     @field_validator("primary_signal")
-    @classmethod  
+    @classmethod
     def validate_primary_signal(
         cls, v: BettingSignalType | None, info: ValidationInfo
     ) -> BettingSignalType | None:
@@ -463,6 +463,13 @@ class BettingSplit(ValidatedModel):
     # Market information
     market_type: MarketType = Field(..., description="Market type for this split")
 
+    team_side: str | None = Field(
+        default=None,
+        description="Which team/side the percentages refer to (home, away, over, under)",
+        pattern="^(home|away|over|under|unknown)?$",
+        max_length=10,
+    )
+
     # Public betting data
     public_bet_percentage: float | None = Field(
         default=None, description="Percentage of public bets (0.0-1.0)", ge=0.0, le=1.0
@@ -564,6 +571,11 @@ class BettingSplit(ValidatedModel):
         """Get human-readable summary of betting splits."""
         summary_parts = []
 
+        # Add team/side information if available
+        if self.team_side:
+            side_display = self.team_side.title()
+            summary_parts.append(f"{side_display}")
+
         if self.public_bet_percentage is not None:
             summary_parts.append(f"Public: {self.public_bet_percentage:.1%} bets")
 
@@ -577,6 +589,35 @@ class BettingSplit(ValidatedModel):
             return "No split data available"
 
         return " | ".join(summary_parts)
+
+    @property
+    def money_pattern(self) -> str:
+        """Detect money vs bet percentage patterns."""
+        if self.public_money_percentage is None or self.public_bet_percentage is None:
+            return "unknown"
+
+        money_diff = self.public_money_percentage - self.public_bet_percentage
+
+        if money_diff > 0.15:
+            return "sharp_money"
+        elif money_diff < -0.15:
+            return "public_heavy"
+        else:
+            return "balanced"
+
+    @property
+    def team_display(self) -> str:
+        """Get display name for the team side."""
+        if self.team_side == "home":
+            return "HOME"
+        elif self.team_side == "away":
+            return "AWAY"
+        elif self.team_side == "over":
+            return "OVER"
+        elif self.team_side == "under":
+            return "UNDER"
+        else:
+            return "UNKNOWN"
 
     def calculate_fade_value(self) -> float:
         """Calculate fade value based on public/sharp divergence."""

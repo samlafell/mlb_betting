@@ -8,6 +8,7 @@ solution that supports all collection modes.
 """
 
 import asyncio
+import json
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Union
 from enum import Enum
@@ -165,7 +166,10 @@ class ActionNetworkCollector(BaseCollector):
         self.stats["games_found"] = len(games)
         logger.info("Found games for current lines", count=len(games))
         
-        # Process current lines
+        # Store raw data first (RAW layer)
+        await self._store_raw_game_data(games, "https://api.actionnetwork.com/web/v2/scoreboard/publicbetting/mlb")
+        
+        # Process current lines (CURATED layer)
         await self._process_current_lines(games)
         
         return games
@@ -197,10 +201,19 @@ class ActionNetworkCollector(BaseCollector):
         self.stats["games_found"] = len(games)
         logger.info("Found games for comprehensive collection", count=len(games))
         
-        # Create game records first
+        # Store raw game data first (RAW layer)
+        await self._store_raw_game_data(games, "https://api.actionnetwork.com/web/v2/scoreboard/publicbetting/mlb")
+        
+        # Store raw odds data from current games (RAW layer)
+        await self._store_raw_current_odds(games)
+        
+        # Fetch and store historical data for each game (RAW layer)
+        await self._fetch_and_store_historical_data(games)
+        
+        # Create game records first (CURATED layer)
         game_mappings = await self._create_games(games)
         
-        # Process comprehensive data with smart filtering
+        # Process comprehensive data with smart filtering (CURATED layer)
         await self._process_comprehensive_data(games, game_mappings)
         
         return games
@@ -255,17 +268,176 @@ class ActionNetworkCollector(BaseCollector):
         
         return game_mappings
     
+    async def _store_raw_game_data(self, games: List[Dict[str, Any]], endpoint_url: str = None) -> None:
+        """Store raw game data to raw_data.action_network_games table."""
+        if not games:
+            return
+            
+        try:
+            conn = await asyncpg.connect(
+                host=self.db_config["host"],
+                port=self.db_config["port"],
+                database=self.db_config["database"],
+                user=self.db_config["user"]
+            )
+            
+            for game in games:
+                game_id = game.get('id')
+                if not game_id:
+                    continue
+                    
+                # Store raw game data exactly as received from API
+                await conn.execute("""
+                    INSERT INTO raw_data.action_network_games (
+                        external_game_id, raw_response, endpoint_url, 
+                        response_status, game_date, collected_at, created_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (external_game_id) DO UPDATE SET
+                        raw_response = EXCLUDED.raw_response,
+                        collected_at = EXCLUDED.collected_at
+                """,
+                str(game_id), 
+                json.dumps(game),  # Convert dict to JSON string for JSONB storage
+                endpoint_url or "https://api.actionnetwork.com/web/v2/scoreboard/publicbetting/mlb",
+                200,
+                safe_game_datetime_parse(game.get('start_time')).date() if game.get('start_time') else now_est().date(),
+                now_est(),
+                now_est()
+                )
+            
+            await conn.close()
+            logger.info(f"Stored {len(games)} games to raw_data.action_network_games")
+            
+        except Exception as e:
+            logger.error("Error storing raw game data", error=str(e))
+    
+    async def _store_raw_odds_data(self, game_id: str, odds_data: Dict[str, Any], sportsbook_key: str = None) -> None:
+        """Store raw odds data to raw_data.action_network_odds table."""
+        try:
+            conn = await asyncpg.connect(
+                host=self.db_config["host"],
+                port=self.db_config["port"],
+                database=self.db_config["database"],
+                user=self.db_config["user"]
+            )
+            
+            await conn.execute("""
+                INSERT INTO raw_data.action_network_odds (
+                    external_game_id, sportsbook_key, raw_odds, collected_at, created_at
+                ) VALUES ($1, $2, $3, $4, $5)
+            """,
+            str(game_id),
+            sportsbook_key or "unknown", 
+            json.dumps(odds_data),  # Convert dict to JSON string for JSONB storage
+            now_est(),
+            now_est()
+            )
+            
+            await conn.close()
+            logger.debug(f"Stored odds data for game {game_id}, sportsbook {sportsbook_key}")
+            
+        except Exception as e:
+            logger.error("Error storing raw odds data", error=str(e), game_id=game_id)
+    
+    async def _store_raw_current_odds(self, games: List[Dict[str, Any]]) -> None:
+        """Extract and store raw odds data from current games to raw_data.action_network_odds table."""
+        try:
+            for game in games:
+                game_id = game.get('id')
+                if not game_id:
+                    continue
+                
+                markets = game.get('markets', {})
+                for book_id_str, book_data in markets.items():
+                    event_markets = book_data.get('event', {})
+                    if event_markets:
+                        await self._store_raw_odds_data(str(game_id), event_markets, book_id_str)
+                        
+            logger.info(f"Processed current odds for {len(games)} games")
+            
+        except Exception as e:
+            logger.error("Error storing raw current odds", error=str(e))
+    
+    async def _fetch_and_store_historical_data(self, games: List[Dict[str, Any]]) -> None:
+        """Fetch historical line movement data for each game and store in RAW layer."""
+        try:
+            for game in games:
+                game_id = game.get('id')
+                if not game_id:
+                    continue
+                
+                # Fetch historical data from history endpoint
+                history_data = await self.client.fetch_game_history(int(game_id))
+                
+                if history_data:
+                    # Store raw historical data
+                    await self._store_raw_historical_data(str(game_id), history_data)
+                    self.stats["history_points"] += len(history_data)
+                    
+            logger.info(f"Fetched historical data for {len(games)} games")
+            
+        except Exception as e:
+            logger.error("Error fetching and storing historical data", error=str(e))
+    
+    async def _store_raw_historical_data(self, game_id: str, history_data: Dict[str, Any]) -> None:
+        """Store raw historical data to raw_data.action_network_history table.""" 
+        try:
+            conn = await asyncpg.connect(
+                host=self.db_config["host"],
+                port=self.db_config["port"], 
+                database=self.db_config["database"],
+                user=self.db_config["user"]
+            )
+            
+            # Create table if it doesn't exist
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS raw_data.action_network_history (
+                    id BIGSERIAL PRIMARY KEY,
+                    external_game_id VARCHAR(255),
+                    raw_history JSONB NOT NULL,
+                    endpoint_url TEXT,
+                    collected_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    UNIQUE(external_game_id)
+                )
+            """)
+            
+            await conn.execute("""
+                INSERT INTO raw_data.action_network_history (
+                    external_game_id, raw_history, endpoint_url, collected_at, created_at
+                ) VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (external_game_id) DO UPDATE SET
+                    raw_history = EXCLUDED.raw_history,
+                    collected_at = EXCLUDED.collected_at
+            """,
+            str(game_id),
+            json.dumps(history_data),
+            f"https://api.actionnetwork.com/web/v2/markets/event/{game_id}/history", 
+            now_est(),
+            now_est()
+            )
+            
+            await conn.close()
+            logger.debug(f"Stored historical data for game {game_id}")
+            
+        except Exception as e:
+            logger.error("Error storing raw historical data", error=str(e), game_id=game_id)
+    
     async def _process_current_lines(self, games: List[Dict[str, Any]]) -> None:
         """Process current betting lines."""
         for game in games:
             try:
+                game_id = game.get("id")
                 markets = game.get("markets", {})
                 
                 for book_id_str, book_data in markets.items():
                     book_id = int(book_id_str)
                     event_markets = book_data.get("event", {})
                     
-                    # Process each market type
+                    # Store raw odds data to RAW layer first
+                    await self._store_raw_odds_data(str(game_id), event_markets, book_id_str)
+                    
+                    # Process each market type for CURATED layer
                     for market_type in ["moneyline", "spread", "total"]:
                         market_data = event_markets.get(market_type, [])
                         if market_data:

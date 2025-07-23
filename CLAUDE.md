@@ -197,11 +197,11 @@ mlb_betting_program/
    - RLM (Reverse Line Movement) detection
 
 3. **Database Layer** (`src/data/database/`)
-   - PostgreSQL integration
+   - PostgreSQL integration with source-specific raw tables
    - Repository pattern for data access
-   - Schema migrations and management
-   - Data quality monitoring
-   - Sportsbook mapping system
+   - Schema migrations and management (see `sql/migrations/004_create_source_specific_zones.sql`)
+   - Unified historical staging with temporal precision
+   - Data quality monitoring and sportsbook mapping system
 
 4. **Services Layer** (`src/services/`)
    - Orchestration services for complex workflows
@@ -242,20 +242,20 @@ The system includes multiple strategy processors located in `src/analysis/proces
 
 ## Recent Improvements (July 2025)
 
-### Pydantic v2 Migration
-- **Complete migration**: All models updated to use Pydantic v2 syntax
-- **Field validators**: Updated to use `@field_validator` decorator
-- **ValidationInfo**: Using modern `ValidationInfo` instead of legacy `values` parameter
-- **Settings import**: Proper `pydantic_settings.BaseSettings` import structure
-- **Type safety**: Enhanced validation and error handling
+### Architecture Cleanup & Consolidation
+- **Unified historical approach**: Consolidated multiple redundant processors (sparse, wide, long) into single historical staging
+- **Source-specific raw tables**: Replaced generic tables with source-specific approach for better organization
+- **Complete cleanup**: Removed legacy files and consolidated to `staging.action_network_odds_historical` for temporal analysis
+- **Pipeline fixes**: Resolved database connection async patterns across all pipeline components
+- **Documentation**: Created comprehensive cleanup summary in `docs/ARCHITECTURE_CLEANUP_SUMMARY.md`
 
 ### Action Network Integration Enhancement
 - **Consolidated collector**: New unified `consolidated_action_network_collector.py`
+- **Historical staging processor**: Single `staging_action_network_history_processor.py` for temporal data processing
 - **Smart filtering**: Intelligent line movement noise reduction with `smart_line_movement_filter.py`
-- **Multi-mode support**: Current, historical, and comprehensive collection modes
-- **Comprehensive coverage**: 8+ major sportsbooks (DraftKings, FanDuel, BetMGM, etc.)
-- **Database optimization**: Improved storage efficiency and duplicate prevention
-- **Real-time validation**: Live data testing with 15 games and 402+ records successfully processed
+- **Comprehensive coverage**: 8+ major sportsbooks with complete line movement history
+- **Temporal precision**: Microsecond-level timestamps for sophisticated betting analysis
+- **Pipeline integration**: Source-specific raw → unified historical staging flow
 
 ### Database & Data Quality
 - **Sportsbook ID resolution**: Automatic mapping of external sportsbook identifiers
@@ -311,6 +311,11 @@ uv run ruff format && uv run ruff check && uv run mypy src/
 - `src/data/collection/smart_line_movement_filter.py`: Intelligent noise reduction for line movements
 - `src/data/collection/orchestrator.py`: Main data collection orchestration
 - `src/data/collection/base.py`: Base collector classes and common functionality
+
+### Database & Pipeline (Updated Architecture)
+- `src/data/pipeline/staging_action_network_history_processor.py`: **Unified historical staging processor** (replaces multiple old processors)
+- `sql/migrations/004_create_source_specific_zones.sql`: **New source-specific migration** (replaces generic table approach)
+- **Removed legacy files**: Old sparse/wide/long processors consolidated into historical approach
 
 ### Database & Models
 - `src/data/models/unified/game.py`: Game data models (Pydantic v2)

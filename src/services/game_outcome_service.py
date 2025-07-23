@@ -371,6 +371,9 @@ class GameOutcomeService:
         if not game_data:
             return None
 
+        # Store raw response before processing
+        await self._store_raw_response(mlb_game_id, game_data)
+
         # Check if game is completed
         game_state = game_data.get("gameData", {}).get("status", {})
         status_code = game_state.get("statusCode", "")
@@ -450,6 +453,103 @@ class GameOutcomeService:
             total_line=total_line,
             home_spread_line=home_spread_line,
         )
+
+    async def _store_raw_response(self, mlb_game_id: str, game_data: dict[str, Any]) -> None:
+        """
+        Store raw MLB Stats API response in raw_data.mlb_game_outcomes table.
+
+        Args:
+            mlb_game_id: MLB Stats API game PK
+            game_data: Complete JSON response from MLB Stats API
+        """
+        try:
+            # Extract basic info from response for quick access
+            game_state = game_data.get("gameData", {}).get("status", {})
+            game_status = game_state.get("abstractGameState", "")
+            
+            # Extract team info
+            teams = game_data.get("gameData", {}).get("teams", {})
+            home_team = teams.get("home", {}).get("name", "")
+            away_team = teams.get("away", {}).get("name", "")
+            
+            # Extract game date
+            game_datetime_str = game_data.get("gameData", {}).get("datetime", {}).get("dateTime", "")
+            game_date = None
+            if game_datetime_str:
+                try:
+                    game_datetime = datetime.fromisoformat(game_datetime_str.replace("Z", "+00:00"))
+                    game_date = game_datetime.date()
+                except ValueError:
+                    pass
+            
+            # Extract scores if available
+            linescore = game_data.get("liveData", {}).get("linescore", {})
+            home_score = None
+            away_score = None
+            is_final = False
+            
+            if linescore:
+                home_runs = linescore.get("teams", {}).get("home", {}).get("runs")
+                away_runs = linescore.get("teams", {}).get("away", {}).get("runs")
+                if home_runs is not None and away_runs is not None:
+                    home_score = int(home_runs)
+                    away_score = int(away_runs)
+                    
+            # Check if game is final
+            status_code = game_state.get("statusCode", "")
+            is_final = status_code in ["F", "O"]  # Final or Official
+
+            # Insert raw response
+            query = """
+            INSERT INTO raw_data.mlb_game_outcomes (
+                mlb_game_pk, mlb_stats_api_game_id, api_endpoint, 
+                raw_response, game_date, home_team, away_team, 
+                game_status, home_score, away_score, is_final_game
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            ON CONFLICT (mlb_game_pk, request_timestamp) DO UPDATE SET
+                raw_response = EXCLUDED.raw_response,
+                game_status = EXCLUDED.game_status,
+                home_score = EXCLUDED.home_score,
+                away_score = EXCLUDED.away_score,
+                is_final_game = EXCLUDED.is_final_game,
+                updated_at = NOW()
+            """
+
+            params = [
+                mlb_game_id,  # mlb_game_pk
+                mlb_game_id,  # mlb_stats_api_game_id (same value)
+                f"/api/v1/game/{mlb_game_id}/feed/live",  # api_endpoint
+                json.dumps(game_data),  # raw_response
+                game_date,  # game_date
+                home_team,  # home_team
+                away_team,  # away_team
+                game_status,  # game_status
+                home_score,  # home_score
+                away_score,  # away_score
+                is_final,  # is_final_game
+            ]
+
+            async with get_connection() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute(query, params)
+                    await conn.commit()
+
+            self.logger.debug(
+                "Stored raw MLB response",
+                game_id=mlb_game_id,
+                game_status=game_status,
+                is_final=is_final,
+            )
+
+        except Exception as e:
+            self.logger.error(
+                "Error storing raw MLB response",
+                game_id=mlb_game_id,
+                error=str(e),
+            )
+            # Don't raise - raw storage failure shouldn't block outcome processing
 
     async def _get_betting_lines(self, game_id: int) -> dict[str, Any]:
         """

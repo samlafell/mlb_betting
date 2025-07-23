@@ -375,12 +375,42 @@ All timestamps are automatically converted from UTC (API format) to Eastern Time
 
 ## Data Sources & Pipeline Architecture
 
-### 3-Tier Data Pipeline
-The system implements a sophisticated RAW → STAGING → CURATED architecture:
+### Raw→Staging Movement Flow (New Unified Approach)
 
-- **RAW Zone**: Unprocessed external data exactly as received from sources
-- **STAGING Zone**: Cleaned, normalized, and validated data with quality scoring (0-100 scale)
-- **CURATED Zone**: Feature-enriched, analysis-ready datasets with advanced ML capabilities
+The system now uses a **unified historical approach** for moving data from raw to staging:
+
+```
+RAW (Source-Specific Tables)     →     STAGING (Historical/Temporal)
+├── raw_data.action_network_odds  →  staging.action_network_odds_historical
+├── raw_data.sbd_betting_splits   →  staging.sbd_historical  
+├── raw_data.vsin_data           →  staging.vsin_historical
+└── raw_data.mlb_stats_api       →  staging.mlb_games_historical
+```
+
+**Key Benefits:**
+- **Complete Temporal Data**: Every line movement with microsecond precision timestamps
+- **Unified Market Structure**: Single table with market_type (moneyline, spread, total) and side (home, away, over, under)
+- **Historical Analysis**: Full line movement history for sophisticated sharp action detection
+- **Source Attribution**: Clear tracking of data source and sportsbook for each record
+
+**Processing Commands:**
+```bash
+# Collect raw data (source-specific tables)
+uv run -m src.interfaces.cli data collect --source action_network --real
+
+# Process through pipeline (raw → staging historical)
+uv run -m src.interfaces.cli pipeline run --zone all --mode full
+
+# Check pipeline status
+uv run -m src.interfaces.cli pipeline status --detailed
+```
+
+### 3-Tier Data Pipeline
+The system implements a sophisticated RAW → STAGING → CURATED architecture with **source-specific raw tables** and **unified historical staging**:
+
+- **RAW Zone**: Source-specific tables (e.g., `raw_data.action_network_odds`, `raw_data.sbd_betting_splits`) with unprocessed external data
+- **STAGING Zone**: Unified historical tables (e.g., `staging.action_network_odds_historical`) with temporal precision and complete line movement tracking
+- **CURATED Zone**: Feature-enriched, analysis-ready datasets with advanced ML capabilities and cross-market analytics
 
 ### Supported Data Sources
 - **Action Network**: Real-time betting lines, sharp action indicators, professional insights
@@ -410,12 +440,12 @@ uv run -m src.interfaces.cli data test --source action_network --real
 - **Three-Tier Integration**: Seamless RAW → STAGING → CURATED pipeline compatibility
 - **Quality Scoring**: Real-time data completeness assessment and validation
 
-### RAW → STAGING → CURATED Pipeline (July 2025)
-- **Complete 3-tier pipeline**: Successfully migrated 32,431+ records through sophisticated data architecture
-- **Phase 2 (RAW Zone)**: 100% success rate with external data ingestion
-- **Phase 3 (STAGING Zone)**: 91.7% success rate with data cleaning and normalization
-- **Phase 4 (CURATED Zone)**: 100% success rate with ML features and advanced analytics
-- **Migration utilities**: Available in `utilities/migration/` directory
+### Unified Historical Pipeline Architecture (July 2025)
+- **Complete architecture cleanup**: Consolidated multiple redundant approaches into unified historical staging
+- **Source-Specific Raw Tables**: Replaced generic tables with source-specific approach for better data organization
+- **Temporal Historical Staging**: Single `staging.action_network_odds_historical` table with microsecond precision for sophisticated betting analysis
+- **Pipeline Success**: Successfully processes 7,691+ temporal records with complete line movement history
+- **Architecture Documentation**: See `docs/ARCHITECTURE_CLEANUP_SUMMARY.md` for complete details
 
 ### Advanced ML & Analytics
 - **32+ ML features**: Comprehensive betting analytics with implied probabilities, expected values, market efficiency scoring
@@ -437,10 +467,11 @@ uv run -m src.interfaces.cli data test --source action_network --real
 
 ### Action Network Integration Enhancement
 - **Consolidated collector**: New `consolidated_action_network_collector.py` for unified data collection
-- **Smart line movement filtering**: Intelligent noise reduction with `smart_line_movement_filter.py`
-- **Comprehensive data coverage**: 8+ sportsbooks with real-time line tracking
-- **Database optimization**: Improved storage efficiency and duplicate prevention
-- **Multi-mode collection**: Support for current, historical, and comprehensive data modes
+- **Historical staging processor**: Single `staging_action_network_history_processor.py` for temporal data processing
+- **Unified staging approach**: Eliminated redundant sparse/wide/long processors in favor of historical temporal approach
+- **Source-specific raw storage**: `raw_data.action_network_odds` flows to `staging.action_network_odds_historical`
+- **Comprehensive data coverage**: 8+ sportsbooks with complete line movement history and microsecond precision
+- **Database optimization**: Improved storage efficiency with temporal analysis capabilities
 
 ## Development
 

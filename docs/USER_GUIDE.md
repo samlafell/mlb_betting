@@ -145,11 +145,11 @@ uv run -m src.interfaces.cli action-network opportunities
 ```
 
 #### `pipeline` - Data Pipeline Management
-**Purpose**: Manage the RAW → STAGING → CURATED data pipeline
+**Purpose**: Manage the RAW → STAGING → CURATED data pipeline with source-specific tables
 
 **Common Commands**:
 ```bash
-# Run full pipeline (all zones)
+# Run full pipeline (all zones) - now uses source-specific tables
 uv run -m src.interfaces.cli pipeline run --zone all --mode full
 
 # Run specific zone
@@ -165,19 +165,21 @@ uv run -m src.interfaces.cli pipeline migrate --migrate-data [--dry-run]
 **Zones**: `raw`, `staging`, `curated`, `all`  
 **Modes**: `full`, `raw_only`, `staging_only`, `curated_only`
 
+**Pipeline Architecture**: The system now uses **source-specific raw tables** (e.g., `raw_data.action_network_odds`) flowing to **unified historical staging** (`staging.action_network_odds_historical`) for comprehensive temporal analysis.
+
 **Examples**:
 ```bash
-# Process Action Network data through full pipeline
-uv run -m src.interfaces.cli pipeline run --source action_network --mode full
+# Process Action Network data through unified historical pipeline
+uv run -m src.interfaces.cli pipeline run --zone all --mode full
 
 # Check detailed status of all pipeline zones
 uv run -m src.interfaces.cli pipeline status --detailed
 
-# Dry run pipeline migration
-uv run -m src.interfaces.cli pipeline migrate --migrate-data --dry-run
-
 # Process only RAW zone for testing
 uv run -m src.interfaces.cli pipeline run --zone raw --batch-size 500
+
+# Check source-specific raw data processing
+uv run -m src.interfaces.cli data status --detailed
 ```
 
 ### Analysis & Strategy
@@ -510,6 +512,23 @@ pool_timeout = 30         # Connection timeout (10-60)
 ---
 
 ## 🔧 Troubleshooting
+
+### Recent Fixes (July 2025)
+
+**Architecture Cleanup & Consolidation**: Major cleanup of legacy code and architecture
+- **Issue**: Multiple redundant approaches (sparse, wide, long) for Action Network staging
+- **Fix**: Consolidated to unified historical approach with source-specific raw tables
+- **Status**: ✅ Complete architecture cleanup - see `docs/ARCHITECTURE_CLEANUP_SUMMARY.md`
+
+**Database Connection Pipeline Fix**: Fixed `'DatabaseConnection' object can't be used in 'await' expression`
+- **Issue**: Incorrect async patterns in pipeline orchestrator and zone processors
+- **Fix**: Updated to use proper `async with db_connection.get_async_connection()` pattern
+- **Status**: ✅ Resolved across all pipeline components
+
+**Source-Specific Raw Tables**: Replaced generic tables with source-specific approach
+- **Issue**: Generic raw tables (`betting_lines_raw`, `moneylines_raw`) caused confusion
+- **Fix**: Implemented source-specific tables (`action_network_odds`, `sbd_betting_splits`, etc.)
+- **Status**: ✅ Complete migration with improved data organization
 
 ### Common Issues
 
@@ -872,7 +891,8 @@ uv run -m src.interfaces.cli cleanup --keep-recent 10
 
 ---
 
-**Last Updated**: July 21, 2025  
-**CLI Version**: 1.1  
+**Last Updated**: July 23, 2025  
+**CLI Version**: 1.2  
 **Pipeline Status**: Production Ready ✅ 
-**Database-First**: Analysis results now stored in PostgreSQL 📊
+**Architecture**: Unified Historical Approach with Source-Specific Raw Tables 🏗️
+**Database-First**: Analysis results stored in PostgreSQL with temporal precision 📊

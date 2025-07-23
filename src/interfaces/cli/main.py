@@ -17,6 +17,7 @@ from src.interfaces.cli.commands.game_outcomes import outcomes
 from src.interfaces.cli.commands.movement_analysis import movement
 from src.interfaces.cli.commands.pipeline import pipeline
 from src.interfaces.cli.commands.setup_database import database
+# Old staging commands removed - consolidated into historical approach
 
 
 @click.group()
@@ -50,6 +51,7 @@ cli.add_command(database)  # Add the database setup and management commands
 cli.add_command(backtesting_group)  # Add the backtesting commands
 cli.add_command(data_quality_group)  # Add the data quality improvement commands
 cli.add_command(pipeline)  # Add the pipeline management commands
+# Old staging commands removed - use historical approach via action-network pipeline
 cli.add_command(cleanup)  # Add the output folder cleanup command
 
 

@@ -287,7 +287,7 @@ class MLBStatsAPIGameResolutionService:
         try:
             # First try direct database lookup
             db_result = await self._lookup_game_in_database(external_id, source)
-            if db_result.game_id:
+            if db_result.game_id and db_result.mlb_game_id:
                 return db_result
 
             # If not found in database, try to match with MLB Stats API

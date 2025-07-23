@@ -604,14 +604,36 @@ def get_connection_pool() -> ConnectionPool:
     return _connection_pool
 
 
-def get_connection(name: str | None = None) -> DatabaseConnection:
-    """Get database connection from global pool."""
-    return _connection_pool.get_connection(name)
+# Old function removed - replaced with async context manager version above
 
 
 async def close_all_connections() -> None:
     """Close all database connections."""
     await _connection_pool.disconnect_all()
+
+
+@contextlib.asynccontextmanager
+async def get_connection(name: str | None = None) -> AsyncContextManager[asyncpg.Connection]:
+    """
+    Get async database connection as context manager.
+    
+    This is the async context manager function that the codebase expects.
+    Usage: async with get_connection() as conn:
+    
+    Args:
+        name: Connection name (uses default if None)
+        
+    Yields:
+        asyncpg.Connection instance
+    """
+    db_connection = _connection_pool.get_connection(name)
+    async with db_connection.get_async_connection() as conn:
+        yield conn
+
+
+def get_database_connection(name: str | None = None) -> DatabaseConnection:
+    """Get database connection object from global pool."""
+    return _connection_pool.get_connection(name)
 
 
 def initialize_connections(settings: UnifiedSettings) -> None:

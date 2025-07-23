@@ -325,29 +325,31 @@ class DataPipelineOrchestrator:
             # For now, return empty list as placeholder
             # In real implementation, query the zone's output tables
             
-            connection = await get_connection()
+            db_connection = get_connection()
             
             if current_zone == ZoneType.RAW:
-                # Query raw_data tables for recently processed records
+                # Query source-specific raw_data tables for recently processed records
+                # Use Action Network as primary source for pipeline flow
                 query = """
-                SELECT * FROM raw_data.betting_lines_raw 
+                SELECT * FROM raw_data.action_network_odds 
                 WHERE processed_at > NOW() - INTERVAL '1 hour'
                 ORDER BY processed_at DESC
                 LIMIT $1
                 """
             elif current_zone == ZoneType.STAGING:
-                # Query staging tables for recently processed records
+                # Query historical staging table for recently processed records
                 query = """
-                SELECT * FROM staging.betting_lines
-                WHERE processed_at > NOW() - INTERVAL '1 hour'
-                ORDER BY processed_at DESC
+                SELECT * FROM staging.action_network_odds_historical
+                WHERE data_processing_time > NOW() - INTERVAL '1 hour'
+                ORDER BY data_processing_time DESC
                 LIMIT $1
                 """
             else:
                 return []
             
             # Execute query and convert to DataRecord objects
-            rows = await connection.fetch(query, limit)
+            async with db_connection.get_async_connection() as connection:
+                rows = await connection.fetch(query, limit)
             
             # Convert rows to DataRecord objects (simplified)
             records = []
@@ -472,7 +474,7 @@ class DataPipelineOrchestrator:
     ) -> None:
         """Log pipeline execution to database."""
         try:
-            connection = await get_connection()
+            db_connection = get_connection()
             
             query = """
             INSERT INTO public.pipeline_execution_log 
@@ -481,18 +483,19 @@ class DataPipelineOrchestrator:
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             """
             
-            await connection.execute(
-                query,
-                execution.execution_id,
-                stage.value,
-                execution.start_time,
-                execution.end_time,
-                execution.status.value,
-                execution.metrics.total_records,
-                execution.metrics.successful_records,
-                execution.metrics.failed_records,
-                execution.metadata
-            )
+            async with db_connection.get_async_connection() as connection:
+                await connection.execute(
+                    query,
+                    execution.execution_id,
+                    stage.value,
+                    execution.start_time,
+                    execution.end_time,
+                    execution.status.value,
+                    execution.metrics.total_records,
+                    execution.metrics.successful_records,
+                    execution.metrics.failed_records,
+                    execution.metadata
+                )
             
         except Exception as e:
             logger.error(f"Error logging pipeline execution: {e}")

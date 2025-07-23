@@ -95,11 +95,22 @@ class DataCommands:
             is_flag=True,
             help="Force collection even if recent data exists",
         )
+        @click.option(
+            "--check-outcomes",
+            "-o",
+            is_flag=True,
+            help="Check for completed game outcomes after data collection",
+        )
+        @click.option(
+            "--no-outcomes",
+            is_flag=True,
+            help="Skip outcome checking (disable default behavior)",
+        )
         @click.pass_context
-        def collect(ctx, source, parallel, test_mode, mock_data, real, force):
+        def collect(ctx, source, parallel, test_mode, mock_data, real, force, check_outcomes, no_outcomes):
             """Collect data from sources with individual testing support."""
             asyncio.run(
-                self._collect_data(source, parallel, test_mode, mock_data, real, force)
+                self._collect_data(source, parallel, test_mode, mock_data, real, force, check_outcomes, no_outcomes)
             )
 
         @data.command()
@@ -377,28 +388,38 @@ class DataCommands:
         mock_data: bool,
         real: bool,
         force: bool,
+        check_outcomes: bool = False,
+        no_outcomes: bool = False,
     ):
         """Execute data collection with source selection."""
 
+        # Determine if outcome checking should run (default yes unless explicitly disabled)
+        should_check_outcomes = check_outcomes or (not no_outcomes and real and not test_mode)
+        
         console.print(
             Panel.fit(
                 "[bold blue]🔄 Data Collection System[/bold blue]\n"
                 f"Test Mode: [yellow]{test_mode}[/yellow]\n"
                 f"Mock Data: [yellow]{mock_data}[/yellow]\n"
                 f"Real Data: [yellow]{real}[/yellow]\n"
-                f"Parallel: [yellow]{parallel}[/yellow]",
+                f"Parallel: [yellow]{parallel}[/yellow]\n"
+                f"Check Outcomes: [yellow]{should_check_outcomes}[/yellow]",
                 title="Collection Configuration",
             )
         )
 
         if source:
             # Single source collection
-            await self._collect_from_single_source(source, test_mode, mock_data, real)
+            result = await self._collect_from_single_source(source, test_mode, mock_data, real)
         else:
             # Multi-source collection
-            await self._collect_from_multiple_sources(
+            result = await self._collect_from_multiple_sources(
                 parallel, test_mode, mock_data, real
             )
+        
+        # Check game outcomes after data collection if enabled and data was collected
+        if should_check_outcomes and result:
+            await self._check_game_outcomes_after_collection()
 
     async def _collect_from_single_source(
         self, source_name: str, test_mode: bool, mock_data: bool, real: bool
@@ -425,8 +446,10 @@ class DataCommands:
                             if len(result["output"]) > 500
                             else result["output"]
                         )
+                    return True  # Success
                 else:
                     console.print("❌ [red]Real data collection failed[/red]")
+                    return False  # Failure
             else:
                 # Use mock data
                 with Progress(
@@ -449,11 +472,14 @@ class DataCommands:
 
                 # Display mock results
                 self._display_mock_collection_result(source_name)
+                return True  # Mock always succeeds
 
         except ValueError:
             console.print(f"❌ [red]Unknown data source: {source_name}[/red]")
+            return False
         except Exception as e:
             console.print(f"❌ [red]Collection failed: {str(e)}[/red]")
+            return False
 
     async def _collect_from_multiple_sources(
         self, parallel: bool, test_mode: bool, mock_data: bool, real: bool
@@ -491,6 +517,7 @@ class DataCommands:
             console.print(f"  • Sources attempted: {len(sources)}")
             console.print(f"  • Successful: {successful}")
             console.print(f"  • Failed: {len(sources) - successful}")
+            return successful > 0  # Return True if at least one source succeeded
         else:
             # Use mock data
             with Progress(
@@ -513,6 +540,7 @@ class DataCommands:
 
             # Display mock results
             self._display_mock_multi_source_results()
+            return True  # Mock always succeeds
 
     def _display_mock_collection_result(self, source_name: str):
         """Display mock results from single source collection."""
@@ -2000,3 +2028,39 @@ class DataCommands:
         except Exception as e:
             console.print(f"❌ Error in batch line history collection: {str(e)}")
             raise
+
+    async def _check_game_outcomes_after_collection(self):
+        """Check for completed game outcomes after data collection."""
+        try:
+            console.print("\n🏁 [bold blue]Checking Game Outcomes[/bold blue]")
+            
+            # Import the game outcome service
+            from src.services.game_outcome_service import check_game_outcomes
+            
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+                transient=True,
+            ) as progress:
+                task = progress.add_task("Checking for completed games...", total=None)
+                
+                # Check outcomes for the last 7 days
+                results = await check_game_outcomes(date_range=None, force_update=False)
+                
+                progress.remove_task(task)
+            
+            # Display outcome results
+            if results["updated_outcomes"] > 0:
+                console.print(f"✅ [green]Updated {results['updated_outcomes']} game outcomes[/green]")
+            elif results["processed_games"] == 0:
+                console.print("ℹ️ [blue]No games found needing outcome updates[/blue]")
+            else:
+                console.print(f"ℹ️ [blue]Processed {results['processed_games']} games, {results['skipped_games']} not completed yet[/blue]")
+            
+            if results["errors"]:
+                console.print(f"⚠️ [yellow]{len(results['errors'])} errors occurred during outcome checking[/yellow]")
+                
+        except Exception as e:
+            console.print(f"⚠️ [yellow]Game outcome checking failed: {str(e)}[/yellow]")
+            # Don't raise - outcome checking failure shouldn't stop data collection

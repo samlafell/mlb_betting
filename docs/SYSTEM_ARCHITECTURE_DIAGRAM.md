@@ -7,6 +7,7 @@ This is a comprehensive 24/7 MLB betting analysis system built with a unified la
 ## System Evolution Timeline
 
 Based on git history analysis:
+- **July 22-23, 2025**: CLI command testing and fixes, database connection improvements, repository pattern refinements
 - **July 2025**: Pydantic v2 migration, enhanced Action Network integration, CLI system improvements
 - **June 2025**: Database schema consolidation, data quality improvements, comprehensive monitoring
 - **Previous phases**: Legacy migration, unified architecture implementation, PostgreSQL transition
@@ -389,9 +390,10 @@ sequenceDiagram
 ```bash
 # Primary development commands
 uv sync                                                    # Install dependencies
-uv run -m src.interfaces.cli data collect --source action_network --real  # Live data collection
-uv run -m src.interfaces.cli action-network pipeline      # Action Network pipeline with database storage
-uv run -m src.interfaces.cli data status --detailed       # System status
+uv run -m src.interfaces.cli database test-connection     # Test database connectivity (fixed connection handling)
+uv run -m src.interfaces.cli data collect --source action_network --real  # Live data collection (validated)
+uv run -m src.interfaces.cli action-network pipeline      # Action Network pipeline with JSON fallback
+uv run -m src.interfaces.cli data status --detailed       # System status (comprehensive validation)
 uv run -m src.interfaces.cli cleanup --dry-run           # Output folder management
 uv run pytest --cov=src                                   # Testing with coverage
 uv run ruff format && uv run ruff check && uv run mypy src/  # Code quality
@@ -400,11 +402,28 @@ uv run ruff format && uv run ruff check && uv run mypy src/  # Code quality
 ### Production Characteristics
 - **24/7 Operation**: Continuous data collection during MLB season
 - **Rate Limiting**: Respectful API usage with intelligent throttling
-- **Error Recovery**: Automatic retry mechanisms and graceful degradation
+- **Error Recovery**: Automatic retry mechanisms and graceful degradation with JSON fallback
 - **Data Quality**: Real-time validation and quality monitoring
 - **Performance Monitoring**: Comprehensive system health tracking
+- **CLI Robustness**: All 11 CLI command categories tested and validated
+- **Database Resilience**: Improved connection handling with proper disconnect methods
 
 ## Recent Architecture Enhancements (July 2025)
+
+### Database Connection and CLI Robustness (July 22-23, 2025)
+- **Database Connection Fix**: Resolved `'DatabaseConnection' object has no attribute 'close'` error in database test-connection commands
+  - Updated `setup_database.py` to use proper `disconnect()` method instead of `close()`
+  - Fixed all database connection handling across the CLI system
+- **SBD Collection Architecture Fix**: Resolved `'external_source_id'` error in SBD data collection
+  - Modified `sbd_unified_collector_api.py` to use direct data collection since SBD API handles its own storage
+  - Fixed architectural mismatch between unified processing flow and SBD-specific storage patterns
+- **Action Network Pipeline Resilience**: Implemented database fallback mechanism
+  - Added temporary workaround for `AnalysisReportsRepository` connection issues
+  - Enabled JSON fallback storage when database saving fails to prevent pipeline crashes
+- **CLI Command Validation**: Comprehensive testing and validation of all 11 CLI command categories
+  - Systematic testing of data collection, pipeline management, analysis, and maintenance commands
+  - Verified functionality across all documented CLI operations
+  - Updated USER_GUIDE.md with discovered fixes and improvements
 
 ### Database-First Analysis Architecture
 - **Analysis Results Storage**: All automated analysis results now stored in `curated.analysis_reports` schema instead of JSON files
@@ -419,8 +438,9 @@ uv run ruff format && uv run ruff check && uv run mypy src/  # Code quality
 
 ### Repository Pattern Enhancement
 - **Zone-Specific Repositories**: Separate repository classes for each pipeline zone
-- **Analysis Reports Repository**: New `AnalysisReportsRepository` for database-first analysis storage
+- **Analysis Reports Repository**: New `AnalysisReportsRepository` for database-first analysis storage with temporary JSON fallback
 - **Unified Data Access**: Clean abstraction across all three pipeline zones
+- **Connection Management**: Enhanced database connection handling with proper async patterns
 
 ## Key Architectural Patterns
 
@@ -516,5 +536,5 @@ uv run ruff format && uv run ruff check && uv run mypy src/  # Code quality
 
 ---
 
-*Generated: July 21, 2025*
-*System Version: Three-Tier Pipeline with Database-First Analysis Architecture*
+*Generated: July 22, 2025*
+*System Version: Three-Tier Pipeline with Database-First Analysis Architecture and Enhanced CLI Robustness*
