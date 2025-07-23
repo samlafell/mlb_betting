@@ -515,6 +515,21 @@ class StagingZoneProcessor(BaseZoneProcessor):
             ProcessingResult with promotion status
         """
         try:
+            # TEMPORARY: Hardcode disable CURATED zone until RAW/STAGING are stable
+            # TODO: Fix config.toml loading issue for pipeline settings
+            CURATED_ZONE_DISABLED = True  # Temporary hardcode
+            
+            if CURATED_ZONE_DISABLED or not self.settings.pipeline.zones.curated_enabled:
+                logger.info(f"CURATED zone disabled - skipping promotion of {len(records)} records")
+                from .zone_interface import ProcessingResult, ProcessingStatus
+                return ProcessingResult(
+                    status=ProcessingStatus.SKIPPED,
+                    records_processed=len(records),
+                    records_successful=len(records),
+                    records_failed=0,
+                    metadata={'reason': 'curated_zone_disabled_hardcoded'}
+                )
+            
             # Import here to avoid circular imports
             from .curated_zone import CuratedZoneProcessor
             from .zone_interface import create_zone_config, ZoneType

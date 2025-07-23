@@ -261,15 +261,24 @@ class CuratedZoneProcessor(BaseZoneProcessor):
     async def _generate_ml_features(self, curated_data: Dict, record: DataRecord):
         """Generate ML-ready feature vectors."""
         try:
+            # Helper function to safely convert to float
+            def safe_float(value, default=0.0):
+                if value is None:
+                    return default
+                try:
+                    return float(value)
+                except (ValueError, TypeError):
+                    return default
+            
             # Create feature vector for ML models
             feature_vector = {
-                'odds_decimal': float(curated_data.get('odds_decimal', 1.0)),
-                'line_value': float(curated_data.get('line_value', 0.0)),
-                'sharp_action_score': curated_data.get('sharp_action_score', 0.0),
-                'market_efficiency_score': curated_data.get('market_efficiency_score', 0.0),
-                'consensus_score': curated_data.get('consensus_score', 0.0),
-                'value_score': curated_data.get('value_score', 0.0),
-                'quality_score': curated_data.get('quality_score', 0.0)
+                'odds_decimal': safe_float(curated_data.get('odds_decimal'), 1.0),
+                'line_value': safe_float(curated_data.get('line_value'), 0.0),
+                'sharp_action_score': safe_float(curated_data.get('sharp_action_score'), 0.0),
+                'market_efficiency_score': safe_float(curated_data.get('market_efficiency_score'), 0.0),
+                'consensus_score': safe_float(curated_data.get('consensus_score'), 0.0),
+                'value_score': safe_float(curated_data.get('value_score'), 0.0),
+                'quality_score': safe_float(curated_data.get('quality_score'), 0.0)
             }
             
             # Add categorical features as one-hot encoded
