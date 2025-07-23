@@ -21,7 +21,7 @@ General Balls
 import asyncio
 import json
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from typing import Any
 
 import aiohttp
@@ -295,7 +295,11 @@ class GameOutcomeService:
         Returns:
             List of game dictionaries from core_betting.games
         """
-        start_date, end_date = date_range
+        start_date_str, end_date_str = date_range
+        
+        # Convert string dates to date objects
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
 
         # SQL query to get games needing outcome updates
         if force_update:
@@ -304,7 +308,7 @@ class GameOutcomeService:
             SELECT g.id, g.mlb_stats_api_game_id, g.home_team, g.away_team,
                    g.game_datetime, g.game_status
             FROM core_betting.games g
-            WHERE g.game_date BETWEEN %s AND %s
+            WHERE g.game_date BETWEEN $1 AND $2
               AND g.mlb_stats_api_game_id IS NOT NULL
             ORDER BY g.game_datetime DESC
             """
@@ -316,7 +320,7 @@ class GameOutcomeService:
                    g.game_datetime, g.game_status
             FROM core_betting.games g
             LEFT JOIN core_betting.game_outcomes go ON g.id = go.game_id
-            WHERE g.game_date BETWEEN %s AND %s
+            WHERE g.game_date BETWEEN $1 AND $2
               AND g.mlb_stats_api_game_id IS NOT NULL
               AND go.game_id IS NULL
             ORDER BY g.game_datetime DESC
@@ -325,25 +329,23 @@ class GameOutcomeService:
 
         try:
             async with get_connection() as conn:
-                async with conn.cursor() as cursor:
-                    await cursor.execute(query, params)
-                    rows = await cursor.fetchall()
+                rows = await conn.fetch(query, *params)
 
-                    # Convert to list of dictionaries
-                    games = []
-                    for row in rows:
-                        games.append(
-                            {
-                                "id": row[0],
-                                "mlb_stats_api_game_id": row[1],
-                                "home_team": row[2],
-                                "away_team": row[3],
-                                "game_datetime": row[4],
-                                "game_status": row[5],
-                            }
-                        )
+                # Convert to list of dictionaries
+                games = []
+                for row in rows:
+                    games.append(
+                        {
+                            "id": row["id"],
+                            "mlb_stats_api_game_id": row["mlb_stats_api_game_id"],
+                            "home_team": row["home_team"],
+                            "away_team": row["away_team"],
+                            "game_datetime": row["game_datetime"],
+                            "game_status": row["game_status"],
+                        }
+                    )
 
-                    return games
+                return games
 
         except Exception as e:
             self.logger.error("Database query error", error=str(e))
@@ -506,7 +508,7 @@ class GameOutcomeService:
                 raw_response, game_date, home_team, away_team, 
                 game_status, home_score, away_score, is_final_game
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
             )
             ON CONFLICT (mlb_game_pk, request_timestamp) DO UPDATE SET
                 raw_response = EXCLUDED.raw_response,
@@ -532,9 +534,7 @@ class GameOutcomeService:
             ]
 
             async with get_connection() as conn:
-                async with conn.cursor() as cursor:
-                    await cursor.execute(query, params)
-                    await conn.commit()
+                await conn.execute(query, *params)
 
             self.logger.debug(
                 "Stored raw MLB response",
@@ -569,30 +569,28 @@ class GameOutcomeService:
         LEFT JOIN (
             SELECT game_id, total_line
             FROM core_betting.betting_lines_totals
-            WHERE game_id = %s
+            WHERE game_id = $1
             ORDER BY odds_timestamp DESC
             LIMIT 1
         ) t ON g.id = t.game_id
         LEFT JOIN (
             SELECT game_id, home_spread
             FROM core_betting.betting_lines_spreads
-            WHERE game_id = %s
+            WHERE game_id = $1
             ORDER BY odds_timestamp DESC
             LIMIT 1
         ) s ON g.id = s.game_id
-        WHERE g.id = %s
+        WHERE g.id = $1
         """
 
         try:
             async with get_connection() as conn:
-                async with conn.cursor() as cursor:
-                    await cursor.execute(query, [game_id, game_id, game_id])
-                    row = await cursor.fetchone()
+                row = await conn.fetchrow(query, game_id)
 
-                    if row:
-                        return {"total_line": row[0], "home_spread_line": row[1]}
-                    else:
-                        return {}
+                if row:
+                    return {"total_line": row["total_line"], "home_spread_line": row["home_spread"]}
+                else:
+                    return {}
 
         except Exception as e:
             self.logger.error(
@@ -613,7 +611,7 @@ class GameOutcomeService:
             home_win, over, home_cover_spread, total_line, home_spread_line,
             game_date, created_at, updated_at
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW()
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW()
         )
         ON CONFLICT (game_id) DO UPDATE SET
             home_team = EXCLUDED.home_team,
@@ -645,9 +643,7 @@ class GameOutcomeService:
 
         try:
             async with get_connection() as conn:
-                async with conn.cursor() as cursor:
-                    await cursor.execute(query, params)
-                    await conn.commit()
+                await conn.execute(query, *params)
 
         except Exception as e:
             self.logger.error(
@@ -681,36 +677,34 @@ class GameOutcomeService:
             g.game_status
         FROM core_betting.game_outcomes go
         JOIN core_betting.games g ON go.game_id = g.id
-        WHERE go.game_date >= NOW() - INTERVAL '%s days'
+        WHERE go.game_date >= NOW() - INTERVAL '1 day' * $1
         ORDER BY go.game_date DESC
         """
 
         try:
             async with get_connection() as conn:
-                async with conn.cursor() as cursor:
-                    await cursor.execute(query, [days])
-                    rows = await cursor.fetchall()
+                rows = await conn.fetch(query, days)
 
-                    outcomes = []
-                    for row in rows:
-                        outcomes.append(
-                            {
-                                "game_id": row[0],
-                                "home_team": row[1],
-                                "away_team": row[2],
-                                "home_score": row[3],
-                                "away_score": row[4],
-                                "home_win": row[5],
-                                "over": row[6],
-                                "home_cover_spread": row[7],
-                                "total_line": row[8],
-                                "home_spread_line": row[9],
-                                "game_date": row[10],
-                                "game_status": row[11],
-                            }
-                        )
+                outcomes = []
+                for row in rows:
+                    outcomes.append(
+                        {
+                            "game_id": row["game_id"],
+                            "home_team": row["home_team"],
+                            "away_team": row["away_team"],
+                            "home_score": row["home_score"],
+                            "away_score": row["away_score"],
+                            "home_win": row["home_win"],
+                            "over": row["over"],
+                            "home_cover_spread": row["home_cover_spread"],
+                            "total_line": row["total_line"],
+                            "home_spread_line": row["home_spread_line"],
+                            "game_date": row["game_date"],
+                            "game_status": row["game_status"],
+                        }
+                    )
 
-                    return outcomes
+                return outcomes
 
         except Exception as e:
             self.logger.error("Error getting recent outcomes", error=str(e))

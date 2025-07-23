@@ -295,7 +295,7 @@ class MLBStatsAPIGameResolutionService:
                 api_result = await self._match_game_with_mlb_api(
                     home_team, away_team, game_date, external_id, source
                 )
-                if api_result.game_id:
+                if api_result.mlb_game_id and api_result.confidence != MatchConfidence.NONE:
                     # Store the match in database for future use
                     await self._store_game_match(api_result, external_id, source)
                     return api_result
@@ -419,45 +419,119 @@ class MLBStatsAPIGameResolutionService:
             home_team_info = self.team_mappings[home_abbr]
             away_team_info = self.team_mappings[away_abbr]
 
-            # Search for matching games
+            # Search for matching games - expanded search window for better results
             search_dates = []
             if game_date:
                 search_dates = [game_date]
             else:
-                # Search recent days if no date provided
+                # Search recent days if no date provided - expanded to 14 days
                 today = date.today()
-                search_dates = [today - timedelta(days=i) for i in range(7)]
+                search_dates = [today - timedelta(days=i) for i in range(14)]
 
             for search_date in search_dates:
                 games = await self._fetch_mlb_games_for_date(search_date)
+                
+                self.logger.debug(
+                    "Searching for game matches",
+                    search_date=search_date,
+                    games_found=len(games),
+                    looking_for_home=home_abbr,
+                    looking_for_away=away_abbr
+                )
 
                 for game in games:
                     game_home_id = game.get('teams', {}).get('home', {}).get('team', {}).get('id')
                     game_away_id = game.get('teams', {}).get('away', {}).get('team', {}).get('id')
+                    game_pk = str(game['gamePk'])
+                    
+                    # Get team names for logging
+                    game_home_name = game.get('teams', {}).get('home', {}).get('team', {}).get('name', 'Unknown')
+                    game_away_name = game.get('teams', {}).get('away', {}).get('team', {}).get('name', 'Unknown')
+                    
+                    self.logger.debug(
+                        "Checking game match",
+                        game_pk=game_pk,
+                        api_home=f"{game_home_name} (ID: {game_home_id})",
+                        api_away=f"{game_away_name} (ID: {game_away_id})",
+                        db_home=f"{home_abbr} (ID: {home_team_info.mlb_team_id})",
+                        db_away=f"{away_abbr} (ID: {away_team_info.mlb_team_id})"
+                    )
 
+                    # Try exact match first (database home/away = API home/away)
                     if (game_home_id == home_team_info.mlb_team_id and
                         game_away_id == away_team_info.mlb_team_id):
 
-                        # Found a match!
-                        game_pk = str(game['gamePk'])
-                        confidence = MatchConfidence.HIGH if game_date else MatchConfidence.MEDIUM
+                        self.logger.info(
+                            "Found exact team match",
+                            game_pk=game_pk,
+                            match_type="exact",
+                            home_team=home_abbr,
+                            away_team=away_abbr
+                        )
 
+                        confidence = MatchConfidence.HIGH if game_date else MatchConfidence.MEDIUM
                         return GameMatchResult(
                             game_id=None,  # Will be set when stored
                             mlb_game_id=game_pk,
                             confidence=confidence,
-                            match_method="mlb_api_match",
+                            match_method="mlb_api_match_exact",
                             match_details={
                                 "game_pk": game_pk,
                                 "home_team": home_abbr,
                                 "away_team": away_abbr,
                                 "game_date": search_date.isoformat(),
                                 "external_id": external_id,
-                                "source": source.value if source else None
+                                "source": source.value if source else None,
+                                "match_type": "exact"
+                            }
+                        )
+                    
+                    # Try reversed match (database home/away = API away/home)
+                    elif (game_home_id == away_team_info.mlb_team_id and
+                          game_away_id == home_team_info.mlb_team_id):
+
+                        self.logger.info(
+                            "Found reversed team match",
+                            game_pk=game_pk,
+                            match_type="reversed",
+                            db_home=home_abbr,
+                            db_away=away_abbr,
+                            api_home=game_home_name,
+                            api_away=game_away_name
+                        )
+
+                        # Slightly lower confidence for reversed matches
+                        confidence = MatchConfidence.MEDIUM if game_date else MatchConfidence.LOW
+                        return GameMatchResult(
+                            game_id=None,  # Will be set when stored
+                            mlb_game_id=game_pk,
+                            confidence=confidence,
+                            match_method="mlb_api_match_reversed",
+                            match_details={
+                                "game_pk": game_pk,
+                                "home_team": home_abbr,
+                                "away_team": away_abbr,
+                                "game_date": search_date.isoformat(),
+                                "external_id": external_id,
+                                "source": source.value if source else None,
+                                "match_type": "reversed",
+                                "api_home_team": game_home_name,
+                                "api_away_team": game_away_name
                             }
                         )
 
-            # No match found
+            # No match found - provide detailed debugging info
+            self.logger.warning(
+                "No game match found after exhaustive search",
+                home_team=home_team,
+                away_team=away_team,
+                home_abbr=home_abbr,
+                away_abbr=away_abbr,
+                home_mlb_id=home_team_info.mlb_team_id,
+                away_mlb_id=away_team_info.mlb_team_id,
+                search_dates=[d.isoformat() for d in search_dates]
+            )
+            
             return GameMatchResult(
                 game_id=None,
                 mlb_game_id=None,
@@ -468,7 +542,10 @@ class MLBStatsAPIGameResolutionService:
                     "away_team": away_team,
                     "home_abbr": home_abbr,
                     "away_abbr": away_abbr,
-                    "search_dates": [d.isoformat() for d in search_dates]
+                    "home_mlb_id": home_team_info.mlb_team_id,
+                    "away_mlb_id": away_team_info.mlb_team_id,
+                    "search_dates": [d.isoformat() for d in search_dates],
+                    "tried_both_directions": True
                 }
             )
 
