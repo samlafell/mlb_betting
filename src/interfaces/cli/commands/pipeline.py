@@ -90,8 +90,8 @@ async def _run_pipeline_async(zone: str, mode: str, source: Optional[str], batch
         # Create pipeline orchestrator
         orchestrator = await create_pipeline_orchestrator()
         
-        # Get sample records (in real implementation, would query from sources)
-        records = await _get_sample_records(source, batch_size)
+        # Get real records from database (NO MOCK DATA)
+        records = await _get_real_records(source, batch_size)
         
         if not records:
             console.print("[yellow]No records found to process[/yellow]")
@@ -267,39 +267,115 @@ async def _migrate_pipeline_async(create_schemas: bool, migrate_data: bool, sour
         raise click.ClickException(str(e))
 
 
-async def _get_sample_records(source: Optional[str], limit: int) -> list[DataRecord]:
-    """Get sample records for processing (placeholder implementation)."""
-    # In real implementation, this would query the database or external APIs
-    # For now, return sample records
+async def _get_real_records(source: Optional[str], limit: int) -> list[DataRecord]:
+    """Get real records from database for processing (NO MOCK DATA)."""
+    from ....data.database.connection import get_connection
     
-    sample_records = []
+    real_records = []
     
-    # Use valid sources that have table mappings
-    valid_sources = ['action_network', 'sbd', 'vsin', 'mlb_stats_api']
+    try:
+        async with get_connection() as conn:
+            # Query actual data from raw_data tables that have been processed_at IS NULL
+            # This queries real data from the database, not mock/sample data
+            
+            table_mapping = {
+                'action_network': ['action_network_odds', 'action_network_games', 'action_network_history'],
+                'sbd': ['sbd_betting_splits'],
+                'vsin': ['vsin_data'],
+                'mlb_stats_api': ['mlb_stats_api_games', 'mlb_stats_api']
+            }
+            
+            tables_to_query = []
+            if source == 'all' or source is None:
+                # Query all tables
+                for source_tables in table_mapping.values():
+                    tables_to_query.extend(source_tables)
+            elif source in table_mapping:
+                tables_to_query = table_mapping[source]
+            else:
+                logger.warning(f"Unknown source: {source}")
+                return []
+            
+            # Query each table for unprocessed records
+            for table in tables_to_query:
+                try:
+                    # Get table-specific column names
+                    external_id_col = _get_external_id_column(table)
+                    
+                    query = f"""
+                        SELECT id, 
+                               {external_id_col} as external_id,
+                               collected_at,
+                               CASE WHEN created_at IS NOT NULL THEN created_at ELSE collected_at END as created_at
+                        FROM raw_data.{table}
+                        WHERE processed_at IS NULL
+                        ORDER BY collected_at DESC
+                        LIMIT $1
+                    """
+                    
+                    rows = await conn.fetch(query, min(limit, 50))
+                    
+                    for row in rows:
+                        # Create DataRecord from real database data
+                        record = DataRecord(
+                            external_id=row['external_id'] or f"{table}_{row['id']}",
+                            source=_get_source_from_table(table),
+                            raw_data={
+                                'table': table,
+                                'id': row['id'],
+                                'real_data': True  # Mark as real data
+                            },
+                            created_at=row['created_at'],
+                            collected_at=row['collected_at']
+                        )
+                        real_records.append(record)
+                        
+                        if len(real_records) >= limit:
+                            break
+                            
+                except Exception as e:
+                    logger.warning(f"Error querying table {table}: {e}")
+                    continue
+                    
+                if len(real_records) >= limit:
+                    break
+                    
+    except Exception as e:
+        logger.error(f"Error getting real records: {e}")
+        return []
     
-    for i in range(min(limit, 5)):  # Limit to 5 for demo
-        # If no source specified or 'all', cycle through valid sources
-        if source == 'all' or source is None:
-            record_source = valid_sources[i % len(valid_sources)]
-        else:
-            record_source = source
-        
-        record = DataRecord(
-            external_id=f"sample_{record_source}_{i}",
-            source=record_source,
-            raw_data={
-                'game_id': f'game_{i}',
-                'home_team': 'Sample Home Team',
-                'away_team': 'Sample Away Team',
-                'sportsbook': 'Sample Sportsbook',
-                'bet_type': 'moneyline',
-                'odds': -110
-            },
-            created_at=datetime.now()
-        )
-        sample_records.append(record)
+    logger.info(f"Retrieved {len(real_records)} real records from database (no mock data)")
+    return real_records
+
+
+def _get_source_from_table(table: str) -> str:
+    """Map table name to source name."""
+    if 'action_network' in table:
+        return 'action_network'
+    elif 'sbd' in table:
+        return 'sbd' 
+    elif 'vsin' in table:
+        return 'vsin'
+    elif 'mlb_stats_api' in table:
+        return 'mlb_stats_api'
+    else:
+        return 'unknown'
+
+
+def _get_external_id_column(table: str) -> str:
+    """Get the correct external ID column name for each table."""
+    # Map table name to its external ID column name
+    column_mapping = {
+        'action_network_odds': 'external_game_id',
+        'action_network_games': 'external_game_id', 
+        'action_network_history': 'external_game_id',
+        'sbd_betting_splits': 'external_matchup_id',
+        'vsin_data': 'external_id',
+        'mlb_stats_api_games': 'external_game_id',
+        'mlb_stats_api': 'external_id'
+    }
     
-    return sample_records
+    return column_mapping.get(table, 'id')  # Fallback to id if unknown table
 
 
 def _display_dry_run_summary(records: list[DataRecord], zone: str, mode: str):

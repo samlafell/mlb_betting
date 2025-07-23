@@ -474,6 +474,7 @@ class SBDUnifiedCollectorAPI(UnifiedBettingLinesCollector):
             import os
 
             import psycopg2
+            import psycopg2.extras
 
             # Use environment variables or construct connection string
             db_url = os.getenv(
@@ -500,7 +501,7 @@ class SBDUnifiedCollectorAPI(UnifiedBettingLinesCollector):
                                 insert_sql,
                                 (
                                     record["external_matchup_id"],
-                                    json.dumps(record["raw_response"]),
+                                    psycopg2.extras.Json(record["raw_response"]),  # Use JSONB instead of JSON string
                                     record["api_endpoint"],
                                     game_data.get("home_team"),
                                     game_data.get("away_team"),

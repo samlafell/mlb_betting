@@ -65,6 +65,7 @@ class DataRecord(BaseModel):
     quality_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     validation_status: ProcessingStatus = ProcessingStatus.PENDING
     validation_errors: Optional[List[str]] = None
+    collected_at: Optional[datetime] = None
     processed_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

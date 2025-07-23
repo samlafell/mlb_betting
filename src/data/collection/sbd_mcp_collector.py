@@ -286,44 +286,53 @@ class SBDMCPCollector(UnifiedBettingLinesCollector):
         return unified_records
 
     def _store_in_raw_data(self, records: list[dict[str, Any]]) -> int:
-        """Store records in raw_data.sbd_betting_splits table."""
+        """Store records in raw_data.sbd_betting_splits table using inherited connection pool."""
         stored_count = 0
         
         try:
-            # Import database connection here to avoid circular imports
-            import psycopg2
-            import os
-            
-            # Use environment variables or construct connection string
-            db_url = os.getenv('DATABASE_URL', 'postgresql://samlafell@localhost:5432/mlb_betting')
-            
-            with psycopg2.connect(db_url) as conn:
+            # Use inherited connection pool from UnifiedBettingLinesCollector
+            with self.connection_pool.get_connection() as conn:
                 with conn.cursor() as cursor:
                     for record in records:
                         try:
-                            # Insert into raw_data.sbd_betting_splits
+                            # Extract team info from raw_response for enhanced storage
+                            game_data = record['raw_response'].get('game_data', {})
+                            
+                            # Enhanced insert with team information fields
                             insert_sql = """
                                 INSERT INTO raw_data.sbd_betting_splits 
-                                (external_matchup_id, raw_response, api_endpoint)
-                                VALUES (%s, %s, %s)
+                                (external_matchup_id, raw_response, api_endpoint,
+                                 home_team, away_team, home_team_abbr, away_team_abbr,
+                                 home_team_id, away_team_id, game_name)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """
+                            
+                            # Import psycopg2.extras for JSONB support
+                            import psycopg2.extras
                             
                             cursor.execute(insert_sql, (
                                 record['external_matchup_id'],
-                                json.dumps(record['raw_response']),
-                                record['api_endpoint']
+                                psycopg2.extras.Json(record['raw_response']),  # Use JSONB instead of JSON string
+                                record['api_endpoint'],
+                                game_data.get('home_team'),
+                                game_data.get('away_team'),  
+                                game_data.get('home_team_abbr'),
+                                game_data.get('away_team_abbr'),
+                                game_data.get('home_team_id'),
+                                game_data.get('away_team_id'),
+                                game_data.get('game_name')
                             ))
                             stored_count += 1
                             
                         except Exception as e:
-                            self.logger.error(f"Failed to store record: {str(e)}")
+                            self.logger.error(f"Failed to store SBD MCP record: {str(e)}")
                             continue
                     
                     conn.commit()
-                    self.logger.info(f"Successfully stored {stored_count} real SBD records in raw_data")
+                    self.logger.info(f"Successfully stored {stored_count} SBD MCP records in raw_data with team info")
                     
         except Exception as e:
-            self.logger.error(f"Database storage failed: {str(e)}")
+            self.logger.error(f"SBD MCP database storage failed: {str(e)}")
             
         return stored_count
 
