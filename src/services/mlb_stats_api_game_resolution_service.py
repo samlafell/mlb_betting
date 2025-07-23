@@ -81,7 +81,7 @@ class MLBStatsAPIGameResolutionService:
             "TOR": TeamMapping("Toronto Blue Jays", "TOR", ["Toronto", "Blue Jays", "Jays"], 141, "AL", "EAST"),
 
             # American League Central
-            "CHW": TeamMapping("Chicago White Sox", "CHW", ["Chicago", "White Sox", "ChiSox"], 145, "AL", "CENTRAL"),
+            "CHW": TeamMapping("Chicago White Sox", "CHW", ["Chicago", "White Sox", "ChiSox", "CWS"], 145, "AL", "CENTRAL"),
             "CLE": TeamMapping("Cleveland Guardians", "CLE", ["Cleveland", "Guardians", "Indians"], 114, "AL", "CENTRAL"),
             "DET": TeamMapping("Detroit Tigers", "DET", ["Detroit", "Tigers"], 116, "AL", "CENTRAL"),
             "KC": TeamMapping("Kansas City Royals", "KC", ["Kansas City", "Royals", "K.C."], 118, "AL", "CENTRAL"),
