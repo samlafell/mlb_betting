@@ -13,6 +13,30 @@ Build a 24/7 sports betting service that will scrape various sources and be pull
 - **`sql/`**: Database schemas, migrations, and improvements
 - **`tests/`**: Comprehensive testing suite
 
+## Project Cleanup (January 2025)
+
+**Major redundancy cleanup performed to improve project maintainability:**
+
+### Removed Redundant Files
+- **Utilities**: Removed `deploy_line_movement_improvements_simple.py` (basic version, kept full-featured version)
+- **Scripts**: Removed `collect_2025_season.py` (basic version, kept optimized version)
+
+### Archived Legacy/Debug Files
+- **Date-specific Debug Scripts**: Archived 7 July 7th specific debug scripts to `scripts/archive/july_7th_debug/`
+- **Resolved Issues**: Archived 9 issue-specific debug scripts to `scripts/archive/resolved_issues/`
+- **Analysis Scripts**: Consolidated flip analysis scripts, kept `enhanced_late_sharp_flip_strategy_backtest.py`, archived 4 redundant variations
+
+### Archive Structure
+```
+scripts/archive/
+├── july_7th_debug/          # Date-specific historical debugging scripts
+├── resolved_issues/         # Issue-specific debug scripts for resolved problems
+analysis_scripts/archive/
+├── flip_variations/         # Redundant flip strategy analysis implementations
+```
+
+**Benefits**: ~20 redundant files cleaned up, ~3,000+ lines of duplicate code eliminated, clearer project structure.
+
 ## TEST EVERYTHIGN
 every time you create a new feature, test it.
 Run integration tests and unit tests.

@@ -73,6 +73,7 @@ class SmartLineMovementFilter:
     def _is_significant_movement(self, current: Dict[str, Any], previous: Dict[str, Any]) -> bool:
         """
         Determine if a movement is significant enough to keep.
+        Uses improved American odds calculation and line value change detection.
         
         Args:
             current: Current movement data
@@ -81,13 +82,16 @@ class SmartLineMovementFilter:
         Returns:
             True if movement is significant
         """
-        # Check for odds changes
+        # Check for odds changes using corrected American odds calculation
         current_odds = current.get('odds')
         previous_odds = previous.get('odds')
         
         if current_odds is not None and previous_odds is not None:
-            # Keep if odds changed by more than 5 points
-            if abs(current_odds - previous_odds) > 5:
+            # Calculate corrected American odds movement
+            corrected_odds_change = self._calculate_american_odds_change(previous_odds, current_odds)
+            
+            # Keep if corrected odds changed by more than 5 points
+            if abs(corrected_odds_change) >= 5:
                 return True
         
         # Check for line value changes (spread/totals)
@@ -96,7 +100,7 @@ class SmartLineMovementFilter:
         
         if current_value is not None and previous_value is not None:
             # Keep if line changed by more than 0.5
-            if abs(current_value - previous_value) > 0.5:
+            if abs(current_value - previous_value) >= 0.5:
                 return True
         
         # Check for time-based significance (keep movements more than 1 hour apart)
@@ -111,6 +115,40 @@ class SmartLineMovementFilter:
             pass
         
         return False
+    
+    def _calculate_american_odds_change(self, previous_odds: int, current_odds: int) -> int:
+        """
+        Calculate the correct American odds movement.
+        
+        American odds work as follows:
+        - Positive odds (+150): You win $150 on a $100 bet
+        - Negative odds (-150): You bet $150 to win $100
+        - Movement from -101 to +101 is crossing zero (2 point movement)
+        - Movement from -150 to -140 is 10 point movement toward even
+        
+        Args:
+            previous_odds: Previous odds value
+            current_odds: Current odds value
+            
+        Returns:
+            Corrected odds change
+        """
+        # Both odds same sign: simple difference
+        if (previous_odds > 0 and current_odds > 0) or (previous_odds < 0 and current_odds < 0):
+            return current_odds - previous_odds
+        
+        # Crossing zero: special handling for American odds
+        elif previous_odds < 0 and current_odds > 0:
+            # From negative to positive: -101 to +101 = 2 points
+            return (current_odds - 100) + (100 - abs(previous_odds))
+        
+        elif previous_odds > 0 and current_odds < 0:
+            # From positive to negative: +101 to -101 = -2 points  
+            return -((abs(current_odds) - 100) + (100 - previous_odds))
+        
+        else:
+            # Fallback to simple difference
+            return current_odds - previous_odds
     
     def get_stats(self) -> Dict[str, Any]:
         """Get filtering statistics."""

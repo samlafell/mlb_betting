@@ -15,33 +15,15 @@ Provides:
 
 from .base import BaseCollector, CollectionMetrics, CollectionResult, CollectorConfig
 from .collectors import (
-    ActionNetworkCollector,
+    ActionNetworkCollector,  # Now points to ConsolidatedActionNetworkCollector
     MLBStatsAPICollector,
     OddsAPICollector,
     SBDCollector,
     SportsBettingReportCollector,  # DEPRECATED: Use SBRUnifiedCollector instead
     VSINCollector,
 )
-from .orchestrator import (
-    CollectionOrchestrator,
-    CollectionPlan,
-    CollectionStatus,
-    SourceConfig,
-)
-from .rate_limiter import (
-    CircuitBreaker,
-    RateLimitConfig,
-    RateLimitResult,
-    TokenBucket,
-    UnifiedRateLimiter,
-)
-from .validators import (
-    DataQualityValidator,
-    DeduplicationService,
-    ValidationResult,
-    ValidationRule,
-)
 
+# Define __all__ first
 __all__ = [
     # Base classes
     "BaseCollector",
@@ -72,3 +54,38 @@ __all__ = [
     "CollectionStatus",
     "SourceConfig",
 ]
+
+# Import refactored collectors directly for better compatibility
+try:
+    from .sbd_unified_collector_api import SBDUnifiedCollectorAPI
+    from .vsin_unified_collector import VSINUnifiedCollector
+    from .consolidated_action_network_collector import ActionNetworkCollector as ConsolidatedActionNetworkCollector
+    
+    # Add refactored collectors to exports
+    __all__.extend([
+        "SBDUnifiedCollectorAPI",
+        "VSINUnifiedCollector", 
+        "ConsolidatedActionNetworkCollector"
+    ])
+except ImportError:
+    # Refactored collectors not available, stick with legacy ones
+    pass
+from .orchestrator import (
+    CollectionOrchestrator,
+    CollectionPlan,
+    CollectionStatus,
+    SourceConfig,
+)
+from .rate_limiter import (
+    CircuitBreaker,
+    RateLimitConfig,
+    RateLimitResult,
+    TokenBucket,
+    UnifiedRateLimiter,
+)
+from .validators import (
+    DataQualityValidator,
+    DeduplicationService,
+    ValidationResult,
+    ValidationRule,
+)

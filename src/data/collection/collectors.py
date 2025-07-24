@@ -323,7 +323,14 @@ class SportsBettingReportCollector(BaseCollector):
         return normalized
 
 
-class ActionNetworkCollector(BaseCollector):
+# Import the consolidated ActionNetworkCollector from consolidated_action_network_collector.py
+from .consolidated_action_network_collector import ActionNetworkCollector as ConsolidatedActionNetworkCollector
+
+# Make it available as ActionNetworkCollector for backward compatibility
+ActionNetworkCollector = ConsolidatedActionNetworkCollector
+
+# Legacy ActionNetworkCollector - DEPRECATED: Use ConsolidatedActionNetworkCollector instead
+class DeprecatedActionNetworkCollector(BaseCollector):
     """
     Action Network Data Collector
 
@@ -1228,9 +1235,26 @@ class OddsAPICollector(BaseCollector):
 # Register collectors with the factory
 from .base import CollectorFactory
 
-CollectorFactory.register_collector(DataSource.VSIN, VSINCollector)
-CollectorFactory.register_collector(DataSource.SBD, SBDCollector)
-CollectorFactory.register_collector(DataSource.ACTION_NETWORK, ActionNetworkCollector)
+# Import the refactored source-specific collectors
+try:
+    from .sbd_unified_collector_api import SBDUnifiedCollectorAPI
+    from .vsin_unified_collector import VSINUnifiedCollector
+    from .consolidated_action_network_collector import ActionNetworkCollector as ConsolidatedActionNetworkCollector
+    
+    # Register the refactored collectors (primary registrations)
+    CollectorFactory.register_collector(DataSource.VSIN, VSINUnifiedCollector)
+    CollectorFactory.register_collector(DataSource.SBD, SBDUnifiedCollectorAPI)
+    CollectorFactory.register_collector(DataSource.SPORTS_BETTING_DIME, SBDUnifiedCollectorAPI)  # Alternative name
+    CollectorFactory.register_collector(DataSource.ACTION_NETWORK, ConsolidatedActionNetworkCollector)
+    
+except ImportError as e:
+    # Fallback to legacy collectors if refactored ones aren't available
+    logger.warning("Could not import refactored collectors, using legacy ones", error=str(e))
+    CollectorFactory.register_collector(DataSource.VSIN, VSINCollector)
+    CollectorFactory.register_collector(DataSource.SBD, SBDCollector)
+    CollectorFactory.register_collector(DataSource.ACTION_NETWORK, ActionNetworkCollector)
+
+# Register remaining collectors (legacy and others)
 CollectorFactory.register_collector(
     DataSource.SPORTS_BOOK_REVIEW_DEPRECATED, SportsBettingReportCollector
 )

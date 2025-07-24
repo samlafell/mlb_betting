@@ -143,7 +143,7 @@ class ActionNetworkHistoryProcessor:
         try:
             conn = await asyncpg.connect(**self._get_db_config())
             
-            # Get unprocessed raw history data
+            # Get unprocessed OR updated raw history data
             raw_history_data = await conn.fetch("""
                 SELECT id, external_game_id, raw_history, collected_at
                 FROM raw_data.action_network_history 
@@ -151,6 +151,14 @@ class ActionNetworkHistoryProcessor:
                     SELECT DISTINCT raw_data_id 
                     FROM staging.action_network_odds_historical
                     WHERE raw_data_id IS NOT NULL
+                )
+                OR id IN (
+                    -- Also include records where raw data is newer than staging processing
+                    SELECT rh.id
+                    FROM raw_data.action_network_history rh
+                    JOIN staging.action_network_odds_historical oh ON oh.raw_data_id = rh.id
+                    WHERE rh.collected_at > oh.data_collection_time
+                    GROUP BY rh.id
                 )
                 ORDER BY collected_at DESC
                 LIMIT $1
@@ -168,6 +176,21 @@ class ActionNetworkHistoryProcessor:
             
             for raw_history_record in raw_history_data:
                 try:
+                    # Check if this is an update (raw data newer than existing staging data)
+                    existing_staging_count = await conn.fetchval("""
+                        SELECT COUNT(*) 
+                        FROM staging.action_network_odds_historical 
+                        WHERE raw_data_id = $1
+                    """, raw_history_record['id'])
+                    
+                    if existing_staging_count > 0:
+                        # This is an update - delete existing staging records for this raw_data_id
+                        deleted_count = await conn.fetchval("""
+                            DELETE FROM staging.action_network_odds_historical 
+                            WHERE raw_data_id = $1
+                        """, raw_history_record['id'])
+                        logger.info(f"Updated raw data detected for game {raw_history_record['external_game_id']}: deleted {deleted_count} old staging records")
+                    
                     # Extract all historical records from this raw history record
                     historical_records = await self._extract_historical_records_from_history(raw_history_record, conn)
                     
