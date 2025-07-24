@@ -807,6 +807,12 @@ class DataCommands:
                 from ....data.collection.base import CollectorConfig, DataSource
                 config = CollectorConfig(source=DataSource.MLB_STATS_API, enabled=True)
                 collector = collector_class(config)
+            elif source_name == "vsin":
+                # VSIN collector uses legacy constructor (no config parameter)
+                collector = collector_class()
+            elif source_name == "sbd":
+                # SBD collector uses legacy constructor (no config parameter)
+                collector = collector_class()
             else:
                 collector = collector_class()
 
