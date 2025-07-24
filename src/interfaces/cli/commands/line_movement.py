@@ -11,6 +11,7 @@ from typing import Optional
 
 import structlog
 
+from ....core.config import get_settings
 from ....data.collection.consolidated_action_network_collector import ActionNetworkCollector, CollectionMode
 from ....data.collection.base import CollectorConfig, CollectionRequest, DataSource
 
@@ -159,14 +160,16 @@ async def _analyze_line_movements(game_id: Optional[int], date: Optional[datetim
     
     import asyncpg
     
-    db_config = {
-        "host": "localhost",
-        "port": 5432,
-        "database": "mlb_betting",
-        "user": "samlafell"
-    }
+    # Use centralized database configuration
+    settings = get_settings()
     
-    conn = await asyncpg.connect(**db_config)
+    conn = await asyncpg.connect(
+        host=settings.database.host,
+        port=settings.database.port,
+        database=settings.database.database,
+        user=settings.database.user,
+        password=settings.database.password
+    )
     
     try:
         # Build query based on filters
@@ -242,14 +245,16 @@ async def _show_movement_status(date: datetime):
     
     import asyncpg
     
-    db_config = {
-        "host": "localhost",
-        "port": 5432,
-        "database": "mlb_betting",
-        "user": "samlafell"
-    }
+    # Use centralized database configuration
+    settings = get_settings()
     
-    conn = await asyncpg.connect(**db_config)
+    conn = await asyncpg.connect(
+        host=settings.database.host,
+        port=settings.database.port,
+        database=settings.database.database,
+        user=settings.database.user,
+        password=settings.database.password
+    )
     
     try:
         # Games with movement data

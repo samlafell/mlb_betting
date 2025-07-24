@@ -63,12 +63,19 @@ class CrossSiteGameResolutionService:
     """
     
     def __init__(self, db_config: dict = None):
-        self.db_config = db_config or {
-            "host": "localhost",
-            "port": 5432,
-            "database": "mlb_betting",
-            "user": "samlafell"
-        }
+        if db_config:
+            self.db_config = db_config
+        else:
+            # Use centralized database configuration
+            from ..core.config import get_settings
+            settings = get_settings()
+            self.db_config = {
+                "host": settings.database.host,
+                "port": settings.database.port,
+                "database": settings.database.database,
+                "user": settings.database.user,
+                "password": settings.database.password
+            }
     
     async def resolve_game_by_mlb_stats_api(self, mlb_game_id: str) -> GameResolutionResult:
         """Resolve game using MLB Stats API game ID (authoritative source)."""

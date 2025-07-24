@@ -16,6 +16,7 @@ import asyncpg
 import structlog
 
 from .base import BaseCollector, CollectorConfig, CollectionRequest, CollectionResult
+from ...core.config import get_settings
 from ...core.datetime_utils import prepare_for_postgres, safe_game_datetime_parse, now_est
 from ...core.team_utils import normalize_team_name
 
@@ -103,11 +104,14 @@ class MLBStatsAPICollector(BaseCollector):
     
     def __init__(self, config: CollectorConfig):
         super().__init__(config)
+        # Use centralized database configuration
+        settings = get_settings()
         self.db_config = {
-            "host": "localhost",
-            "port": 5432,
-            "database": "mlb_betting",
-            "user": "samlafell"
+            "host": settings.database.host,
+            "port": settings.database.port,
+            "database": settings.database.database,
+            "user": settings.database.user,
+            "password": settings.database.password
         }
         self.client = MLBStatsAPIClient(self.db_config)
         
