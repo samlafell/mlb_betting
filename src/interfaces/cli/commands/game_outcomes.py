@@ -19,7 +19,11 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from src.data.database.connection import get_connection
-from src.services.game_outcome_service import check_game_outcomes, game_outcome_service
+from src.services.game_outcome_service import (
+    check_game_outcomes, 
+    fetch_outcomes_from_mlb_api,
+    game_outcome_service
+)
 
 console = Console()
 
@@ -28,6 +32,87 @@ console = Console()
 def outcomes():
     """Game outcome checking and management commands."""
     pass
+
+
+@outcomes.command()
+@click.option("--date", "-d", type=str, help="Date to update (YYYY-MM-DD or 'today')")
+@click.option("--start-date", "-s", type=str, help="Start date (YYYY-MM-DD)")
+@click.option("--end-date", "-e", type=str, help="End date (YYYY-MM-DD)")
+@click.option("--force", "-f", is_flag=True, help="Force update even if outcome exists")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed output")
+def update(
+    date: str | None,
+    start_date: str | None,
+    end_date: str | None,
+    force: bool,
+    verbose: bool,
+):
+    """Update game outcomes for specified date(s)."""
+    
+    # Handle date parameter - convert to start_date/end_date
+    if date:
+        if date.lower() == "today":
+            from datetime import datetime
+            today = datetime.now().strftime("%Y-%m-%d")
+            start_date = today
+            end_date = today
+        else:
+            # Assume it's a specific date
+            start_date = date
+            end_date = date
+    
+    # Set default days if no dates provided
+    days = 1 if (start_date or end_date) else 7
+    
+    # Determine date range
+    if start_date and end_date:
+        date_range = (start_date, end_date)
+    elif start_date:
+        # Single date provided
+        date_range = (start_date, start_date)
+    else:
+        # Default to last N days
+        from datetime import datetime, timedelta
+        end = datetime.now()
+        start = end - timedelta(days=days)
+        date_range = (start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
+
+    console.print("\n🎯 [bold blue]Updating Game Outcomes[/bold blue]")
+    console.print("📊 [bold cyan]Fetching directly from MLB Stats API[/bold cyan]")
+    console.print(f"📅 Date Range: {date_range[0]} to {date_range[1]}")
+    console.print(f"🔄 Force Update: {'Yes' if force else 'No'}")
+
+    async def run_update():
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+            transient=True,
+        ) as progress:
+            task = progress.add_task("Fetching games from MLB Stats API...", total=None)
+
+            try:
+                # Use the new independent MLB API method
+                results = await fetch_outcomes_from_mlb_api(
+                    date_range=date_range, force_update=force
+                )
+                progress.remove_task(task)
+
+                # Display results
+                _display_results(results, verbose)
+
+            except Exception as e:
+                progress.remove_task(task)
+                console.print(f"\n❌ [bold red]Error:[/bold red] {str(e)}")
+                return False
+
+        return True
+
+    success = asyncio.run(run_update())
+    if success:
+        console.print("\n✅ [bold green]Game outcome update completed![/bold green]")
+    else:
+        console.print("\n❌ [bold red]Game outcome update failed![/bold red]")
 
 
 @outcomes.command()
@@ -860,8 +945,12 @@ def _display_results(results: dict, verbose: bool):
     """Display the results of a game outcome check."""
 
     # Create summary panel
+    api_games_info = ""
+    if "api_games_found" in results:
+        api_games_info = f"🏟️ MLB API Games Found: {results['api_games_found']}\n"
+    
     summary_text = f"""
-📊 Processed: {results["processed_games"]} games
+{api_games_info}📊 Processed: {results["processed_games"]} games
 ✅ Updated: {results["updated_outcomes"]} outcomes  
 ⏳ Skipped: {results["skipped_games"]} games (not completed)
 ❌ Errors: {len(results["errors"])}

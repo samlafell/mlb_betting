@@ -105,7 +105,12 @@ class MLBStatsAPIClient:
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data.get("dates", [{}])[0].get("games", [])
+                    dates = data.get("dates", [])
+                    if dates:
+                        return dates[0].get("games", [])
+                    else:
+                        # No games for this date (likely off-season)
+                        return []
                 else:
                     logger.warning(
                         "MLB API request failed", status=response.status, date=date_str
@@ -115,9 +120,13 @@ class MLBStatsAPIClient:
             logger.error("MLB API request error", error=str(e), date=date_str)
             return []
 
-    async def get_game_details(self, game_pk: str) -> dict[str, Any] | None:
+    async def get_game_details(self, game_pk: str, schedule_team_info: dict[str, Any] | None = None) -> dict[str, Any] | None:
         """
         Get detailed information for a specific game.
+        
+        Uses a fallback strategy:
+        1. Try /feed/live endpoint first (comprehensive data)
+        2. Fallback to /linescore endpoint (reliable for completed games)
 
         Args:
             game_pk: MLB Stats API game PK
@@ -128,12 +137,20 @@ class MLBStatsAPIClient:
         if not self.session:
             raise DataError("Client session not initialized")
 
-        url = f"{self.BASE_URL}/game/{game_pk}/feed/live"
-
+        # Try feed/live endpoint first
+        feed_url = f"{self.BASE_URL}/game/{game_pk}/feed/live"
+        
         try:
-            async with self.session.get(url) as response:
+            async with self.session.get(feed_url) as response:
                 if response.status == 200:
                     return await response.json()
+                elif response.status == 404:
+                    # Feed/live not available, try linescore fallback
+                    logger.debug(
+                        "Feed/live endpoint not available, trying linescore fallback",
+                        game_pk=game_pk,
+                    )
+                    return await self._get_game_linescore_fallback(game_pk, schedule_team_info)
                 else:
                     logger.warning(
                         "Game details request failed",
@@ -143,6 +160,88 @@ class MLBStatsAPIClient:
                     return None
         except Exception as e:
             logger.error("Game details request error", error=str(e), game_pk=game_pk)
+            # Try linescore fallback on any error
+            return await self._get_game_linescore_fallback(game_pk, schedule_team_info)
+
+    async def _get_game_linescore_fallback(self, game_pk: str, schedule_team_info: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        """
+        Fallback method to get game data using the linescore endpoint.
+        
+        This endpoint is more reliable for completed games but has limited data.
+        We'll construct a minimal game data structure compatible with our processing.
+        
+        Args:
+            game_pk: MLB Stats API game PK
+            
+        Returns:
+            Simplified game data dictionary or None
+        """
+        if not self.session:
+            return None
+            
+        linescore_url = f"{self.BASE_URL}/game/{game_pk}/linescore"
+        
+        try:
+            async with self.session.get(linescore_url) as response:
+                if response.status == 200:
+                    linescore_data = await response.json()
+                    
+                    # Construct a minimal game data structure
+                    # compatible with our existing processing logic
+                    game_data = {
+                        "gameData": {
+                            "status": {
+                                "statusCode": "F",  # Assume Final if linescore exists
+                                "abstractGameState": "Final"
+                            },
+                            "teams": {
+                                "home": {
+                                    "name": schedule_team_info.get("teams", {}).get("home", {}).get("team", {}).get("name", "HOME") if schedule_team_info else "HOME"
+                                },
+                                "away": {
+                                    "name": schedule_team_info.get("teams", {}).get("away", {}).get("team", {}).get("name", "AWAY") if schedule_team_info else "AWAY"
+                                }
+                            },
+                            "datetime": {
+                                "dateTime": ""  # Not available in linescore, will use fallback
+                            }
+                        },
+                        "liveData": {
+                            "linescore": {
+                                "teams": {
+                                    "home": {
+                                        "runs": linescore_data.get("teams", {}).get("home", {}).get("runs", 0)
+                                    },
+                                    "away": {
+                                        "runs": linescore_data.get("teams", {}).get("away", {}).get("runs", 0)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    logger.info(
+                        "Using linescore fallback for game",
+                        game_pk=game_pk,
+                        home_runs=game_data["liveData"]["linescore"]["teams"]["home"]["runs"],
+                        away_runs=game_data["liveData"]["linescore"]["teams"]["away"]["runs"],
+                    )
+                    
+                    return game_data
+                else:
+                    logger.warning(
+                        "Linescore fallback failed",
+                        status=response.status,
+                        game_pk=game_pk,
+                    )
+                    return None
+                    
+        except Exception as e:
+            logger.error(
+                "Linescore fallback error", 
+                error=str(e), 
+                game_pk=game_pk
+            )
             return None
 
 
@@ -165,6 +264,7 @@ class GameOutcomeService:
             "Los Angeles Angels": "LAA",
             "Houston Astros": "HOU",
             "Oakland Athletics": "OAK",
+            "Athletics": "OAK",
             "Seattle Mariners": "SEA",
             "Texas Rangers": "TEX",
             "New York Yankees": "NYY",
@@ -195,6 +295,148 @@ class GameOutcomeService:
         }
 
         self.logger.info("GameOutcomeService initialized")
+
+    async def fetch_and_update_outcomes_from_mlb_api(
+        self, date_range: tuple[str, str], force_update: bool = False
+    ) -> dict[str, Any]:
+        """
+        Fetch games directly from MLB Stats API and update outcomes independently.
+        
+        This method is completely independent of other data sources and fetches
+        games directly from the MLB Stats API for the specified date range.
+        
+        Args:
+            date_range: Tuple of (start_date, end_date) in YYYY-MM-DD format
+            force_update: If True, update even if outcome already exists
+            
+        Returns:
+            Dictionary with update results and statistics
+        """
+        start_date_str, end_date_str = date_range
+        
+        self.logger.info(
+            "Starting independent MLB outcomes fetch",
+            date_range=date_range,
+            force_update=force_update,
+        )
+        
+        results = {
+            "processed_games": 0,
+            "completed_games": 0,
+            "updated_outcomes": 0,
+            "skipped_games": 0,
+            "errors": [],
+            "date_range": date_range,
+            "api_games_found": 0,
+        }
+        
+        try:
+            # Parse date range
+            start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+            end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+            
+            # Iterate through each date in the range
+            current_date = start_date
+            async with MLBStatsAPIClient() as mlb_client:
+                while current_date <= end_date:
+                    date_str = current_date.strftime("%Y-%m-%d")
+                    
+                    self.logger.info("Fetching games for date", date=date_str)
+                    
+                    # Get all MLB games for this date
+                    games_for_date = await mlb_client.get_games_for_date(date_str)
+                    results["api_games_found"] += len(games_for_date)
+                    
+                    self.logger.info(
+                        "Found games via MLB API", 
+                        date=date_str, 
+                        count=len(games_for_date)
+                    )
+                    
+                    # Process each game from the API
+                    for game_data in games_for_date:
+                        results["processed_games"] += 1
+                        
+                        try:
+                            # Extract game PK (primary key from MLB API)
+                            game_pk = str(game_data.get("gamePk", ""))
+                            
+                            if not game_pk:
+                                self.logger.warning("Game missing gamePk", game_data_keys=list(game_data.keys()))
+                                results["skipped_games"] += 1
+                                continue
+                            
+                            # Check if game is completed
+                            game_status = game_data.get("status", {}).get("statusCode", "")
+                            
+                            if game_status not in ["F", "O"]:  # Final or Official
+                                self.logger.debug(
+                                    "Game not completed", 
+                                    game_pk=game_pk, 
+                                    status=game_status
+                                )
+                                results["skipped_games"] += 1
+                                continue
+                                
+                            # Check if outcome already exists (unless force_update)
+                            if not force_update:
+                                existing_outcome = await self._check_existing_outcome_by_mlb_id(game_pk)
+                                if existing_outcome:
+                                    self.logger.debug(
+                                        "Outcome already exists", 
+                                        game_pk=game_pk
+                                    )
+                                    results["skipped_games"] += 1
+                                    continue
+                            
+                            # Get detailed game information for final outcome
+                            # Pass the schedule team info for fallback scenarios
+                            detailed_game = await mlb_client.get_game_details(game_pk, game_data)
+                            if not detailed_game:
+                                self.logger.warning("Could not fetch game details", game_pk=game_pk)
+                                results["skipped_games"] += 1
+                                continue
+                            
+                            # Create outcome from API data
+                            outcome = await self._create_outcome_from_api_data(
+                                detailed_game, game_pk, current_date
+                            )
+                            
+                            if outcome:
+                                await self._store_independent_outcome(outcome)
+                                results["updated_outcomes"] += 1
+                                results["completed_games"] += 1
+                                
+                                self.logger.info(
+                                    "Stored independent outcome",
+                                    game_pk=game_pk,
+                                    home_team=outcome.home_team,
+                                    away_team=outcome.away_team,
+                                    home_score=outcome.home_score,
+                                    away_score=outcome.away_score,
+                                )
+                            else:
+                                results["skipped_games"] += 1
+                                
+                        except Exception as e:
+                            error_msg = f"Error processing MLB API game {game_data.get('gamePk', 'unknown')}: {str(e)}"
+                            results["errors"].append(error_msg)
+                            self.logger.error(
+                                "Game processing error",
+                                game_pk=game_data.get("gamePk"),
+                                error=str(e),
+                            )
+                    
+                    # Move to next date
+                    current_date += timedelta(days=1)
+            
+            self.logger.info("Independent MLB outcomes fetch completed", results=results)
+            return results
+            
+        except Exception as e:
+            self.logger.error("Independent outcomes fetch failed", error=str(e))
+            results["errors"].append(f"Service error: {str(e)}")
+            return results
 
     async def check_and_update_game_outcomes(
         self, date_range: tuple[str, str] | None = None, force_update: bool = False
@@ -264,6 +506,15 @@ class GameOutcomeService:
                             )
                         else:
                             results["skipped_games"] += 1
+                            # More detailed logging for skipped games
+                            self.logger.debug(
+                                "Game skipped",
+                                db_game_id=game_info.get("id"),
+                                mlb_game_id=game_info.get("mlb_stats_api_game_id"),
+                                home_team=game_info.get("home_team"),
+                                away_team=game_info.get("away_team"),
+                                reason="not_completed_or_invalid",
+                            )
 
                     except Exception as e:
                         error_msg = f"Error processing game {game_info.get('id', 'unknown')}: {str(e)}"
@@ -271,6 +522,7 @@ class GameOutcomeService:
                         self.logger.error(
                             "Game processing error",
                             game_id=game_info.get("id"),
+                            mlb_game_id=game_info.get("mlb_stats_api_game_id"),
                             error=str(e),
                         )
 
@@ -302,26 +554,36 @@ class GameOutcomeService:
         end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
 
         # SQL query to get games needing outcome updates
+        # Add filtering for obviously invalid game IDs
+        base_conditions = """
+        WHERE g.game_date BETWEEN $1 AND $2
+          AND g.mlb_stats_api_game_id IS NOT NULL
+          AND g.mlb_stats_api_game_id NOT LIKE '%test%'
+          AND g.mlb_stats_api_game_id NOT LIKE '%fake%'
+          AND g.mlb_stats_api_game_id NOT LIKE '%placeholder%'
+          AND g.mlb_stats_api_game_id NOT LIKE '777%'
+          AND g.mlb_stats_api_game_id NOT LIKE '888%'
+          AND g.mlb_stats_api_game_id NOT LIKE '999%'
+        """
+        
         if force_update:
             # Get all games in date range
-            query = """
+            query = f"""
             SELECT g.id, g.mlb_stats_api_game_id, g.home_team, g.away_team,
                    g.game_datetime, g.game_status
             FROM core_betting.games g
-            WHERE g.game_date BETWEEN $1 AND $2
-              AND g.mlb_stats_api_game_id IS NOT NULL
+            {base_conditions}
             ORDER BY g.game_datetime DESC
             """
             params = [start_date, end_date]
         else:
             # Only get games without outcomes
-            query = """
+            query = f"""
             SELECT g.id, g.mlb_stats_api_game_id, g.home_team, g.away_team,
                    g.game_datetime, g.game_status
             FROM core_betting.games g
             LEFT JOIN core_betting.game_outcomes go ON g.id = go.game_id
-            WHERE g.game_date BETWEEN $1 AND $2
-              AND g.mlb_stats_api_game_id IS NOT NULL
+            {base_conditions}
               AND go.game_id IS NULL
             ORDER BY g.game_datetime DESC
             """
@@ -351,6 +613,42 @@ class GameOutcomeService:
             self.logger.error("Database query error", error=str(e))
             return []
 
+    def _is_valid_mlb_game_id(self, game_id: str) -> bool:
+        """
+        Validate if a game ID appears to be a legitimate MLB Stats API game ID.
+        
+        Args:
+            game_id: The game ID to validate
+            
+        Returns:
+            True if the game ID appears valid, False otherwise
+        """
+        if not game_id or not isinstance(game_id, str):
+            return False
+            
+        # Filter out obvious test/placeholder IDs
+        invalid_patterns = [
+            "test", "fake", "placeholder", "dummy", "example",
+            "mlb-test", "sample"
+        ]
+        
+        game_id_lower = game_id.lower()
+        for pattern in invalid_patterns:
+            if pattern in game_id_lower:
+                return False
+        
+        # Real MLB game IDs are typically 6+ digit numbers
+        # or follow specific patterns like "2024_04_01_bosmlb_houmlb_1"
+        if game_id.isdigit():
+            # Numeric IDs should be reasonable (not obviously fake like 777xxx)
+            if game_id.startswith(("777", "888", "999")):
+                return False
+            # Should be at least 6 digits for recent games
+            if len(game_id) < 6:
+                return False
+        
+        return True
+
     async def _check_game_outcome(
         self, mlb_client: MLBStatsAPIClient, game_info: dict[str, Any]
     ) -> GameOutcome | None:
@@ -368,9 +666,27 @@ class GameOutcomeService:
         if not mlb_game_id:
             return None
 
+        # Validate game ID before making API call
+        if not self._is_valid_mlb_game_id(mlb_game_id):
+            self.logger.warning(
+                "Skipping invalid/test game ID",
+                game_id=mlb_game_id,
+                db_game_id=game_info.get("id"),
+            )
+            return None
+
         # Get game details from MLB API
         game_data = await mlb_client.get_game_details(mlb_game_id)
         if not game_data:
+            # Log more specific information about the failure
+            self.logger.info(
+                "Game not found in MLB API - may be invalid ID",
+                game_id=mlb_game_id,
+                db_game_id=game_info.get("id"),
+                home_team=game_info.get("home_team"),
+                away_team=game_info.get("away_team"),
+                game_date=game_info.get("game_datetime"),
+            )
             return None
 
         # Store raw response before processing
@@ -719,6 +1035,223 @@ class GameOutcomeService:
             self.logger.error("Error getting recent outcomes", error=str(e))
             return []
 
+    async def _check_existing_outcome_by_mlb_id(self, mlb_game_pk: str) -> dict[str, Any] | None:
+        """
+        Check if an outcome already exists for a given MLB game PK.
+        
+        Args:
+            mlb_game_pk: MLB Stats API game PK
+            
+        Returns:
+            Existing outcome dictionary or None if not found
+        """
+        query = """
+        SELECT go.*, g.id as game_id
+        FROM core_betting.game_outcomes go
+        JOIN core_betting.games g ON go.game_id = g.id
+        WHERE g.mlb_stats_api_game_id = $1
+        LIMIT 1
+        """
+        
+        try:
+            async with get_connection() as conn:
+                row = await conn.fetchrow(query, mlb_game_pk)
+                return dict(row) if row else None
+        except Exception as e:
+            self.logger.error(
+                "Error checking existing outcome", 
+                mlb_game_pk=mlb_game_pk, 
+                error=str(e)
+            )
+            return None
+
+    async def _create_outcome_from_api_data(
+        self, game_data: dict[str, Any], game_pk: str, game_date: datetime.date
+    ) -> GameOutcome | None:
+        """
+        Create a GameOutcome object from MLB Stats API data.
+        
+        Args:
+            game_data: Complete game data from MLB Stats API
+            game_pk: MLB Stats API game PK
+            game_date: Date of the game
+            
+        Returns:
+            GameOutcome object or None if data is insufficient
+        """
+        try:
+            # Extract game status
+            game_state = game_data.get("gameData", {}).get("status", {})
+            status_code = game_state.get("statusCode", "")
+            
+            # Only process completed games
+            if status_code not in ["F", "O"]:
+                return None
+            
+            # Extract scores from linescore
+            live_data = game_data.get("liveData", {})
+            linescore = live_data.get("linescore", {})
+            
+            home_score = linescore.get("teams", {}).get("home", {}).get("runs", 0)
+            away_score = linescore.get("teams", {}).get("away", {}).get("runs", 0)
+            
+            # Extract team information
+            game_teams = game_data.get("gameData", {}).get("teams", {})
+            home_team_name = game_teams.get("home", {}).get("name", "")
+            away_team_name = game_teams.get("away", {}).get("name", "")
+            
+            # Map team names to abbreviations
+            home_team_abbr = self.team_mappings.get(home_team_name, home_team_name)
+            away_team_abbr = self.team_mappings.get(away_team_name, away_team_name)
+            
+            # Calculate basic betting outcomes
+            home_win = home_score > away_score
+            total_score = home_score + away_score
+            
+            # Get game datetime
+            game_datetime_str = (
+                game_data.get("gameData", {}).get("datetime", {}).get("dateTime", "")
+            )
+            
+            if game_datetime_str:
+                game_datetime = datetime.fromisoformat(
+                    game_datetime_str.replace("Z", "+00:00")
+                )
+                # Convert to EST
+                est_timezone = timezone(timedelta(hours=-5))
+                game_datetime = game_datetime.astimezone(est_timezone)
+            else:
+                # Use date with default time if no datetime available
+                game_datetime = datetime.combine(game_date, datetime.min.time())
+                game_datetime = game_datetime.replace(tzinfo=timezone(timedelta(hours=-5)))
+            
+            # Note: We don't have betting lines for over/under and spread calculations
+            # in this independent mode, so we'll set them as None
+            
+            return GameOutcome(
+                game_id=0,  # Will be resolved when storing
+                mlb_stats_api_game_id=game_pk,
+                home_team=home_team_abbr,
+                away_team=away_team_abbr,
+                home_score=int(home_score),
+                away_score=int(away_score),
+                game_datetime=game_datetime,
+                home_win=home_win,
+                over=False,  # Default to False when no betting lines available 
+                home_cover_spread=False,  # Default to False when no betting lines available
+                total_line=None,
+                home_spread_line=None,
+            )
+            
+        except Exception as e:
+            self.logger.error(
+                "Error creating outcome from API data",
+                game_pk=game_pk,
+                error=str(e),
+            )
+            return None
+
+    async def _store_independent_outcome(self, outcome: GameOutcome) -> None:
+        """
+        Store an outcome that was fetched independently from MLB Stats API.
+        
+        This method handles cases where the game might not exist in our
+        core_betting.games table, creating a minimal game record if needed.
+        
+        Args:
+            outcome: GameOutcome object to store
+        """
+        try:
+            async with get_connection() as conn:
+                # First, try to find existing game record
+                game_query = """
+                SELECT id FROM core_betting.games 
+                WHERE mlb_stats_api_game_id = $1
+                LIMIT 1
+                """
+                
+                game_row = await conn.fetchrow(game_query, outcome.mlb_stats_api_game_id)
+                
+                if game_row:
+                    game_id = game_row["id"]
+                    self.logger.debug(
+                        "Found existing game record",
+                        mlb_game_id=outcome.mlb_stats_api_game_id,
+                        game_id=game_id,
+                    )
+                else:
+                    # Create minimal game record
+                    insert_game_query = """
+                    INSERT INTO core_betting.games (
+                        mlb_stats_api_game_id, home_team, away_team, 
+                        game_datetime, game_date, game_status,
+                        created_at, updated_at
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, 'Final', NOW(), NOW()
+                    ) RETURNING id
+                    """
+                    
+                    game_id = await conn.fetchval(
+                        insert_game_query,
+                        outcome.mlb_stats_api_game_id,
+                        outcome.home_team,
+                        outcome.away_team,
+                        outcome.game_datetime,
+                        outcome.game_datetime.date(),
+                    )
+                    
+                    self.logger.info(
+                        "Created new game record",
+                        mlb_game_id=outcome.mlb_stats_api_game_id,
+                        game_id=game_id,
+                    )
+                
+                # Now store the outcome
+                outcome_query = """
+                INSERT INTO core_betting.game_outcomes (
+                    game_id, home_team, away_team, home_score, away_score,
+                    home_win, over, home_cover_spread, total_line, home_spread_line,
+                    game_date, created_at, updated_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW()
+                )
+                ON CONFLICT (game_id) DO UPDATE SET
+                    home_team = EXCLUDED.home_team,
+                    away_team = EXCLUDED.away_team,
+                    home_score = EXCLUDED.home_score,
+                    away_score = EXCLUDED.away_score,
+                    home_win = EXCLUDED.home_win,
+                    over = EXCLUDED.over,
+                    home_cover_spread = EXCLUDED.home_cover_spread,
+                    total_line = EXCLUDED.total_line,
+                    home_spread_line = EXCLUDED.home_spread_line,
+                    game_date = EXCLUDED.game_date,
+                    updated_at = NOW()
+                """
+                
+                await conn.execute(
+                    outcome_query,
+                    game_id,
+                    outcome.home_team,
+                    outcome.away_team,
+                    outcome.home_score,
+                    outcome.away_score,
+                    outcome.home_win,
+                    outcome.over,
+                    outcome.home_cover_spread,
+                    outcome.total_line,
+                    outcome.home_spread_line,
+                    outcome.game_datetime,
+                )
+                
+        except Exception as e:
+            self.logger.error(
+                "Error storing independent outcome",
+                mlb_game_id=outcome.mlb_stats_api_game_id,
+                error=str(e),
+            )
+            raise
+
 
 # Service instance for easy importing
 game_outcome_service = GameOutcomeService()
@@ -738,6 +1271,27 @@ async def check_game_outcomes(
         Dictionary with update results and statistics
     """
     return await game_outcome_service.check_and_update_game_outcomes(
+        date_range, force_update
+    )
+
+
+async def fetch_outcomes_from_mlb_api(
+    date_range: tuple[str, str], force_update: bool = False
+) -> dict[str, Any]:
+    """
+    Convenience function to fetch outcomes directly from MLB Stats API.
+    
+    This is completely independent of other data sources and fetches
+    games directly from the MLB Stats API.
+
+    Args:
+        date_range: Tuple of (start_date, end_date) in YYYY-MM-DD format
+        force_update: If True, update even if outcome already exists
+
+    Returns:
+        Dictionary with update results and statistics
+    """
+    return await game_outcome_service.fetch_and_update_outcomes_from_mlb_api(
         date_range, force_update
     )
 
