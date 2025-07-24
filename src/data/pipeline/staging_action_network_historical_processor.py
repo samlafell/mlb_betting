@@ -115,12 +115,14 @@ class ActionNetworkHistoricalProcessor:
         self.processing_batch_id = str(uuid4())
         
     def _get_db_config(self) -> Dict[str, Any]:
-        """Get database configuration."""
+        """Get database configuration from centralized settings."""
+        settings = get_settings()
         return {
-            "host": "localhost",
-            "port": 5432,
-            "database": "mlb_betting",
-            "user": "samlafell"
+            "host": settings.database.host,
+            "port": settings.database.port,
+            "database": settings.database.database,
+            "user": settings.database.user,
+            "password": settings.database.password
         }
     
     async def initialize(self):

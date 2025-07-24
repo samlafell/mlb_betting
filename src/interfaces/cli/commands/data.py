@@ -808,11 +808,15 @@ class DataCommands:
                 config = CollectorConfig(source=DataSource.MLB_STATS_API, enabled=True)
                 collector = collector_class(config)
             elif source_name == "vsin":
-                # VSIN collector uses legacy constructor (no config parameter)
-                collector = collector_class()
+                # VSIN collector uses CollectorConfig pattern
+                from ....data.collection.base import CollectorConfig, DataSource
+                config = CollectorConfig(source=DataSource.VSIN, enabled=True)
+                collector = collector_class(config)
             elif source_name == "sbd":
-                # SBD collector uses legacy constructor (no config parameter)
-                collector = collector_class()
+                # SBD collector uses CollectorConfig pattern
+                from ....data.collection.base import CollectorConfig, DataSource
+                config = CollectorConfig(source=DataSource.SPORTS_BETTING_DIME, enabled=True)
+                collector = collector_class(config)
             else:
                 collector = collector_class()
 
@@ -919,6 +923,70 @@ class DataCommands:
                             "records_collected": stats['games_found'],
                             "records_stored": stats['games_stored'],
                         }
+                    except Exception as e:
+                        console.print(f"❌ [red]{source_name.upper()} test failed[/red]")
+                        return {
+                            "status": "failed",
+                            "error": f"Test failed: {str(e)}",
+                        }
+                elif source_name == "vsin":
+                    # Use VSIN collector test method (sync)
+                    try:
+                        test_result = collector.test_collection("mlb")
+                        
+                        if test_result and test_result.get("status") == "success":
+                            console.print(f"✅ [green]{source_name.upper()} test successful[/green]")
+                            summary = (
+                                f"Test Status: {test_result['status']}\n"
+                                f"Raw records: {test_result.get('raw_records', 0)}\n"
+                                f"Processed: {test_result.get('processed', 0)}\n"
+                                f"Stored: {test_result.get('stored', 0)}\n"
+                                f"Collection result: {test_result.get('collection_result', 'success')}"
+                            )
+                            return {
+                                "status": "success",
+                                "output": summary,
+                                "records_collected": test_result.get('raw_records', 0),
+                                "records_stored": test_result.get('stored', 0),
+                            }
+                        else:
+                            console.print(f"❌ [red]{source_name.upper()} test failed[/red]")
+                            return {
+                                "status": "failed",
+                                "error": f"Test failed: {test_result.get('error', 'Unknown error') if test_result else 'No test result'}",
+                            }
+                    except Exception as e:
+                        console.print(f"❌ [red]{source_name.upper()} test failed[/red]")
+                        return {
+                            "status": "failed",
+                            "error": f"Test failed: {str(e)}",
+                        }
+                elif source_name == "sbd":
+                    # Use SBD collector test method (async)
+                    try:
+                        test_result = await collector.test_collection("mlb")
+                        
+                        if test_result and test_result.get("status") == "success":
+                            console.print(f"✅ [green]{source_name.upper()} test successful[/green]")
+                            summary = (
+                                f"Test Status: {test_result['status']}\n"
+                                f"Raw records: {test_result.get('raw_records', 0)}\n"
+                                f"Processed: {test_result.get('valid_records', 0)}\n"
+                                f"Stored: {test_result.get('raw_records', 0)}\n"
+                                f"Collection result: {test_result.get('status', 'success')}"
+                            )
+                            return {
+                                "status": "success",
+                                "output": summary,
+                                "records_collected": test_result.get('raw_records', 0),
+                                "records_stored": test_result.get('raw_records', 0),
+                            }
+                        else:
+                            console.print(f"❌ [red]{source_name.upper()} test failed[/red]")
+                            return {
+                                "status": "failed",
+                                "error": f"Test failed: {test_result.get('error', 'Unknown error') if test_result else 'No test result'}",
+                            }
                     except Exception as e:
                         console.print(f"❌ [red]{source_name.upper()} test failed[/red]")
                         return {

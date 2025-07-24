@@ -52,12 +52,29 @@ class CompleteHistoryCollector:
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         }
         
-        self.db_config = {
-            "host": "localhost",
-            "port": 5432,
-            "database": "mlb_betting",
-            "user": "samlafell"
-        }
+        # Use centralized database configuration
+        try:
+            import sys
+            sys.path.append('..')
+            from src.core.config import get_settings
+            settings = get_settings()
+            self.db_config = {
+                "host": settings.database.host,
+                "port": settings.database.port,
+                "database": settings.database.database,
+                "user": settings.database.user,
+                "password": settings.database.password
+            }
+        except ImportError:
+            # Fallback for utility scripts running independently
+            import os
+            self.db_config = {
+                "host": os.getenv("DB_HOST", "localhost"),
+                "port": int(os.getenv("DB_PORT", "5432")),
+                "database": os.getenv("DB_NAME", "mlb_betting"),
+                "user": os.getenv("DB_USER", "samlafell"),
+                "password": os.getenv("DB_PASSWORD", "")
+            }
         
         self.sportsbook_resolver = SportsbookResolver(self.db_config)
         
