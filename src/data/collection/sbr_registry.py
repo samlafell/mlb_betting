@@ -18,13 +18,15 @@ def register_sbr_collector():
     """Register SBR collector with the factory."""
     try:
         # Register for both SPORTS_BOOK_REVIEW and SBR aliases
-        CollectorFactory.register_collector(DataSource.SPORTS_BOOK_REVIEW, SBRUnifiedCollector)
+        CollectorFactory.register_collector(
+            DataSource.SPORTS_BOOK_REVIEW, SBRUnifiedCollector
+        )
         CollectorFactory.register_collector(DataSource.SBR, SBRUnifiedCollector)
 
         logger.info(
             "SBR collector registered successfully",
             collector="SBRUnifiedCollector",
-            sources=["SPORTS_BOOK_REVIEW", "SBR"]
+            sources=["SPORTS_BOOK_REVIEW", "SBR"],
         )
 
     except Exception as e:

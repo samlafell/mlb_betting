@@ -17,6 +17,7 @@ from src.interfaces.cli.commands.game_outcomes import outcomes
 from src.interfaces.cli.commands.movement_analysis import movement
 from src.interfaces.cli.commands.pipeline import pipeline
 from src.interfaces.cli.commands.setup_database import database
+
 # Old staging commands removed - consolidated into historical approach
 
 

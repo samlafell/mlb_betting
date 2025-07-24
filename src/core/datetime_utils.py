@@ -16,20 +16,22 @@ from datetime import datetime, timezone
 import pytz
 
 # Project timezone constant
-EST = pytz.timezone('US/Eastern')
+EST = pytz.timezone("US/Eastern")
 
 
-def parse_iso_to_datetime(iso_string: str, target_tz: pytz.BaseTzInfo | None = None) -> datetime:
+def parse_iso_to_datetime(
+    iso_string: str, target_tz: pytz.BaseTzInfo | None = None
+) -> datetime:
     """
     Parse ISO datetime string to proper datetime object for PostgreSQL.
-    
+
     Args:
         iso_string: ISO format datetime string (e.g., '2025-07-18T02:24:41.714814+00:00')
         target_tz: Target timezone (defaults to EST)
-    
+
     Returns:
         datetime: Properly parsed datetime object with timezone
-    
+
     Example:
         >>> iso_str = '2025-07-18T02:24:41.714814+00:00'
         >>> dt = parse_iso_to_datetime(iso_str)
@@ -40,8 +42,8 @@ def parse_iso_to_datetime(iso_string: str, target_tz: pytz.BaseTzInfo | None = N
 
     try:
         # Handle various ISO formats
-        if iso_string.endswith('Z'):
-            iso_string = iso_string[:-1] + '+00:00'
+        if iso_string.endswith("Z"):
+            iso_string = iso_string[:-1] + "+00:00"
 
         # Parse the ISO string
         dt = datetime.fromisoformat(iso_string)
@@ -60,10 +62,10 @@ def parse_iso_to_datetime(iso_string: str, target_tz: pytz.BaseTzInfo | None = N
 def utc_to_est(dt: datetime | str) -> datetime:
     """
     Convert UTC datetime (string or object) to EST datetime object.
-    
+
     Args:
         dt: UTC datetime as string or datetime object
-    
+
     Returns:
         datetime: EST datetime object suitable for PostgreSQL
     """
@@ -85,13 +87,13 @@ def now_est() -> datetime:
 def prepare_for_postgres(dt: datetime | str) -> datetime:
     """
     Prepare datetime for PostgreSQL insertion.
-    
+
     Converts any datetime input to a timezone-aware EST datetime object
     that PostgreSQL can properly handle.
-    
+
     Args:
         dt: Datetime as string or datetime object
-    
+
     Returns:
         datetime: PostgreSQL-ready EST datetime object
     """
@@ -111,10 +113,10 @@ def prepare_for_postgres(dt: datetime | str) -> datetime:
 def format_for_display(dt: datetime | str) -> str:
     """
     Format datetime for human-readable display in EST.
-    
+
     Args:
         dt: Datetime as string or datetime object
-    
+
     Returns:
         str: Formatted datetime string in EST
     """
@@ -131,12 +133,12 @@ def format_for_display(dt: datetime | str) -> str:
 def safe_game_datetime_parse(game_datetime: str | datetime | None) -> datetime | None:
     """
     Safely parse game datetime from various formats.
-    
+
     Handles common game datetime formats from APIs and converts to EST.
-    
+
     Args:
         game_datetime: Game datetime in various formats
-    
+
     Returns:
         datetime: EST datetime object or None if parsing fails
     """
@@ -146,7 +148,7 @@ def safe_game_datetime_parse(game_datetime: str | datetime | None) -> datetime |
     try:
         if isinstance(game_datetime, str):
             # Handle common API formats
-            if 'T' in game_datetime:
+            if "T" in game_datetime:
                 # ISO format
                 return parse_iso_to_datetime(game_datetime)
             else:
@@ -181,10 +183,10 @@ def collection_timestamp() -> datetime:
 def ensure_est_datetime(dt: datetime | str | None) -> datetime | None:
     """
     Ensure datetime is in EST timezone, handling None safely.
-    
+
     Args:
         dt: Datetime in any format or None
-    
+
     Returns:
         datetime: EST datetime object or None
     """

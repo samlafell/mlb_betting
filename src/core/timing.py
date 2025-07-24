@@ -21,7 +21,7 @@ import pytz
 from pydantic import BaseModel, Field
 
 # Timezone constants - EST only per project requirements
-EST = pytz.timezone('US/Eastern')
+EST = pytz.timezone("US/Eastern")
 
 
 @dataclass
@@ -72,7 +72,7 @@ class SynchronizationWindow:
 class DataSynchronizer:
     """
     Handles synchronization of data from multiple sources with different timing.
-    
+
     Key Features:
     - Groups data by time windows
     - Handles timing mismatches between sources
@@ -84,7 +84,7 @@ class DataSynchronizer:
         self,
         default_window_seconds: float = 60.0,
         max_skew_seconds: float = 300.0,
-        require_all_sources: bool = False
+        require_all_sources: bool = False,
     ):
         self.default_window_seconds = default_window_seconds
         self.max_skew_seconds = max_skew_seconds
@@ -96,7 +96,7 @@ class DataSynchronizer:
         data: Any,
         source: str,
         collected_at_est: datetime | None = None,
-        sequence_id: str | None = None
+        sequence_id: str | None = None,
     ) -> TimestampedData:
         """Add timestamped data to synchronization buffer."""
         if collected_at_est is None:
@@ -106,7 +106,7 @@ class DataSynchronizer:
             data=data,
             collected_at_est=collected_at_est,
             source=source,
-            source_sequence_id=sequence_id
+            source_sequence_id=sequence_id,
         )
 
         self.data_buffer.append(timestamped)
@@ -116,16 +116,16 @@ class DataSynchronizer:
         self,
         center_time: datetime | None = None,
         window_seconds: float | None = None,
-        required_sources: list[str] | None = None
+        required_sources: list[str] | None = None,
     ) -> dict[str, list[TimestampedData]]:
         """
         Get synchronized data grouped by source within a time window.
-        
+
         Args:
             center_time: Center of synchronization window (default: now)
             window_seconds: Size of window (default: instance default)
             required_sources: Sources that must be present
-            
+
         Returns:
             Dictionary mapping source names to lists of timestamped data
         """
@@ -137,7 +137,7 @@ class DataSynchronizer:
         window = SynchronizationWindow(
             center_time_est=center_time,
             window_seconds=window_seconds,
-            max_acceptable_skew_seconds=self.max_skew_seconds
+            max_acceptable_skew_seconds=self.max_skew_seconds,
         )
 
         # Group data by source within the window
@@ -166,15 +166,15 @@ class DataSynchronizer:
     def find_best_time_alignment(
         self,
         data_sets: dict[str, list[TimestampedData]],
-        max_time_diff_seconds: float = 180.0
+        max_time_diff_seconds: float = 180.0,
     ) -> dict[str, TimestampedData] | None:
         """
         Find the best time-aligned data point from each source.
-        
+
         Args:
             data_sets: Data grouped by source
             max_time_diff_seconds: Maximum acceptable time difference
-            
+
         Returns:
             Dictionary mapping sources to best-aligned data points
         """
@@ -183,7 +183,7 @@ class DataSynchronizer:
 
         sources = list(data_sets.keys())
         best_alignment = None
-        min_time_spread = float('inf')
+        min_time_spread = float("inf")
 
         # Try all combinations to find best alignment
         for source_a in sources:
@@ -197,10 +197,14 @@ class DataSynchronizer:
                         continue
 
                     closest_item = None
-                    min_diff = float('inf')
+                    min_diff = float("inf")
 
                     for item_b in data_sets[source_b]:
-                        diff = abs((item_b.collected_at_est - item_a.collected_at_est).total_seconds())
+                        diff = abs(
+                            (
+                                item_b.collected_at_est - item_a.collected_at_est
+                            ).total_seconds()
+                        )
                         if diff < min_diff:
                             min_diff = diff
                             closest_item = item_b
@@ -226,8 +230,7 @@ class DataSynchronizer:
 
         initial_count = len(self.data_buffer)
         self.data_buffer = [
-            item for item in self.data_buffer
-            if item.collected_at_est >= cutoff_time
+            item for item in self.data_buffer if item.collected_at_est >= cutoff_time
         ]
 
         removed_count = initial_count - len(self.data_buffer)
@@ -246,7 +249,9 @@ class TimingMetrics(BaseModel):
     timing_anomalies: list[str] = Field(default_factory=list)
     last_updated_est: datetime = Field(default_factory=lambda: get_est_now())
 
-    def add_timing_anomaly(self, source: str, description: str, timestamp: datetime) -> None:
+    def add_timing_anomaly(
+        self, source: str, description: str, timestamp: datetime
+    ) -> None:
         """Add a timing anomaly for tracking."""
         anomaly = f"{format_timestamp_for_logging(timestamp)}: {source} - {description}"
         self.timing_anomalies.append(anomaly)
@@ -259,6 +264,7 @@ class TimingMetrics(BaseModel):
 
 
 # Core timing utilities - EST only per project requirements
+
 
 def get_est_now() -> datetime:
     """Get current EST time with timezone info."""
@@ -280,12 +286,11 @@ def precise_timestamp() -> datetime:
 
 
 def create_collection_timestamp(
-    source: str,
-    sequence_id: str | None = None
+    source: str, sequence_id: str | None = None
 ) -> dict[str, Any]:
     """
     Create standardized timestamp metadata for data collection.
-    
+
     Returns:
         Dictionary with timing metadata
     """
@@ -297,22 +302,23 @@ def create_collection_timestamp(
         "source": source,
         "sequence_id": sequence_id,
         "timezone_info": {
-            "est_offset_seconds": now_est.utcoffset().total_seconds() if now_est.utcoffset() else 0,
-        }
+            "est_offset_seconds": now_est.utcoffset().total_seconds()
+            if now_est.utcoffset()
+            else 0,
+        },
     }
 
 
 def calculate_synchronization_quality(
-    timestamps: list[datetime],
-    expected_interval_seconds: float = 60.0
+    timestamps: list[datetime], expected_interval_seconds: float = 60.0
 ) -> float:
     """
     Calculate quality score for timestamp synchronization.
-    
+
     Args:
         timestamps: List of timestamps to analyze
         expected_interval_seconds: Expected interval between data points
-        
+
     Returns:
         Quality score from 0.0 (poor) to 1.0 (perfect)
     """
@@ -323,12 +329,14 @@ def calculate_synchronization_quality(
     intervals = []
 
     for i in range(1, len(timestamps)):
-        interval = (timestamps[i] - timestamps[i-1]).total_seconds()
+        interval = (timestamps[i] - timestamps[i - 1]).total_seconds()
         intervals.append(interval)
 
     # Calculate variance from expected interval
     avg_interval = sum(intervals) / len(intervals)
-    variance = sum((interval - expected_interval_seconds) ** 2 for interval in intervals) / len(intervals)
+    variance = sum(
+        (interval - expected_interval_seconds) ** 2 for interval in intervals
+    ) / len(intervals)
 
     # Convert variance to quality score (lower variance = higher quality)
     max_acceptable_variance = (expected_interval_seconds * 0.5) ** 2
@@ -340,16 +348,16 @@ def calculate_synchronization_quality(
 async def wait_for_synchronized_collection(
     sources: list[str],
     max_wait_seconds: float = 30.0,
-    check_interval_seconds: float = 1.0
+    check_interval_seconds: float = 1.0,
 ) -> bool:
     """
     Wait for all sources to complete collection within a time window.
-    
+
     Args:
         sources: List of source names to wait for
         max_wait_seconds: Maximum time to wait
         check_interval_seconds: How often to check
-        
+
     Returns:
         True if all sources completed within window
     """
@@ -377,7 +385,5 @@ def format_timestamp_for_logging(dt: datetime) -> str:
 
 # Global synchronizer instance for the application
 default_synchronizer = DataSynchronizer(
-    default_window_seconds=60.0,
-    max_skew_seconds=300.0,
-    require_all_sources=False
+    default_window_seconds=60.0, max_skew_seconds=300.0, require_all_sources=False
 )

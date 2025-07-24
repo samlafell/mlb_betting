@@ -35,7 +35,9 @@ class DataSource(Enum):
     SBD = "sbd"  # Sports Betting Dime
     SPORTS_BETTING_DIME = "sports_betting_dime"  # Alternative name for SBD
     ACTION_NETWORK = "action_network"
-    SPORTS_BOOK_REVIEW_DEPRECATED = "SPORTS_BOOK_REVIEW"  # DEPRECATED: Use SBR instead - matches DB enum
+    SPORTS_BOOK_REVIEW_DEPRECATED = (
+        "SPORTS_BOOK_REVIEW"  # DEPRECATED: Use SBR instead - matches DB enum
+    )
     SPORTS_BOOK_REVIEW = "sports_book_review"  # SportsbookReview.com
     SBR = "sbr"  # Alias for SPORTS_BOOK_REVIEW
     MLB_STATS_API = "mlb_stats_api"
@@ -116,7 +118,9 @@ class CollectionResult:
     # Synchronization metadata for handling timing mismatches
     collection_window_id: str | None = None
     sync_quality_score: float = 1.0  # 0.0 = poor sync, 1.0 = perfect sync
-    is_synchronized: bool = False  # Whether this data is part of synchronized collection
+    is_synchronized: bool = (
+        False  # Whether this data is part of synchronized collection
+    )
 
     @property
     def has_data(self) -> bool:
@@ -139,10 +143,7 @@ class CollectionResult:
         return len(self.data)
 
     def set_synchronization_metadata(
-        self,
-        window_id: str,
-        quality_score: float,
-        is_synchronized: bool = True
+        self, window_id: str, quality_score: float, is_synchronized: bool = True
     ) -> None:
         """Set synchronization metadata for this collection result."""
         self.collection_window_id = window_id
@@ -196,7 +197,7 @@ class BaseCollector(ABC):
             self.session = aiohttp.ClientSession(
                 headers=self.config.headers, timeout=timeout
             )
-        self.logger.info("Collector initialized", source=self.source.value)
+        self.logger.info("Collector initialized", source=self.source)
 
     async def cleanup(self) -> None:
         """Cleanup resources (close connections, etc.)."""
@@ -223,10 +224,10 @@ class BaseCollector(ABC):
     async def collect(self, **params) -> CollectionResult:
         """
         Main collection method that wraps collect_data with error handling.
-        
+
         Args:
             **params: Collection parameters
-            
+
         Returns:
             CollectionResult with data and metadata
         """
@@ -236,7 +237,7 @@ class BaseCollector(ABC):
             # Create collection request from params
             request = CollectionRequest(
                 source=self.source,
-                **{k: v for k, v in params.items() if hasattr(CollectionRequest, k)}
+                **{k: v for k, v in params.items() if hasattr(CollectionRequest, k)},
             )
 
             # Collect data
@@ -256,7 +257,7 @@ class BaseCollector(ABC):
                 source=self.source.value,
                 timestamp=start_time,
                 request_count=1,
-                response_time_ms=(datetime.now() - start_time).total_seconds() * 1000
+                response_time_ms=(datetime.now() - start_time).total_seconds() * 1000,
             )
 
             self.metrics.records_collected = len(raw_data)
@@ -281,7 +282,7 @@ class BaseCollector(ABC):
                 timestamp=start_time,
                 errors=[error_message],
                 request_count=1,
-                response_time_ms=(datetime.now() - start_time).total_seconds() * 1000
+                response_time_ms=(datetime.now() - start_time).total_seconds() * 1000,
             )
 
     @abstractmethod
@@ -341,7 +342,7 @@ class BaseCollector(ABC):
             "last_status": self.metrics.status.value,
             "last_duration_seconds": self.metrics.duration,
             "error_count": len(self.metrics.errors),
-            "last_errors": self.metrics.errors[-3:] if self.metrics.errors else []
+            "last_errors": self.metrics.errors[-3:] if self.metrics.errors else [],
         }
 
     def reset_metrics(self) -> None:
@@ -411,7 +412,9 @@ class MockCollector(BaseCollector):
         except ImportError:
             # Fallback for backward compatibility
             import pytz
-            EST = pytz.timezone('US/Eastern')
+
+            EST = pytz.timezone("US/Eastern")
+
             def precise_timestamp():
                 return datetime.now(EST)
 
@@ -575,7 +578,9 @@ class CollectorFactory:
 
         collector_class = cls._collectors.get(source_key)
         if not collector_class:
-            source_value = config.source if isinstance(config.source, str) else config.source.value
+            source_value = (
+                config.source if isinstance(config.source, str) else config.source.value
+            )
             logger.warning(
                 "Real collector not implemented, using mock", source=source_value
             )

@@ -13,9 +13,9 @@ from datetime import date, datetime, time
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import Field, ConfigDict
-from ....core.pydantic_compat import computed_field, field_validator, ValidationInfo
+from pydantic import ConfigDict, Field
 
+from ....core.pydantic_compat import ValidationInfo, field_validator
 from .base import UnifiedEntity, ValidatedModel
 
 
@@ -905,7 +905,8 @@ class UnifiedGame(UnifiedEntity):
 
         self.touch_updated_at()
 
-    model_config = ConfigDict(json_schema_extra={
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "game_id": "2025-07-01-NYY-BOS",
                 "mlb_game_id": "12345",
@@ -920,5 +921,5 @@ class UnifiedGame(UnifiedEntity):
                     "state": "MA",
                 },
             }
-        })
-
+        }
+    )

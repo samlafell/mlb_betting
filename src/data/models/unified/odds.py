@@ -13,8 +13,8 @@ from datetime import datetime
 from enum import Enum
 
 from pydantic import Field
-from ....core.pydantic_compat import computed_field, field_validator
 
+from ....core.pydantic_compat import field_validator
 from .base import SourcedModel, UnifiedEntity, ValidatedModel
 
 

@@ -33,6 +33,7 @@ logger = structlog.get_logger(__name__)
 
 class CollectionStatus(Enum):
     """Collection status enumeration."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -44,6 +45,7 @@ class CollectionStatus(Enum):
 @dataclass
 class BatchCollectionConfig:
     """Configuration for batch collection operations."""
+
     max_concurrent_collections: int = 5
     retry_attempts: int = 3
     retry_delay_seconds: float = 60.0
@@ -73,6 +75,7 @@ class BatchCollectionConfig:
 @dataclass
 class GameCollectionTask:
     """Individual game collection task."""
+
     task_id: str
     mlb_game: MLBGame
     # Note: SBR mapping removed with SBR collector cleanup
@@ -104,6 +107,7 @@ class GameCollectionTask:
 @dataclass
 class BatchCollectionResult:
     """Result of batch collection operation."""
+
     batch_id: str
     start_date: datetime
     end_date: datetime
@@ -159,14 +163,14 @@ class BatchCollectionResult:
             "games_skipped": self.games_skipped,
             "success_rate": f"{self.success_rate:.1%}",
             "total_records": self.total_records_collected,
-            "errors": len(self.global_errors)
+            "errors": len(self.global_errors),
         }
 
 
 class BatchCollectionService:
     """
     Batch Collection Service for historical line movement data.
-    
+
     Provides comprehensive batch collection capabilities including:
     - Date-range game discovery
     - SBR game ID resolution
@@ -175,7 +179,9 @@ class BatchCollectionService:
     - Error handling and retry mechanisms
     """
 
-    def __init__(self, config: BatchCollectionConfig = None, settings: UnifiedSettings = None):
+    def __init__(
+        self, config: BatchCollectionConfig = None, settings: UnifiedSettings = None
+    ):
         self.config = config or BatchCollectionConfig()
         self.settings = settings or UnifiedSettings()
         self.logger = logger.bind(component="BatchCollectionService")
@@ -198,16 +204,16 @@ class BatchCollectionService:
         self,
         start_date: datetime,
         end_date: datetime,
-        source: str = "sports_betting_report"
+        source: str = "sports_betting_report",
     ) -> BatchCollectionResult:
         """
         Collect betting lines for a date range.
-        
+
         Args:
             start_date: Start date for collection
             end_date: End date for collection
             source: Data source (currently only SBR supported)
-            
+
         Returns:
             Batch collection result
         """
@@ -222,7 +228,7 @@ class BatchCollectionService:
                 batch_id=batch_id,
                 start_date=start_date,
                 end_date=end_date,
-                start_time=datetime.now()
+                start_time=datetime.now(),
             )
 
             self.is_running = True
@@ -232,7 +238,7 @@ class BatchCollectionService:
                 "Starting batch collection",
                 batch_id=batch_id,
                 start_date=start_date.strftime("%Y-%m-%d"),
-                end_date=end_date.strftime("%Y-%m-%d")
+                end_date=end_date.strftime("%Y-%m-%d"),
             )
 
             # Phase 1: Discover games
@@ -253,7 +259,7 @@ class BatchCollectionService:
                 batch_id=batch_id,
                 duration=str(self.current_batch.duration),
                 success_rate=f"{self.current_batch.success_rate:.1%}",
-                total_records=self.current_batch.total_records_collected
+                total_records=self.current_batch.total_records_collected,
             )
 
             return self.current_batch
@@ -275,15 +281,12 @@ class BatchCollectionService:
                 games = await self.schedule_service.get_games_by_date_range(
                     start_date=start_date,
                     end_date=end_date,
-                    season_type="R"  # Regular season
+                    season_type="R",  # Regular season
                 )
 
             # Create tasks for each game
             for game in games:
-                task = GameCollectionTask(
-                    task_id=str(uuid.uuid4()),
-                    mlb_game=game
-                )
+                task = GameCollectionTask(task_id=str(uuid.uuid4()), mlb_game=game)
                 self.current_batch.tasks.append(task)
 
             self.current_batch.total_games = len(games)
@@ -291,7 +294,7 @@ class BatchCollectionService:
             self.logger.info(
                 f"Discovered {len(games)} games",
                 start_date=start_date.strftime("%Y-%m-%d"),
-                end_date=end_date.strftime("%Y-%m-%d")
+                end_date=end_date.strftime("%Y-%m-%d"),
             )
 
         except Exception as e:
@@ -313,7 +316,9 @@ class BatchCollectionService:
                 games = [task.mlb_game for task in self.current_batch.tasks]
 
                 # Use optimized bulk resolution (much faster than individual calls)
-                mappings = await self.game_resolver.resolve_multiple_games_optimized(games)
+                mappings = await self.game_resolver.resolve_multiple_games_optimized(
+                    games
+                )
 
                 # Update tasks with mappings
                 resolved_count = 0
@@ -327,7 +332,7 @@ class BatchCollectionService:
 
             self.logger.info(
                 f"Resolved {resolved_count} of {len(self.current_batch.tasks)} games",
-                resolution_rate=f"{resolved_count / len(self.current_batch.tasks):.1%}"
+                resolution_rate=f"{resolved_count / len(self.current_batch.tasks):.1%}",
             )
 
         except Exception as e:
@@ -341,7 +346,8 @@ class BatchCollectionService:
 
             # Filter tasks with valid mappings
             valid_tasks = [
-                task for task in self.current_batch.tasks
+                task
+                for task in self.current_batch.tasks
                 if task.sbr_mapping and task.sbr_mapping.is_high_confidence
             ]
 
@@ -353,10 +359,7 @@ class BatchCollectionService:
             semaphore = asyncio.Semaphore(self.config.max_concurrent_collections)
 
             # Process tasks
-            tasks = [
-                self._collect_single_game(task, semaphore)
-                for task in valid_tasks
-            ]
+            tasks = [self._collect_single_game(task, semaphore) for task in valid_tasks]
 
             # Wait for all tasks to complete
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -368,7 +371,9 @@ class BatchCollectionService:
             self.logger.error("Error collecting betting lines", error=str(e))
             raise DataError(f"Failed to collect betting lines: {str(e)}")
 
-    async def _collect_single_game(self, task: GameCollectionTask, semaphore: asyncio.Semaphore):
+    async def _collect_single_game(
+        self, task: GameCollectionTask, semaphore: asyncio.Semaphore
+    ):
         """Collect betting lines for a single game."""
         async with semaphore:
             if self.should_cancel:
@@ -382,24 +387,46 @@ class BatchCollectionService:
                     task.attempts = attempt + 1
 
                     # Collect game lines using configured collector
-                    if self.config.use_enhanced_collector and hasattr(self, 'legacy_collector') and self.legacy_collector:
+                    if (
+                        self.config.use_enhanced_collector
+                        and hasattr(self, "legacy_collector")
+                        and self.legacy_collector
+                    ):
                         # Try enhanced collector with fallback
                         try:
-                            self.logger.debug(f"Trying enhanced collector for game {task.sbr_mapping.sbr_game_id}")
-                            records_stored = await self.sbr_collector.collect_game_lines_async(task.sbr_mapping.sbr_game_id)
-                            self.logger.debug(f"Enhanced collector succeeded: {records_stored} records")
+                            self.logger.debug(
+                                f"Trying enhanced collector for game {task.sbr_mapping.sbr_game_id}"
+                            )
+                            records_stored = (
+                                await self.sbr_collector.collect_game_lines_async(
+                                    task.sbr_mapping.sbr_game_id
+                                )
+                            )
+                            self.logger.debug(
+                                f"Enhanced collector succeeded: {records_stored} records"
+                            )
                         except Exception as enhanced_error:
                             # Fallback to legacy collector
                             self.logger.warning(
                                 f"Enhanced collector failed for game {task.sbr_mapping.sbr_game_id}, trying legacy collector",
                                 error=str(enhanced_error),
-                                error_type=type(enhanced_error).__name__
+                                error_type=type(enhanced_error).__name__,
                             )
-                            records_stored = await self.legacy_collector.collect_game_lines_async(task.sbr_mapping.sbr_game_id)
-                            self.logger.debug(f"Legacy collector result: {records_stored} records")
+                            records_stored = (
+                                await self.legacy_collector.collect_game_lines_async(
+                                    task.sbr_mapping.sbr_game_id
+                                )
+                            )
+                            self.logger.debug(
+                                f"Legacy collector result: {records_stored} records"
+                            )
                     else:
                         # Use primary collector only
-                        records_stored = await self.sbr_collector.collect_game_lines_async(task.sbr_mapping.sbr_game_id)
+                        records_stored = (
+                            await self.sbr_collector.collect_game_lines_async(
+                                task.sbr_mapping.sbr_game_id
+                            )
+                        )
 
                     if records_stored > 0:
                         # Create successful result
@@ -407,7 +434,7 @@ class BatchCollectionService:
                             status=BaseCollectionStatus.SUCCESS,
                             records_processed=1,
                             records_stored=records_stored,
-                            message="Collection successful"
+                            message="Collection successful",
                         )
                         task.records_collected = records_stored
                         task.status = CollectionStatus.COMPLETED
@@ -415,7 +442,7 @@ class BatchCollectionService:
                         self.logger.debug(
                             f"Collected game {task.mlb_game.game_pk}",
                             sbr_game_id=task.sbr_mapping.sbr_game_id,
-                            records=task.records_collected
+                            records=task.records_collected,
                         )
 
                         break
@@ -448,28 +475,38 @@ class BatchCollectionService:
             self.current_batch.games_processed += 1
 
             if self.config.enable_progress_tracking:
-                if self.current_batch.games_processed % self.config.progress_update_interval == 0:
+                if (
+                    self.current_batch.games_processed
+                    % self.config.progress_update_interval
+                    == 0
+                ):
                     self._log_progress()
 
             # Checkpointing
             if self.config.enable_checkpointing:
-                if self.current_batch.games_processed % self.config.checkpoint_interval == 0:
+                if (
+                    self.current_batch.games_processed % self.config.checkpoint_interval
+                    == 0
+                ):
                     await self._save_checkpoint()
 
     def _update_batch_statistics(self):
         """Update batch statistics."""
         self.current_batch.games_successful = sum(
-            1 for task in self.current_batch.tasks
+            1
+            for task in self.current_batch.tasks
             if task.status == CollectionStatus.COMPLETED
         )
 
         self.current_batch.games_failed = sum(
-            1 for task in self.current_batch.tasks
+            1
+            for task in self.current_batch.tasks
             if task.status == CollectionStatus.FAILED
         )
 
         self.current_batch.games_skipped = sum(
-            1 for task in self.current_batch.tasks
+            1
+            for task in self.current_batch.tasks
             if not task.sbr_mapping or not task.sbr_mapping.is_high_confidence
         )
 
@@ -489,7 +526,7 @@ class BatchCollectionService:
             processed=self.current_batch.games_processed,
             total=self.current_batch.total_games,
             successful=self.current_batch.games_successful,
-            failed=self.current_batch.games_failed
+            failed=self.current_batch.games_failed,
         )
 
     async def _save_checkpoint(self):
@@ -498,7 +535,9 @@ class BatchCollectionService:
             if not self.current_batch:
                 return
 
-            checkpoint_file = self.checkpoint_dir / f"batch_{self.current_batch.batch_id}.json"
+            checkpoint_file = (
+                self.checkpoint_dir / f"batch_{self.current_batch.batch_id}.json"
+            )
 
             # Serialize batch data
             checkpoint_data = {
@@ -509,10 +548,10 @@ class BatchCollectionService:
                 "games_processed": self.current_batch.games_processed,
                 "games_successful": self.current_batch.games_successful,
                 "games_failed": self.current_batch.games_failed,
-                "total_records_collected": self.current_batch.total_records_collected
+                "total_records_collected": self.current_batch.total_records_collected,
             }
 
-            with open(checkpoint_file, 'w') as f:
+            with open(checkpoint_file, "w") as f:
                 json.dump(checkpoint_data, f, indent=2)
 
             self.logger.debug(f"Checkpoint saved: {checkpoint_file}")
@@ -535,12 +574,15 @@ class BatchCollectionService:
             "batch_id": self.current_batch.batch_id,
             "is_running": self.is_running,
             "total_games": self.current_batch.total_games,
-            "progress": self.current_batch.games_processed / self.current_batch.total_games if self.current_batch.total_games > 0 else 0,
+            "progress": self.current_batch.games_processed
+            / self.current_batch.total_games
+            if self.current_batch.total_games > 0
+            else 0,
             "games_processed": self.current_batch.games_processed,
             "games_successful": self.current_batch.games_successful,
             "games_failed": self.current_batch.games_failed,
             "total_records": self.current_batch.total_records_collected,
-            "duration": str(datetime.now() - self.current_batch.start_time)
+            "duration": str(datetime.now() - self.current_batch.start_time),
         }
 
     async def get_failed_games(self) -> list[GameCollectionTask]:
@@ -549,7 +591,8 @@ class BatchCollectionService:
             return []
 
         return [
-            task for task in self.current_batch.tasks
+            task
+            for task in self.current_batch.tasks
             if task.status == CollectionStatus.FAILED
         ]
 
@@ -574,10 +617,7 @@ class BatchCollectionService:
 
         # Process retry
         semaphore = asyncio.Semaphore(self.config.max_concurrent_collections)
-        tasks = [
-            self._collect_single_game(task, semaphore)
-            for task in failed_tasks
-        ]
+        tasks = [self._collect_single_game(task, semaphore) for task in failed_tasks]
 
         await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -589,13 +629,14 @@ class BatchCollectionService:
 
 # Example usage
 if __name__ == "__main__":
+
     async def main():
         # Configure batch collection
         config = BatchCollectionConfig(
             max_concurrent_collections=3,
             retry_attempts=2,
             enable_progress_tracking=True,
-            enable_checkpointing=True
+            enable_checkpointing=True,
         )
 
         # Create service
@@ -609,7 +650,9 @@ if __name__ == "__main__":
             result = await service.collect_date_range(start_date, end_date)
 
             print("Batch Collection Results:")
-            print(f"  Date Range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+            print(
+                f"  Date Range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+            )
             print(f"  Duration: {result.duration}")
             print(f"  Games Processed: {result.games_processed}")
             print(f"  Success Rate: {result.success_rate:.1%}")

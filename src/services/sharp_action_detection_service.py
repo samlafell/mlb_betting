@@ -24,17 +24,15 @@ class SharpActionDetectionService:
         # Note: Strategy orchestrator integration will be added in future iteration
 
     async def update_sharp_action_indicators(
-        self,
-        target_date: date | None = None,
-        force_update: bool = False
+        self, target_date: date | None = None, force_update: bool = False
     ) -> dict[str, Any]:
         """
         Update sharp action indicators for games on specified date.
-        
+
         Args:
             target_date: Date to process (defaults to today)
             force_update: Whether to update existing records
-            
+
         Returns:
             Dict with processing results
         """
@@ -44,7 +42,7 @@ class SharpActionDetectionService:
         self.logger.info(
             "Starting sharp action detection",
             target_date=target_date,
-            force_update=force_update
+            force_update=force_update,
         )
 
         try:
@@ -60,12 +58,12 @@ class SharpActionDetectionService:
                 games_processed = 0
 
                 for game in games:
-                    game_id = game['id']
+                    game_id = game["id"]
                     self.logger.info(
                         "Processing game for sharp action",
                         game_id=game_id,
-                        home_team=game['home_team'],
-                        away_team=game['away_team']
+                        home_team=game["home_team"],
+                        away_team=game["away_team"],
                     )
 
                     # Run strategy analysis for this game
@@ -84,35 +82,33 @@ class SharpActionDetectionService:
                     self.logger.info(
                         "Completed game sharp action processing",
                         game_id=game_id,
-                        updated_records=updated_count
+                        updated_records=updated_count,
                     )
 
                 self.logger.info(
                     "Completed sharp action detection",
                     target_date=target_date,
                     games_processed=games_processed,
-                    total_records_updated=total_updated
+                    total_records_updated=total_updated,
                 )
 
                 return {
                     "success": True,
                     "games_processed": games_processed,
                     "records_updated": total_updated,
-                    "target_date": target_date.isoformat()
+                    "target_date": target_date.isoformat(),
                 }
 
         except Exception as e:
             self.logger.error(
                 "Failed to update sharp action indicators",
                 target_date=target_date,
-                error=str(e)
+                error=str(e),
             )
             return {"success": False, "error": str(e)}
 
     async def _get_games_for_date(
-        self,
-        conn,
-        target_date: date
+        self, conn, target_date: date
     ) -> list[dict[str, Any]]:
         """Get all games for the specified date."""
         query = """
@@ -126,14 +122,11 @@ class SharpActionDetectionService:
         return [dict(row) for row in rows]
 
     async def _analyze_game_for_sharp_action(
-        self,
-        conn,
-        game_id: int,
-        target_date: date
+        self, conn, game_id: int, target_date: date
     ) -> dict[str, Any]:
         """
         Analyze a specific game for sharp action using existing strategy processors.
-        
+
         Returns:
             Dict containing sharp action analysis results
         """
@@ -147,17 +140,11 @@ class SharpActionDetectionService:
 
         except Exception as e:
             self.logger.error(
-                "Failed to analyze game for sharp action",
-                game_id=game_id,
-                error=str(e)
+                "Failed to analyze game for sharp action", game_id=game_id, error=str(e)
             )
             return {}
 
-    async def _detect_basic_sharp_patterns(
-        self,
-        conn,
-        game_id: int
-    ) -> dict[str, Any]:
+    async def _detect_basic_sharp_patterns(self, conn, game_id: int) -> dict[str, Any]:
         """
         Detect basic sharp action patterns from betting lines data.
         This is a simplified implementation that can be enhanced later.
@@ -165,7 +152,7 @@ class SharpActionDetectionService:
         indicators = {
             "moneyline": {"detected": False, "confidence": 0.0, "patterns": []},
             "spread": {"detected": False, "confidence": 0.0, "patterns": []},
-            "total": {"detected": False, "confidence": 0.0, "patterns": []}
+            "total": {"detected": False, "confidence": 0.0, "patterns": []},
         }
 
         # Check for line movement patterns in the betting lines data
@@ -185,47 +172,48 @@ class SharpActionDetectionService:
             try:
                 result = await conn.fetchrow(query, game_id)
 
-                if result and result['line_count'] > 0:
+                if result and result["line_count"] > 0:
                     # Simple heuristic: multiple books with good data quality suggests activity
-                    if result['book_count'] >= 2 and result['avg_completeness'] > 0.6:
+                    if result["book_count"] >= 2 and result["avg_completeness"] > 0.6:
                         indicators[market_type]["detected"] = True
                         indicators[market_type]["confidence"] = min(
-                            result['avg_completeness'] * result['book_count'] / 5.0, 1.0
+                            result["avg_completeness"] * result["book_count"] / 5.0, 1.0
                         )
-                        indicators[market_type]["patterns"].append({
-                            "strategy": "basic_line_movement",
-                            "recommendation": "MONITOR",
-                            "confidence": indicators[market_type]["confidence"],
-                            "reasoning": f"Multiple books ({result['book_count']}) with good data quality"
-                        })
+                        indicators[market_type]["patterns"].append(
+                            {
+                                "strategy": "basic_line_movement",
+                                "recommendation": "MONITOR",
+                                "confidence": indicators[market_type]["confidence"],
+                                "reasoning": f"Multiple books ({result['book_count']}) with good data quality",
+                            }
+                        )
 
             except Exception as e:
                 self.logger.warning(
                     "Failed to check sharp patterns for market",
                     market_type=market_type,
                     game_id=game_id,
-                    error=str(e)
+                    error=str(e),
                 )
 
         return indicators
 
     def _extract_sharp_action_indicators(
-        self,
-        analysis_results: list[UnifiedBettingSignal]
+        self, analysis_results: list[UnifiedBettingSignal]
     ) -> dict[str, Any]:
         """
         Extract sharp action indicators from strategy analysis results.
-        
+
         Args:
             analysis_results: List of strategy results
-            
+
         Returns:
             Dict with sharp action indicators for different market types
         """
         indicators = {
             "moneyline": {"detected": False, "confidence": 0.0, "patterns": []},
             "spread": {"detected": False, "confidence": 0.0, "patterns": []},
-            "total": {"detected": False, "confidence": 0.0, "patterns": []}
+            "total": {"detected": False, "confidence": 0.0, "patterns": []},
         }
 
         # Pattern keywords that indicate sharp action
@@ -236,7 +224,7 @@ class SharpActionDetectionService:
             "consensus_fade",
             "late_flip",
             "steam_move",
-            "sharp_money"
+            "sharp_money",
         ]
 
         for result in analysis_results:
@@ -247,20 +235,23 @@ class SharpActionDetectionService:
             market_type = self._determine_market_type_from_bet_type(result.bet_type)
 
             # Check if this signal indicates sharp action
-            is_sharp_strategy = any(pattern in signal_type for pattern in sharp_patterns)
+            is_sharp_strategy = any(
+                pattern in signal_type for pattern in sharp_patterns
+            )
 
             if is_sharp_strategy and market_type in indicators:
                 indicators[market_type]["detected"] = True
                 indicators[market_type]["confidence"] = max(
-                    indicators[market_type]["confidence"],
-                    result.confidence_score
+                    indicators[market_type]["confidence"], result.confidence_score
                 )
-                indicators[market_type]["patterns"].append({
-                    "strategy": result.signal_type.value,
-                    "recommendation": result.recommended_side,
-                    "confidence": result.confidence_score,
-                    "reasoning": f"Signal: {result.signal_type.value}, Side: {result.recommended_side}"
-                })
+                indicators[market_type]["patterns"].append(
+                    {
+                        "strategy": result.signal_type.value,
+                        "recommendation": result.recommended_side,
+                        "confidence": result.confidence_score,
+                        "reasoning": f"Signal: {result.signal_type.value}, Side: {result.recommended_side}",
+                    }
+                )
 
         return indicators
 
@@ -272,7 +263,11 @@ class SharpActionDetectionService:
             return "moneyline"
         elif "spread" in bet_type_lower or "point" in bet_type_lower:
             return "spread"
-        elif "total" in bet_type_lower or "over" in bet_type_lower or "under" in bet_type_lower:
+        elif (
+            "total" in bet_type_lower
+            or "over" in bet_type_lower
+            or "under" in bet_type_lower
+        ):
             return "total"
         else:
             # Default to spread for generic betting types
@@ -283,11 +278,11 @@ class SharpActionDetectionService:
         conn,
         game_id: int,
         sharp_indicators: dict[str, Any],
-        force_update: bool = False
+        force_update: bool = False,
     ) -> int:
         """
         Update betting lines tables with sharp action indicators.
-        
+
         Returns:
             Number of records updated
         """
@@ -300,8 +295,11 @@ class SharpActionDetectionService:
             )
 
             update_count = await self._update_table_sharp_action(
-                conn, "betting_lines_moneyline", game_id,
-                moneyline_indicator, force_update
+                conn,
+                "betting_lines_moneyline",
+                game_id,
+                moneyline_indicator,
+                force_update,
             )
             updated_count += update_count
 
@@ -312,8 +310,7 @@ class SharpActionDetectionService:
             )
 
             update_count = await self._update_table_sharp_action(
-                conn, "betting_lines_spreads", game_id,
-                spread_indicator, force_update
+                conn, "betting_lines_spreads", game_id, spread_indicator, force_update
             )
             updated_count += update_count
 
@@ -324,8 +321,7 @@ class SharpActionDetectionService:
             )
 
             update_count = await self._update_table_sharp_action(
-                conn, "betting_lines_totals", game_id,
-                total_indicator, force_update
+                conn, "betting_lines_totals", game_id, total_indicator, force_update
             )
             updated_count += update_count
 
@@ -340,7 +336,9 @@ class SharpActionDetectionService:
         # Create a summary of detected patterns
         pattern_summary = []
         for pattern in patterns[:3]:  # Limit to top 3 patterns
-            pattern_summary.append(f"{pattern['strategy']}({pattern['confidence']:.2f})")
+            pattern_summary.append(
+                f"{pattern['strategy']}({pattern['confidence']:.2f})"
+            )
 
         return f"SHARP_ACTION: {', '.join(pattern_summary)}"
 
@@ -350,7 +348,7 @@ class SharpActionDetectionService:
         table_name: str,
         game_id: int,
         sharp_action_value: str,
-        force_update: bool = False
+        force_update: bool = False,
     ) -> int:
         """Update sharp_action field in a specific betting lines table."""
 
@@ -375,7 +373,7 @@ class SharpActionDetectionService:
                 table=table_name,
                 game_id=game_id,
                 updated_count=updated_count,
-                sharp_action_value=sharp_action_value
+                sharp_action_value=sharp_action_value,
             )
 
             return updated_count
@@ -385,22 +383,20 @@ class SharpActionDetectionService:
                 "Failed to update sharp action",
                 table=table_name,
                 game_id=game_id,
-                error=str(e)
+                error=str(e),
             )
             return 0
 
     async def get_sharp_action_summary(
-        self,
-        start_date: date | None = None,
-        end_date: date | None = None
+        self, start_date: date | None = None, end_date: date | None = None
     ) -> dict[str, Any]:
         """
         Get summary of sharp action detection results.
-        
+
         Args:
             start_date: Start date for analysis (defaults to 30 days ago)
             end_date: End date for analysis (defaults to today)
-            
+
         Returns:
             Dict with sharp action summary statistics
         """
@@ -450,9 +446,9 @@ class SharpActionDetectionService:
                 summary = {
                     "period": {
                         "start_date": start_date.isoformat(),
-                        "end_date": end_date.isoformat()
+                        "end_date": end_date.isoformat(),
                     },
-                    "markets": {row['market_type']: dict(row) for row in rows}
+                    "markets": {row["market_type"]: dict(row) for row in rows},
                 }
 
                 return summary
@@ -462,7 +458,7 @@ class SharpActionDetectionService:
                 "Failed to get sharp action summary",
                 start_date=start_date,
                 end_date=end_date,
-                error=str(e)
+                error=str(e),
             )
             return {"error": str(e)}
 
@@ -485,12 +481,12 @@ class SharpActionDetectionService:
                     "status": "healthy",
                     "strategy_orchestrator": orchestrator_status,
                     "recent_sharp_action_records": recent_activity,
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now().isoformat(),
                 }
 
         except Exception as e:
             return {
                 "status": "unhealthy",
                 "error": str(e),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }

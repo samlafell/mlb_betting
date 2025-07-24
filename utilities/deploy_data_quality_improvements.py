@@ -108,11 +108,23 @@ async def check_deployment_status():
         """)
 
         print("\n📋 Deployment Status:")
-        print(f"  Sportsbook Mapping System: {'✅ Deployed' if mapping_exists[0]['exists'] else '❌ Not Deployed'}")
-        print(f"  Data Quality Views: {'✅ Deployed' if views_exist[0]['exists'] else '❌ Not Deployed'}")
-        print(f"  Completeness Scoring: {'✅ Deployed' if columns_exist[0]['exists'] else '❌ Not Deployed'}")
+        print(
+            f"  Sportsbook Mapping System: {'✅ Deployed' if mapping_exists[0]['exists'] else '❌ Not Deployed'}"
+        )
+        print(
+            f"  Data Quality Views: {'✅ Deployed' if views_exist[0]['exists'] else '❌ Not Deployed'}"
+        )
+        print(
+            f"  Completeness Scoring: {'✅ Deployed' if columns_exist[0]['exists'] else '❌ Not Deployed'}"
+        )
 
-        if all([mapping_exists[0]['exists'], views_exist[0]['exists'], columns_exist[0]['exists']]):
+        if all(
+            [
+                mapping_exists[0]["exists"],
+                views_exist[0]["exists"],
+                columns_exist[0]["exists"],
+            ]
+        ):
             print("\n🎉 All improvements are deployed!")
             return True
         else:
@@ -144,11 +156,15 @@ async def show_data_quality_status():
         print("-" * 70)
 
         for row in dashboard_data:
-            table_name = row['table_name']
-            total_rows = row['total_rows']
-            sportsbook_pct = row['sportsbook_id_pct']
-            sharp_action_pct = row['sharp_action_pct'] if 'sharp_action_pct' in row else 0
-            avg_completeness = row['avg_completeness'] if 'avg_completeness' in row else 0
+            table_name = row["table_name"]
+            total_rows = row["total_rows"]
+            sportsbook_pct = row["sportsbook_id_pct"]
+            sharp_action_pct = (
+                row["sharp_action_pct"] if "sharp_action_pct" in row else 0
+            )
+            avg_completeness = (
+                row["avg_completeness"] if "avg_completeness" in row else 0
+            )
 
             print(f"\n📋 {table_name.upper()} Table:")
             print(f"  Total Records: {total_rows:,}")

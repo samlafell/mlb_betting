@@ -613,16 +613,18 @@ async def close_all_connections() -> None:
 
 
 @contextlib.asynccontextmanager
-async def get_connection(name: str | None = None) -> AsyncContextManager[asyncpg.Connection]:
+async def get_connection(
+    name: str | None = None,
+) -> AsyncContextManager[asyncpg.Connection]:
     """
     Get async database connection as context manager.
-    
+
     This is the async context manager function that the codebase expects.
     Usage: async with get_connection() as conn:
-    
+
     Args:
         name: Connection name (uses default if None)
-        
+
     Yields:
         asyncpg.Connection instance
     """

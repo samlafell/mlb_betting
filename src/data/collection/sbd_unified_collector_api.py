@@ -11,22 +11,29 @@ Refactored to use BaseCollector and proper Pydantic models.
 """
 
 import asyncio
-import json
 from datetime import datetime
 from typing import Any
 
-import aiohttp
 import structlog
 
 from .base import (
     BaseCollector,
-    CollectorConfig, 
     CollectionRequest,
-    CollectionResult,
-    DataSource
+    CollectorConfig,
+    DataSource,
 )
 
 logger = structlog.get_logger(__name__)
+
+
+def safe_get(obj, key, default=None):
+    """Safely get a value from a dict, ensuring the result is not None."""
+    if not obj or not isinstance(obj, dict):
+        return default if default is not None else {}
+    value = obj.get(key)
+    if value is None:
+        return default if default is not None else {}
+    return value
 
 
 class SBDUnifiedCollectorAPI(BaseCollector):
@@ -86,9 +93,7 @@ class SBDUnifiedCollectorAPI(BaseCollector):
         try:
             sport = request.additional_params.get("sport", "mlb")
             self.logger.info(
-                "Starting SBD API data collection",
-                sport=sport,
-                dry_run=request.dry_run
+                "Starting SBD API data collection", sport=sport, dry_run=request.dry_run
             )
 
             # Collect real data using SBD API
@@ -118,6 +123,9 @@ class SBDUnifiedCollectorAPI(BaseCollector):
     async def _collect_with_api(self, sport: str) -> list[dict[str, Any]]:
         """Collect data using SBD WordPress JSON API."""
         try:
+            # Initialize session if not already done
+            if not self.session:
+                await self.initialize()
             # Build API URL with all sportsbook IDs and US format
             books_param = ",".join(self.sportsbook_ids)
             api_url = f"{self.api_url}?books={books_param}&format=us"
@@ -144,22 +152,52 @@ class SBDUnifiedCollectorAPI(BaseCollector):
 
             # API data already parsed above
 
-            if not api_data or "data" not in api_data:
-                self.logger.warning("No data found in SBD API response")
+            # Check if API data is valid
+            if not api_data:
+                self.logger.warning("API returned null response")
+                return []
+
+            if not isinstance(api_data, dict):
+                self.logger.warning(f"API returned non-dict response: {type(api_data)}")
+                return []
+
+            if "data" not in api_data:
+                self.logger.warning("No 'data' field found in SBD API response")
+                return []
+
+            games_data = api_data["data"]
+            if not games_data:
+                self.logger.warning("Games data is empty or null")
+                return []
+
+            if not isinstance(games_data, list):
+                self.logger.warning(f"Games data is not a list: {type(games_data)}")
                 return []
 
             # Process each game from API
             processed_games = []
-            for game in api_data["data"]:
+            for game in games_data:
                 try:
+                    # Skip null games
+                    if not game:
+                        self.logger.warning("Skipping null game data")
+                        continue
+
+                    if not isinstance(game, dict):
+                        self.logger.warning(f"Skipping non-dict game: {type(game)}")
+                        continue
+
                     processed_game = self._process_api_game(game, sport)
                     if processed_game:
                         processed_games.append(processed_game)
 
                 except Exception as e:
-                    self.logger.error(
-                        f"Error processing game {game.get('id', 'unknown')}: {str(e)}"
+                    game_id = (
+                        game.get("id", "unknown")
+                        if game and isinstance(game, dict)
+                        else "invalid"
                     )
+                    self.logger.error(f"Error processing game {game_id}: {str(e)}")
                     continue
 
             self.logger.info(
@@ -168,7 +206,11 @@ class SBDUnifiedCollectorAPI(BaseCollector):
             return processed_games
 
         except Exception as e:
+            # Add more detailed error logging to identify the exact location
+            import traceback
+
             self.logger.error(f"SBD API collection failed: {str(e)}")
+            self.logger.error(f"Full traceback: {traceback.format_exc()}")
             return []
 
     def _process_api_game(self, game: dict[str, Any], sport: str) -> dict[str, Any]:
@@ -178,10 +220,18 @@ class SBDUnifiedCollectorAPI(BaseCollector):
             game_id = game.get("id", "unknown")
             scheduled_time = game.get("scheduled", datetime.now().isoformat())
 
-            # Extract team info
+            # Extract team info with null safety
             competitors = game.get("competitors", {})
-            home_team = competitors.get("home", {})
-            away_team = competitors.get("away", {})
+            if not competitors or not isinstance(competitors, dict):
+                competitors = {}
+            home_team = competitors.get("home", {}) if competitors else {}
+            away_team = competitors.get("away", {}) if competitors else {}
+
+            # Ensure team objects are dictionaries
+            if not isinstance(home_team, dict):
+                home_team = {}
+            if not isinstance(away_team, dict):
+                away_team = {}
 
             # Create base game data with enhanced team information
             game_data = {
@@ -206,8 +256,10 @@ class SBDUnifiedCollectorAPI(BaseCollector):
                 "raw_data": game,
             }
 
-            # Process markets (moneyline, spread, totals)
+            # Process markets (moneyline, spread, totals) with null safety
             markets = game.get("markets", {})
+            if not markets or not isinstance(markets, dict):
+                markets = {}
 
             # Process moneyline
             if "moneyline" in markets:
@@ -243,9 +295,25 @@ class SBDUnifiedCollectorAPI(BaseCollector):
         records = []
 
         try:
+            # Ensure market is a valid dictionary
+            if not market or not isinstance(market, dict):
+                self.logger.warning(
+                    f"Invalid market data for {bet_type}: {type(market)}"
+                )
+                return []
+
             books = market.get("books", [])
+            if not books or not isinstance(books, list):
+                self.logger.warning(f"No books found for {bet_type} market")
+                return []
 
             for book in books:
+                # Skip null books
+                if not book or not isinstance(book, dict):
+                    self.logger.warning(
+                        f"Skipping invalid book in {bet_type}: {type(book)}"
+                    )
+                    continue
                 book_id = book.get("id")
                 book_name = book.get(
                     "name", self.sportsbook_mapping.get(book_id, "Unknown")
@@ -272,40 +340,52 @@ class SBDUnifiedCollectorAPI(BaseCollector):
                 if bet_type == "moneyline":
                     record.update(
                         {
-                            "home_odds": book.get("home", {}).get("odds"),
-                            "away_odds": book.get("away", {}).get("odds"),
-                            "home_opening_odds": book.get("home", {}).get(
-                                "opening_odds"
+                            "home_odds": safe_get(safe_get(book, "home"), "odds"),
+                            "away_odds": safe_get(safe_get(book, "away"), "odds"),
+                            "home_opening_odds": safe_get(
+                                safe_get(book, "home"), "opening_odds"
                             ),
-                            "away_opening_odds": book.get("away", {}).get(
-                                "opening_odds"
+                            "away_opening_odds": safe_get(
+                                safe_get(book, "away"), "opening_odds"
                             ),
-                            "home_best": book.get("home", {}).get("best", False),
-                            "away_best": book.get("away", {}).get("best", False),
+                            "home_best": safe_get(
+                                safe_get(book, "home"), "best", False
+                            ),
+                            "away_best": safe_get(
+                                safe_get(book, "away"), "best", False
+                            ),
                         }
                     )
 
                 elif bet_type == "spread":
                     record.update(
                         {
-                            "home_spread": book.get("home", {}).get("spread"),
-                            "away_spread": book.get("away", {}).get("spread"),
-                            "home_spread_odds": book.get("home", {}).get("odds"),
-                            "away_spread_odds": book.get("away", {}).get("odds"),
-                            "home_opening_spread": book.get("home", {}).get(
-                                "opening_spread"
+                            "home_spread": safe_get(safe_get(book, "home"), "spread"),
+                            "away_spread": safe_get(safe_get(book, "away"), "spread"),
+                            "home_spread_odds": safe_get(
+                                safe_get(book, "home"), "odds"
                             ),
-                            "away_opening_spread": book.get("away", {}).get(
-                                "opening_spread"
+                            "away_spread_odds": safe_get(
+                                safe_get(book, "away"), "odds"
                             ),
-                            "home_opening_odds": book.get("home", {}).get(
-                                "opening_odds"
+                            "home_opening_spread": safe_get(
+                                safe_get(book, "home"), "opening_spread"
                             ),
-                            "away_opening_odds": book.get("away", {}).get(
-                                "opening_odds"
+                            "away_opening_spread": safe_get(
+                                safe_get(book, "away"), "opening_spread"
                             ),
-                            "home_best": book.get("home", {}).get("best", False),
-                            "away_best": book.get("away", {}).get("best", False),
+                            "home_opening_odds": safe_get(
+                                safe_get(book, "home"), "opening_odds"
+                            ),
+                            "away_opening_odds": safe_get(
+                                safe_get(book, "away"), "opening_odds"
+                            ),
+                            "home_best": safe_get(
+                                safe_get(book, "home"), "best", False
+                            ),
+                            "away_best": safe_get(
+                                safe_get(book, "away"), "best", False
+                            ),
                         }
                     )
 
@@ -314,52 +394,57 @@ class SBDUnifiedCollectorAPI(BaseCollector):
                         {
                             "total_line": book.get("total"),
                             "opening_total": book.get("opening_total"),
-                            "over_odds": book.get("over", {}).get("odds"),
-                            "under_odds": book.get("under", {}).get("odds"),
-                            "over_opening_odds": book.get("over", {}).get(
-                                "opening_odds"
+                            "over_odds": safe_get(safe_get(book, "over"), "odds"),
+                            "under_odds": safe_get(safe_get(book, "under"), "odds"),
+                            "over_opening_odds": safe_get(
+                                safe_get(book, "over"), "opening_odds"
                             ),
-                            "under_opening_odds": book.get("under", {}).get(
-                                "opening_odds"
+                            "under_opening_odds": safe_get(
+                                safe_get(book, "under"), "opening_odds"
                             ),
-                            "over_best": book.get("over", {}).get("best", False),
-                            "under_best": book.get("under", {}).get("best", False),
+                            "over_best": safe_get(
+                                safe_get(book, "over"), "best", False
+                            ),
+                            "under_best": safe_get(
+                                safe_get(book, "under"), "best", False
+                            ),
                         }
                     )
 
                 # Add betting splits data if available
                 betting_splits = game_data.get("betting_splits", {})
-                if bet_type in betting_splits:
-                    splits = betting_splits[bet_type]
-                    record.update(
-                        {
-                            "splits_updated": splits.get("updated"),
-                            "home_bets_percentage": splits.get("home", {}).get(
-                                "betsPercentage"
-                            ),
-                            "home_money_percentage": splits.get("home", {}).get(
-                                "stakePercentage"
-                            ),
-                            "away_bets_percentage": splits.get("away", {}).get(
-                                "betsPercentage"
-                            ),
-                            "away_money_percentage": splits.get("away", {}).get(
-                                "stakePercentage"
-                            ),
-                            "over_bets_percentage": splits.get("over", {}).get(
-                                "betsPercentage"
-                            ),
-                            "over_money_percentage": splits.get("over", {}).get(
-                                "stakePercentage"
-                            ),
-                            "under_bets_percentage": splits.get("under", {}).get(
-                                "betsPercentage"
-                            ),
-                            "under_money_percentage": splits.get("under", {}).get(
-                                "stakePercentage"
-                            ),
-                        }
-                    )
+                if bet_type in betting_splits and betting_splits:
+                    splits = betting_splits.get(bet_type, {})
+                    if splits and isinstance(splits, dict):
+                        record.update(
+                            {
+                                "splits_updated": splits.get("updated"),
+                                "home_bets_percentage": safe_get(
+                                    safe_get(splits, "home"), "betsPercentage"
+                                ),
+                                "home_money_percentage": safe_get(
+                                    safe_get(splits, "home"), "stakePercentage"
+                                ),
+                                "away_bets_percentage": safe_get(
+                                    safe_get(splits, "away"), "betsPercentage"
+                                ),
+                                "away_money_percentage": safe_get(
+                                    safe_get(splits, "away"), "stakePercentage"
+                                ),
+                                "over_bets_percentage": safe_get(
+                                    safe_get(splits, "over"), "betsPercentage"
+                                ),
+                                "over_money_percentage": safe_get(
+                                    safe_get(splits, "over"), "stakePercentage"
+                                ),
+                                "under_bets_percentage": safe_get(
+                                    safe_get(splits, "under"), "betsPercentage"
+                                ),
+                                "under_money_percentage": safe_get(
+                                    safe_get(splits, "under"), "stakePercentage"
+                                ),
+                            }
+                        )
 
                     # Calculate sharp action indicators
                     sharp_action = self._detect_sharp_action_api(record, bet_type)
@@ -505,7 +590,9 @@ class SBDUnifiedCollectorAPI(BaseCollector):
                                 insert_sql,
                                 (
                                     record["external_matchup_id"],
-                                    psycopg2.extras.Json(record["raw_response"]),  # Use JSONB instead of JSON string
+                                    psycopg2.extras.Json(
+                                        record["raw_response"]
+                                    ),  # Use JSONB instead of JSON string
                                     record["api_endpoint"],
                                     game_data.get("home_team"),
                                     game_data.get("away_team"),
@@ -535,67 +622,77 @@ class SBDUnifiedCollectorAPI(BaseCollector):
     def validate_record(self, record: dict[str, Any]) -> bool:
         """
         Validate SBD record structure.
-        
+
         Args:
             record: Raw data record from SBD API
-            
+
         Returns:
             True if valid, False otherwise
         """
         required_fields = [
-            "external_game_id", "game_name", "away_team", "home_team",
-            "game_datetime", "betting_records"
+            "external_game_id",
+            "game_name",
+            "away_team",
+            "home_team",
+            "game_datetime",
+            "betting_records",
         ]
-        
+
         # Check basic structure
         if not all(field in record for field in required_fields):
             return False
-            
+
         # Validate betting records exist
         betting_records = record.get("betting_records", [])
         if not isinstance(betting_records, list) or len(betting_records) == 0:
             return False
-            
+
         # Validate at least one betting record has required fields
         for betting_record in betting_records:
             if not isinstance(betting_record, dict):
                 continue
-            if all(field in betting_record for field in ["sportsbook", "bet_type", "timestamp"]):
+            if all(
+                field in betting_record
+                for field in ["sportsbook", "bet_type", "timestamp"]
+            ):
                 return True
-                
+
         return False
-        
+
     def normalize_record(self, record: dict[str, Any]) -> dict[str, Any]:
         """
         Normalize SBD record to standard format.
-        
+
         Args:
             record: Raw data record
-            
+
         Returns:
             Normalized data record with collection metadata
         """
         normalized = record.copy()
-        
+
         # Add standardized metadata
-        normalized["source"] = self.source.value
+        normalized["source"] = self.source.value if hasattr(self.source, 'value') else str(self.source)
         normalized["collected_at_est"] = datetime.now().isoformat()
         normalized["collector_version"] = "sbd_api_v2_unified"
-        
+
         # Ensure consistent team name formatting
         if "away_team" in normalized:
             normalized["away_team_normalized"] = str(normalized["away_team"]).strip()
         if "home_team" in normalized:
             normalized["home_team_normalized"] = str(normalized["home_team"]).strip()
-            
+
         # Add data quality indicators
         normalized["has_betting_splits"] = bool(normalized.get("betting_splits"))
         normalized["betting_record_count"] = len(normalized.get("betting_records", []))
-        normalized["sportsbook_count"] = len(set(
-            br.get("sportsbook") for br in normalized.get("betting_records", [])
-            if br.get("sportsbook")
-        ))
-        
+        normalized["sportsbook_count"] = len(
+            set(
+                br.get("sportsbook")
+                for br in normalized.get("betting_records", [])
+                if br.get("sportsbook")
+            )
+        )
+
         return normalized
 
     async def collect_game_data(self, sport: str = "mlb") -> int:
@@ -611,14 +708,12 @@ class SBDUnifiedCollectorAPI(BaseCollector):
         try:
             # Create collection request
             request = CollectionRequest(
-                source=self.source,
-                sport=sport,
-                additional_params={"sport": sport}
+                source=self.source, sport=sport, additional_params={"sport": sport}
             )
-            
+
             # Use standardized collection interface
             raw_data = await self.collect_data(request)
-            
+
             if raw_data:
                 self.logger.info(
                     "SBD API collection completed",
@@ -653,15 +748,15 @@ class SBDUnifiedCollectorAPI(BaseCollector):
                 source=self.source,
                 sport=sport,
                 dry_run=True,
-                additional_params={"sport": sport}
+                additional_params={"sport": sport},
             )
-            
+
             # Test data collection using the standardized interface
             raw_data = await self.collect_data(test_request)
 
             # Test validation on sample records
             valid_count = sum(1 for record in raw_data if self.validate_record(record))
-            
+
             if raw_data:
                 return {
                     "status": "success",
@@ -670,7 +765,9 @@ class SBDUnifiedCollectorAPI(BaseCollector):
                     "valid_records": valid_count,
                     "validation_rate": valid_count / len(raw_data) if raw_data else 0,
                     "collection_result": "success",
-                    "sample_record": self.normalize_record(raw_data[0]) if raw_data else None,
+                    "sample_record": self.normalize_record(raw_data[0])
+                    if raw_data
+                    else None,
                     "is_real_data": True,
                     "sportsbooks_included": len(self.sportsbook_ids),
                     "api_endpoint": self.api_url,
@@ -698,16 +795,16 @@ class SBDUnifiedCollectorAPI(BaseCollector):
 # Example usage
 if __name__ == "__main__":
     from .base import CollectorConfig
-    
+
     # Create configuration using the standardized CollectorConfig
     config = CollectorConfig(
         source=DataSource.SBD,
         base_url="https://www.sportsbettingdime.com",
         rate_limit_per_minute=60,
         timeout_seconds=30,
-        params={"api_path": "/wp-json/adpt/v1/mlb-odds"}
+        params={"api_path": "/wp-json/adpt/v1/mlb-odds"},
     )
-    
+
     collector = SBDUnifiedCollectorAPI(config)
 
     # Test collection using async context
@@ -720,5 +817,5 @@ if __name__ == "__main__":
             if test_result["status"] == "success":
                 stored_count = await collector.collect_game_data("mlb")
                 print(f"Stored {stored_count} real API records")
-    
+
     asyncio.run(main())

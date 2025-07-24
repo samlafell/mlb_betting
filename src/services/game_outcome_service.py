@@ -21,7 +21,7 @@ General Balls
 import asyncio
 import json
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone, date
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import aiohttp
@@ -296,7 +296,7 @@ class GameOutcomeService:
             List of game dictionaries from core_betting.games
         """
         start_date_str, end_date_str = date_range
-        
+
         # Convert string dates to date objects
         start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
         end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
@@ -456,7 +456,9 @@ class GameOutcomeService:
             home_spread_line=home_spread_line,
         )
 
-    async def _store_raw_response(self, mlb_game_id: str, game_data: dict[str, Any]) -> None:
+    async def _store_raw_response(
+        self, mlb_game_id: str, game_data: dict[str, Any]
+    ) -> None:
         """
         Store raw MLB Stats API response in raw_data.mlb_game_outcomes table.
 
@@ -468,35 +470,39 @@ class GameOutcomeService:
             # Extract basic info from response for quick access
             game_state = game_data.get("gameData", {}).get("status", {})
             game_status = game_state.get("abstractGameState", "")
-            
+
             # Extract team info
             teams = game_data.get("gameData", {}).get("teams", {})
             home_team = teams.get("home", {}).get("name", "")
             away_team = teams.get("away", {}).get("name", "")
-            
+
             # Extract game date
-            game_datetime_str = game_data.get("gameData", {}).get("datetime", {}).get("dateTime", "")
+            game_datetime_str = (
+                game_data.get("gameData", {}).get("datetime", {}).get("dateTime", "")
+            )
             game_date = None
             if game_datetime_str:
                 try:
-                    game_datetime = datetime.fromisoformat(game_datetime_str.replace("Z", "+00:00"))
+                    game_datetime = datetime.fromisoformat(
+                        game_datetime_str.replace("Z", "+00:00")
+                    )
                     game_date = game_datetime.date()
                 except ValueError:
                     pass
-            
+
             # Extract scores if available
             linescore = game_data.get("liveData", {}).get("linescore", {})
             home_score = None
             away_score = None
             is_final = False
-            
+
             if linescore:
                 home_runs = linescore.get("teams", {}).get("home", {}).get("runs")
                 away_runs = linescore.get("teams", {}).get("away", {}).get("runs")
                 if home_runs is not None and away_runs is not None:
                     home_score = int(home_runs)
                     away_score = int(away_runs)
-                    
+
             # Check if game is final
             status_code = game_state.get("statusCode", "")
             is_final = status_code in ["F", "O"]  # Final or Official
@@ -588,7 +594,10 @@ class GameOutcomeService:
                 row = await conn.fetchrow(query, game_id)
 
                 if row:
-                    return {"total_line": row["total_line"], "home_spread_line": row["home_spread"]}
+                    return {
+                        "total_line": row["total_line"],
+                        "home_spread_line": row["home_spread"],
+                    }
                 else:
                     return {}
 

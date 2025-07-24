@@ -14,20 +14,22 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 import asyncpg
+
 from src.core.config import get_settings
+
 
 async def validate_improvements():
     """Validate the improved line movement calculations."""
     print("🔍 Validating line movement calculation improvements...")
-    
+
     # Load settings
     settings = get_settings()
-    
+
     # Connect to database
     try:
         conn = await asyncpg.connect(settings.database.connection_string)
         print("✅ Connected to database")
-        
+
         # Test 1: Show largest corrections in American odds calculations
         print("\n📊 Test 1: Largest American odds corrections")
         corrections = await conn.fetch("""
@@ -44,14 +46,20 @@ async def validate_improvements():
             ORDER BY ABS(odds_change_raw - odds_change) DESC
             LIMIT 5
         """)
-        
+
         for row in corrections:
-            print(f"   {row['external_game_id']} | {row['sportsbook_name']} | {row['side']}")
+            print(
+                f"   {row['external_game_id']} | {row['sportsbook_name']} | {row['side']}"
+            )
             print(f"   {row['previous_odds']} → {row['odds']}")
-            print(f"   Old calc: {row['old_calculation']}, New calc: {row['new_calculation']}")
-            print(f"   Correction: {row['correction']} points | Type: {row['movement_type']}")
+            print(
+                f"   Old calc: {row['old_calculation']}, New calc: {row['new_calculation']}"
+            )
+            print(
+                f"   Correction: {row['correction']} points | Type: {row['movement_type']}"
+            )
             print()
-        
+
         # Test 2: Line value changes detection
         print("📊 Test 2: Line value changes causing false movements")
         line_changes = await conn.fetch("""
@@ -65,13 +73,19 @@ async def validate_improvements():
             ORDER BY ABS(line_value_change) DESC
             LIMIT 5
         """)
-        
+
         for row in line_changes:
-            print(f"   {row['external_game_id']} | {row['sportsbook_name']} | {row['market_type']} {row['side']}")
-            print(f"   Line: {row['previous_line_value']} → {row['line_value']} (Δ{row['line_value_change']})")
-            print(f"   Odds: {row['previous_odds']} → {row['odds']} (Δ{row['odds_change']})")
+            print(
+                f"   {row['external_game_id']} | {row['sportsbook_name']} | {row['market_type']} {row['side']}"
+            )
+            print(
+                f"   Line: {row['previous_line_value']} → {row['line_value']} (Δ{row['line_value_change']})"
+            )
+            print(
+                f"   Odds: {row['previous_odds']} → {row['odds']} (Δ{row['odds_change']})"
+            )
             print()
-        
+
         # Test 3: Sharp movement detection
         print("📊 Test 3: High-quality sharp movements")
         sharp_movements = await conn.fetch("""
@@ -83,13 +97,19 @@ async def validate_improvements():
             ORDER BY ABS(filtered_odds_change) DESC
             LIMIT 5
         """)
-        
+
         for row in sharp_movements:
-            print(f"   {row['external_game_id']} | {row['sportsbook_name']} | {row['market_type']} {row['side']}")
-            print(f"   {row['previous_odds']} → {row['odds']} (Δ{row['filtered_odds_change']})")
-            print(f"   Quality: {row['movement_quality_score']} | Type: {row['movement_type']}")
+            print(
+                f"   {row['external_game_id']} | {row['sportsbook_name']} | {row['market_type']} {row['side']}"
+            )
+            print(
+                f"   {row['previous_odds']} → {row['odds']} (Δ{row['filtered_odds_change']})"
+            )
+            print(
+                f"   Quality: {row['movement_quality_score']} | Type: {row['movement_type']}"
+            )
             print()
-        
+
         # Test 4: Movement type distribution
         print("📊 Test 4: Movement type distribution")
         distribution = await conn.fetch("""
@@ -103,10 +123,12 @@ async def validate_improvements():
             GROUP BY movement_type
             ORDER BY count DESC
         """)
-        
+
         for row in distribution:
-            print(f"   {row['movement_type']:<20}: {row['count']:>6} movements | Quality: {row['avg_quality']} | Avg Movement: {row['avg_movement']}")
-        
+            print(
+                f"   {row['movement_type']:<20}: {row['count']:>6} movements | Quality: {row['avg_quality']} | Avg Movement: {row['avg_movement']}"
+            )
+
         # Test 5: Cross-zero American odds examples
         print("\n📊 Test 5: Cross-zero American odds examples")
         cross_zero = await conn.fetch("""
@@ -123,27 +145,31 @@ async def validate_improvements():
             ORDER BY ABS(odds_change_raw - odds_change) DESC
             LIMIT 3
         """)
-        
+
         for row in cross_zero:
-            print(f"   {row['external_game_id']} | {row['sportsbook_name']} | {row['side']}")
+            print(
+                f"   {row['external_game_id']} | {row['sportsbook_name']} | {row['side']}"
+            )
             print(f"   {row['previous_odds']} → {row['odds']}")
             print(f"   Raw: {row['odds_change_raw']}, Corrected: {row['odds_change']}")
             print(f"   Type: {row['movement_type']}")
             print()
-        
+
         await conn.close()
         print("✅ Validation completed successfully!")
-        
+
         return True
-        
+
     except Exception as e:
         print(f"❌ Validation failed: {e}")
         return False
+
 
 async def main():
     """Main function."""
     success = await validate_improvements()
     sys.exit(0 if success else 1)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

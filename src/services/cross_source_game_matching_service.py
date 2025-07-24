@@ -29,6 +29,7 @@ logger = structlog.get_logger(__name__)
 
 class MatchingStrategy(Enum):
     """Different strategies for matching games."""
+
     EXACT_MATCH = "exact_match"
     FUZZY_MATCH = "fuzzy_match"
     DATE_TEAM_MATCH = "date_team_match"
@@ -38,6 +39,7 @@ class MatchingStrategy(Enum):
 @dataclass
 class GameMatchCandidate:
     """Candidate for game matching."""
+
     external_id: str
     source: DataSource
     home_team: str
@@ -51,6 +53,7 @@ class GameMatchCandidate:
 @dataclass
 class CrossSourceMatch:
     """Result of cross-source game matching."""
+
     internal_game_id: int | None
     mlb_game_id: str | None
     matched_sources: list[DataSource]
@@ -64,7 +67,7 @@ class CrossSourceMatch:
 class CrossSourceGameMatchingService:
     """
     Service for automated cross-source game matching.
-    
+
     This service helps maintain consistency across different data sources by:
     1. Matching games from different sources to the same internal game ID
     2. Resolving conflicts when multiple sources report the same game
@@ -77,7 +80,7 @@ class CrossSourceGameMatchingService:
         self.logger = logger.bind(component="CrossSourceGameMatchingService")
         self.mlb_resolution_service = MLBStatsAPIGameResolutionService()
         self.pending_matches = {}  # Cache for pending matches
-        self.match_history = {}    # Cache for historical matches
+        self.match_history = {}  # Cache for historical matches
 
     async def initialize(self):
         """Initialize the service."""
@@ -97,11 +100,12 @@ class CrossSourceGameMatchingService:
                 database=self.settings.database.database,
                 user=self.settings.database.user,
                 password=self.settings.database.password,
-                cursor_factory=RealDictCursor
+                cursor_factory=RealDictCursor,
             ) as conn:
                 with conn.cursor() as cur:
                     # Load games with multiple source mappings
-                    cur.execute("""
+                    cur.execute(
+                        """
                         SELECT 
                             id,
                             mlb_stats_api_game_id,
@@ -118,42 +122,54 @@ class CrossSourceGameMatchingService:
                         WHERE mlb_stats_api_game_id IS NOT NULL
                         AND game_date >= %s
                         ORDER BY game_date DESC
-                    """, (date.today() - timedelta(days=30),))
+                    """,
+                        (date.today() - timedelta(days=30),),
+                    )
 
                     games = cur.fetchall()
 
                     for game in games:
                         # Build source mappings
                         source_mappings = {}
-                        if game['sportsbookreview_game_id']:
-                            source_mappings[DataSource.SPORTS_BOOK_REVIEW_DEPRECATED] = game['sportsbookreview_game_id']
-                        if game['action_network_game_id']:
-                            source_mappings[DataSource.ACTION_NETWORK] = str(game['action_network_game_id'])
-                        if game['vsin_game_id']:
-                            source_mappings[DataSource.VSIN] = game['vsin_game_id']
-                        if game['sbd_game_id']:
-                            source_mappings[DataSource.SPORTS_BETTING_DIME] = game['sbd_game_id']
+                        if game["sportsbookreview_game_id"]:
+                            source_mappings[
+                                DataSource.SPORTS_BOOK_REVIEW_DEPRECATED
+                            ] = game["sportsbookreview_game_id"]
+                        if game["action_network_game_id"]:
+                            source_mappings[DataSource.ACTION_NETWORK] = str(
+                                game["action_network_game_id"]
+                            )
+                        if game["vsin_game_id"]:
+                            source_mappings[DataSource.VSIN] = game["vsin_game_id"]
+                        if game["sbd_game_id"]:
+                            source_mappings[DataSource.SPORTS_BETTING_DIME] = game[
+                                "sbd_game_id"
+                            ]
 
                         if len(source_mappings) > 1:
                             match = CrossSourceMatch(
-                                internal_game_id=game['id'],
-                                mlb_game_id=game['mlb_stats_api_game_id'],
+                                internal_game_id=game["id"],
+                                mlb_game_id=game["mlb_stats_api_game_id"],
                                 matched_sources=list(source_mappings.keys()),
                                 source_mappings=source_mappings,
                                 confidence=MatchConfidence.HIGH,
                                 match_strategy=MatchingStrategy.EXACT_MATCH,
                                 match_details={
-                                    'home_team': game['home_team'],
-                                    'away_team': game['away_team'],
-                                    'game_date': game['game_date'].isoformat() if game['game_date'] else None,
-                                    'loaded_from_database': True
+                                    "home_team": game["home_team"],
+                                    "away_team": game["away_team"],
+                                    "game_date": game["game_date"].isoformat()
+                                    if game["game_date"]
+                                    else None,
+                                    "loaded_from_database": True,
                                 },
-                                created_at=game['created_at']
+                                created_at=game["created_at"],
                             )
 
-                            self.match_history[game['mlb_stats_api_game_id']] = match
+                            self.match_history[game["mlb_stats_api_game_id"]] = match
 
-                    self.logger.info(f"Loaded {len(self.match_history)} existing cross-source matches")
+                    self.logger.info(
+                        f"Loaded {len(self.match_history)} existing cross-source matches"
+                    )
 
         except Exception as e:
             self.logger.error("Error loading existing matches", error=str(e))
@@ -161,10 +177,10 @@ class CrossSourceGameMatchingService:
     async def match_games_for_date(self, target_date: date) -> list[CrossSourceMatch]:
         """
         Match games across all sources for a specific date.
-        
+
         Args:
             target_date: Date to match games for
-            
+
         Returns:
             List of CrossSourceMatch objects
         """
@@ -194,14 +210,20 @@ class CrossSourceGameMatchingService:
             for match in matches:
                 await self._store_cross_source_match(match)
 
-            self.logger.info(f"Successfully matched {len(matches)} games for date {target_date}")
+            self.logger.info(
+                f"Successfully matched {len(matches)} games for date {target_date}"
+            )
             return matches
 
         except Exception as e:
-            self.logger.error("Error matching games for date", date=target_date, error=str(e))
+            self.logger.error(
+                "Error matching games for date", date=target_date, error=str(e)
+            )
             return []
 
-    async def _collect_game_candidates(self, target_date: date) -> list[GameMatchCandidate]:
+    async def _collect_game_candidates(
+        self, target_date: date
+    ) -> list[GameMatchCandidate]:
         """Collect game candidates from all sources for a specific date."""
         candidates = []
 
@@ -212,20 +234,37 @@ class CrossSourceGameMatchingService:
                 database=self.settings.database.database,
                 user=self.settings.database.user,
                 password=self.settings.database.password,
-                cursor_factory=RealDictCursor
+                cursor_factory=RealDictCursor,
             ) as conn:
                 with conn.cursor() as cur:
                     # Collect from betting lines tables
                     sources_queries = [
-                        (DataSource.SPORTS_BOOK_REVIEW_DEPRECATED, "core_betting.betting_lines_moneyline", "sportsbookreview_game_id"),
-                        (DataSource.ACTION_NETWORK, "core_betting.betting_lines_moneyline", "action_network_game_id"),
-                        (DataSource.VSIN, "core_betting.betting_lines_moneyline", "vsin_game_id"),
-                        (DataSource.SPORTS_BETTING_DIME, "core_betting.betting_lines_moneyline", "sbd_game_id"),
+                        (
+                            DataSource.SPORTS_BOOK_REVIEW_DEPRECATED,
+                            "core_betting.betting_lines_moneyline",
+                            "sportsbookreview_game_id",
+                        ),
+                        (
+                            DataSource.ACTION_NETWORK,
+                            "core_betting.betting_lines_moneyline",
+                            "action_network_game_id",
+                        ),
+                        (
+                            DataSource.VSIN,
+                            "core_betting.betting_lines_moneyline",
+                            "vsin_game_id",
+                        ),
+                        (
+                            DataSource.SPORTS_BETTING_DIME,
+                            "core_betting.betting_lines_moneyline",
+                            "sbd_game_id",
+                        ),
                     ]
 
                     for source, table, id_field in sources_queries:
                         try:
-                            cur.execute(f"""
+                            cur.execute(
+                                f"""
                                 SELECT DISTINCT
                                     external_source_id,
                                     home_team,
@@ -238,35 +277,46 @@ class CrossSourceGameMatchingService:
                                 AND DATE(game_datetime) = %s
                                 AND external_source_id IS NOT NULL
                                 GROUP BY external_source_id, home_team, away_team, game_datetime, source_metadata
-                            """, (source.value, target_date))
+                            """,
+                                (source.value, target_date),
+                            )
 
                             results = cur.fetchall()
 
                             for row in results:
                                 candidate = GameMatchCandidate(
-                                    external_id=row['external_source_id'],
+                                    external_id=row["external_source_id"],
                                     source=source,
-                                    home_team=row['home_team'],
-                                    away_team=row['away_team'],
+                                    home_team=row["home_team"],
+                                    away_team=row["away_team"],
                                     game_date=target_date,
-                                    game_datetime=row['game_datetime'],
-                                    metadata=row['source_metadata'] or {},
-                                    confidence_score=min(1.0, row['record_count'] / 10.0)  # More records = higher confidence
+                                    game_datetime=row["game_datetime"],
+                                    metadata=row["source_metadata"] or {},
+                                    confidence_score=min(
+                                        1.0, row["record_count"] / 10.0
+                                    ),  # More records = higher confidence
                                 )
                                 candidates.append(candidate)
 
                         except Exception as e:
-                            self.logger.warning(f"Error collecting candidates from {source.value}", error=str(e))
+                            self.logger.warning(
+                                f"Error collecting candidates from {source.value}",
+                                error=str(e),
+                            )
                             continue
 
-                    self.logger.info(f"Collected {len(candidates)} game candidates for {target_date}")
+                    self.logger.info(
+                        f"Collected {len(candidates)} game candidates for {target_date}"
+                    )
                     return candidates
 
         except Exception as e:
             self.logger.error("Error collecting game candidates", error=str(e))
             return []
 
-    def _group_candidates_by_similarity(self, candidates: list[GameMatchCandidate]) -> list[list[GameMatchCandidate]]:
+    def _group_candidates_by_similarity(
+        self, candidates: list[GameMatchCandidate]
+    ) -> list[list[GameMatchCandidate]]:
         """Group candidates that likely represent the same game."""
         groups = []
         used_candidates = set()
@@ -292,7 +342,9 @@ class CrossSourceGameMatchingService:
 
         return groups
 
-    def _candidates_are_similar(self, candidate1: GameMatchCandidate, candidate2: GameMatchCandidate) -> bool:
+    def _candidates_are_similar(
+        self, candidate1: GameMatchCandidate, candidate2: GameMatchCandidate
+    ) -> bool:
         """Determine if two candidates represent the same game."""
         # Different sources can represent the same game
         if candidate1.source == candidate2.source:
@@ -313,18 +365,29 @@ class CrossSourceGameMatchingService:
             return True
 
         # Check if game times are close (within 4 hours)
-        if (candidate1.game_datetime and candidate2.game_datetime and
-            abs((candidate1.game_datetime - candidate2.game_datetime).total_seconds()) < 4 * 3600):
+        if (
+            candidate1.game_datetime
+            and candidate2.game_datetime
+            and abs(
+                (candidate1.game_datetime - candidate2.game_datetime).total_seconds()
+            )
+            < 4 * 3600
+        ):
             return True
 
         # Same date and teams
-        if (candidate1.game_date == candidate2.game_date and
-            home1 == home2 and away1 == away2):
+        if (
+            candidate1.game_date == candidate2.game_date
+            and home1 == home2
+            and away1 == away2
+        ):
             return True
 
         return False
 
-    async def _match_candidate_group(self, candidates: list[GameMatchCandidate]) -> CrossSourceMatch | None:
+    async def _match_candidate_group(
+        self, candidates: list[GameMatchCandidate]
+    ) -> CrossSourceMatch | None:
         """Match a group of candidates to create a cross-source match."""
         if not candidates:
             return None
@@ -339,7 +402,7 @@ class CrossSourceGameMatchingService:
                 source=primary_candidate.source,
                 home_team=primary_candidate.home_team,
                 away_team=primary_candidate.away_team,
-                game_date=primary_candidate.game_date
+                game_date=primary_candidate.game_date,
             )
 
             if resolution_result.game_id:
@@ -352,14 +415,18 @@ class CrossSourceGameMatchingService:
             elif resolution_result.mlb_game_id:
                 # Found MLB game but need to create internal game
                 match_strategy = MatchingStrategy.MLB_API_MATCH
-                internal_game_id = await self._create_internal_game(resolution_result, primary_candidate)
+                internal_game_id = await self._create_internal_game(
+                    resolution_result, primary_candidate
+                )
                 mlb_game_id = resolution_result.mlb_game_id
                 confidence = resolution_result.confidence
 
             else:
                 # Create new game based on candidate data
                 match_strategy = MatchingStrategy.FUZZY_MATCH
-                internal_game_id = await self._create_game_from_candidate(primary_candidate)
+                internal_game_id = await self._create_game_from_candidate(
+                    primary_candidate
+                )
                 mlb_game_id = None
                 confidence = MatchConfidence.MEDIUM
 
@@ -375,7 +442,9 @@ class CrossSourceGameMatchingService:
                 matched_sources.append(candidate.source)
 
             # Update database with all source mappings
-            await self._update_game_with_source_mappings(internal_game_id, source_mappings)
+            await self._update_game_with_source_mappings(
+                internal_game_id, source_mappings
+            )
 
             # Create match result
             match = CrossSourceMatch(
@@ -386,17 +455,19 @@ class CrossSourceGameMatchingService:
                 confidence=confidence,
                 match_strategy=match_strategy,
                 match_details={
-                    'primary_candidate': {
-                        'external_id': primary_candidate.external_id,
-                        'source': primary_candidate.source.value,
-                        'home_team': primary_candidate.home_team,
-                        'away_team': primary_candidate.away_team,
-                        'game_date': primary_candidate.game_date.isoformat() if primary_candidate.game_date else None,
-                        'confidence_score': primary_candidate.confidence_score
+                    "primary_candidate": {
+                        "external_id": primary_candidate.external_id,
+                        "source": primary_candidate.source.value,
+                        "home_team": primary_candidate.home_team,
+                        "away_team": primary_candidate.away_team,
+                        "game_date": primary_candidate.game_date.isoformat()
+                        if primary_candidate.game_date
+                        else None,
+                        "confidence_score": primary_candidate.confidence_score,
                     },
-                    'total_candidates': len(candidates),
-                    'resolution_method': resolution_result.match_method
-                }
+                    "total_candidates": len(candidates),
+                    "resolution_method": resolution_result.match_method,
+                },
             )
 
             return match
@@ -405,7 +476,9 @@ class CrossSourceGameMatchingService:
             self.logger.error("Error matching candidate group", error=str(e))
             return None
 
-    async def _create_internal_game(self, resolution_result, primary_candidate: GameMatchCandidate) -> int | None:
+    async def _create_internal_game(
+        self, resolution_result, primary_candidate: GameMatchCandidate
+    ) -> int | None:
         """Create internal game record from MLB resolution result."""
         try:
             with psycopg2.connect(
@@ -414,42 +487,53 @@ class CrossSourceGameMatchingService:
                 database=self.settings.database.database,
                 user=self.settings.database.user,
                 password=self.settings.database.password,
-                cursor_factory=RealDictCursor
+                cursor_factory=RealDictCursor,
             ) as conn:
                 with conn.cursor() as cur:
                     # Standardize team names
-                    home_team = self.mlb_resolution_service.standardize_team_name(primary_candidate.home_team)
-                    away_team = self.mlb_resolution_service.standardize_team_name(primary_candidate.away_team)
+                    home_team = self.mlb_resolution_service.standardize_team_name(
+                        primary_candidate.home_team
+                    )
+                    away_team = self.mlb_resolution_service.standardize_team_name(
+                        primary_candidate.away_team
+                    )
 
                     if not home_team or not away_team:
                         return None
 
-                    cur.execute("""
+                    cur.execute(
+                        """
                         INSERT INTO core_betting.games 
                         (mlb_stats_api_game_id, home_team, away_team, game_date, game_datetime, 
                          data_quality, has_mlb_enrichment, created_at, updated_at)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
                         RETURNING id
-                    """, (
-                        resolution_result.mlb_game_id,
-                        home_team,
-                        away_team,
-                        primary_candidate.game_date,
-                        primary_candidate.game_datetime,
-                        'HIGH' if resolution_result.confidence == MatchConfidence.HIGH else 'MEDIUM',
-                        True
-                    ))
+                    """,
+                        (
+                            resolution_result.mlb_game_id,
+                            home_team,
+                            away_team,
+                            primary_candidate.game_date,
+                            primary_candidate.game_datetime,
+                            "HIGH"
+                            if resolution_result.confidence == MatchConfidence.HIGH
+                            else "MEDIUM",
+                            True,
+                        ),
+                    )
 
                     result = cur.fetchone()
                     conn.commit()
 
-                    return result['id']
+                    return result["id"]
 
         except Exception as e:
             self.logger.error("Error creating internal game", error=str(e))
             return None
 
-    async def _create_game_from_candidate(self, candidate: GameMatchCandidate) -> int | None:
+    async def _create_game_from_candidate(
+        self, candidate: GameMatchCandidate
+    ) -> int | None:
         """Create game record from candidate data."""
         try:
             with psycopg2.connect(
@@ -458,40 +542,49 @@ class CrossSourceGameMatchingService:
                 database=self.settings.database.database,
                 user=self.settings.database.user,
                 password=self.settings.database.password,
-                cursor_factory=RealDictCursor
+                cursor_factory=RealDictCursor,
             ) as conn:
                 with conn.cursor() as cur:
                     # Standardize team names
-                    home_team = self.mlb_resolution_service.standardize_team_name(candidate.home_team)
-                    away_team = self.mlb_resolution_service.standardize_team_name(candidate.away_team)
+                    home_team = self.mlb_resolution_service.standardize_team_name(
+                        candidate.home_team
+                    )
+                    away_team = self.mlb_resolution_service.standardize_team_name(
+                        candidate.away_team
+                    )
 
                     if not home_team or not away_team:
                         return None
 
-                    cur.execute("""
+                    cur.execute(
+                        """
                         INSERT INTO core_betting.games 
                         (home_team, away_team, game_date, game_datetime, data_quality, has_mlb_enrichment, created_at, updated_at)
                         VALUES (%s, %s, %s, %s, %s, %s, NOW(), NOW())
                         RETURNING id
-                    """, (
-                        home_team,
-                        away_team,
-                        candidate.game_date,
-                        candidate.game_datetime,
-                        'MEDIUM',
-                        False
-                    ))
+                    """,
+                        (
+                            home_team,
+                            away_team,
+                            candidate.game_date,
+                            candidate.game_datetime,
+                            "MEDIUM",
+                            False,
+                        ),
+                    )
 
                     result = cur.fetchone()
                     conn.commit()
 
-                    return result['id']
+                    return result["id"]
 
         except Exception as e:
             self.logger.error("Error creating game from candidate", error=str(e))
             return None
 
-    async def _update_game_with_source_mappings(self, game_id: int, source_mappings: dict[DataSource, str]):
+    async def _update_game_with_source_mappings(
+        self, game_id: int, source_mappings: dict[DataSource, str]
+    ):
         """Update game record with source mappings."""
         try:
             with psycopg2.connect(
@@ -500,7 +593,7 @@ class CrossSourceGameMatchingService:
                 database=self.settings.database.database,
                 user=self.settings.database.user,
                 password=self.settings.database.password,
-                cursor_factory=RealDictCursor
+                cursor_factory=RealDictCursor,
             ) as conn:
                 with conn.cursor() as cur:
                     # Build update query dynamically
@@ -554,11 +647,12 @@ class CrossSourceGameMatchingService:
                 database=self.settings.database.database,
                 user=self.settings.database.user,
                 password=self.settings.database.password,
-                cursor_factory=RealDictCursor
+                cursor_factory=RealDictCursor,
             ) as conn:
                 with conn.cursor() as cur:
                     # Find games with only one source
-                    cur.execute("""
+                    cur.execute(
+                        """
                         SELECT 
                             id,
                             home_team,
@@ -579,7 +673,9 @@ class CrossSourceGameMatchingService:
                             (sbd_game_id IS NOT NULL)::int
                         ) = 1
                         ORDER BY game_date DESC
-                    """, (date.today() - timedelta(days=days_back),))
+                    """,
+                        (date.today() - timedelta(days=days_back),),
+                    )
 
                     unmatched_games = []
                     for row in cur.fetchall():
@@ -587,29 +683,31 @@ class CrossSourceGameMatchingService:
                         source = None
                         external_id = None
 
-                        if row['sportsbookreview_game_id']:
+                        if row["sportsbookreview_game_id"]:
                             source = DataSource.SPORTS_BOOK_REVIEW_DEPRECATED
-                            external_id = row['sportsbookreview_game_id']
-                        elif row['action_network_game_id']:
+                            external_id = row["sportsbookreview_game_id"]
+                        elif row["action_network_game_id"]:
                             source = DataSource.ACTION_NETWORK
-                            external_id = str(row['action_network_game_id'])
-                        elif row['vsin_game_id']:
+                            external_id = str(row["action_network_game_id"])
+                        elif row["vsin_game_id"]:
                             source = DataSource.VSIN
-                            external_id = row['vsin_game_id']
-                        elif row['sbd_game_id']:
+                            external_id = row["vsin_game_id"]
+                        elif row["sbd_game_id"]:
                             source = DataSource.SPORTS_BETTING_DIME
-                            external_id = row['sbd_game_id']
+                            external_id = row["sbd_game_id"]
 
-                        unmatched_games.append({
-                            'internal_game_id': row['id'],
-                            'home_team': row['home_team'],
-                            'away_team': row['away_team'],
-                            'game_date': row['game_date'],
-                            'source': source.value if source else None,
-                            'external_id': external_id,
-                            'mlb_game_id': row['mlb_stats_api_game_id'],
-                            'created_at': row['created_at']
-                        })
+                        unmatched_games.append(
+                            {
+                                "internal_game_id": row["id"],
+                                "home_team": row["home_team"],
+                                "away_team": row["away_team"],
+                                "game_date": row["game_date"],
+                                "source": source.value if source else None,
+                                "external_id": external_id,
+                                "mlb_game_id": row["mlb_stats_api_game_id"],
+                                "created_at": row["created_at"],
+                            }
+                        )
 
                     return unmatched_games
 
@@ -626,11 +724,12 @@ class CrossSourceGameMatchingService:
                 database=self.settings.database.database,
                 user=self.settings.database.user,
                 password=self.settings.database.password,
-                cursor_factory=RealDictCursor
+                cursor_factory=RealDictCursor,
             ) as conn:
                 with conn.cursor() as cur:
                     # Get matching statistics
-                    cur.execute("""
+                    cur.execute(
+                        """
                         SELECT 
                             COUNT(*) as total_games,
                             COUNT(CASE WHEN mlb_stats_api_game_id IS NOT NULL THEN 1 END) as mlb_matched,
@@ -647,27 +746,33 @@ class CrossSourceGameMatchingService:
                             AVG(data_quality) as avg_quality
                         FROM core_betting.games
                         WHERE game_date >= %s
-                    """, (date.today() - timedelta(days=days_back),))
+                    """,
+                        (date.today() - timedelta(days=days_back),),
+                    )
 
                     stats = cur.fetchone()
 
                     # Calculate percentages
-                    total_games = stats['total_games'] or 1
+                    total_games = stats["total_games"] or 1
 
                     return {
-                        'total_games': stats['total_games'],
-                        'mlb_matched': stats['mlb_matched'],
-                        'mlb_match_percentage': (stats['mlb_matched'] / total_games) * 100,
-                        'cross_source_matched': stats['cross_source_matched'],
-                        'cross_source_match_percentage': (stats['cross_source_matched'] / total_games) * 100,
-                        'source_counts': {
-                            'sports_book_review_deprecated': stats['sbr_games'],
-                            'action_network': stats['action_network_games'],
-                            'vsin': stats['vsin_games'],
-                            'sports_betting_dime': stats['sbd_games']
+                        "total_games": stats["total_games"],
+                        "mlb_matched": stats["mlb_matched"],
+                        "mlb_match_percentage": (stats["mlb_matched"] / total_games)
+                        * 100,
+                        "cross_source_matched": stats["cross_source_matched"],
+                        "cross_source_match_percentage": (
+                            stats["cross_source_matched"] / total_games
+                        )
+                        * 100,
+                        "source_counts": {
+                            "sports_book_review_deprecated": stats["sbr_games"],
+                            "action_network": stats["action_network_games"],
+                            "vsin": stats["vsin_games"],
+                            "sports_betting_dime": stats["sbd_games"],
                         },
-                        'cache_size': len(self.match_history),
-                        'days_analyzed': days_back
+                        "cache_size": len(self.match_history),
+                        "days_analyzed": days_back,
                     }
 
         except Exception as e:
@@ -677,10 +782,10 @@ class CrossSourceGameMatchingService:
     async def run_daily_matching(self, target_date: date = None) -> dict[str, Any]:
         """
         Run daily matching process for all sources.
-        
+
         Args:
             target_date: Date to run matching for (default: today)
-            
+
         Returns:
             Dictionary with matching results and statistics
         """
@@ -700,40 +805,43 @@ class CrossSourceGameMatchingService:
             unmatched = await self.find_unmatched_games(days_back=1)
 
             result = {
-                'date': target_date.isoformat(),
-                'matches_created': len(matches),
-                'matches': [
+                "date": target_date.isoformat(),
+                "matches_created": len(matches),
+                "matches": [
                     {
-                        'internal_game_id': match.internal_game_id,
-                        'mlb_game_id': match.mlb_game_id,
-                        'sources': [s.value for s in match.matched_sources],
-                        'confidence': match.confidence.value,
-                        'strategy': match.match_strategy.value
+                        "internal_game_id": match.internal_game_id,
+                        "mlb_game_id": match.mlb_game_id,
+                        "sources": [s.value for s in match.matched_sources],
+                        "confidence": match.confidence.value,
+                        "strategy": match.match_strategy.value,
                     }
                     for match in matches
                 ],
-                'statistics': stats,
-                'unmatched_games': len(unmatched),
-                'unmatched_details': unmatched[:5]  # First 5 for brevity
+                "statistics": stats,
+                "unmatched_games": len(unmatched),
+                "unmatched_details": unmatched[:5],  # First 5 for brevity
             }
 
-            self.logger.info(f"Daily matching completed for {target_date}",
-                           matches=len(matches),
-                           unmatched=len(unmatched))
+            self.logger.info(
+                f"Daily matching completed for {target_date}",
+                matches=len(matches),
+                unmatched=len(unmatched),
+            )
 
             return result
 
         except Exception as e:
             self.logger.error("Error in daily matching", date=target_date, error=str(e))
             return {
-                'date': target_date.isoformat(),
-                'error': str(e),
-                'matches_created': 0
+                "date": target_date.isoformat(),
+                "error": str(e),
+                "matches_created": 0,
             }
 
 
 # Example usage
 if __name__ == "__main__":
+
     async def main():
         service = CrossSourceGameMatchingService()
         await service.initialize()

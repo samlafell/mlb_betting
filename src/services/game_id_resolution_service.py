@@ -14,7 +14,7 @@ This service:
 
 import asyncio
 from datetime import datetime, timedelta
-from typing import Any, List, Dict
+from typing import Any
 
 import structlog
 
@@ -22,9 +22,8 @@ from ..core.config import get_settings
 from ..data.collection.base import DataSource
 from ..data.database.connection import get_connection
 from ..services.mlb_stats_api_game_resolution_service import (
+    MatchConfidence,
     MLBStatsAPIGameResolutionService,
-    GameMatchResult,
-    MatchConfidence
 )
 
 logger = structlog.get_logger(__name__)
@@ -33,7 +32,7 @@ logger = structlog.get_logger(__name__)
 class GameIDResolutionService:
     """
     Service for resolving missing MLB Stats API game IDs.
-    
+
     Integrates with the MLB Stats API Game Resolution Service to populate
     missing game IDs in the core_betting.games table, enabling comprehensive
     game outcome coverage.
@@ -55,11 +54,8 @@ class GameIDResolutionService:
         await self.mlb_resolution_service.cleanup()
 
     async def resolve_missing_game_ids(
-        self, 
-        days: int = 30,
-        source_filter: str | None = None,
-        dry_run: bool = False
-    ) -> Dict[str, Any]:
+        self, days: int = 30, source_filter: str | None = None, dry_run: bool = False
+    ) -> dict[str, Any]:
         """
         Resolve missing MLB Stats API game IDs.
 
@@ -75,7 +71,7 @@ class GameIDResolutionService:
             "Starting game ID resolution",
             days=days,
             source_filter=source_filter,
-            dry_run=dry_run
+            dry_run=dry_run,
         )
 
         results = {
@@ -90,9 +86,9 @@ class GameIDResolutionService:
         try:
             # Get games missing MLB Stats API IDs
             missing_games = await self._get_games_missing_mlb_ids(days, source_filter)
-            
+
             self.logger.info("Found games missing MLB IDs", count=len(missing_games))
-            
+
             if not missing_games:
                 self.logger.info("No games missing MLB Stats API IDs")
                 return results
@@ -100,54 +96,62 @@ class GameIDResolutionService:
             # Process each game
             for game_info in missing_games:
                 results["processed_games"] += 1
-                
+
                 try:
                     # Determine source for resolution
                     source = self._determine_data_source(game_info)
-                    
+
                     if not source:
                         results["skipped_games"] += 1
                         self.logger.warning(
                             "Could not determine data source for game",
-                            game_id=game_info["id"]
+                            game_id=game_info["id"],
                         )
                         continue
 
                     # Resolve game ID
-                    resolution_result = await self.mlb_resolution_service.resolve_game_id(
-                        external_id=self._get_external_id(game_info, source),
-                        source=source,
-                        home_team=game_info["home_team"],
-                        away_team=game_info["away_team"],
-                        game_date=game_info["game_date"]
+                    resolution_result = (
+                        await self.mlb_resolution_service.resolve_game_id(
+                            external_id=self._get_external_id(game_info, source),
+                            source=source,
+                            home_team=game_info["home_team"],
+                            away_team=game_info["away_team"],
+                            game_date=game_info["game_date"],
+                        )
                     )
 
-                    if resolution_result.mlb_game_id and resolution_result.confidence != MatchConfidence.NONE:
+                    if (
+                        resolution_result.mlb_game_id
+                        and resolution_result.confidence != MatchConfidence.NONE
+                    ):
                         # Update database with resolved MLB game ID
                         if not dry_run:
                             await self._update_game_with_mlb_id(
-                                game_info["id"], 
-                                resolution_result.mlb_game_id
+                                game_info["id"], resolution_result.mlb_game_id
                             )
-                        
+
                         results["resolved_games"] += 1
-                        results["resolutions"].append({
-                            "game_id": game_info["id"],
-                            "mlb_game_id": resolution_result.mlb_game_id,
-                            "confidence": resolution_result.confidence.value,
-                            "method": resolution_result.match_method,
-                            "home_team": game_info["home_team"],
-                            "away_team": game_info["away_team"],
-                            "game_date": game_info["game_date"].isoformat() if game_info["game_date"] else None,
-                            "source": source.value
-                        })
+                        results["resolutions"].append(
+                            {
+                                "game_id": game_info["id"],
+                                "mlb_game_id": resolution_result.mlb_game_id,
+                                "confidence": resolution_result.confidence.value,
+                                "method": resolution_result.match_method,
+                                "home_team": game_info["home_team"],
+                                "away_team": game_info["away_team"],
+                                "game_date": game_info["game_date"].isoformat()
+                                if game_info["game_date"]
+                                else None,
+                                "source": source.value,
+                            }
+                        )
 
                         self.logger.info(
                             "Resolved MLB game ID",
                             game_id=game_info["id"],
                             mlb_game_id=resolution_result.mlb_game_id,
                             confidence=resolution_result.confidence.value,
-                            method=resolution_result.match_method
+                            method=resolution_result.match_method,
                         )
                     else:
                         results["failed_resolutions"] += 1
@@ -157,7 +161,7 @@ class GameIDResolutionService:
                             home_team=game_info["home_team"],
                             away_team=game_info["away_team"],
                             confidence=resolution_result.confidence.value,
-                            method=resolution_result.match_method
+                            method=resolution_result.match_method,
                         )
 
                 except Exception as e:
@@ -166,7 +170,7 @@ class GameIDResolutionService:
                     self.logger.error(
                         "Game resolution error",
                         game_id=game_info.get("id"),
-                        error=str(e)
+                        error=str(e),
                     )
 
             self.logger.info("Game ID resolution completed", results=results)
@@ -178,10 +182,8 @@ class GameIDResolutionService:
             return results
 
     async def _get_games_missing_mlb_ids(
-        self, 
-        days: int, 
-        source_filter: str | None = None
-    ) -> List[Dict[str, Any]]:
+        self, days: int, source_filter: str | None = None
+    ) -> list[dict[str, Any]]:
         """
         Get games missing MLB Stats API IDs.
 
@@ -199,7 +201,7 @@ class GameIDResolutionService:
         # Build query based on source filter
         where_conditions = [
             "g.game_date BETWEEN $1 AND $2",
-            "g.mlb_stats_api_game_id IS NULL"
+            "g.mlb_stats_api_game_id IS NULL",
         ]
         params = [start_date.date(), end_date.date()]
 
@@ -216,7 +218,7 @@ class GameIDResolutionService:
             g.action_network_game_id, g.sportsbookreview_game_id, 
             g.vsin_game_id
         FROM core_betting.games g
-        WHERE {' AND '.join(where_conditions)}
+        WHERE {" AND ".join(where_conditions)}
         ORDER BY g.game_date DESC
         """
 
@@ -226,16 +228,18 @@ class GameIDResolutionService:
 
                 games = []
                 for row in rows:
-                    games.append({
-                        "id": row["id"],
-                        "home_team": row["home_team"],
-                        "away_team": row["away_team"],
-                        "game_date": row["game_date"],
-                        "game_datetime": row["game_datetime"],
-                        "action_network_game_id": row["action_network_game_id"],
-                        "sportsbookreview_game_id": row["sportsbookreview_game_id"],
-                        "vsin_game_id": row["vsin_game_id"],
-                    })
+                    games.append(
+                        {
+                            "id": row["id"],
+                            "home_team": row["home_team"],
+                            "away_team": row["away_team"],
+                            "game_date": row["game_date"],
+                            "game_datetime": row["game_datetime"],
+                            "action_network_game_id": row["action_network_game_id"],
+                            "sportsbookreview_game_id": row["sportsbookreview_game_id"],
+                            "vsin_game_id": row["vsin_game_id"],
+                        }
+                    )
 
                 return games
 
@@ -243,7 +247,7 @@ class GameIDResolutionService:
             self.logger.error("Database query error", error=str(e))
             return []
 
-    def _determine_data_source(self, game_info: Dict[str, Any]) -> DataSource | None:
+    def _determine_data_source(self, game_info: dict[str, Any]) -> DataSource | None:
         """
         Determine the data source for a game based on available external IDs.
 
@@ -259,10 +263,10 @@ class GameIDResolutionService:
             return DataSource.SPORTS_BOOK_REVIEW_DEPRECATED
         elif game_info.get("vsin_game_id"):
             return DataSource.VSIN
-        
+
         return None
 
-    def _get_external_id(self, game_info: Dict[str, Any], source: DataSource) -> str:
+    def _get_external_id(self, game_info: dict[str, Any], source: DataSource) -> str:
         """
         Get the external ID for a game based on the source.
 
@@ -276,13 +280,13 @@ class GameIDResolutionService:
         source_mapping = {
             DataSource.ACTION_NETWORK: "action_network_game_id",
             DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: "sportsbookreview_game_id",
-            DataSource.VSIN: "vsin_game_id"
+            DataSource.VSIN: "vsin_game_id",
         }
-        
+
         field_name = source_mapping.get(source)
         if field_name:
             return str(game_info[field_name])
-        
+
         raise ValueError(f"Unknown data source: {source}")
 
     async def _update_game_with_mlb_id(self, game_id: int, mlb_game_id: str) -> None:
@@ -308,9 +312,7 @@ class GameIDResolutionService:
                 await conn.execute(query, mlb_game_id, game_id)
 
             self.logger.debug(
-                "Updated game with MLB ID",
-                game_id=game_id,
-                mlb_game_id=mlb_game_id
+                "Updated game with MLB ID", game_id=game_id, mlb_game_id=mlb_game_id
             )
 
         except Exception as e:
@@ -318,11 +320,11 @@ class GameIDResolutionService:
                 "Error updating game with MLB ID",
                 game_id=game_id,
                 mlb_game_id=mlb_game_id,
-                error=str(e)
+                error=str(e),
             )
             raise
 
-    async def get_resolution_stats(self, days: int = 30) -> Dict[str, Any]:
+    async def get_resolution_stats(self, days: int = 30) -> dict[str, Any]:
         """
         Get statistics about game ID resolution coverage.
 
@@ -359,9 +361,17 @@ class GameIDResolutionService:
                     total_games = row["total_games"]
                     games_with_mlb_id = row["games_with_mlb_id"]
                     resolvable_missing = row["resolvable_missing"]
-                    
-                    coverage_percentage = (games_with_mlb_id / total_games * 100) if total_games > 0 else 0
-                    potential_coverage = ((games_with_mlb_id + resolvable_missing) / total_games * 100) if total_games > 0 else 0
+
+                    coverage_percentage = (
+                        (games_with_mlb_id / total_games * 100)
+                        if total_games > 0
+                        else 0
+                    )
+                    potential_coverage = (
+                        ((games_with_mlb_id + resolvable_missing) / total_games * 100)
+                        if total_games > 0
+                        else 0
+                    )
 
                     return {
                         "total_games": total_games,
@@ -370,12 +380,13 @@ class GameIDResolutionService:
                         "resolvable_missing": resolvable_missing,
                         "coverage_percentage": coverage_percentage,
                         "potential_coverage_percentage": potential_coverage,
-                        "improvement_potential": potential_coverage - coverage_percentage,
+                        "improvement_potential": potential_coverage
+                        - coverage_percentage,
                         "source_breakdown": {
                             "action_network": row["action_network_games"],
                             "sbr": row["sbr_games"],
                             "vsin": row["vsin_games"],
-                        }
+                        },
                     }
                 else:
                     return {
@@ -386,7 +397,7 @@ class GameIDResolutionService:
                         "coverage_percentage": 0,
                         "potential_coverage_percentage": 0,
                         "improvement_potential": 0,
-                        "source_breakdown": {}
+                        "source_breakdown": {},
                     }
 
         except Exception as e:
@@ -399,10 +410,8 @@ game_id_resolution_service = GameIDResolutionService()
 
 
 async def resolve_missing_game_ids(
-    days: int = 30,
-    source_filter: str | None = None,
-    dry_run: bool = False
-) -> Dict[str, Any]:
+    days: int = 30, source_filter: str | None = None, dry_run: bool = False
+) -> dict[str, Any]:
     """
     Convenience function to resolve missing game IDs.
 
@@ -417,9 +426,7 @@ async def resolve_missing_game_ids(
     await game_id_resolution_service.initialize()
     try:
         return await game_id_resolution_service.resolve_missing_game_ids(
-            days=days,
-            source_filter=source_filter,
-            dry_run=dry_run
+            days=days, source_filter=source_filter, dry_run=dry_run
         )
     finally:
         await game_id_resolution_service.cleanup()
