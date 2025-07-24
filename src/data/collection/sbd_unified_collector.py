@@ -7,7 +7,6 @@ Integrates with core_betting schema and provides standardized data quality track
 """
 
 import asyncio
-import json
 import re
 import time
 from datetime import datetime
@@ -16,11 +15,11 @@ from typing import Any
 import aiohttp
 import structlog
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.webdriver.support.ui import WebDriverWait
 
 from .base import DataSource
 from .unified_betting_lines_collector import UnifiedBettingLinesCollector
@@ -31,7 +30,7 @@ logger = structlog.get_logger(__name__)
 class SBDUnifiedCollector(UnifiedBettingLinesCollector):
     """
     SBD (Sports Betting Dime) collector using the unified betting lines pattern.
-    
+
     Provides standardized integration with core_betting schema while maintaining
     compatibility with existing SBD data collection methods.
     """
@@ -41,9 +40,13 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
         self.base_url = "https://www.sportsbettingdime.com"
         self.betting_trends_url = f"{self.base_url}/mlb/public-betting-trends/"
         self.bet_types = [
-            {"data_format": "moneyline", "name": "Moneyline", "unified_type": "moneyline"},
+            {
+                "data_format": "moneyline",
+                "name": "Moneyline",
+                "unified_type": "moneyline",
+            },
             {"data_format": "spread", "name": "Spread", "unified_type": "spread"},
-            {"data_format": "totals", "name": "Totals", "unified_type": "totals"}
+            {"data_format": "totals", "name": "Totals", "unified_type": "totals"},
         ]
         self.driver = None
         self.session = None
@@ -51,11 +54,11 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
     def collect_raw_data(self, sport: str = "mlb", **kwargs) -> list[dict[str, Any]]:
         """
         Collect raw betting data from SBD.
-        
+
         Args:
             sport: Sport type (default: mlb)
             **kwargs: Additional parameters
-            
+
         Returns:
             List of raw betting line dictionaries
         """
@@ -64,21 +67,27 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
             try:
                 loop = asyncio.get_running_loop()
                 # We're in an event loop, can't use asyncio.run()
-                self.logger.info("SBD collector running in async context - using mock data and storing in three-tier pipeline")
-                
+                self.logger.info(
+                    "SBD collector running in async context - using mock data and storing in three-tier pipeline"
+                )
+
                 # Collect real data using Selenium
                 real_data = self._collect_with_selenium(sport)
                 if real_data:
                     # Convert to three-tier format and store
                     for game_data in real_data:
                         # Process each real game
-                        raw_records = self._convert_to_unified_format([game_data], game_data)
+                        raw_records = self._convert_to_unified_format(
+                            [game_data], game_data
+                        )
                         if raw_records:
                             stored_count = self._store_in_raw_data(raw_records)
-                            self.logger.info(f"Stored {stored_count} real SBD records in raw_data")
-                
+                            self.logger.info(
+                                f"Stored {stored_count} real SBD records in raw_data"
+                            )
+
                 return real_data
-                
+
             except RuntimeError:
                 # No event loop running, collect real data directly
                 return self._collect_with_selenium(sport)
@@ -90,7 +99,7 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
     def _collect_with_selenium(self, sport: str) -> list[dict[str, Any]]:
         """Collect real betting data from SBD using Selenium."""
         all_data = []
-        
+
         try:
             # Setup headless Chrome
             chrome_options = Options()
@@ -99,44 +108,54 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
             chrome_options.add_argument("--disable-dev-shm-usage")
             chrome_options.add_argument("--disable-gpu")
             chrome_options.add_argument("--window-size=1920,1080")
-            chrome_options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            
+            chrome_options.add_argument(
+                "--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+
             self.driver = webdriver.Chrome(options=chrome_options)
-            self.logger.info(f"Navigating to SBD betting trends: {self.betting_trends_url}")
-            
+            self.logger.info(
+                f"Navigating to SBD betting trends: {self.betting_trends_url}"
+            )
+
             # Navigate to the betting trends page
             self.driver.get(self.betting_trends_url)
-            
+
             # Wait for page to load and dismiss any privacy banners
             time.sleep(3)
-            
+
             # Try to dismiss privacy banners
             try:
                 ok_button = WebDriverWait(self.driver, 5).until(
-                    EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'OK')]"))
+                    EC.element_to_be_clickable(
+                        (By.XPATH, "//button[contains(text(), 'OK')]")
+                    )
                 )
                 ok_button.click()
                 time.sleep(1)
             except TimeoutException:
                 self.logger.debug("No privacy banner found or couldn't click it")
-            
+
             # Extract betting data from the page
             games_data = self._extract_betting_data_selenium(sport)
-            
+
             if games_data:
                 all_data.extend(games_data)
-                self.logger.info(f"Successfully collected {len(games_data)} real SBD games")
+                self.logger.info(
+                    f"Successfully collected {len(games_data)} real SBD games"
+                )
             else:
-                self.logger.warning("No betting data found on SBD page, falling back to mock data")
+                self.logger.warning(
+                    "No betting data found on SBD page, falling back to mock data"
+                )
                 all_data = self._generate_mock_data(sport)
-            
+
             return all_data
-            
+
         except Exception as e:
             self.logger.error(f"Selenium collection failed: {str(e)}")
             # Fallback to mock data if Selenium fails
             return self._generate_mock_data(sport)
-            
+
         finally:
             if self.driver:
                 try:
@@ -144,130 +163,154 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
                 except Exception as e:
                     self.logger.error(f"Error closing driver: {str(e)}")
                 self.driver = None
-                
+
     def _extract_betting_data_selenium(self, sport: str) -> list[dict[str, Any]]:
         """Extract real betting data from SBD page using Selenium."""
         games_data = []
-        
+
         try:
             # Wait for content to load
             WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
-            
+
             # Scroll down to see the betting data table
             self.driver.execute_script("window.scrollTo(0, 1000);")
             time.sleep(2)
-            
+
             # Get page text and parse the betting data structure we saw
             page_text = self.driver.find_element(By.TAG_NAME, "body").text
-            lines = page_text.split('\n')
-            
+            lines = page_text.split("\n")
+
             # Look for the betting table data pattern
             i = 0
-            
+
             while i < len(lines):
                 line = lines[i].strip()
-                
+
                 # Look for team abbreviations (2-4 uppercase letters)
-                if (len(line) >= 2 and len(line) <= 4 and line.isupper() and 
-                    line.isalpha() and i + 1 < len(lines)):
-                    
+                if (
+                    len(line) >= 2
+                    and len(line) <= 4
+                    and line.isupper()
+                    and line.isalpha()
+                    and i + 1 < len(lines)
+                ):
                     next_line = lines[i + 1].strip()
-                    if (len(next_line) >= 2 and len(next_line) <= 4 and 
-                        next_line.isupper() and next_line.isalpha()):
-                        
+                    if (
+                        len(next_line) >= 2
+                        and len(next_line) <= 4
+                        and next_line.isupper()
+                        and next_line.isalpha()
+                    ):
                         # Found a game matchup
                         away_team = line
                         home_team = next_line
-                        
+
                         # Look for betting data in the next several lines
-                        betting_data = self._parse_game_betting_data(lines, i + 2, away_team, home_team)
-                        
+                        betting_data = self._parse_game_betting_data(
+                            lines, i + 2, away_team, home_team
+                        )
+
                         if betting_data:
                             game_data = {
-                                'game_id': f'sbd_real_{away_team}_{home_team}_{datetime.now().strftime("%Y%m%d")}',
-                                'game_name': f'{away_team} @ {home_team}',
-                                'away_team': away_team,
-                                'home_team': home_team,
-                                'sport': sport,
-                                'game_datetime': datetime.now().isoformat(),
-                                'api_endpoint': 'selenium_scraping',
-                                'extraction_method': 'selenium_real_data',
-                                'source_url': self.betting_trends_url,
-                                'betting_records': betting_data,
-                                'raw_data': {
-                                    'page_text_sample': ' '.join(lines[i:i+20]),
-                                    'extraction_timestamp': datetime.now().isoformat()
-                                }
+                                "game_id": f"sbd_real_{away_team}_{home_team}_{datetime.now().strftime('%Y%m%d')}",
+                                "game_name": f"{away_team} @ {home_team}",
+                                "away_team": away_team,
+                                "home_team": home_team,
+                                "sport": sport,
+                                "game_datetime": datetime.now().isoformat(),
+                                "api_endpoint": "selenium_scraping",
+                                "extraction_method": "selenium_real_data",
+                                "source_url": self.betting_trends_url,
+                                "betting_records": betting_data,
+                                "raw_data": {
+                                    "page_text_sample": " ".join(lines[i : i + 20]),
+                                    "extraction_timestamp": datetime.now().isoformat(),
+                                },
                             }
-                            
+
                             games_data.append(game_data)
-                            self.logger.info(f"Extracted betting data for {away_team} @ {home_team}")
-                        
+                            self.logger.info(
+                                f"Extracted betting data for {away_team} @ {home_team}"
+                            )
+
                         i += 10  # Skip ahead to avoid duplicates
                         continue
-                
+
                 i += 1
-            
+
             return games_data
-            
+
         except Exception as e:
             self.logger.error(f"Error extracting betting data: {str(e)}")
             return []
-            
-    def _parse_game_betting_data(self, lines: list[str], start_index: int, 
-                                away_team: str, home_team: str) -> list[dict[str, Any]]:
+
+    def _parse_game_betting_data(
+        self, lines: list[str], start_index: int, away_team: str, home_team: str
+    ) -> list[dict[str, Any]]:
         """Parse betting data for a specific game from text lines."""
         betting_records = []
-        
+
         try:
             # Look for odds and percentages in the next 20 lines
             end_index = min(start_index + 20, len(lines))
             game_lines = lines[start_index:end_index]
-            
+
             odds_found = []
             percentages_found = []
-            
+
             for line in game_lines:
                 line = line.strip()
-                
+
                 # Look for odds patterns like +120, -140
-                if re.match(r'^[+-]\d+$', line):
+                if re.match(r"^[+-]\d+$", line):
                     odds_found.append(line)
-                
+
                 # Look for percentage patterns like 51%, 64%
-                elif re.match(r'^\d+%$', line):
-                    percentages_found.append(line.replace('%', ''))
-                
+                elif re.match(r"^\d+%$", line):
+                    percentages_found.append(line.replace("%", ""))
+
                 # Look for totals like "o 8", "u 8.5", "o 9", "u 9.5"
-                elif re.match(r'^[ou]\s*\d+(\.\d+)?$', line):
+                elif re.match(r"^[ou]\s*\d+(\.\d+)?$", line):
                     odds_found.append(line)
-                
+
                 # Look for spreads like "+1.5", "-1.5"
-                elif re.match(r'^[+-]\d+\.\d+$', line):
+                elif re.match(r"^[+-]\d+\.\d+$", line):
                     odds_found.append(line)
-            
+
             # Create betting records from the found data
             if len(odds_found) >= 2 and len(percentages_found) >= 4:
                 # Moneyline record
-                betting_records.append({
-                    'sportsbook': 'SBD_PUBLIC_BETTING',
-                    'bet_type': 'moneyline',
-                    'away_odds': odds_found[0] if len(odds_found) > 0 else None,
-                    'home_odds': odds_found[1] if len(odds_found) > 1 else None,
-                    'away_bet_percentage': float(percentages_found[0]) if len(percentages_found) > 0 else None,
-                    'away_money_percentage': float(percentages_found[1]) if len(percentages_found) > 1 else None,
-                    'home_bet_percentage': float(percentages_found[2]) if len(percentages_found) > 2 else None,
-                    'home_money_percentage': float(percentages_found[3]) if len(percentages_found) > 3 else None,
-                    'timestamp': datetime.now().isoformat(),
-                    'extraction_method': 'selenium_real_scraping'
-                })
-            
+                betting_records.append(
+                    {
+                        "sportsbook": "SBD_PUBLIC_BETTING",
+                        "bet_type": "moneyline",
+                        "away_odds": odds_found[0] if len(odds_found) > 0 else None,
+                        "home_odds": odds_found[1] if len(odds_found) > 1 else None,
+                        "away_bet_percentage": float(percentages_found[0])
+                        if len(percentages_found) > 0
+                        else None,
+                        "away_money_percentage": float(percentages_found[1])
+                        if len(percentages_found) > 1
+                        else None,
+                        "home_bet_percentage": float(percentages_found[2])
+                        if len(percentages_found) > 2
+                        else None,
+                        "home_money_percentage": float(percentages_found[3])
+                        if len(percentages_found) > 3
+                        else None,
+                        "timestamp": datetime.now().isoformat(),
+                        "extraction_method": "selenium_real_scraping",
+                    }
+                )
+
             return betting_records
-            
+
         except Exception as e:
-            self.logger.error(f"Error parsing betting data for {away_team} @ {home_team}: {str(e)}")
+            self.logger.error(
+                f"Error parsing betting data for {away_team} @ {home_team}: {str(e)}"
+            )
             return []
 
     async def _collect_sbd_data_async(self, sport: str) -> list[dict[str, Any]]:
@@ -282,19 +325,21 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
     async def _collect_via_api(self, sport: str) -> list[dict[str, Any]]:
         """Collect data via SBD API endpoints."""
         all_data = []
-        
+
         try:
             # Initialize HTTP session with proper headers
             timeout = aiohttp.ClientTimeout(total=30)
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/html, text/plain, */*',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Referer': f'{self.base_url}/',
-                'Cache-Control': 'no-cache',
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "application/json, text/html, text/plain, */*",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": f"{self.base_url}/",
+                "Cache-Control": "no-cache",
             }
 
-            async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
+            async with aiohttp.ClientSession(
+                headers=headers, timeout=timeout
+            ) as session:
                 self.session = session
 
                 # Try multiple SBD API endpoints
@@ -303,43 +348,57 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
                     f"{self.base_url}/api/{sport}/betting-splits",
                     f"{self.base_url}/api/{sport}/odds",
                     f"{self.base_url}/{sport}/api/betting-data",
-                    f"{self.base_url}/{sport}/betting-splits"
+                    f"{self.base_url}/{sport}/betting-splits",
                 ]
 
                 for api_url in api_endpoints:
                     try:
                         self.logger.info(f"Trying SBD API endpoint: {api_url}")
-                        
+
                         async with session.get(api_url) as response:
                             if response.status == 200:
-                                content_type = response.headers.get('content-type', '')
-                                
-                                if 'application/json' in content_type:
+                                content_type = response.headers.get("content-type", "")
+
+                                if "application/json" in content_type:
                                     data = await response.json()
-                                    processed_data = self._process_api_data(data, sport, api_url)
+                                    processed_data = self._process_api_data(
+                                        data, sport, api_url
+                                    )
                                     if processed_data:
                                         all_data.extend(processed_data)
-                                        self.logger.info(f"Successfully collected {len(processed_data)} records from {api_url}")
+                                        self.logger.info(
+                                            f"Successfully collected {len(processed_data)} records from {api_url}"
+                                        )
                                         break
                                 else:
                                     # Handle HTML/text response - might contain embedded JSON
                                     text_data = await response.text()
-                                    json_data = self._extract_json_from_html(text_data, api_url)
+                                    json_data = self._extract_json_from_html(
+                                        text_data, api_url
+                                    )
                                     if json_data:
-                                        processed_data = self._process_api_data(json_data, sport, api_url)
+                                        processed_data = self._process_api_data(
+                                            json_data, sport, api_url
+                                        )
                                         if processed_data:
                                             all_data.extend(processed_data)
-                                            self.logger.info(f"Successfully extracted {len(processed_data)} records from {api_url}")
+                                            self.logger.info(
+                                                f"Successfully extracted {len(processed_data)} records from {api_url}"
+                                            )
                                             break
                             else:
-                                self.logger.debug(f"API endpoint {api_url} returned status: {response.status}")
-                                
+                                self.logger.debug(
+                                    f"API endpoint {api_url} returned status: {response.status}"
+                                )
+
                     except Exception as e:
                         self.logger.debug(f"API endpoint {api_url} failed: {str(e)}")
                         continue
 
                 if not all_data:
-                    self.logger.info("No successful API endpoints found - using mock data for testing")
+                    self.logger.info(
+                        "No successful API endpoints found - using mock data for testing"
+                    )
                     all_data = self._generate_mock_data(sport)
 
                 return all_data
@@ -360,13 +419,15 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
 
             # Check if playwright adapter is available
             if self.playwright_adapter is None:
-                self.logger.warning("Playwright adapter not available - scraping disabled")
+                self.logger.warning(
+                    "Playwright adapter not available - scraping disabled"
+                )
                 return []
 
             # Navigate to SBD betting splits page
             url = f"{self.base_url}/{sport}/betting-splits"
             await self.playwright_adapter.goto(url)
-            await self.playwright_adapter.wait_for_load_state('networkidle')
+            await self.playwright_adapter.wait_for_load_state("networkidle")
 
             # Extract today's games
             games_data = await self._extract_games_data(sport)
@@ -387,14 +448,14 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
 
                     self.logger.info(
                         f"Collected {len(unified_data)} unified records",
-                        game=game_data.get('game_name')
+                        game=game_data.get("game_name"),
                     )
 
                 except Exception as e:
                     self.logger.error(
                         "Error processing game",
-                        game=game_data.get('game_name'),
-                        error=str(e)
+                        game=game_data.get("game_name"),
+                        error=str(e),
                     )
                     continue
 
@@ -408,7 +469,9 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
             if self.playwright_adapter:
                 await self.playwright_adapter.close()
 
-    def _process_api_data(self, data: dict[str, Any], sport: str, api_url: str) -> list[dict[str, Any]]:
+    def _process_api_data(
+        self, data: dict[str, Any], sport: str, api_url: str
+    ) -> list[dict[str, Any]]:
         """Process API response data."""
         processed_data = []
 
@@ -416,12 +479,16 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
             # Handle different API response formats
             games = []
             if isinstance(data, dict):
-                if 'games' in data:
-                    games = data['games']
-                elif 'data' in data:
-                    games = data['data'] if isinstance(data['data'], list) else [data['data']]
-                elif 'results' in data:
-                    games = data['results']
+                if "games" in data:
+                    games = data["games"]
+                elif "data" in data:
+                    games = (
+                        data["data"]
+                        if isinstance(data["data"], list)
+                        else [data["data"]]
+                    )
+                elif "results" in data:
+                    games = data["results"]
                 else:
                     # Assume data itself is game data
                     games = [data]
@@ -430,22 +497,26 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
 
             for game in games:
                 game_data = {
-                    'game_id': game.get('id', game.get('game_id')),
-                    'game_name': f"{game.get('away_team', game.get('visitor', 'Unknown'))} @ {game.get('home_team', game.get('home', 'Unknown'))}",
-                    'away_team': game.get('away_team', game.get('visitor')),
-                    'home_team': game.get('home_team', game.get('home')),
-                    'sport': sport,
-                    'game_datetime': game.get('game_time', game.get('start_time', game.get('datetime'))),
-                    'sportsbooks': game.get('sportsbooks', game.get('books', [])),
-                    'api_endpoint': api_url,
-                    'raw_data': game
+                    "game_id": game.get("id", game.get("game_id")),
+                    "game_name": f"{game.get('away_team', game.get('visitor', 'Unknown'))} @ {game.get('home_team', game.get('home', 'Unknown'))}",
+                    "away_team": game.get("away_team", game.get("visitor")),
+                    "home_team": game.get("home_team", game.get("home")),
+                    "sport": sport,
+                    "game_datetime": game.get(
+                        "game_time", game.get("start_time", game.get("datetime"))
+                    ),
+                    "sportsbooks": game.get("sportsbooks", game.get("books", [])),
+                    "api_endpoint": api_url,
+                    "raw_data": game,
                 }
 
                 # Process each sportsbook's data
-                sportsbooks = game_data['sportsbooks']
+                sportsbooks = game_data["sportsbooks"]
                 if sportsbooks:
                     for sportsbook_data in sportsbooks:
-                        betting_records = self._process_sportsbook_data(sportsbook_data, game_data)
+                        betting_records = self._process_sportsbook_data(
+                            sportsbook_data, game_data
+                        )
                         processed_data.extend(betting_records)
                 else:
                     # Direct game data without sportsbook breakdown
@@ -455,65 +526,75 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
             return processed_data
 
         except Exception as e:
-            self.logger.error("Error processing API data", error=str(e), api_url=api_url)
+            self.logger.error(
+                "Error processing API data", error=str(e), api_url=api_url
+            )
             return []
 
-    def _process_sportsbook_data(self, sportsbook_data: dict[str, Any], game_data: dict[str, Any]) -> list[dict[str, Any]]:
+    def _process_sportsbook_data(
+        self, sportsbook_data: dict[str, Any], game_data: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """Process sportsbook data from API."""
         records = []
 
         try:
-            sportsbook_name = sportsbook_data.get('name', 'Unknown')
+            sportsbook_name = sportsbook_data.get("name", "Unknown")
 
             # Process moneyline data
-            if 'moneyline' in sportsbook_data:
-                ml_data = sportsbook_data['moneyline']
-                records.append({
-                    'sportsbook': sportsbook_name,
-                    'bet_type': 'moneyline',
-                    'home_odds': ml_data.get('home_odds'),
-                    'away_odds': ml_data.get('away_odds'),
-                    'home_bets_percentage': ml_data.get('home_bets_pct'),
-                    'away_bets_percentage': ml_data.get('away_bets_pct'),
-                    'home_money_percentage': ml_data.get('home_money_pct'),
-                    'away_money_percentage': ml_data.get('away_money_pct'),
-                    'timestamp': datetime.now().isoformat(),
-                    'game_data': game_data
-                })
+            if "moneyline" in sportsbook_data:
+                ml_data = sportsbook_data["moneyline"]
+                records.append(
+                    {
+                        "sportsbook": sportsbook_name,
+                        "bet_type": "moneyline",
+                        "home_odds": ml_data.get("home_odds"),
+                        "away_odds": ml_data.get("away_odds"),
+                        "home_bets_percentage": ml_data.get("home_bets_pct"),
+                        "away_bets_percentage": ml_data.get("away_bets_pct"),
+                        "home_money_percentage": ml_data.get("home_money_pct"),
+                        "away_money_percentage": ml_data.get("away_money_pct"),
+                        "timestamp": datetime.now().isoformat(),
+                        "game_data": game_data,
+                    }
+                )
 
             # Process spread data
-            if 'spread' in sportsbook_data:
-                spread_data = sportsbook_data['spread']
-                records.append({
-                    'sportsbook': sportsbook_name,
-                    'bet_type': 'spread',
-                    'spread_line': spread_data.get('line'),
-                    'home_spread_odds': spread_data.get('home_odds'),
-                    'away_spread_odds': spread_data.get('away_odds'),
-                    'home_bets_percentage': spread_data.get('home_bets_pct'),
-                    'away_bets_percentage': spread_data.get('away_bets_pct'),
-                    'home_money_percentage': spread_data.get('home_money_pct'),
-                    'away_money_percentage': spread_data.get('away_money_pct'),
-                    'timestamp': datetime.now().isoformat(),
-                    'game_data': game_data
-                })
+            if "spread" in sportsbook_data:
+                spread_data = sportsbook_data["spread"]
+                records.append(
+                    {
+                        "sportsbook": sportsbook_name,
+                        "bet_type": "spread",
+                        "spread_line": spread_data.get("line"),
+                        "home_spread_odds": spread_data.get("home_odds"),
+                        "away_spread_odds": spread_data.get("away_odds"),
+                        "home_bets_percentage": spread_data.get("home_bets_pct"),
+                        "away_bets_percentage": spread_data.get("away_bets_pct"),
+                        "home_money_percentage": spread_data.get("home_money_pct"),
+                        "away_money_percentage": spread_data.get("away_money_pct"),
+                        "timestamp": datetime.now().isoformat(),
+                        "game_data": game_data,
+                    }
+                )
 
             # Process totals data
-            if 'totals' in sportsbook_data:
-                totals_data = sportsbook_data['totals']
-                records.append({
-                    'sportsbook': sportsbook_name,
-                    'bet_type': 'totals',
-                    'total_line': totals_data.get('line'),
-                    'over_odds': totals_data.get('over_odds'),
-                    'under_odds': totals_data.get('under_odds'),
-                    'over_bets_percentage': totals_data.get('over_bets_pct'),
-                    'under_bets_percentage': totals_data.get('under_bets_pct'),
-                    'over_money_percentage': totals_data.get('over_money_pct'),
-                    'under_money_percentage': totals_data.get('under_money_pct'),
-                    'timestamp': datetime.now().isoformat(),
-                    'game_data': game_data
-                })
+            if "totals" in sportsbook_data:
+                totals_data = sportsbook_data["totals"]
+                records.append(
+                    {
+                        "sportsbook": sportsbook_name,
+                        "bet_type": "totals",
+                        "total_line": totals_data.get("line"),
+                        "over_odds": totals_data.get("over_odds"),
+                        "under_odds": totals_data.get("under_odds"),
+                        "over_bets_percentage": totals_data.get("over_bets_pct"),
+                        "under_bets_percentage": totals_data.get("under_bets_pct"),
+                        "over_money_percentage": totals_data.get("over_money_pct"),
+                        "under_money_percentage": totals_data.get("under_money_pct"),
+                        "timestamp": datetime.now().isoformat(),
+                        "game_data": game_data,
+                    }
+                )
 
             return records
 
@@ -566,7 +647,9 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
             self.logger.error("Error extracting games data", error=str(e))
             return []
 
-    async def _extract_betting_data(self, game_data: dict[str, Any]) -> list[dict[str, Any]]:
+    async def _extract_betting_data(
+        self, game_data: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """Extract betting data for a specific game."""
         try:
             # Extract betting data using JavaScript
@@ -663,7 +746,9 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
             })();
             """
 
-            result = await self.playwright_adapter.evaluate(extraction_script, game_data.get('game_id'))
+            result = await self.playwright_adapter.evaluate(
+                extraction_script, game_data.get("game_id")
+            )
             return result or []
 
         except Exception as e:
@@ -671,17 +756,15 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
             return []
 
     def _convert_to_unified_format(
-        self,
-        betting_data: list[dict[str, Any]],
-        game_data: dict[str, Any]
+        self, betting_data: list[dict[str, Any]], game_data: dict[str, Any]
     ) -> list[dict[str, Any]]:
         """
         Convert SBD raw data to unified format for three-tier pipeline.
-        
+
         Args:
             betting_data: Raw betting data from SBD
             game_data: Game information
-            
+
         Returns:
             List of unified format records for raw_data.sbd_betting_splits
         """
@@ -694,25 +777,29 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
 
                 # Create raw_data record for three-tier pipeline
                 raw_record = {
-                    'external_matchup_id': external_matchup_id,
-                    'raw_response': {
-                        'game_data': game_data,
-                        'betting_record': record,
-                        'collection_metadata': {
-                            'collection_timestamp': datetime.now().isoformat(),
-                            'source': 'sbd',
-                            'collector_version': 'sbd_unified_v2',
-                            'data_format': 'api_response',
-                            'sport': game_data.get('sport', 'mlb')
-                        }
+                    "external_matchup_id": external_matchup_id,
+                    "raw_response": {
+                        "game_data": game_data,
+                        "betting_record": record,
+                        "collection_metadata": {
+                            "collection_timestamp": datetime.now().isoformat(),
+                            "source": "sbd",
+                            "collector_version": "sbd_unified_v2",
+                            "data_format": "api_response",
+                            "sport": game_data.get("sport", "mlb"),
+                        },
                     },
-                    'api_endpoint': game_data.get('api_endpoint', 'sbd_unified_collector')
+                    "api_endpoint": game_data.get(
+                        "api_endpoint", "sbd_unified_collector"
+                    ),
                 }
 
                 unified_records.append(raw_record)
 
             except Exception as e:
-                self.logger.error("Error converting record to unified format", error=str(e))
+                self.logger.error(
+                    "Error converting record to unified format", error=str(e)
+                )
                 continue
 
         return unified_records
@@ -720,7 +807,7 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
     def _store_in_raw_data(self, records: list[dict[str, Any]]) -> int:
         """Store records in raw_data.sbd_betting_splits table using inherited connection pool."""
         stored_count = 0
-        
+
         try:
             # Use inherited connection pool from UnifiedBettingLinesCollector
             with self.connection_pool.get_connection() as conn:
@@ -728,8 +815,8 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
                     for record in records:
                         try:
                             # Extract team info from raw_response for enhanced storage
-                            game_data = record['raw_response'].get('game_data', {})
-                            
+                            game_data = record["raw_response"].get("game_data", {})
+
                             # Enhanced insert with team information fields
                             insert_sql = """
                                 INSERT INTO raw_data.sbd_betting_splits 
@@ -738,48 +825,53 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
                                  home_team_id, away_team_id, game_name)
                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """
-                            
+
                             # Import psycopg2.extras for JSONB support
                             import psycopg2.extras
-                            
-                            cursor.execute(insert_sql, (
-                                record['external_matchup_id'],
-                                psycopg2.extras.Json(record['raw_response']),  # Use JSONB instead of JSON string
-                                record['api_endpoint'],
-                                game_data.get('home_team'),
-                                game_data.get('away_team'),  
-                                game_data.get('home_team_abbr'),
-                                game_data.get('away_team_abbr'),
-                                game_data.get('home_team_id'),
-                                game_data.get('away_team_id'),
-                                game_data.get('game_name')
-                            ))
+
+                            cursor.execute(
+                                insert_sql,
+                                (
+                                    record["external_matchup_id"],
+                                    psycopg2.extras.Json(
+                                        record["raw_response"]
+                                    ),  # Use JSONB instead of JSON string
+                                    record["api_endpoint"],
+                                    game_data.get("home_team"),
+                                    game_data.get("away_team"),
+                                    game_data.get("home_team_abbr"),
+                                    game_data.get("away_team_abbr"),
+                                    game_data.get("home_team_id"),
+                                    game_data.get("away_team_id"),
+                                    game_data.get("game_name"),
+                                ),
+                            )
                             stored_count += 1
-                            
+
                         except Exception as e:
                             self.logger.error(f"Failed to store SBD record: {str(e)}")
                             continue
-                    
+
                     conn.commit()
-                    self.logger.info(f"Successfully stored {stored_count} SBD records in raw_data with team info")
-                    
+                    self.logger.info(
+                        f"Successfully stored {stored_count} SBD records in raw_data with team info"
+                    )
+
         except Exception as e:
             self.logger.error(f"SBD database storage failed: {str(e)}")
-            
+
         return stored_count
 
     def _convert_to_legacy_unified_format(
-        self,
-        betting_data: list[dict[str, Any]],
-        game_data: dict[str, Any]
+        self, betting_data: list[dict[str, Any]], game_data: dict[str, Any]
     ) -> list[dict[str, Any]]:
         """
         Convert SBD raw data to legacy unified format (for backward compatibility).
-        
+
         Args:
             betting_data: Raw betting data from SBD
             game_data: Game information
-            
+
         Returns:
             List of legacy unified format records
         """
@@ -792,68 +884,113 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
 
                 # Base unified record
                 unified_record = {
-                    'external_source_id': external_source_id,
-                    'sportsbook': record.get('sportsbook', 'SBD_AGGREGATE'),
-                    'bet_type': record.get('bet_type', 'moneyline'),
-                    'odds_timestamp': record.get('timestamp', datetime.now().isoformat()),
-                    'collection_method': 'API_REQUEST',
-                    'source_api_version': 'SBD_v2',
-                    'source_metadata': {
-                        'game_id': game_data.get('game_id'),
-                        'extraction_method': 'api',
-                        'sport': game_data.get('sport', 'mlb')
+                    "external_source_id": external_source_id,
+                    "sportsbook": record.get("sportsbook", "SBD_AGGREGATE"),
+                    "bet_type": record.get("bet_type", "moneyline"),
+                    "odds_timestamp": record.get(
+                        "timestamp", datetime.now().isoformat()
+                    ),
+                    "collection_method": "API_REQUEST",
+                    "source_api_version": "SBD_v2",
+                    "source_metadata": {
+                        "game_id": game_data.get("game_id"),
+                        "extraction_method": "api",
+                        "sport": game_data.get("sport", "mlb"),
                     },
-                    'game_datetime': game_data.get('game_datetime') or datetime.now().isoformat(),
-                    'home_team': game_data.get('home_team'),
-                    'away_team': game_data.get('away_team'),
+                    "game_datetime": game_data.get("game_datetime")
+                    or datetime.now().isoformat(),
+                    "home_team": game_data.get("home_team"),
+                    "away_team": game_data.get("away_team"),
                 }
 
                 # Add bet type specific fields
-                if record['bet_type'] == 'moneyline':
-                    unified_record.update({
-                        'home_ml': self._parse_odds(record.get('home_odds')),
-                        'away_ml': self._parse_odds(record.get('away_odds')),
-                        'home_bets_percentage': self._parse_percentage(record.get('home_bets_percentage')),
-                        'away_bets_percentage': self._parse_percentage(record.get('away_bets_percentage')),
-                        'home_money_percentage': self._parse_percentage(record.get('home_money_percentage')),
-                        'away_money_percentage': self._parse_percentage(record.get('away_money_percentage')),
-                    })
+                if record["bet_type"] == "moneyline":
+                    unified_record.update(
+                        {
+                            "home_ml": self._parse_odds(record.get("home_odds")),
+                            "away_ml": self._parse_odds(record.get("away_odds")),
+                            "home_bets_percentage": self._parse_percentage(
+                                record.get("home_bets_percentage")
+                            ),
+                            "away_bets_percentage": self._parse_percentage(
+                                record.get("away_bets_percentage")
+                            ),
+                            "home_money_percentage": self._parse_percentage(
+                                record.get("home_money_percentage")
+                            ),
+                            "away_money_percentage": self._parse_percentage(
+                                record.get("away_money_percentage")
+                            ),
+                        }
+                    )
 
-                elif record['bet_type'] == 'spread':
-                    unified_record.update({
-                        'spread_line': self._parse_spread(record.get('spread_line')),
-                        'home_spread_price': self._parse_odds(record.get('home_spread_odds')),
-                        'away_spread_price': self._parse_odds(record.get('away_spread_odds')),
-                        'home_bets_percentage': self._parse_percentage(record.get('home_bets_percentage')),
-                        'away_bets_percentage': self._parse_percentage(record.get('away_bets_percentage')),
-                        'home_money_percentage': self._parse_percentage(record.get('home_money_percentage')),
-                        'away_money_percentage': self._parse_percentage(record.get('away_money_percentage')),
-                    })
+                elif record["bet_type"] == "spread":
+                    unified_record.update(
+                        {
+                            "spread_line": self._parse_spread(
+                                record.get("spread_line")
+                            ),
+                            "home_spread_price": self._parse_odds(
+                                record.get("home_spread_odds")
+                            ),
+                            "away_spread_price": self._parse_odds(
+                                record.get("away_spread_odds")
+                            ),
+                            "home_bets_percentage": self._parse_percentage(
+                                record.get("home_bets_percentage")
+                            ),
+                            "away_bets_percentage": self._parse_percentage(
+                                record.get("away_bets_percentage")
+                            ),
+                            "home_money_percentage": self._parse_percentage(
+                                record.get("home_money_percentage")
+                            ),
+                            "away_money_percentage": self._parse_percentage(
+                                record.get("away_money_percentage")
+                            ),
+                        }
+                    )
 
-                elif record['bet_type'] == 'totals':
-                    unified_record.update({
-                        'total_line': self._parse_total(record.get('total_line')),
-                        'over_price': self._parse_odds(record.get('over_odds')),
-                        'under_price': self._parse_odds(record.get('under_odds')),
-                        'over_bets_percentage': self._parse_percentage(record.get('over_bets_percentage')),
-                        'under_bets_percentage': self._parse_percentage(record.get('under_bets_percentage')),
-                        'over_money_percentage': self._parse_percentage(record.get('over_money_percentage')),
-                        'under_money_percentage': self._parse_percentage(record.get('under_money_percentage')),
-                    })
+                elif record["bet_type"] == "totals":
+                    unified_record.update(
+                        {
+                            "total_line": self._parse_total(record.get("total_line")),
+                            "over_price": self._parse_odds(record.get("over_odds")),
+                            "under_price": self._parse_odds(record.get("under_odds")),
+                            "over_bets_percentage": self._parse_percentage(
+                                record.get("over_bets_percentage")
+                            ),
+                            "under_bets_percentage": self._parse_percentage(
+                                record.get("under_bets_percentage")
+                            ),
+                            "over_money_percentage": self._parse_percentage(
+                                record.get("over_money_percentage")
+                            ),
+                            "under_money_percentage": self._parse_percentage(
+                                record.get("under_money_percentage")
+                            ),
+                        }
+                    )
 
                 # Detect sharp action indicators
-                sharp_action = self._detect_sharp_action(unified_record, record['bet_type'])
+                sharp_action = self._detect_sharp_action(
+                    unified_record, record["bet_type"]
+                )
                 if sharp_action:
-                    unified_record['sharp_action'] = sharp_action
+                    unified_record["sharp_action"] = sharp_action
 
                 # Detect reverse line movement
-                rlm = self._detect_reverse_line_movement(unified_record, record['bet_type'])
-                unified_record['reverse_line_movement'] = rlm
+                rlm = self._detect_reverse_line_movement(
+                    unified_record, record["bet_type"]
+                )
+                unified_record["reverse_line_movement"] = rlm
 
                 unified_records.append(unified_record)
 
             except Exception as e:
-                self.logger.error("Error converting record to unified format", error=str(e))
+                self.logger.error(
+                    "Error converting record to unified format", error=str(e)
+                )
                 continue
 
         return unified_records
@@ -865,7 +1002,7 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
 
         try:
             # Remove non-numeric characters except + and -
-            clean_odds = re.sub(r'[^\d+-]', '', odds_str)
+            clean_odds = re.sub(r"[^\d+-]", "", odds_str)
             if clean_odds:
                 return int(clean_odds)
         except ValueError:
@@ -880,7 +1017,7 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
 
         try:
             # Remove % and convert to float
-            clean_pct = re.sub(r'[^\d.]', '', pct_str)
+            clean_pct = re.sub(r"[^\d.]", "", pct_str)
             if clean_pct:
                 return float(clean_pct)
         except ValueError:
@@ -895,7 +1032,7 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
 
         try:
             # Remove non-numeric characters except + and -
-            clean_spread = re.sub(r'[^\d.+-]', '', spread_str)
+            clean_spread = re.sub(r"[^\d.+-]", "", spread_str)
             if clean_spread:
                 return float(clean_spread)
         except ValueError:
@@ -910,7 +1047,7 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
 
         try:
             # Remove non-numeric characters except decimal point
-            clean_total = re.sub(r'[^\d.]', '', total_str)
+            clean_total = re.sub(r"[^\d.]", "", total_str)
             if clean_total:
                 return float(clean_total)
         except ValueError:
@@ -921,79 +1058,122 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
     def _detect_sharp_action(self, record: dict[str, Any], bet_type: str) -> str | None:
         """Detect sharp action based on betting percentages."""
         try:
-            if bet_type == 'moneyline':
-                home_money_pct = record.get('home_money_percentage', 0)
-                away_money_pct = record.get('away_money_percentage', 0)
-                home_bets_pct = record.get('home_bets_percentage', 0)
-                away_bets_pct = record.get('away_bets_percentage', 0)
+            if bet_type == "moneyline":
+                home_money_pct = record.get("home_money_percentage", 0)
+                away_money_pct = record.get("away_money_percentage", 0)
+                home_bets_pct = record.get("home_bets_percentage", 0)
+                away_bets_pct = record.get("away_bets_percentage", 0)
 
                 # Sharp action: money percentage significantly higher than bet percentage
-                if home_money_pct and home_bets_pct and home_money_pct > home_bets_pct + 15:
-                    return 'MODERATE' if home_money_pct > home_bets_pct + 25 else 'LIGHT'
-                elif away_money_pct and away_bets_pct and away_money_pct > away_bets_pct + 15:
-                    return 'MODERATE' if away_money_pct > away_bets_pct + 25 else 'LIGHT'
+                if (
+                    home_money_pct
+                    and home_bets_pct
+                    and home_money_pct > home_bets_pct + 15
+                ):
+                    return (
+                        "MODERATE" if home_money_pct > home_bets_pct + 25 else "LIGHT"
+                    )
+                elif (
+                    away_money_pct
+                    and away_bets_pct
+                    and away_money_pct > away_bets_pct + 15
+                ):
+                    return (
+                        "MODERATE" if away_money_pct > away_bets_pct + 25 else "LIGHT"
+                    )
 
-            elif bet_type == 'spread':
-                home_money_pct = record.get('home_money_percentage', 0)
-                away_money_pct = record.get('away_money_percentage', 0)
-                home_bets_pct = record.get('home_bets_percentage', 0)
-                away_bets_pct = record.get('away_bets_percentage', 0)
+            elif bet_type == "spread":
+                home_money_pct = record.get("home_money_percentage", 0)
+                away_money_pct = record.get("away_money_percentage", 0)
+                home_bets_pct = record.get("home_bets_percentage", 0)
+                away_bets_pct = record.get("away_bets_percentage", 0)
 
-                if home_money_pct and home_bets_pct and home_money_pct > home_bets_pct + 15:
-                    return 'MODERATE' if home_money_pct > home_bets_pct + 25 else 'LIGHT'
-                elif away_money_pct and away_bets_pct and away_money_pct > away_bets_pct + 15:
-                    return 'MODERATE' if away_money_pct > away_bets_pct + 25 else 'LIGHT'
+                if (
+                    home_money_pct
+                    and home_bets_pct
+                    and home_money_pct > home_bets_pct + 15
+                ):
+                    return (
+                        "MODERATE" if home_money_pct > home_bets_pct + 25 else "LIGHT"
+                    )
+                elif (
+                    away_money_pct
+                    and away_bets_pct
+                    and away_money_pct > away_bets_pct + 15
+                ):
+                    return (
+                        "MODERATE" if away_money_pct > away_bets_pct + 25 else "LIGHT"
+                    )
 
-            elif bet_type == 'totals':
-                over_money_pct = record.get('over_money_percentage', 0)
-                under_money_pct = record.get('under_money_percentage', 0)
-                over_bets_pct = record.get('over_bets_percentage', 0)
-                under_bets_pct = record.get('under_bets_percentage', 0)
+            elif bet_type == "totals":
+                over_money_pct = record.get("over_money_percentage", 0)
+                under_money_pct = record.get("under_money_percentage", 0)
+                over_bets_pct = record.get("over_bets_percentage", 0)
+                under_bets_pct = record.get("under_bets_percentage", 0)
 
-                if over_money_pct and over_bets_pct and over_money_pct > over_bets_pct + 15:
-                    return 'MODERATE' if over_money_pct > over_bets_pct + 25 else 'LIGHT'
-                elif under_money_pct and under_bets_pct and under_money_pct > under_bets_pct + 15:
-                    return 'MODERATE' if under_money_pct > under_bets_pct + 25 else 'LIGHT'
+                if (
+                    over_money_pct
+                    and over_bets_pct
+                    and over_money_pct > over_bets_pct + 15
+                ):
+                    return (
+                        "MODERATE" if over_money_pct > over_bets_pct + 25 else "LIGHT"
+                    )
+                elif (
+                    under_money_pct
+                    and under_bets_pct
+                    and under_money_pct > under_bets_pct + 15
+                ):
+                    return (
+                        "MODERATE" if under_money_pct > under_bets_pct + 25 else "LIGHT"
+                    )
 
         except Exception as e:
             self.logger.error("Error detecting sharp action", error=str(e))
 
         return None
 
-    def _detect_reverse_line_movement(self, record: dict[str, Any], bet_type: str) -> bool:
+    def _detect_reverse_line_movement(
+        self, record: dict[str, Any], bet_type: str
+    ) -> bool:
         """Detect potential reverse line movement (placeholder - requires historical data)."""
         # This is a placeholder - true RLM detection requires historical line data
         return False
 
-    def _extract_json_from_html(self, html_content: str, api_url: str) -> dict[str, Any] | None:
+    def _extract_json_from_html(
+        self, html_content: str, api_url: str
+    ) -> dict[str, Any] | None:
         """Extract JSON data from HTML response."""
         try:
             # Look for common patterns of embedded JSON in HTML
             import re
-            
+
             # Pattern 1: window.__INITIAL_STATE__ = {...}
-            pattern1 = r'window\.__INITIAL_STATE__\s*=\s*({.*?});'
+            pattern1 = r"window\.__INITIAL_STATE__\s*=\s*({.*?});"
             match = re.search(pattern1, html_content, re.DOTALL)
             if match:
                 import json
+
                 return json.loads(match.group(1))
-            
+
             # Pattern 2: JSON data in script tags
             pattern2 = r'<script[^>]*>.*?(\{.*"games".*?\}).*?</script>'
             match = re.search(pattern2, html_content, re.DOTALL | re.IGNORECASE)
             if match:
                 import json
+
                 return json.loads(match.group(1))
-                
+
             # Pattern 3: API data variable
-            pattern3 = r'(?:var|let|const)\s+(?:data|apiData|gameData)\s*=\s*(\{.*?\});'
+            pattern3 = r"(?:var|let|const)\s+(?:data|apiData|gameData)\s*=\s*(\{.*?\});"
             match = re.search(pattern3, html_content, re.DOTALL)
             if match:
                 import json
+
                 return json.loads(match.group(1))
-                
+
             return None
-            
+
         except Exception as e:
             self.logger.debug(f"Failed to extract JSON from HTML: {str(e)}")
             return None
@@ -1001,87 +1181,91 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
     def _generate_mock_data(self, sport: str) -> list[dict[str, Any]]:
         """Generate mock data for testing purposes."""
         try:
-            from datetime import datetime, timedelta
             import random
-            
+            from datetime import datetime, timedelta
+
             mock_games = []
             teams = [
                 ("New York Yankees", "Boston Red Sox"),
                 ("Los Angeles Dodgers", "San Francisco Giants"),
                 ("Houston Astros", "Texas Rangers"),
                 ("Atlanta Braves", "Philadelphia Phillies"),
-                ("Chicago Cubs", "Milwaukee Brewers")
+                ("Chicago Cubs", "Milwaukee Brewers"),
             ]
-            
-            for i, (away_team, home_team) in enumerate(teams[:3]):  # Generate 3 mock games
+
+            for i, (away_team, home_team) in enumerate(
+                teams[:3]
+            ):  # Generate 3 mock games
                 game_time = datetime.now() + timedelta(hours=random.randint(1, 8))
-                
+
                 game_data = {
-                    'game_id': f'mock_sbd_{i+1}',
-                    'game_name': f"{away_team} @ {home_team}",
-                    'away_team': away_team,
-                    'home_team': home_team,
-                    'sport': sport,
-                    'game_datetime': game_time.isoformat(),
-                    'api_endpoint': 'mock_data_generator',
-                    'raw_data': {
-                        'id': f'mock_sbd_{i+1}',
-                        'away_team': away_team,
-                        'home_team': home_team,
-                        'start_time': game_time.isoformat(),
-                        'sportsbooks': [
+                    "game_id": f"mock_sbd_{i + 1}",
+                    "game_name": f"{away_team} @ {home_team}",
+                    "away_team": away_team,
+                    "home_team": home_team,
+                    "sport": sport,
+                    "game_datetime": game_time.isoformat(),
+                    "api_endpoint": "mock_data_generator",
+                    "raw_data": {
+                        "id": f"mock_sbd_{i + 1}",
+                        "away_team": away_team,
+                        "home_team": home_team,
+                        "start_time": game_time.isoformat(),
+                        "sportsbooks": [
                             {
-                                'name': 'DraftKings',
-                                'moneyline': {
-                                    'home_odds': random.randint(-200, 200),
-                                    'away_odds': random.randint(-200, 200),
-                                    'home_bets_pct': random.randint(30, 70),
-                                    'away_bets_pct': random.randint(30, 70),
-                                    'home_money_pct': random.randint(25, 75),
-                                    'away_money_pct': random.randint(25, 75)
+                                "name": "DraftKings",
+                                "moneyline": {
+                                    "home_odds": random.randint(-200, 200),
+                                    "away_odds": random.randint(-200, 200),
+                                    "home_bets_pct": random.randint(30, 70),
+                                    "away_bets_pct": random.randint(30, 70),
+                                    "home_money_pct": random.randint(25, 75),
+                                    "away_money_pct": random.randint(25, 75),
                                 },
-                                'spread': {
-                                    'line': random.uniform(-2.5, 2.5),
-                                    'home_odds': random.randint(-120, 120),
-                                    'away_odds': random.randint(-120, 120)
+                                "spread": {
+                                    "line": random.uniform(-2.5, 2.5),
+                                    "home_odds": random.randint(-120, 120),
+                                    "away_odds": random.randint(-120, 120),
                                 },
-                                'totals': {
-                                    'line': random.uniform(7.5, 11.5),
-                                    'over_odds': random.randint(-120, 120),
-                                    'under_odds': random.randint(-120, 120)
-                                }
+                                "totals": {
+                                    "line": random.uniform(7.5, 11.5),
+                                    "over_odds": random.randint(-120, 120),
+                                    "under_odds": random.randint(-120, 120),
+                                },
                             }
-                        ]
-                    }
+                        ],
+                    },
                 }
                 mock_games.append(game_data)
-            
+
             self.logger.info(f"Generated {len(mock_games)} mock SBD games for testing")
             return mock_games
-            
+
         except Exception as e:
             self.logger.error(f"Failed to generate mock data: {str(e)}")
             return []
 
-    def _process_direct_game_data(self, game_data: dict[str, Any]) -> list[dict[str, Any]]:
+    def _process_direct_game_data(
+        self, game_data: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """Process game data that doesn't have sportsbook breakdown."""
         records = []
-        
+
         try:
             # Create a generic record from the game data
             record = {
-                'sportsbook': 'SBD_AGGREGATE',
-                'bet_type': 'moneyline',
-                'timestamp': datetime.now().isoformat(),
-                'game_data': game_data,
-                'external_matchup_id': f"sbd_{game_data.get('game_id', 'unknown')}",
-                'raw_response': game_data.get('raw_data', game_data),
-                'api_endpoint': game_data.get('api_endpoint', 'unknown')
+                "sportsbook": "SBD_AGGREGATE",
+                "bet_type": "moneyline",
+                "timestamp": datetime.now().isoformat(),
+                "game_data": game_data,
+                "external_matchup_id": f"sbd_{game_data.get('game_id', 'unknown')}",
+                "raw_response": game_data.get("raw_data", game_data),
+                "api_endpoint": game_data.get("api_endpoint", "unknown"),
             }
-            
+
             records.append(record)
             return records
-            
+
         except Exception as e:
             self.logger.error("Error processing direct game data", error=str(e))
             return []
@@ -1089,10 +1273,10 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
     def collect_game_data(self, sport: str = "mlb") -> int:
         """
         Convenience method to collect all betting data for a sport.
-        
+
         Args:
             sport: Sport type (default: mlb)
-            
+
         Returns:
             Number of records stored
         """
@@ -1104,7 +1288,7 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
                 sport=sport,
                 status=result.status.value,
                 processed=result.records_processed,
-                stored=result.records_stored
+                stored=result.records_stored,
             )
 
             return result.records_stored
@@ -1116,10 +1300,10 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
     def test_collection(self, sport: str = "mlb") -> dict[str, Any]:
         """
         Test method for validating SBD collection.
-        
+
         Args:
             sport: Sport type to test with
-            
+
         Returns:
             Test results dictionary
         """
@@ -1134,29 +1318,29 @@ class SBDUnifiedCollector(UnifiedBettingLinesCollector):
                 result = self.collect_and_store(sport=sport)
 
                 return {
-                    'status': 'success',
-                    'raw_records': len(raw_data),
-                    'processed': result.records_processed,
-                    'stored': result.records_stored,
-                    'collection_result': result.status.value,
-                    'sample_record': raw_data[0] if raw_data else None
+                    "status": "success",
+                    "raw_records": len(raw_data),
+                    "processed": result.records_processed,
+                    "stored": result.records_stored,
+                    "collection_result": result.status.value,
+                    "sample_record": raw_data[0] if raw_data else None,
                 }
             else:
                 return {
-                    'status': 'no_data',
-                    'raw_records': 0,
-                    'processed': 0,
-                    'stored': 0,
-                    'message': 'No data collected from SBD'
+                    "status": "no_data",
+                    "raw_records": 0,
+                    "processed": 0,
+                    "stored": 0,
+                    "message": "No data collected from SBD",
                 }
 
         except Exception as e:
             return {
-                'status': 'error',
-                'error': str(e),
-                'raw_records': 0,
-                'processed': 0,
-                'stored': 0
+                "status": "error",
+                "error": str(e),
+                "raw_records": 0,
+                "processed": 0,
+                "stored": 0,
             }
 
 
@@ -1169,6 +1353,6 @@ if __name__ == "__main__":
     print(f"Test result: {test_result}")
 
     # Production collection
-    if test_result['status'] == 'success':
+    if test_result["status"] == "success":
         stored_count = collector.collect_game_data("mlb")
         print(f"Stored {stored_count} records")

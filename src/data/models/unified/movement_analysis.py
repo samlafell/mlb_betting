@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 
-from pydantic import BaseModel, field_validator, ValidationInfo, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
 
 
 class MovementDirection(str, Enum):

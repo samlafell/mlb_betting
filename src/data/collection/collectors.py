@@ -160,29 +160,33 @@ class SBDCollector(BaseCollector):
         try:
             # Use our working API collector to get real data
             raw_data = self.api_collector._collect_with_api("mlb")
-            
+
             if not raw_data:
                 self.logger.warning("No data collected from SBD API")
                 return []
-            
+
             # Extract betting records from all games
             all_records = []
             for game in raw_data:
-                betting_records = game.get('betting_records', [])
+                betting_records = game.get("betting_records", [])
                 for record in betting_records:
                     # Add game context to each record
-                    record.update({
-                        'game_id': game.get('external_game_id'),
-                        'game_name': game.get('game_name'),
-                        'away_team': game.get('away_team_abbr'),
-                        'home_team': game.get('home_team_abbr'),
-                        'scheduled_time': game.get('game_datetime'),
-                        'collection_source': 'sbd_api'
-                    })
+                    record.update(
+                        {
+                            "game_id": game.get("external_game_id"),
+                            "game_name": game.get("game_name"),
+                            "away_team": game.get("away_team_abbr"),
+                            "home_team": game.get("home_team_abbr"),
+                            "scheduled_time": game.get("game_datetime"),
+                            "collection_source": "sbd_api",
+                        }
+                    )
                     all_records.append(record)
-            
-            self.logger.info(f"Collected {len(all_records)} betting records from {len(raw_data)} games via SBD API")
-            
+
+            self.logger.info(
+                f"Collected {len(all_records)} betting records from {len(raw_data)} games via SBD API"
+            )
+
             # Update metrics
             self.metrics.records_collected = len(all_records)
             self.metrics.records_valid = sum(
@@ -196,7 +200,7 @@ class SBDCollector(BaseCollector):
                 records=len(all_records),
                 valid=self.metrics.records_valid,
                 games=len(raw_data),
-                sportsbooks=9
+                sportsbooks=9,
             )
 
             return [
@@ -247,7 +251,7 @@ class SportsBettingReportCollector(BaseCollector):
 
     Status: 🔴 DEPRECATED - Use SBRUnifiedCollector instead
     This collector is kept for backward compatibility only.
-    
+
     Use the new SBRUnifiedCollector from sbr_unified_collector.py
     which provides Playwright-based collection with full functionality.
     """
@@ -324,10 +328,13 @@ class SportsBettingReportCollector(BaseCollector):
 
 
 # Import the consolidated ActionNetworkCollector from consolidated_action_network_collector.py
-from .consolidated_action_network_collector import ActionNetworkCollector as ConsolidatedActionNetworkCollector
+from .consolidated_action_network_collector import (
+    ActionNetworkCollector as ConsolidatedActionNetworkCollector,
+)
 
 # Make it available as ActionNetworkCollector for backward compatibility
 ActionNetworkCollector = ConsolidatedActionNetworkCollector
+
 
 # Legacy ActionNetworkCollector - DEPRECATED: Use ConsolidatedActionNetworkCollector instead
 class DeprecatedActionNetworkCollector(BaseCollector):
@@ -1165,24 +1172,74 @@ class OddsAPICollector(BaseCollector):
 
         try:
             if not self.api_key:
-                raise Exception("Odds API key required")
+                self.logger.warning("Odds API key not configured, using sample data")
+                return self._get_sample_odds_data()
 
-            # Placeholder - needs implementation
-            records = self._get_sample_odds_data()
+            # Real API implementation
+            sport = request.additional_params.get("sport", "baseball_mlb")
+            region = request.additional_params.get("region", "us")
+            markets = request.additional_params.get("markets", "h2h,spreads,totals")
 
-            self.metrics.records_collected = len(records)
-            self.metrics.records_valid = len(records)
-            self.metrics.status = CollectionStatus.PARTIAL
-            self.metrics.end_time = datetime.now()
-            self.metrics.warnings.append(
-                "Placeholder implementation - needs development"
+            # Build API URL
+            url = f"{self.base_url}/sports/{sport}/odds"
+            params = {
+                "apiKey": self.api_key,
+                "regions": region,
+                "markets": markets,
+                "oddsFormat": "american",
+                "dateFormat": "iso",
+            }
+
+            self.logger.info(
+                "Fetching from Odds API",
+                url=url,
+                params={k: v for k, v in params.items() if k != "apiKey"},
             )
 
-            self.logger.warning(
-                "Odds API collection using sample data", records=len(records)
-            )
+            async with self.session.get(url, params=params) as response:
+                if response.status == 200:
+                    api_data = await response.json()
 
-            return [self.normalize_record(r) for r in records]
+                    if not api_data:
+                        self.logger.warning("No data returned from Odds API")
+                        return []
+
+                    # Process the real API data
+                    processed_games = []
+                    for game in api_data:
+                        processed_game = self._process_odds_api_game(game, sport)
+                        if processed_game:
+                            processed_games.append(processed_game)
+
+                    self.metrics.records_collected = len(processed_games)
+                    self.metrics.records_valid = len(processed_games)
+                    self.metrics.status = CollectionStatus.SUCCESS
+                    self.metrics.end_time = datetime.now()
+
+                    self.logger.info(
+                        "Odds API collection completed",
+                        records=len(processed_games),
+                        api_status=response.status,
+                    )
+
+                    return [self.normalize_record(r) for r in processed_games]
+
+                elif response.status == 401:
+                    self.logger.error(
+                        "Odds API authentication failed - invalid API key"
+                    )
+                    raise Exception("Invalid Odds API key")
+                elif response.status == 402:
+                    self.logger.error("Odds API quota exceeded")
+                    raise Exception("Odds API quota exceeded")
+                else:
+                    self.logger.error(
+                        f"Odds API request failed with status {response.status}"
+                    )
+                    response_text = await response.text()
+                    raise Exception(
+                        f"API request failed: {response.status} - {response_text}"
+                    )
 
         except Exception as e:
             self.metrics.status = CollectionStatus.FAILED
@@ -1237,22 +1294,39 @@ from .base import CollectorFactory
 
 # Import the refactored source-specific collectors
 try:
+    from .consolidated_action_network_collector import (
+        ActionNetworkCollector as ConsolidatedActionNetworkCollector,
+    )
     from .sbd_unified_collector_api import SBDUnifiedCollectorAPI
+    from .sbr_unified_collector import SBRUnifiedCollector
     from .vsin_unified_collector import VSINUnifiedCollector
-    from .consolidated_action_network_collector import ActionNetworkCollector as ConsolidatedActionNetworkCollector
-    
+
     # Register the refactored collectors (primary registrations)
     CollectorFactory.register_collector(DataSource.VSIN, VSINUnifiedCollector)
     CollectorFactory.register_collector(DataSource.SBD, SBDUnifiedCollectorAPI)
-    CollectorFactory.register_collector(DataSource.SPORTS_BETTING_DIME, SBDUnifiedCollectorAPI)  # Alternative name
-    CollectorFactory.register_collector(DataSource.ACTION_NETWORK, ConsolidatedActionNetworkCollector)
-    
+    CollectorFactory.register_collector(
+        DataSource.SPORTS_BETTING_DIME, SBDUnifiedCollectorAPI
+    )  # Alternative name
+    CollectorFactory.register_collector(
+        DataSource.ACTION_NETWORK, ConsolidatedActionNetworkCollector
+    )
+    CollectorFactory.register_collector(
+        DataSource.SPORTS_BOOK_REVIEW, SBRUnifiedCollector
+    )  # New SBR unified collector
+    CollectorFactory.register_collector(
+        DataSource.SBR, SBRUnifiedCollector
+    )  # Alias for SBR
+
 except ImportError as e:
     # Fallback to legacy collectors if refactored ones aren't available
-    logger.warning("Could not import refactored collectors, using legacy ones", error=str(e))
+    logger.warning(
+        "Could not import refactored collectors, using legacy ones", error=str(e)
+    )
     CollectorFactory.register_collector(DataSource.VSIN, VSINCollector)
     CollectorFactory.register_collector(DataSource.SBD, SBDCollector)
-    CollectorFactory.register_collector(DataSource.ACTION_NETWORK, ActionNetworkCollector)
+    CollectorFactory.register_collector(
+        DataSource.ACTION_NETWORK, ActionNetworkCollector
+    )
 
 # Register remaining collectors (legacy and others)
 CollectorFactory.register_collector(

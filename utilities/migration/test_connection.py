@@ -19,31 +19,31 @@ from src.data.database.connection import initialize_connections
 async def test_connection():
     """Test basic database connectivity."""
     settings = get_settings()
-    
+
     print("🔍 Testing database connection...")
     print(f"Database: {settings.database.database}")
     print(f"Host: {settings.database.host}:{settings.database.port}")
-    
+
     # Initialize connections first
     initialize_connections(settings)
-    
+
     try:
         connection_manager = get_connection()
         async with connection_manager.get_async_connection() as conn:
             result = await conn.fetchrow("SELECT version() as version")
-            print(f"✅ Connection successful!")
+            print("✅ Connection successful!")
             print(f"PostgreSQL version: {result['version']}")
-            
+
             # Test basic data access
             count_result = await conn.fetchrow("""
                 SELECT COUNT(*) as count FROM core_betting.games
             """)
             print(f"📊 Games in database: {count_result['count']:,}")
-            
+
     except Exception as e:
         print(f"❌ Connection failed: {e}")
         return False
-    
+
     return True
 
 

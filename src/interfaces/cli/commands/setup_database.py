@@ -11,7 +11,7 @@ import click
 import structlog
 
 from ....data.database.action_network_repository import ActionNetworkRepository
-from ....data.database.connection import get_connection
+from ....data.database.connection import get_database_connection
 
 logger = structlog.get_logger(__name__)
 
@@ -70,7 +70,7 @@ async def _setup_action_network_async(
 
     try:
         # Get database connection
-        connection = get_connection()
+        connection = get_database_connection()
         await connection.connect()
 
         logger.info("Connected to database successfully")
@@ -188,7 +188,7 @@ async def _check_data_async(
 
     try:
         # Get database connection
-        connection = get_connection()
+        connection = get_database_connection()
         await connection.connect()
 
         repository = ActionNetworkRepository(connection)
@@ -301,7 +301,7 @@ async def _test_connection_async(verbose: bool):
         logger.info("Testing database connection...")
 
         # Get database connection
-        connection = get_connection()
+        connection = get_database_connection()
         await connection.connect()
 
         # Test basic query

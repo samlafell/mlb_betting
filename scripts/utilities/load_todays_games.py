@@ -11,9 +11,9 @@ from datetime import date, datetime, time
 
 import psycopg2
 import pytz
+from action.utils.actionnetwork_url_builder import ActionNetworkURLBuilder
 from psycopg2.extras import RealDictCursor
 
-from action.utils.actionnetwork_url_builder import ActionNetworkURLBuilder
 from src.mlb_sharp_betting.core.config import get_settings
 from src.mlb_sharp_betting.core.logging import setup_logging
 from src.mlb_sharp_betting.models.actionnetwork import GameFact

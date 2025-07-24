@@ -22,6 +22,7 @@ sys.path.insert(0, str(project_root))
 try:
     from sportsbookreview.services.collection_orchestrator import CollectionOrchestrator
     from sportsbookreview.services.data_storage_service import DataStorageService
+
     from src.mlb_sharp_betting.db.table_registry import get_table_registry
     from src.mlb_sharp_betting.services.data_service import get_data_service
     from src.mlb_sharp_betting.utils.migration_monitor import monitor_migration

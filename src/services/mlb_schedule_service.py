@@ -24,6 +24,7 @@ logger = structlog.get_logger(__name__)
 
 class GameStatus(Enum):
     """MLB game status enumeration."""
+
     SCHEDULED = "scheduled"
     LIVE = "live"
     FINAL = "final"
@@ -35,6 +36,7 @@ class GameStatus(Enum):
 @dataclass
 class MLBGame:
     """MLB game data model."""
+
     game_id: str
     game_pk: int
     game_date: datetime
@@ -80,6 +82,7 @@ class MLBGame:
 @dataclass
 class ScheduleRequest:
     """Request parameters for schedule retrieval."""
+
     start_date: datetime
     end_date: datetime
     season: int | None = None
@@ -112,7 +115,7 @@ class ScheduleRequest:
 class MLBScheduleService:
     """
     MLB Schedule Service for comprehensive game schedule retrieval.
-    
+
     Provides functionality to fetch MLB game schedules for date ranges,
     individual games, and team-specific schedules. Integrates with MLB Stats API
     and provides data formatting for betting line collection systems.
@@ -183,7 +186,7 @@ class MLBScheduleService:
                 headers={
                     "User-Agent": "MLB-Betting-System/1.0",
                     "Accept": "application/json",
-                }
+                },
             )
 
     async def _close_session(self):
@@ -197,17 +200,17 @@ class MLBScheduleService:
         start_date: datetime,
         end_date: datetime,
         season_type: str = "R",
-        team_ids: list[int] | None = None
+        team_ids: list[int] | None = None,
     ) -> list[MLBGame]:
         """
         Get all MLB games for a date range.
-        
+
         Args:
             start_date: Start date for game search
             end_date: End date for game search
             season_type: Season type (R=Regular, P=Postseason, S=Spring)
             team_ids: Optional list of team IDs to filter
-            
+
         Returns:
             List of MLB games
         """
@@ -219,7 +222,7 @@ class MLBScheduleService:
                 start_date=start_date,
                 end_date=end_date,
                 season_type=season_type,
-                team_ids=team_ids
+                team_ids=team_ids,
             )
 
             # Fetch schedule data
@@ -229,7 +232,7 @@ class MLBScheduleService:
                 f"Retrieved {len(games)} games",
                 start_date=start_date.strftime("%Y-%m-%d"),
                 end_date=end_date.strftime("%Y-%m-%d"),
-                season_type=season_type
+                season_type=season_type,
             )
 
             return games
@@ -241,10 +244,10 @@ class MLBScheduleService:
     async def get_games_by_date(self, date: datetime) -> list[MLBGame]:
         """
         Get all MLB games for a specific date.
-        
+
         Args:
             date: Date to fetch games for
-            
+
         Returns:
             List of MLB games for the date
         """
@@ -253,10 +256,10 @@ class MLBScheduleService:
     async def get_game_by_id(self, game_pk: int) -> MLBGame | None:
         """
         Get a specific game by its MLB game ID.
-        
+
         Args:
             game_pk: MLB game primary key
-            
+
         Returns:
             MLB game or None if not found
         """
@@ -270,11 +273,15 @@ class MLBScheduleService:
                     data = await response.json()
                     return self._parse_game_data(data.get("gameData", {}))
                 else:
-                    self.logger.warning("Game not found", game_pk=game_pk, status=response.status)
+                    self.logger.warning(
+                        "Game not found", game_pk=game_pk, status=response.status
+                    )
                     return None
 
         except Exception as e:
-            self.logger.error("Error fetching game by ID", game_pk=game_pk, error=str(e))
+            self.logger.error(
+                "Error fetching game by ID", game_pk=game_pk, error=str(e)
+            )
             return None
 
     async def _fetch_schedule_data(self, request: ScheduleRequest) -> list[MLBGame]:
@@ -290,7 +297,7 @@ class MLBScheduleService:
                 start_date=current_date,
                 end_date=chunk_end,
                 season_type=request.season_type,
-                team_ids=request.team_ids
+                team_ids=request.team_ids,
             )
 
             chunk_games = await self._fetch_schedule_chunk(chunk_request)
@@ -411,62 +418,79 @@ class MLBScheduleService:
             return None
 
     async def get_team_schedule(
-        self,
-        team_id: int,
-        start_date: datetime,
-        end_date: datetime
+        self, team_id: int, start_date: datetime, end_date: datetime
     ) -> list[MLBGame]:
         """
         Get schedule for specific team.
-        
+
         Args:
             team_id: MLB team ID
             start_date: Start date
             end_date: End date
-            
+
         Returns:
             List of games for the team
         """
         return await self.get_games_by_date_range(
-            start_date=start_date,
-            end_date=end_date,
-            team_ids=[team_id]
+            start_date=start_date, end_date=end_date, team_ids=[team_id]
         )
 
     def get_team_id_by_abbr(self, abbreviation: str) -> int | None:
         """
         Get team ID by abbreviation.
-        
+
         Args:
             abbreviation: Team abbreviation (e.g., 'NYY')
-            
+
         Returns:
             Team ID or None if not found
         """
         # This would need to be populated with actual team IDs
         team_ids = {
-            "ARI": 109, "ATL": 144, "BAL": 110, "BOS": 111, "CHC": 112,
-            "CWS": 145, "CIN": 113, "CLE": 114, "COL": 115, "DET": 116,
-            "HOU": 117, "KC": 118, "LAA": 108, "LAD": 119, "MIA": 146,
-            "MIL": 158, "MIN": 142, "NYM": 121, "NYY": 147, "OAK": 133,
-            "PHI": 143, "PIT": 134, "SD": 135, "SF": 137, "SEA": 136,
-            "STL": 138, "TB": 139, "TEX": 140, "TOR": 141, "WAS": 120,
+            "ARI": 109,
+            "ATL": 144,
+            "BAL": 110,
+            "BOS": 111,
+            "CHC": 112,
+            "CWS": 145,
+            "CIN": 113,
+            "CLE": 114,
+            "COL": 115,
+            "DET": 116,
+            "HOU": 117,
+            "KC": 118,
+            "LAA": 108,
+            "LAD": 119,
+            "MIA": 146,
+            "MIL": 158,
+            "MIN": 142,
+            "NYM": 121,
+            "NYY": 147,
+            "OAK": 133,
+            "PHI": 143,
+            "PIT": 134,
+            "SD": 135,
+            "SF": 137,
+            "SEA": 136,
+            "STL": 138,
+            "TB": 139,
+            "TEX": 140,
+            "TOR": 141,
+            "WAS": 120,
         }
 
         return team_ids.get(abbreviation.upper())
 
     async def validate_date_range(
-        self,
-        start_date: datetime,
-        end_date: datetime
+        self, start_date: datetime, end_date: datetime
     ) -> tuple[bool, str]:
         """
         Validate date range for data availability.
-        
+
         Args:
             start_date: Start date
             end_date: End date
-            
+
         Returns:
             Tuple of (is_valid, message)
         """
@@ -489,6 +513,7 @@ class MLBScheduleService:
 
 # Example usage
 if __name__ == "__main__":
+
     async def main():
         async with MLBScheduleService() as service:
             # Get games for a specific date range

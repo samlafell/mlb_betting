@@ -35,6 +35,7 @@ from .collectors import (
 )
 from .consolidated_action_network_collector import ActionNetworkCollector
 from .rate_limiter import get_rate_limiter
+from .sbr_unified_collector import SBRUnifiedCollector
 from .validators import DataQualityValidator
 
 # Import timing utilities for synchronization
@@ -49,6 +50,7 @@ except ImportError:
         sources_count: int = 0
         time_span_seconds: float = 0.0
         synchronization_success_rate: float = 0.0
+
 
 logger = get_logger(__name__, LogComponent.CORE)
 
@@ -814,7 +816,7 @@ class CollectionOrchestrator:
         self._collectors_registered_for_health = True
         self.logger.info(
             "All collectors initialized and registered for health monitoring",
-            collector_count=len(self.collectors)
+            collector_count=len(self.collectors),
         )
 
     async def get_health_status(self) -> dict[str, Any]:

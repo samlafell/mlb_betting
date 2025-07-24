@@ -21,13 +21,19 @@ def data_quality_group():
 
 
 @data_quality_group.command()
-@click.option('--execute', is_flag=True, help='Execute the SQL scripts (dry-run by default)')
-@click.option('--phase', type=click.Choice(['1', '2', 'all']), default='all',
-              help='Which phase to run (1=mapping, 2=validation, all=both)')
+@click.option(
+    "--execute", is_flag=True, help="Execute the SQL scripts (dry-run by default)"
+)
+@click.option(
+    "--phase",
+    type=click.Choice(["1", "2", "all"]),
+    default="all",
+    help="Which phase to run (1=mapping, 2=validation, all=both)",
+)
 def setup(execute: bool, phase: str):
     """
     Setup data quality infrastructure improvements.
-    
+
     Phase 1: Sportsbook mapping system
     Phase 2: Data validation and completeness scoring
     """
@@ -51,17 +57,21 @@ async def _run_setup(connection, execute: bool, phase: str):
 
     sql_files = []
 
-    if phase in ['1', 'all']:
-        sql_files.append({
-            'name': 'Phase 1: Sportsbook Mapping System',
-            'file': 'sql/improvements/01_sportsbook_mapping_system.sql'
-        })
+    if phase in ["1", "all"]:
+        sql_files.append(
+            {
+                "name": "Phase 1: Sportsbook Mapping System",
+                "file": "sql/improvements/01_sportsbook_mapping_system.sql",
+            }
+        )
 
-    if phase in ['2', 'all']:
-        sql_files.append({
-            'name': 'Phase 2: Data Validation and Completeness',
-            'file': 'sql/improvements/02_data_validation_and_completeness.sql'
-        })
+    if phase in ["2", "all"]:
+        sql_files.append(
+            {
+                "name": "Phase 2: Data Validation and Completeness",
+                "file": "sql/improvements/02_data_validation_and_completeness.sql",
+            }
+        )
 
     await connection.connect()
     try:
@@ -70,12 +80,14 @@ async def _run_setup(connection, execute: bool, phase: str):
 
             try:
                 # Read SQL file
-                with open(sql_config['file']) as f:
+                with open(sql_config["file"]) as f:
                     sql_content = f.read()
 
                 if execute:
                     # Execute the SQL
-                    await connection.execute_async(sql_content, fetch=None, table="data_quality_setup")
+                    await connection.execute_async(
+                        sql_content, fetch=None, table="data_quality_setup"
+                    )
                     click.echo(f"✅ {sql_config['name']} applied successfully")
                 else:
                     click.echo(f"📄 Would execute: {sql_config['file']}")
@@ -90,10 +102,14 @@ async def _run_setup(connection, execute: bool, phase: str):
 
 
 @data_quality_group.command()
-@click.option('--date', type=click.DateTime(formats=['%Y-%m-%d']),
-              help='Target date (YYYY-MM-DD), defaults to today')
-@click.option('--force-update', is_flag=True,
-              help='Update existing sharp action records')
+@click.option(
+    "--date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Target date (YYYY-MM-DD), defaults to today",
+)
+@click.option(
+    "--force-update", is_flag=True, help="Update existing sharp action records"
+)
 def update_sharp_action(date: datetime | None, force_update: bool):
     """Update sharp action indicators for betting lines."""
 
@@ -107,12 +123,11 @@ def update_sharp_action(date: datetime | None, force_update: bool):
 
         result = asyncio.run(
             service.update_sharp_action_indicators(
-                target_date=target_date,
-                force_update=force_update
+                target_date=target_date, force_update=force_update
             )
         )
 
-        if result['success']:
+        if result["success"]:
             click.echo(f"✅ Processed {result['games_processed']} games")
             click.echo(f"📊 Updated {result['records_updated']} records")
         else:
@@ -125,15 +140,25 @@ def update_sharp_action(date: datetime | None, force_update: bool):
 
 
 @data_quality_group.command()
-@click.option('--start-date', type=click.DateTime(formats=['%Y-%m-%d']),
-              help='Start date for backfill (YYYY-MM-DD)')
-@click.option('--end-date', type=click.DateTime(formats=['%Y-%m-%d']),
-              help='End date for backfill (YYYY-MM-DD), defaults to today')
-@click.option('--max-days', type=int, default=30,
-              help='Maximum number of days to process in one run')
-def backfill_sharp_action(start_date: datetime | None,
-                         end_date: datetime | None,
-                         max_days: int):
+@click.option(
+    "--start-date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Start date for backfill (YYYY-MM-DD)",
+)
+@click.option(
+    "--end-date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="End date for backfill (YYYY-MM-DD), defaults to today",
+)
+@click.option(
+    "--max-days",
+    type=int,
+    default=30,
+    help="Maximum number of days to process in one run",
+)
+def backfill_sharp_action(
+    start_date: datetime | None, end_date: datetime | None, max_days: int
+):
     """Backfill sharp action indicators for historical data."""
 
     end_dt = end_date if end_date else datetime.now()
@@ -142,7 +167,9 @@ def backfill_sharp_action(start_date: datetime | None,
     # Limit the range to max_days
     if (end_dt - start_dt).days > max_days:
         start_dt = end_dt - timedelta(days=max_days)
-        click.echo(f"⚠️  Limited range to {max_days} days: {start_dt.date()} to {end_dt.date()}")
+        click.echo(
+            f"⚠️  Limited range to {max_days} days: {start_dt.date()} to {end_dt.date()}"
+        )
 
     click.echo(f"📅 Backfilling sharp action from {start_dt.date()} to {end_dt.date()}")
 
@@ -161,14 +188,16 @@ def backfill_sharp_action(start_date: datetime | None,
             result = asyncio.run(
                 service.update_sharp_action_indicators(
                     target_date=current_date,
-                    force_update=False  # Don't overwrite existing data
+                    force_update=False,  # Don't overwrite existing data
                 )
             )
 
-            if result['success']:
-                total_games += result['games_processed']
-                total_records += result['records_updated']
-                click.echo(f"  ✅ {result['games_processed']} games, {result['records_updated']} records")
+            if result["success"]:
+                total_games += result["games_processed"]
+                total_records += result["records_updated"]
+                click.echo(
+                    f"  ✅ {result['games_processed']} games, {result['records_updated']} records"
+                )
             else:
                 click.echo(f"  ❌ Failed: {result.get('error', 'Unknown error')}")
 
@@ -183,8 +212,8 @@ def backfill_sharp_action(start_date: datetime | None,
 
 
 @data_quality_group.command()
-@click.option('--detailed', is_flag=True, help='Show detailed breakdown by source')
-@click.option('--days', type=int, default=30, help='Number of days to analyze')
+@click.option("--detailed", is_flag=True, help="Show detailed breakdown by source")
+@click.option("--days", type=int, default=30, help="Number of days to analyze")
 def status(detailed: bool, days: int):
     """Show current data quality status and metrics."""
 
@@ -217,12 +246,12 @@ async def _show_status(connection, detailed: bool, days: int):
         click.echo("-" * 70)
 
         for row in dashboard_rows:
-            table_name = row['table_name']
-            total_rows = row['total_rows']
-            sportsbook_pct = row['sportsbook_id_pct']
-            sharp_action_pct = row['sharp_action_pct']
-            betting_pct_pct = row['betting_pct_pct']
-            avg_completeness = row['avg_completeness']
+            table_name = row["table_name"]
+            total_rows = row["total_rows"]
+            sportsbook_pct = row["sportsbook_id_pct"]
+            sharp_action_pct = row["sharp_action_pct"]
+            betting_pct_pct = row["betting_pct_pct"]
+            avg_completeness = row["avg_completeness"]
 
             click.echo(f"\n📋 {table_name.upper()} Table:")
             click.echo(f"  Total Records: {total_rows:,}")
@@ -250,22 +279,24 @@ async def _show_status(connection, detailed: bool, days: int):
                 LIMIT 20
             """
 
-            trend_rows = await conn.fetch(trend_query.replace('%s', f"'{days} days'"))
+            trend_rows = await conn.fetch(trend_query.replace("%s", f"'{days} days'"))
 
             if trend_rows:
                 click.echo(f"\n📈 Recent Quality Trends (Last {days} days):")
                 click.echo("-" * 70)
 
                 for row in trend_rows:
-                    date_str = row['quality_date'].strftime('%Y-%m-%d')
-                    table_name = row['table_name']
-                    daily_records = row['daily_records']
-                    avg_completeness = row['avg_completeness']
-                    sportsbook_mapping_pct = row['sportsbook_mapping_pct']
+                    date_str = row["quality_date"].strftime("%Y-%m-%d")
+                    table_name = row["table_name"]
+                    daily_records = row["daily_records"]
+                    avg_completeness = row["avg_completeness"]
+                    sportsbook_mapping_pct = row["sportsbook_mapping_pct"]
 
-                    click.echo(f"  {date_str} {table_name}: {daily_records} records, "
-                             f"{avg_completeness:.3f} completeness, "
-                             f"{sportsbook_mapping_pct}% mapped")
+                    click.echo(
+                        f"  {date_str} {table_name}: {daily_records} records, "
+                        f"{avg_completeness:.3f} completeness, "
+                        f"{sportsbook_mapping_pct}% mapped"
+                    )
 
         # Data source analysis if detailed
         if detailed:
@@ -280,12 +311,12 @@ async def _show_status(connection, detailed: bool, days: int):
             click.echo("-" * 70)
 
             for row in source_rows:
-                source = row['source']
-                total_records = row['total_records']
-                mapping_success = row['sportsbook_mapping_success_pct']
-                avg_completeness = row['avg_completeness']
-                distinct_books_found = row['distinct_sportsbooks_found']
-                distinct_books_mapped = row['distinct_sportsbooks_mapped']
+                source = row["source"]
+                total_records = row["total_records"]
+                mapping_success = row["sportsbook_mapping_success_pct"]
+                avg_completeness = row["avg_completeness"]
+                distinct_books_found = row["distinct_sportsbooks_found"]
+                distinct_books_mapped = row["distinct_sportsbooks_mapped"]
 
                 click.echo(f"\n📡 {source}:")
                 click.echo(f"  Total Records: {total_records:,}")
@@ -329,19 +360,23 @@ async def _health_check(connection):
         service = SharpActionDetectionService(connection)
         health_result = await service.health_check()
 
-        if health_result.get('status') == 'healthy':
+        if health_result.get("status") == "healthy":
             click.echo("✅ Sharp Action Detection Service: OK")
-            recent_records = health_result.get('recent_sharp_action_records', 0)
+            recent_records = health_result.get("recent_sharp_action_records", 0)
             click.echo(f"  Recent activity: {recent_records} records (last 7 days)")
         else:
-            click.echo(f"❌ Sharp Action Detection Service: {health_result.get('error', 'Unknown issue')}")
+            click.echo(
+                f"❌ Sharp Action Detection Service: {health_result.get('error', 'Unknown issue')}"
+            )
     except Exception as e:
         click.echo(f"❌ Sharp Action Detection Service: FAILED - {str(e)}")
 
     # Check data quality views
     try:
         async with connection.get_async_connection() as conn:
-            await conn.fetchval("SELECT COUNT(*) FROM core_betting.data_quality_dashboard")
+            await conn.fetchval(
+                "SELECT COUNT(*) FROM core_betting.data_quality_dashboard"
+            )
         click.echo("✅ Data Quality Views: OK")
     except Exception as e:
         click.echo(f"❌ Data Quality Views: FAILED - {str(e)}")

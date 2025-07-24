@@ -27,6 +27,7 @@ logger = structlog.get_logger(__name__)
 
 class DataQualityLevel(Enum):
     """Data quality levels with scoring thresholds."""
+
     EXCEPTIONAL = ("EXCEPTIONAL", 0.95)
     HIGH = ("HIGH", 0.80)
     MEDIUM = ("MEDIUM", 0.60)
@@ -41,6 +42,7 @@ class DataQualityLevel(Enum):
 @dataclass
 class UnifiedCollectionResult:
     """Result of unified data collection operation."""
+
     status: CollectionStatus
     records_processed: int
     records_stored: int
@@ -64,6 +66,7 @@ class UnifiedCollectionResult:
 @dataclass
 class ValidationResult:
     """Result of data validation."""
+
     is_valid: bool
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -80,6 +83,7 @@ class ValidationResult:
 @dataclass
 class PerformanceMetrics:
     """Performance metrics for collection operations."""
+
     total_records: int = 0
     successful_records: int = 0
     failed_records: int = 0
@@ -89,11 +93,19 @@ class PerformanceMetrics:
 
     @property
     def success_rate(self) -> float:
-        return (self.successful_records / self.total_records) if self.total_records > 0 else 0.0
+        return (
+            (self.successful_records / self.total_records)
+            if self.total_records > 0
+            else 0.0
+        )
 
     @property
     def error_rate(self) -> float:
-        return (self.failed_records / self.total_records) if self.total_records > 0 else 0.0
+        return (
+            (self.failed_records / self.total_records)
+            if self.total_records > 0
+            else 0.0
+        )
 
 
 class ConnectionPool:
@@ -116,7 +128,7 @@ class ConnectionPool:
                 database=self.settings.database.database,
                 user=self.settings.database.user,
                 password=self.settings.database.password,
-                cursor_factory=RealDictCursor
+                cursor_factory=RealDictCursor,
             )
             yield conn
         except Exception as e:
@@ -140,11 +152,11 @@ class MLBStatsAPIGameResolver:
     def resolve_game_id(self, external_id: str, source: DataSource) -> int | None:
         """
         Resolve external game ID to core_betting.games.id with caching.
-        
+
         Args:
             external_id: Source-specific game identifier
             source: Data source type
-            
+
         Returns:
             Database game ID or None if not found
         """
@@ -160,27 +172,27 @@ class MLBStatsAPIGameResolver:
                 with conn.cursor() as cur:
                     # Dynamic query based on source
                     source_column_map = {
-                        DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: 'sportsbookreview_game_id',
-                        DataSource.ACTION_NETWORK: 'action_network_game_id',
-                        DataSource.VSIN: 'vsin_game_id',
-                        DataSource.SPORTS_BETTING_DIME: 'sbd_game_id'
+                        DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: "sportsbookreview_game_id",
+                        DataSource.ACTION_NETWORK: "action_network_game_id",
+                        DataSource.VSIN: "vsin_game_id",
+                        DataSource.SPORTS_BETTING_DIME: "sbd_game_id",
                     }
 
                     column = source_column_map.get(source)
                     if column:
                         cur.execute(
                             f"SELECT id FROM core_betting.games WHERE {column} = %s",
-                            (external_id,)
+                            (external_id,),
                         )
                     else:
                         # Try generic lookup
                         cur.execute(
                             "SELECT id FROM core_betting.games WHERE external_source_id = %s",
-                            (external_id,)
+                            (external_id,),
                         )
 
                     result = cur.fetchone()
-                    game_id = result['id'] if result else None
+                    game_id = result["id"] if result else None
 
                     # Cache the result
                     self._cache[cache_key] = (game_id, datetime.now())
@@ -189,7 +201,7 @@ class MLBStatsAPIGameResolver:
                         self.logger.warning(
                             "Game not found for external ID",
                             external_id=external_id,
-                            source=source.value
+                            source=source.value,
                         )
 
                     return game_id
@@ -199,11 +211,13 @@ class MLBStatsAPIGameResolver:
                 "Error resolving game ID",
                 external_id=external_id,
                 source=source.value,
-                error=str(e)
+                error=str(e),
             )
             return None
 
-    def batch_resolve_game_ids(self, game_requests: list[tuple[str, DataSource]]) -> dict[str, int | None]:
+    def batch_resolve_game_ids(
+        self, game_requests: list[tuple[str, DataSource]]
+    ) -> dict[str, int | None]:
         """Batch resolve multiple game IDs for improved performance."""
         results = {}
 
@@ -234,24 +248,24 @@ class MLBStatsAPIGameResolver:
                     # Process each source group
                     for source, external_ids in source_groups.items():
                         source_column_map = {
-                            DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: 'sportsbookreview_game_id',
-                            DataSource.ACTION_NETWORK: 'action_network_game_id',
-                            DataSource.VSIN: 'vsin_game_id',
-                            DataSource.SPORTS_BETTING_DIME: 'sbd_game_id'
+                            DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: "sportsbookreview_game_id",
+                            DataSource.ACTION_NETWORK: "action_network_game_id",
+                            DataSource.VSIN: "vsin_game_id",
+                            DataSource.SPORTS_BETTING_DIME: "sbd_game_id",
                         }
 
                         column = source_column_map.get(source)
                         if column:
-                            placeholders = ','.join(['%s'] * len(external_ids))
+                            placeholders = ",".join(["%s"] * len(external_ids))
                             cur.execute(
                                 f"SELECT id, {column} FROM core_betting.games WHERE {column} IN ({placeholders})",
-                                external_ids
+                                external_ids,
                             )
 
                             batch_results = cur.fetchall()
                             for row in batch_results:
                                 external_id = row[column]
-                                game_id = row['id']
+                                game_id = row["id"]
                                 results[external_id] = game_id
 
                                 # Cache the result
@@ -288,34 +302,34 @@ class SportsbookMapper:
     def _initialize_fuzzy_mappings(self) -> dict[str, str]:
         """Initialize fuzzy name mappings for common sportsbook variations."""
         return {
-            'dk': 'DraftKings',
-            'draftkings': 'DraftKings',
-            'fanduel': 'FanDuel',
-            'fd': 'FanDuel',
-            'betmgm': 'BetMGM',
-            'mgm': 'BetMGM',
-            'caesars': 'Caesars',
-            'czr': 'Caesars',
-            'pointsbet': 'PointsBet',
-            'pb': 'PointsBet',
-            'barstool': 'Barstool',
-            'bovada': 'Bovada',
-            'betonline': 'BetOnline',
-            'bet365': 'Bet365',
-            'williamhill': 'William Hill',
-            'wh': 'William Hill',
-            'circa': 'Circa Sports',
-            'westgate': 'Westgate SuperBook',
-            'superbook': 'Westgate SuperBook'
+            "dk": "DraftKings",
+            "draftkings": "DraftKings",
+            "fanduel": "FanDuel",
+            "fd": "FanDuel",
+            "betmgm": "BetMGM",
+            "mgm": "BetMGM",
+            "caesars": "Caesars",
+            "czr": "Caesars",
+            "pointsbet": "PointsBet",
+            "pb": "PointsBet",
+            "barstool": "Barstool",
+            "bovada": "Bovada",
+            "betonline": "BetOnline",
+            "bet365": "Bet365",
+            "williamhill": "William Hill",
+            "wh": "William Hill",
+            "circa": "Circa Sports",
+            "westgate": "Westgate SuperBook",
+            "superbook": "Westgate SuperBook",
         }
 
     def resolve_sportsbook_id(self, sportsbook_name: str) -> int | None:
         """
         Resolve sportsbook name to standardized ID with fuzzy matching.
-        
+
         Args:
             sportsbook_name: Sportsbook name from source
-            
+
         Returns:
             Sportsbook ID or None if not found
         """
@@ -337,7 +351,7 @@ class SportsbookMapper:
                     # Try exact match first
                     cur.execute(
                         "SELECT id FROM core_betting.sportsbooks WHERE LOWER(name) = %s",
-                        (clean_name,)
+                        (clean_name,),
                     )
                     result = cur.fetchone()
 
@@ -345,7 +359,7 @@ class SportsbookMapper:
                         # Try normalized name
                         cur.execute(
                             "SELECT id FROM core_betting.sportsbooks WHERE LOWER(name) = %s",
-                            (normalized_name.lower(),)
+                            (normalized_name.lower(),),
                         )
                         result = cur.fetchone()
 
@@ -353,18 +367,16 @@ class SportsbookMapper:
                         # Try partial match
                         cur.execute(
                             "SELECT id, name FROM core_betting.sportsbooks WHERE LOWER(name) LIKE %s",
-                            (f"%{clean_name}%",)
+                            (f"%{clean_name}%",),
                         )
                         result = cur.fetchone()
 
                     if result:
-                        sportsbook_id = result['id']
+                        sportsbook_id = result["id"]
                         self._cache[clean_name] = sportsbook_id
                         return sportsbook_id
 
-                    self.logger.warning(
-                        f"Sportsbook not found: {sportsbook_name}"
-                    )
+                    self.logger.warning(f"Sportsbook not found: {sportsbook_name}")
                     self._cache[clean_name] = None
                     return None
 
@@ -372,7 +384,7 @@ class SportsbookMapper:
             self.logger.error(
                 "Error resolving sportsbook ID",
                 sportsbook_name=sportsbook_name,
-                error=str(e)
+                error=str(e),
             )
             return None
 
@@ -388,52 +400,151 @@ class DataQualityCalculator:
     def _initialize_field_weights(self) -> dict[str, dict[str, float]]:
         """Initialize field weights for different bet types."""
         return {
-            'moneyline': {
-                'core': {'home_ml': 0.15, 'away_ml': 0.15, 'odds_timestamp': 0.10, 'sportsbook': 0.10},
-                'opening_closing': {'opening_home_ml': 0.05, 'opening_away_ml': 0.05, 'closing_home_ml': 0.05, 'closing_away_ml': 0.05},
-                'volume': {'home_bets_percentage': 0.05, 'away_bets_percentage': 0.05, 'home_money_percentage': 0.05, 'away_money_percentage': 0.05},
-                'analysis': {'sharp_action': 0.05, 'reverse_line_movement': 0.02, 'steam_move': 0.02},
-                'outcome': {'winning_side': 0.05, 'profit_loss': 0.05}
+            "moneyline": {
+                "core": {
+                    "home_ml": 0.15,
+                    "away_ml": 0.15,
+                    "odds_timestamp": 0.10,
+                    "sportsbook": 0.10,
+                },
+                "opening_closing": {
+                    "opening_home_ml": 0.05,
+                    "opening_away_ml": 0.05,
+                    "closing_home_ml": 0.05,
+                    "closing_away_ml": 0.05,
+                },
+                "volume": {
+                    "home_bets_percentage": 0.05,
+                    "away_bets_percentage": 0.05,
+                    "home_money_percentage": 0.05,
+                    "away_money_percentage": 0.05,
+                },
+                "analysis": {
+                    "sharp_action": 0.05,
+                    "reverse_line_movement": 0.02,
+                    "steam_move": 0.02,
+                },
+                "outcome": {"winning_side": 0.05, "profit_loss": 0.05},
             },
-            'totals': {
-                'core': {'total_line': 0.10, 'over_price': 0.10, 'under_price': 0.10, 'odds_timestamp': 0.10, 'sportsbook': 0.10},
-                'opening_closing': {'opening_total': 0.05, 'opening_over_price': 0.05, 'opening_under_price': 0.05, 'closing_total': 0.05, 'closing_over_price': 0.05, 'closing_under_price': 0.05},
-                'volume': {'over_bets_percentage': 0.05, 'under_bets_percentage': 0.05, 'over_money_percentage': 0.03, 'under_money_percentage': 0.03},
-                'analysis': {'sharp_action': 0.05, 'reverse_line_movement': 0.02, 'steam_move': 0.02},
-                'outcome': {'total_score': 0.10}
+            "totals": {
+                "core": {
+                    "total_line": 0.10,
+                    "over_price": 0.10,
+                    "under_price": 0.10,
+                    "odds_timestamp": 0.10,
+                    "sportsbook": 0.10,
+                },
+                "opening_closing": {
+                    "opening_total": 0.05,
+                    "opening_over_price": 0.05,
+                    "opening_under_price": 0.05,
+                    "closing_total": 0.05,
+                    "closing_over_price": 0.05,
+                    "closing_under_price": 0.05,
+                },
+                "volume": {
+                    "over_bets_percentage": 0.05,
+                    "under_bets_percentage": 0.05,
+                    "over_money_percentage": 0.03,
+                    "under_money_percentage": 0.03,
+                },
+                "analysis": {
+                    "sharp_action": 0.05,
+                    "reverse_line_movement": 0.02,
+                    "steam_move": 0.02,
+                },
+                "outcome": {"total_score": 0.10},
             },
-            'spread': {
-                'core': {'spread_line': 0.10, 'home_spread_price': 0.10, 'away_spread_price': 0.10, 'odds_timestamp': 0.10, 'sportsbook': 0.10},
-                'opening_closing': {'opening_spread': 0.05, 'opening_home_price': 0.05, 'opening_away_price': 0.05, 'closing_spread': 0.05, 'closing_home_price': 0.05, 'closing_away_price': 0.05},
-                'volume': {'home_bets_percentage': 0.05, 'away_bets_percentage': 0.05, 'home_money_percentage': 0.03, 'away_money_percentage': 0.03},
-                'analysis': {'sharp_action': 0.05, 'reverse_line_movement': 0.02, 'steam_move': 0.02},
-                'outcome': {'final_score_difference': 0.10}
-            }
+            "spread": {
+                "core": {
+                    "spread_line": 0.10,
+                    "home_spread_price": 0.10,
+                    "away_spread_price": 0.10,
+                    "odds_timestamp": 0.10,
+                    "sportsbook": 0.10,
+                },
+                "opening_closing": {
+                    "opening_spread": 0.05,
+                    "opening_home_price": 0.05,
+                    "opening_away_price": 0.05,
+                    "closing_spread": 0.05,
+                    "closing_home_price": 0.05,
+                    "closing_away_price": 0.05,
+                },
+                "volume": {
+                    "home_bets_percentage": 0.05,
+                    "away_bets_percentage": 0.05,
+                    "home_money_percentage": 0.03,
+                    "away_money_percentage": 0.03,
+                },
+                "analysis": {
+                    "sharp_action": 0.05,
+                    "reverse_line_movement": 0.02,
+                    "steam_move": 0.02,
+                },
+                "outcome": {"final_score_difference": 0.10},
+            },
         }
 
     def _initialize_validation_rules(self) -> dict[str, dict[str, Any]]:
         """Initialize validation rules for different bet types."""
         return {
-            'moneyline': {
-                'home_ml': {'type': int, 'range': (-10000, 10000), 'required': True},
-                'away_ml': {'type': int, 'range': (-10000, 10000), 'required': True},
-                'home_bets_percentage': {'type': float, 'range': (0, 100), 'required': False},
-                'away_bets_percentage': {'type': float, 'range': (0, 100), 'required': False}
+            "moneyline": {
+                "home_ml": {"type": int, "range": (-10000, 10000), "required": True},
+                "away_ml": {"type": int, "range": (-10000, 10000), "required": True},
+                "home_bets_percentage": {
+                    "type": float,
+                    "range": (0, 100),
+                    "required": False,
+                },
+                "away_bets_percentage": {
+                    "type": float,
+                    "range": (0, 100),
+                    "required": False,
+                },
             },
-            'totals': {
-                'total_line': {'type': float, 'range': (0, 50), 'required': True},
-                'over_price': {'type': int, 'range': (-10000, 10000), 'required': True},
-                'under_price': {'type': int, 'range': (-10000, 10000), 'required': True},
-                'over_bets_percentage': {'type': float, 'range': (0, 100), 'required': False},
-                'under_bets_percentage': {'type': float, 'range': (0, 100), 'required': False}
+            "totals": {
+                "total_line": {"type": float, "range": (0, 50), "required": True},
+                "over_price": {"type": int, "range": (-10000, 10000), "required": True},
+                "under_price": {
+                    "type": int,
+                    "range": (-10000, 10000),
+                    "required": True,
+                },
+                "over_bets_percentage": {
+                    "type": float,
+                    "range": (0, 100),
+                    "required": False,
+                },
+                "under_bets_percentage": {
+                    "type": float,
+                    "range": (0, 100),
+                    "required": False,
+                },
             },
-            'spread': {
-                'spread_line': {'type': float, 'range': (-50, 50), 'required': True},
-                'home_spread_price': {'type': int, 'range': (-10000, 10000), 'required': True},
-                'away_spread_price': {'type': int, 'range': (-10000, 10000), 'required': True},
-                'home_bets_percentage': {'type': float, 'range': (0, 100), 'required': False},
-                'away_bets_percentage': {'type': float, 'range': (0, 100), 'required': False}
-            }
+            "spread": {
+                "spread_line": {"type": float, "range": (-50, 50), "required": True},
+                "home_spread_price": {
+                    "type": int,
+                    "range": (-10000, 10000),
+                    "required": True,
+                },
+                "away_spread_price": {
+                    "type": int,
+                    "range": (-10000, 10000),
+                    "required": True,
+                },
+                "home_bets_percentage": {
+                    "type": float,
+                    "range": (0, 100),
+                    "required": False,
+                },
+                "away_bets_percentage": {
+                    "type": float,
+                    "range": (0, 100),
+                    "required": False,
+                },
+            },
         }
 
     def validate_record(self, data: dict[str, Any], bet_type: str) -> ValidationResult:
@@ -452,7 +563,7 @@ class DataQualityCalculator:
             value = data.get(field_name)
 
             # Check required fields
-            if rule.get('required', False) and value is None:
+            if rule.get("required", False) and value is None:
                 result.add_error(f"Required field '{field_name}' is missing")
                 continue
 
@@ -461,7 +572,7 @@ class DataQualityCalculator:
                 continue
 
             # Type validation
-            expected_type = rule.get('type')
+            expected_type = rule.get("type")
             if expected_type and not isinstance(value, expected_type):
                 try:
                     # Try to convert
@@ -471,14 +582,18 @@ class DataQualityCalculator:
                         value = float(value)
                     data[field_name] = value  # Update the data with converted value
                 except (ValueError, TypeError):
-                    result.add_error(f"Field '{field_name}' has invalid type. Expected {expected_type.__name__}, got {type(value).__name__}")
+                    result.add_error(
+                        f"Field '{field_name}' has invalid type. Expected {expected_type.__name__}, got {type(value).__name__}"
+                    )
                     continue
 
             # Range validation
-            if 'range' in rule:
-                min_val, max_val = rule['range']
+            if "range" in rule:
+                min_val, max_val = rule["range"]
                 if not (min_val <= value <= max_val):
-                    result.add_error(f"Field '{field_name}' value {value} is outside valid range ({min_val}, {max_val})")
+                    result.add_error(
+                        f"Field '{field_name}' value {value} is outside valid range ({min_val}, {max_val})"
+                    )
 
         # Additional business logic validation
         self._validate_business_logic(data, bet_type, result)
@@ -488,23 +603,29 @@ class DataQualityCalculator:
 
         return result
 
-    def _validate_business_logic(self, data: dict[str, Any], bet_type: str, result: ValidationResult):
+    def _validate_business_logic(
+        self, data: dict[str, Any], bet_type: str, result: ValidationResult
+    ):
         """Validate business logic rules."""
         # Validate percentage fields sum to 100 (with tolerance)
-        if bet_type == 'moneyline':
-            home_pct = data.get('home_bets_percentage')
-            away_pct = data.get('away_bets_percentage')
+        if bet_type == "moneyline":
+            home_pct = data.get("home_bets_percentage")
+            away_pct = data.get("away_bets_percentage")
             if home_pct is not None and away_pct is not None:
                 total_pct = home_pct + away_pct
                 if abs(total_pct - 100) > 5:  # 5% tolerance
-                    result.add_warning(f"Betting percentages sum to {total_pct}%, expected ~100%")
+                    result.add_warning(
+                        f"Betting percentages sum to {total_pct}%, expected ~100%"
+                    )
 
         # Validate timestamp is recent (within last 30 days)
-        odds_timestamp = data.get('odds_timestamp')
+        odds_timestamp = data.get("odds_timestamp")
         if odds_timestamp:
             try:
                 if isinstance(odds_timestamp, str):
-                    timestamp = datetime.fromisoformat(odds_timestamp.replace('Z', '+00:00'))
+                    timestamp = datetime.fromisoformat(
+                        odds_timestamp.replace("Z", "+00:00")
+                    )
                 else:
                     timestamp = odds_timestamp
 
@@ -515,18 +636,20 @@ class DataQualityCalculator:
                 result.add_error("Invalid odds_timestamp format")
 
         # Validate sportsbook name
-        sportsbook = data.get('sportsbook')
+        sportsbook = data.get("sportsbook")
         if sportsbook and len(sportsbook.strip()) == 0:
             result.add_error("Sportsbook name cannot be empty")
 
-    def calculate_completeness_score(self, data: dict[str, Any], bet_type: str) -> float:
+    def calculate_completeness_score(
+        self, data: dict[str, Any], bet_type: str
+    ) -> float:
         """
         Calculate completeness score based on available fields.
-        
+
         Args:
             data: Raw betting line data
             bet_type: Type of bet (moneyline, totals, spread)
-            
+
         Returns:
             Completeness score (0.0 to 1.0)
         """
@@ -544,15 +667,20 @@ class DataQualityCalculator:
 
         return min(score, 1.0)
 
-    def determine_quality_level(self, completeness_score: float, reliability_score: float, validation_result: ValidationResult = None) -> str:
+    def determine_quality_level(
+        self,
+        completeness_score: float,
+        reliability_score: float,
+        validation_result: ValidationResult = None,
+    ) -> str:
         """
         Determine overall quality level based on multiple factors.
-        
+
         Args:
             completeness_score: Completeness score (0.0 to 1.0)
             reliability_score: Source reliability score (0.0 to 1.0)
             validation_result: Optional validation result
-            
+
         Returns:
             Quality level string
         """
@@ -575,7 +703,7 @@ class DataQualityCalculator:
 class UnifiedBettingLinesCollector(ABC):
     """
     Enhanced base class for all betting line collectors with performance optimizations.
-    
+
     Provides standardized integration with core_betting schema,
     MLB Stats API normalization, data quality tracking, and performance monitoring.
     """
@@ -615,13 +743,17 @@ class UnifiedBettingLinesCollector(ABC):
         # Enable/disable features based on source
         self.enable_validation = True
         self.enable_performance_tracking = True
-        self.enable_advanced_quality_checks = source in [DataSource.MLB_STATS_API, DataSource.ACTION_NETWORK, DataSource.VSIN]
+        self.enable_advanced_quality_checks = source in [
+            DataSource.MLB_STATS_API,
+            DataSource.ACTION_NETWORK,
+            DataSource.VSIN,
+        ]
 
     @abstractmethod
     def collect_raw_data(self, **kwargs) -> list[dict[str, Any]]:
         """
         Collect raw betting line data from the source.
-        
+
         Returns:
             List of raw betting line dictionaries
         """
@@ -630,7 +762,7 @@ class UnifiedBettingLinesCollector(ABC):
     def collect_and_store(self, **kwargs) -> CollectionResult:
         """
         Enhanced collection with batch processing and performance monitoring.
-        
+
         Returns:
             Collection result with status and metrics
         """
@@ -648,7 +780,7 @@ class UnifiedBettingLinesCollector(ABC):
                     status=CollectionStatus.SUCCESS,
                     records_processed=0,
                     records_stored=0,
-                    message="No data available for collection"
+                    message="No data available for collection",
                 )
 
             self.performance_metrics.total_records = len(raw_data)
@@ -661,8 +793,12 @@ class UnifiedBettingLinesCollector(ABC):
 
             # Calculate final metrics
             self.performance_metrics.successful_records = total_stored
-            self.performance_metrics.failed_records = self.performance_metrics.total_records - total_stored
-            self.performance_metrics.processing_time = (datetime.now() - start_time).total_seconds()
+            self.performance_metrics.failed_records = (
+                self.performance_metrics.total_records - total_stored
+            )
+            self.performance_metrics.processing_time = (
+                datetime.now() - start_time
+            ).total_seconds()
 
             # Log performance metrics
             self.logger.info(
@@ -671,14 +807,14 @@ class UnifiedBettingLinesCollector(ABC):
                 total_records=self.performance_metrics.total_records,
                 successful_records=self.performance_metrics.successful_records,
                 success_rate=f"{self.performance_metrics.success_rate:.2%}",
-                processing_time=f"{self.performance_metrics.processing_time:.2f}s"
+                processing_time=f"{self.performance_metrics.processing_time:.2f}s",
             )
 
             return UnifiedCollectionResult(
                 status=CollectionStatus.SUCCESS,
                 records_processed=self.performance_metrics.total_records,
                 records_stored=self.performance_metrics.successful_records,
-                message=f"Successfully stored {self.performance_metrics.successful_records}/{self.performance_metrics.total_records} records"
+                message=f"Successfully stored {self.performance_metrics.successful_records}/{self.performance_metrics.total_records} records",
             )
 
         except Exception as e:
@@ -687,7 +823,7 @@ class UnifiedBettingLinesCollector(ABC):
                 status=CollectionStatus.FAILED,
                 records_processed=0,
                 records_stored=0,
-                message=f"Collection failed: {str(e)}"
+                message=f"Collection failed: {str(e)}",
             )
 
     def _process_in_batches(self, raw_data: list[dict[str, Any]]) -> int:
@@ -696,35 +832,39 @@ class UnifiedBettingLinesCollector(ABC):
         batch_id = uuid.uuid4()
 
         # Pre-resolve game IDs in batches
-        game_id_requests = [(record.get('external_source_id'), self.source) for record in raw_data if record.get('external_source_id')]
+        game_id_requests = [
+            (record.get("external_source_id"), self.source)
+            for record in raw_data
+            if record.get("external_source_id")
+        ]
         game_id_map = self.game_resolver.batch_resolve_game_ids(game_id_requests)
 
         # Process records in batches
         for i in range(0, len(raw_data), self.batch_size):
-            batch = raw_data[i:i + self.batch_size]
+            batch = raw_data[i : i + self.batch_size]
             batch_stored = 0
 
             for record in batch:
                 try:
                     # Use pre-resolved game ID
-                    external_id = record.get('external_source_id')
+                    external_id = record.get("external_source_id")
                     game_id = game_id_map.get(external_id) if external_id else None
 
                     if game_id:
-                        result = self._process_and_store_record_with_game_id(record, batch_id, game_id)
+                        result = self._process_and_store_record_with_game_id(
+                            record, batch_id, game_id
+                        )
                         if result:
                             batch_stored += 1
                     else:
                         self.logger.warning(
                             "Skipping record due to missing game ID",
-                            external_source_id=external_id
+                            external_source_id=external_id,
                         )
 
                 except Exception as e:
                     self.logger.error(
-                        "Error processing record in batch",
-                        record=record,
-                        error=str(e)
+                        "Error processing record in batch", record=record, error=str(e)
                     )
                     continue
 
@@ -732,9 +872,9 @@ class UnifiedBettingLinesCollector(ABC):
 
             # Log batch progress
             self.logger.debug(
-                f"Processed batch {i//self.batch_size + 1}",
+                f"Processed batch {i // self.batch_size + 1}",
                 batch_size=len(batch),
-                stored=batch_stored
+                stored=batch_stored,
             )
 
         return total_stored
@@ -751,75 +891,80 @@ class UnifiedBettingLinesCollector(ABC):
                     total_stored += 1
             except Exception as e:
                 self.logger.error(
-                    "Error processing record",
-                    record=record,
-                    error=str(e)
+                    "Error processing record", record=record, error=str(e)
                 )
                 continue
 
         return total_stored
 
-    def _process_and_store_record(self, record: dict[str, Any], batch_id: uuid.UUID) -> bool:
+    def _process_and_store_record(
+        self, record: dict[str, Any], batch_id: uuid.UUID
+    ) -> bool:
         """
         Process and store a single betting line record.
-        
+
         Args:
             record: Raw betting line record
             batch_id: Collection batch identifier
-            
+
         Returns:
             True if stored successfully, False otherwise
         """
         try:
             # Resolve game ID
             game_id = self.game_resolver.resolve_game_id(
-                record['external_source_id'],
-                self.source
+                record["external_source_id"], self.source
             )
 
             if not game_id:
                 self.logger.warning(
                     "Could not resolve game ID",
-                    external_source_id=record.get('external_source_id'),
-                    source=self.source.value
+                    external_source_id=record.get("external_source_id"),
+                    source=self.source.value,
                 )
                 return False
 
-            return self._process_and_store_record_with_game_id(record, batch_id, game_id)
+            return self._process_and_store_record_with_game_id(
+                record, batch_id, game_id
+            )
 
         except Exception as e:
             self.logger.error("Error processing record", error=str(e))
             return False
 
-    def _process_and_store_record_with_game_id(self, record: dict[str, Any], batch_id: uuid.UUID, game_id: int) -> bool:
+    def _process_and_store_record_with_game_id(
+        self, record: dict[str, Any], batch_id: uuid.UUID, game_id: int
+    ) -> bool:
         """
         Process and store record with pre-resolved game ID.
-        
+
         Args:
             record: Raw betting line record
             batch_id: Collection batch identifier
             game_id: Pre-resolved game ID
-            
+
         Returns:
             True if stored successfully, False otherwise
         """
         try:
             # Validate the record
-            bet_type = record.get('bet_type', 'moneyline')
-            validation_result = self.quality_calculator.validate_record(record, bet_type)
+            bet_type = record.get("bet_type", "moneyline")
+            validation_result = self.quality_calculator.validate_record(
+                record, bet_type
+            )
 
             if not validation_result.is_valid:
                 self.performance_metrics.validation_errors += 1
                 self.logger.warning(
                     "Record validation failed",
-                    external_source_id=record.get('external_source_id'),
-                    errors=validation_result.errors
+                    external_source_id=record.get("external_source_id"),
+                    errors=validation_result.errors,
                 )
                 return False
 
             # Resolve sportsbook ID
             sportsbook_id = self.sportsbook_mapper.resolve_sportsbook_id(
-                record['sportsbook']
+                record["sportsbook"]
             )
 
             # Calculate quality metrics
@@ -830,35 +975,35 @@ class UnifiedBettingLinesCollector(ABC):
 
             # Prepare unified record
             unified_record = {
-                'game_id': game_id,
-                'sportsbook_id': sportsbook_id,
-                'sportsbook': record['sportsbook'],
-                'odds_timestamp': record['odds_timestamp'],
-                'source': self.source.value,
-                'data_quality': quality_level,
-                'data_completeness_score': completeness_score,
-                'source_reliability_score': self.reliability_score,
-                'collection_batch_id': batch_id,
-                'external_source_id': record.get('external_source_id'),
-                'collection_method': record.get('collection_method', 'API'),
-                'source_api_version': record.get('source_api_version'),
-                'source_metadata': record.get('source_metadata', {}),
-                'game_datetime': record.get('game_datetime'),
-                'home_team': record.get('home_team'),
-                'away_team': record.get('away_team'),
-                'sharp_action': record.get('sharp_action'),
-                'reverse_line_movement': record.get('reverse_line_movement', False),
-                'steam_move': record.get('steam_move', False),
-                'winning_side': record.get('winning_side'),
-                'profit_loss': record.get('profit_loss'),
+                "game_id": game_id,
+                "sportsbook_id": sportsbook_id,
+                "sportsbook": record["sportsbook"],
+                "odds_timestamp": record["odds_timestamp"],
+                "source": self.source.value,
+                "data_quality": quality_level,
+                "data_completeness_score": completeness_score,
+                "source_reliability_score": self.reliability_score,
+                "collection_batch_id": batch_id,
+                "external_source_id": record.get("external_source_id"),
+                "collection_method": record.get("collection_method", "API"),
+                "source_api_version": record.get("source_api_version"),
+                "source_metadata": record.get("source_metadata", {}),
+                "game_datetime": record.get("game_datetime"),
+                "home_team": record.get("home_team"),
+                "away_team": record.get("away_team"),
+                "sharp_action": record.get("sharp_action"),
+                "reverse_line_movement": record.get("reverse_line_movement", False),
+                "steam_move": record.get("steam_move", False),
+                "winning_side": record.get("winning_side"),
+                "profit_loss": record.get("profit_loss"),
             }
 
             # Store based on bet type
-            if bet_type == 'moneyline':
+            if bet_type == "moneyline":
                 return self._store_moneyline(unified_record, record)
-            elif bet_type == 'totals':
+            elif bet_type == "totals":
                 return self._store_totals(unified_record, record)
-            elif bet_type == 'spread':
+            elif bet_type == "spread":
                 return self._store_spread(unified_record, record)
             else:
                 self.logger.warning(f"Unknown bet type: {bet_type}")
@@ -868,84 +1013,102 @@ class UnifiedBettingLinesCollector(ABC):
             self.logger.error("Error processing record with game ID", error=str(e))
             return False
 
-    def _store_moneyline(self, unified_record: dict[str, Any], raw_record: dict[str, Any]) -> bool:
+    def _store_moneyline(
+        self, unified_record: dict[str, Any], raw_record: dict[str, Any]
+    ) -> bool:
         """Store moneyline betting data."""
         try:
             # Add moneyline-specific fields
-            unified_record.update({
-                'home_ml': raw_record.get('home_ml'),
-                'away_ml': raw_record.get('away_ml'),
-                'opening_home_ml': raw_record.get('opening_home_ml'),
-                'opening_away_ml': raw_record.get('opening_away_ml'),
-                'closing_home_ml': raw_record.get('closing_home_ml'),
-                'closing_away_ml': raw_record.get('closing_away_ml'),
-                'home_bets_count': raw_record.get('home_bets_count'),
-                'away_bets_count': raw_record.get('away_bets_count'),
-                'home_bets_percentage': raw_record.get('home_bets_percentage'),
-                'away_bets_percentage': raw_record.get('away_bets_percentage'),
-                'home_money_percentage': raw_record.get('home_money_percentage'),
-                'away_money_percentage': raw_record.get('away_money_percentage'),
-            })
+            unified_record.update(
+                {
+                    "home_ml": raw_record.get("home_ml"),
+                    "away_ml": raw_record.get("away_ml"),
+                    "opening_home_ml": raw_record.get("opening_home_ml"),
+                    "opening_away_ml": raw_record.get("opening_away_ml"),
+                    "closing_home_ml": raw_record.get("closing_home_ml"),
+                    "closing_away_ml": raw_record.get("closing_away_ml"),
+                    "home_bets_count": raw_record.get("home_bets_count"),
+                    "away_bets_count": raw_record.get("away_bets_count"),
+                    "home_bets_percentage": raw_record.get("home_bets_percentage"),
+                    "away_bets_percentage": raw_record.get("away_bets_percentage"),
+                    "home_money_percentage": raw_record.get("home_money_percentage"),
+                    "away_money_percentage": raw_record.get("away_money_percentage"),
+                }
+            )
 
-            return self._execute_insert('core_betting.betting_lines_moneyline', unified_record)
+            return self._execute_insert(
+                "core_betting.betting_lines_moneyline", unified_record
+            )
 
         except Exception as e:
             self.logger.error("Error storing moneyline data", error=str(e))
             return False
 
-    def _store_totals(self, unified_record: dict[str, Any], raw_record: dict[str, Any]) -> bool:
+    def _store_totals(
+        self, unified_record: dict[str, Any], raw_record: dict[str, Any]
+    ) -> bool:
         """Store totals betting data."""
         try:
             # Add totals-specific fields
-            unified_record.update({
-                'total_line': raw_record.get('total_line'),
-                'over_price': raw_record.get('over_price'),
-                'under_price': raw_record.get('under_price'),
-                'opening_total': raw_record.get('opening_total'),
-                'opening_over_price': raw_record.get('opening_over_price'),
-                'opening_under_price': raw_record.get('opening_under_price'),
-                'closing_total': raw_record.get('closing_total'),
-                'closing_over_price': raw_record.get('closing_over_price'),
-                'closing_under_price': raw_record.get('closing_under_price'),
-                'over_bets_count': raw_record.get('over_bets_count'),
-                'under_bets_count': raw_record.get('under_bets_count'),
-                'over_bets_percentage': raw_record.get('over_bets_percentage'),
-                'under_bets_percentage': raw_record.get('under_bets_percentage'),
-                'over_money_percentage': raw_record.get('over_money_percentage'),
-                'under_money_percentage': raw_record.get('under_money_percentage'),
-                'total_score': raw_record.get('total_score'),
-            })
+            unified_record.update(
+                {
+                    "total_line": raw_record.get("total_line"),
+                    "over_price": raw_record.get("over_price"),
+                    "under_price": raw_record.get("under_price"),
+                    "opening_total": raw_record.get("opening_total"),
+                    "opening_over_price": raw_record.get("opening_over_price"),
+                    "opening_under_price": raw_record.get("opening_under_price"),
+                    "closing_total": raw_record.get("closing_total"),
+                    "closing_over_price": raw_record.get("closing_over_price"),
+                    "closing_under_price": raw_record.get("closing_under_price"),
+                    "over_bets_count": raw_record.get("over_bets_count"),
+                    "under_bets_count": raw_record.get("under_bets_count"),
+                    "over_bets_percentage": raw_record.get("over_bets_percentage"),
+                    "under_bets_percentage": raw_record.get("under_bets_percentage"),
+                    "over_money_percentage": raw_record.get("over_money_percentage"),
+                    "under_money_percentage": raw_record.get("under_money_percentage"),
+                    "total_score": raw_record.get("total_score"),
+                }
+            )
 
-            return self._execute_insert('core_betting.betting_lines_totals', unified_record)
+            return self._execute_insert(
+                "core_betting.betting_lines_totals", unified_record
+            )
 
         except Exception as e:
             self.logger.error("Error storing totals data", error=str(e))
             return False
 
-    def _store_spread(self, unified_record: dict[str, Any], raw_record: dict[str, Any]) -> bool:
+    def _store_spread(
+        self, unified_record: dict[str, Any], raw_record: dict[str, Any]
+    ) -> bool:
         """Store spread betting data."""
         try:
             # Add spread-specific fields
-            unified_record.update({
-                'spread_line': raw_record.get('spread_line'),
-                'home_spread_price': raw_record.get('home_spread_price'),
-                'away_spread_price': raw_record.get('away_spread_price'),
-                'opening_spread': raw_record.get('opening_spread'),
-                'opening_home_price': raw_record.get('opening_home_price'),
-                'opening_away_price': raw_record.get('opening_away_price'),
-                'closing_spread': raw_record.get('closing_spread'),
-                'closing_home_price': raw_record.get('closing_home_price'),
-                'closing_away_price': raw_record.get('closing_away_price'),
-                'home_bets_count': raw_record.get('home_bets_count'),
-                'away_bets_count': raw_record.get('away_bets_count'),
-                'home_bets_percentage': raw_record.get('home_bets_percentage'),
-                'away_bets_percentage': raw_record.get('away_bets_percentage'),
-                'home_money_percentage': raw_record.get('home_money_percentage'),
-                'away_money_percentage': raw_record.get('away_money_percentage'),
-                'final_score_difference': raw_record.get('final_score_difference'),
-            })
+            unified_record.update(
+                {
+                    "spread_line": raw_record.get("spread_line"),
+                    "home_spread_price": raw_record.get("home_spread_price"),
+                    "away_spread_price": raw_record.get("away_spread_price"),
+                    "opening_spread": raw_record.get("opening_spread"),
+                    "opening_home_price": raw_record.get("opening_home_price"),
+                    "opening_away_price": raw_record.get("opening_away_price"),
+                    "closing_spread": raw_record.get("closing_spread"),
+                    "closing_home_price": raw_record.get("closing_home_price"),
+                    "closing_away_price": raw_record.get("closing_away_price"),
+                    "home_bets_count": raw_record.get("home_bets_count"),
+                    "away_bets_count": raw_record.get("away_bets_count"),
+                    "home_bets_percentage": raw_record.get("home_bets_percentage"),
+                    "away_bets_percentage": raw_record.get("away_bets_percentage"),
+                    "home_money_percentage": raw_record.get("home_money_percentage"),
+                    "away_money_percentage": raw_record.get("away_money_percentage"),
+                    "final_score_difference": raw_record.get("final_score_difference"),
+                }
+            )
 
-            return self._execute_insert('core_betting.betting_lines_spread', unified_record)
+            return self._execute_insert(
+                "core_betting.betting_lines_spread", unified_record
+            )
 
         except Exception as e:
             self.logger.error("Error storing spread data", error=str(e))
@@ -962,8 +1125,8 @@ class UnifiedBettingLinesCollector(ABC):
                     columns = list(record.keys())
                     values = list(record.values())
 
-                    column_str = ', '.join(columns)
-                    value_placeholders = ', '.join(['%s'] * len(values))
+                    column_str = ", ".join(columns)
+                    value_placeholders = ", ".join(["%s"] * len(values))
 
                     # Use INSERT ... ON CONFLICT for upsert behavior
                     query = f"""
@@ -981,28 +1144,27 @@ class UnifiedBettingLinesCollector(ABC):
                     conn.commit()
 
                     # Track database performance
-                    self.performance_metrics.database_time += (datetime.now() - db_start_time).total_seconds()
+                    self.performance_metrics.database_time += (
+                        datetime.now() - db_start_time
+                    ).total_seconds()
 
                     return True
 
         except Exception as e:
-            self.logger.error(
-                "Database insert failed",
-                table=table_name,
-                error=str(e)
-            )
+            self.logger.error("Database insert failed", table=table_name, error=str(e))
             return False
 
     def get_performance_metrics(self) -> dict[str, Any]:
         """Get current performance metrics."""
         return {
-            'total_records': self.performance_metrics.total_records,
-            'successful_records': self.performance_metrics.successful_records,
-            'failed_records': self.performance_metrics.failed_records,
-            'validation_errors': self.performance_metrics.validation_errors,
-            'success_rate': self.performance_metrics.success_rate,
-            'error_rate': self.performance_metrics.error_rate,
-            'processing_time': self.performance_metrics.processing_time,
-            'database_time': self.performance_metrics.database_time,
-            'avg_processing_time_per_record': self.performance_metrics.processing_time / max(self.performance_metrics.total_records, 1)
+            "total_records": self.performance_metrics.total_records,
+            "successful_records": self.performance_metrics.successful_records,
+            "failed_records": self.performance_metrics.failed_records,
+            "validation_errors": self.performance_metrics.validation_errors,
+            "success_rate": self.performance_metrics.success_rate,
+            "error_rate": self.performance_metrics.error_rate,
+            "processing_time": self.performance_metrics.processing_time,
+            "database_time": self.performance_metrics.database_time,
+            "avg_processing_time_per_record": self.performance_metrics.processing_time
+            / max(self.performance_metrics.total_records, 1),
         }

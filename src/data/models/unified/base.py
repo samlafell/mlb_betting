@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any, TypeVar
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # Import precise timing utilities
 try:
@@ -17,15 +17,20 @@ try:
 except ImportError:
     # Fallback for backward compatibility
     import pytz
-    EST = pytz.timezone('US/Eastern')
+
+    EST = pytz.timezone("US/Eastern")
+
     def get_est_now() -> datetime:
         return datetime.now(EST)
+
     def to_est(dt: datetime) -> datetime:
         if dt.tzinfo is None:
             return EST.localize(dt)
         return dt.astimezone(EST)
+
     def precise_timestamp() -> datetime:
         return get_est_now()
+
 
 T = TypeVar("T", bound="UnifiedBaseModel")
 
@@ -46,7 +51,7 @@ class UnifiedBaseModel(BaseModel):
         use_enum_values=True,
         arbitrary_types_allowed=False,
         # Extra fields handling
-        extra="forbid"
+        extra="forbid",
     )
 
     def model_dump_json_safe(self) -> dict[str, Any]:
@@ -195,12 +200,13 @@ class SourcedModel(UnifiedBaseModel):
     )
 
     source_timestamp: datetime | None = Field(
-        default=None, description="When data was retrieved from source (EST with precise timing)"
+        default=None,
+        description="When data was retrieved from source (EST with precise timing)",
     )
 
     collected_at_est: datetime = Field(
         default_factory=precise_timestamp,
-        description="Precise collection timestamp in EST for data synchronization"
+        description="Precise collection timestamp in EST for data synchronization",
     )
 
     @field_validator("source")

@@ -1,7 +1,5 @@
 """Database repositories package."""
 
-from .analysis_reports_repository import AnalysisReportsRepository
-
 # Re-export legacy repositories for backward compatibility
 from ..repositories_legacy import (
     BettingAnalysisCreateSchema,
@@ -19,6 +17,7 @@ from ..repositories_legacy import (
     UnifiedRepository,
     get_unified_repository,
 )
+from .analysis_reports_repository import AnalysisReportsRepository
 
 __all__ = [
     "AnalysisReportsRepository",

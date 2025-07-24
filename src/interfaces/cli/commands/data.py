@@ -32,7 +32,9 @@ class DataSource(Enum):
     VSIN = "vsin"
     SBD = "sbd"
     ACTION_NETWORK = "action_network"
-    SPORTS_BOOK_REVIEW_DEPRECATED = "sports_betting_report"  # DEPRECATED: Use SBR instead
+    SPORTS_BOOK_REVIEW_DEPRECATED = (
+        "sports_betting_report"  # DEPRECATED: Use SBR instead
+    )
     SPORTS_BOOK_REVIEW = "sports_book_review"  # SportsbookReview.com
     SBR = "sbr"  # Alias for SPORTS_BOOK_REVIEW
     MLB_STATS_API = "mlb_stats_api"
@@ -107,10 +109,29 @@ class DataCommands:
             help="Skip outcome checking (disable default behavior)",
         )
         @click.pass_context
-        def collect(ctx, source, parallel, test_mode, mock_data, real, force, check_outcomes, no_outcomes):
+        def collect(
+            ctx,
+            source,
+            parallel,
+            test_mode,
+            mock_data,
+            real,
+            force,
+            check_outcomes,
+            no_outcomes,
+        ):
             """Collect data from sources with individual testing support."""
             asyncio.run(
-                self._collect_data(source, parallel, test_mode, mock_data, real, force, check_outcomes, no_outcomes)
+                self._collect_data(
+                    source,
+                    parallel,
+                    test_mode,
+                    mock_data,
+                    real,
+                    force,
+                    check_outcomes,
+                    no_outcomes,
+                )
             )
 
         @data.command()
@@ -248,34 +269,29 @@ class DataCommands:
         @data.command("sbr-line-history")
         @click.argument("sbr_game_id")
         @click.option(
-            "--sportsbooks",
-            help="Comma-separated list of sportsbooks (default: all)"
+            "--sportsbooks", help="Comma-separated list of sportsbooks (default: all)"
         )
         @click.option(
-            "--bet-types",
-            help="Comma-separated list of bet types (default: all)"
+            "--bet-types", help="Comma-separated list of bet types (default: all)"
         )
         @click.option(
-            "--analyze-movements",
-            is_flag=True,
-            help="Analyze line movements"
+            "--analyze-movements", is_flag=True, help="Analyze line movements"
         )
         @click.pass_context
-        def collect_sbr_line_history(ctx, sbr_game_id, sportsbooks, bet_types, analyze_movements):
+        def collect_sbr_line_history(
+            ctx, sbr_game_id, sportsbooks, bet_types, analyze_movements
+        ):
             """Collect comprehensive line history for a specific SBR game."""
             asyncio.run(
-                self._collect_sbr_line_history(sbr_game_id, sportsbooks, bet_types, analyze_movements)
+                self._collect_sbr_line_history(
+                    sbr_game_id, sportsbooks, bet_types, analyze_movements
+                )
             )
 
         @data.command("sbr-bulk-history")
+        @click.option("--date", help="Date to collect (YYYY-MM-DD, default: today)")
         @click.option(
-            "--date",
-            help="Date to collect (YYYY-MM-DD, default: today)"
-        )
-        @click.option(
-            "--max-games",
-            type=int,
-            help="Maximum number of games to process"
+            "--max-games", type=int, help="Maximum number of games to process"
         )
         @click.pass_context
         def collect_bulk_sbr_history(ctx, date, max_games):
@@ -285,22 +301,16 @@ class DataCommands:
         # SBR Game ID Collection Commands
         @data.command("sbr-collect-games")
         @click.option(
-            "--date",
-            "-d",
-            help="Specific date to collect games for (YYYY-MM-DD)"
+            "--date", "-d", help="Specific date to collect games for (YYYY-MM-DD)"
         )
         @click.option(
-            "--start-date",
-            help="Start date for range collection (YYYY-MM-DD)"
+            "--start-date", help="Start date for range collection (YYYY-MM-DD)"
         )
-        @click.option(
-            "--end-date",
-            help="End date for range collection (YYYY-MM-DD)"
-        )
+        @click.option("--end-date", help="End date for range collection (YYYY-MM-DD)")
         @click.option(
             "--dry-run",
             is_flag=True,
-            help="Show what would be collected without executing"
+            help="Show what would be collected without executing",
         )
         @click.pass_context
         def sbr_collect_games(ctx, date, start_date, end_date, dry_run):
@@ -313,19 +323,17 @@ class DataCommands:
             "-y",
             type=int,
             default=2025,
-            help="Season year to collect (default: 2025)"
+            help="Season year to collect (default: 2025)",
         )
         @click.option(
             "--batch-size",
             "-b",
             type=int,
             default=7,
-            help="Number of days to process per batch (default: 7)"
+            help="Number of days to process per batch (default: 7)",
         )
         @click.option(
-            "--resume",
-            is_flag=True,
-            help="Resume collection from last successful date"
+            "--resume", is_flag=True, help="Resume collection from last successful date"
         )
         @click.pass_context
         def sbr_collect_season(ctx, year, batch_size, resume):
@@ -338,13 +346,13 @@ class DataCommands:
             "-y",
             type=int,
             default=2025,
-            help="Season year to show status for (default: 2025)"
+            help="Season year to show status for (default: 2025)",
         )
         @click.option(
             "--detailed",
             "-d",
             is_flag=True,
-            help="Show detailed status including failed dates"
+            help="Show detailed status including failed dates",
         )
         @click.pass_context
         def sbr_games_status(ctx, season_year, detailed):
@@ -357,26 +365,28 @@ class DataCommands:
             "-b",
             type=int,
             default=10,
-            help="Number of games to process per batch (default: 10)"
+            help="Number of games to process per batch (default: 10)",
         )
         @click.option(
             "--max-games",
             "-m",
             type=int,
             default=100,
-            help="Maximum number of games to process (default: 100)"
+            help="Maximum number of games to process (default: 100)",
         )
         @click.option(
             "--season-year",
             "-y",
             type=int,
             default=2025,
-            help="Season year to process (default: 2025)"
+            help="Season year to process (default: 2025)",
         )
         @click.pass_context
         def sbr_collect_line_history(ctx, batch_size, max_games, season_year):
             """Collect line history for games with collected SBR game IDs."""
-            asyncio.run(self._sbr_collect_line_history_batch(batch_size, max_games, season_year))
+            asyncio.run(
+                self._sbr_collect_line_history_batch(batch_size, max_games, season_year)
+            )
 
         return data
 
@@ -394,8 +404,10 @@ class DataCommands:
         """Execute data collection with source selection."""
 
         # Determine if outcome checking should run (default yes unless explicitly disabled)
-        should_check_outcomes = check_outcomes or (not no_outcomes and real and not test_mode)
-        
+        should_check_outcomes = check_outcomes or (
+            not no_outcomes and real and not test_mode
+        )
+
         console.print(
             Panel.fit(
                 "[bold blue]🔄 Data Collection System[/bold blue]\n"
@@ -410,13 +422,15 @@ class DataCommands:
 
         if source:
             # Single source collection
-            result = await self._collect_from_single_source(source, test_mode, mock_data, real)
+            result = await self._collect_from_single_source(
+                source, test_mode, mock_data, real
+            )
         else:
             # Multi-source collection
             result = await self._collect_from_multiple_sources(
                 parallel, test_mode, mock_data, real
             )
-        
+
         # Check game outcomes after data collection if enabled and data was collected
         if should_check_outcomes and result:
             await self._check_game_outcomes_after_collection()
@@ -491,7 +505,7 @@ class DataCommands:
 
         if real and not mock_data:
             # Run real collectors for all sources
-            sources = ["sportsbookreview", "action_network", "vsin"]
+            sources = ["SPORTS_BOOK_REVIEW", "action_network", "vsin"]
             console.print(
                 f"🔄 [blue]Running real collectors for {len(sources)} sources...[/blue]"
             )
@@ -702,7 +716,7 @@ class DataCommands:
 
         if real:
             # Test real collectors
-            sources = ["sportsbookreview", "action_network", "vsin"]
+            sources = ["SPORTS_BOOK_REVIEW", "action_network", "vsin"]
             console.print(
                 f"🔄 [blue]Running real tests for {len(sources)} sources...[/blue]"
             )
@@ -773,10 +787,12 @@ class DataCommands:
                 ActionNetworkCollector,
                 CollectionMode,
             )
-            from ....data.collection.sbd_unified_collector_api import SBDUnifiedCollectorAPI as SBDUnifiedCollector
+            from ....data.collection.mlb_stats_api_collector import MLBStatsAPICollector
+            from ....data.collection.sbd_unified_collector_api import (
+                SBDUnifiedCollectorAPI as SBDUnifiedCollector,
+            )
             from ....data.collection.sbr_unified_collector import SBRUnifiedCollector
             from ....data.collection.vsin_unified_collector import VSINUnifiedCollector
-            from ....data.collection.mlb_stats_api_collector import MLBStatsAPICollector
 
             # Map source names to collector classes
             collector_mapping = {
@@ -800,29 +816,37 @@ class DataCommands:
             if source_name == "action_network":
                 # Use consolidated collector with comprehensive mode
                 from ....data.collection.base import CollectorConfig, DataSource
+
                 config = CollectorConfig(source=DataSource.ACTION_NETWORK, enabled=True)
                 collector = collector_class(config, CollectionMode.COMPREHENSIVE)
             elif source_name == "mlb_stats_api":
                 # Use MLB Stats API collector with proper config
                 from ....data.collection.base import CollectorConfig, DataSource
+
                 config = CollectorConfig(source=DataSource.MLB_STATS_API, enabled=True)
                 collector = collector_class(config)
             elif source_name == "vsin":
                 # VSIN collector uses CollectorConfig pattern
                 from ....data.collection.base import CollectorConfig, DataSource
+
                 config = CollectorConfig(source=DataSource.VSIN, enabled=True)
                 collector = collector_class(config)
             elif source_name == "sbd":
                 # SBD collector uses CollectorConfig pattern
                 from ....data.collection.base import CollectorConfig, DataSource
-                config = CollectorConfig(source=DataSource.SPORTS_BETTING_DIME, enabled=True)
+
+                config = CollectorConfig(
+                    source=DataSource.SPORTS_BETTING_DIME, enabled=True
+                )
                 collector = collector_class(config)
             else:
                 collector = collector_class()
 
             if test_mode:
                 # Run test collection with source-specific logic
-                console.print(f"🧪 [yellow]Running test collection for {source_name}...[/yellow]")
+                console.print(
+                    f"🧪 [yellow]Running test collection for {source_name}...[/yellow]"
+                )
 
                 if source_name in ["sbr", "sports_book_review"]:
                     # For SBR, use test_connection and basic collect_data
@@ -833,7 +857,9 @@ class DataCommands:
                     # Test connection first
                     connection_ok = await collector.test_connection()
                     if not connection_ok:
-                        console.print(f"❌ [red]{source_name.upper()} connection test failed[/red]")
+                        console.print(
+                            f"❌ [red]{source_name.upper()} connection test failed[/red]"
+                        )
                         return {
                             "status": "failed",
                             "error": "Connection test failed",
@@ -843,11 +869,13 @@ class DataCommands:
                     request = CollectionRequest(
                         source=DataSource.SPORTS_BOOK_REVIEW,
                         start_date=date.today(),
-                        sport="mlb"
+                        sport="mlb",
                     )
                     games_data = await collector.collect_data(request)
 
-                    console.print(f"✅ [green]{source_name.upper()} test successful[/green]")
+                    console.print(
+                        f"✅ [green]{source_name.upper()} test successful[/green]"
+                    )
                     summary = (
                         f"Test Status: success\n"
                         f"Connection: OK\n"
@@ -862,19 +890,21 @@ class DataCommands:
                     }
                 elif source_name == "action_network":
                     # Use consolidated collector test method
-                    from datetime import datetime, date
+                    from datetime import date
+
                     from ....data.collection.base import CollectionRequest
-                    
+
                     request = CollectionRequest(
-                        source=DataSource.ACTION_NETWORK,
-                        start_date=date.today()
+                        source=DataSource.ACTION_NETWORK, start_date=date.today()
                     )
-                    
+
                     try:
                         test_data = await collector.collect_data(request)
                         stats = collector.get_stats()
-                        
-                        console.print(f"✅ [green]{source_name.upper()} test successful[/green]")
+
+                        console.print(
+                            f"✅ [green]{source_name.upper()} test successful[/green]"
+                        )
                         summary = (
                             f"Test Status: success\n"
                             f"Collection Mode: {collector.mode.value}\n"
@@ -886,30 +916,34 @@ class DataCommands:
                         return {
                             "status": "success",
                             "output": summary,
-                            "records_collected": stats['games_found'],
-                            "records_stored": stats['total_inserted'],
+                            "records_collected": stats["games_found"],
+                            "records_stored": stats["total_inserted"],
                         }
                     except Exception as e:
-                        console.print(f"❌ [red]{source_name.upper()} test failed[/red]")
+                        console.print(
+                            f"❌ [red]{source_name.upper()} test failed[/red]"
+                        )
                         return {
                             "status": "failed",
                             "error": str(e),
                         }
                 elif source_name == "mlb_stats_api":
-                    # Use MLB Stats API collector test method  
-                    from datetime import datetime, date
+                    # Use MLB Stats API collector test method
+                    from datetime import date
+
                     from ....data.collection.base import CollectionRequest
-                    
+
                     request = CollectionRequest(
-                        source=DataSource.MLB_STATS_API,
-                        start_date=date.today()
+                        source=DataSource.MLB_STATS_API, start_date=date.today()
                     )
-                    
+
                     try:
                         test_data = await collector.collect_data(request)
                         stats = collector.get_stats()
-                        
-                        console.print(f"✅ [green]{source_name.upper()} test successful[/green]")
+
+                        console.print(
+                            f"✅ [green]{source_name.upper()} test successful[/green]"
+                        )
                         summary = (
                             f"Test Status: success\n"
                             f"Games found: {stats['games_found']}\n"
@@ -920,22 +954,26 @@ class DataCommands:
                         return {
                             "status": "success",
                             "output": summary,
-                            "records_collected": stats['games_found'],
-                            "records_stored": stats['games_stored'],
+                            "records_collected": stats["games_found"],
+                            "records_stored": stats["games_stored"],
                         }
                     except Exception as e:
-                        console.print(f"❌ [red]{source_name.upper()} test failed[/red]")
+                        console.print(
+                            f"❌ [red]{source_name.upper()} test failed[/red]"
+                        )
                         return {
                             "status": "failed",
                             "error": f"Test failed: {str(e)}",
                         }
                 elif source_name == "vsin":
-                    # Use VSIN collector test method (sync)
+                    # Use VSIN collector test method (async)
                     try:
-                        test_result = collector.test_collection("mlb")
-                        
+                        test_result = await collector.test_collection("mlb")
+
                         if test_result and test_result.get("status") == "success":
-                            console.print(f"✅ [green]{source_name.upper()} test successful[/green]")
+                            console.print(
+                                f"✅ [green]{source_name.upper()} test successful[/green]"
+                            )
                             summary = (
                                 f"Test Status: {test_result['status']}\n"
                                 f"Raw records: {test_result.get('raw_records', 0)}\n"
@@ -946,17 +984,21 @@ class DataCommands:
                             return {
                                 "status": "success",
                                 "output": summary,
-                                "records_collected": test_result.get('raw_records', 0),
-                                "records_stored": test_result.get('stored', 0),
+                                "records_collected": test_result.get("raw_records", 0),
+                                "records_stored": test_result.get("stored", 0),
                             }
                         else:
-                            console.print(f"❌ [red]{source_name.upper()} test failed[/red]")
+                            console.print(
+                                f"❌ [red]{source_name.upper()} test failed[/red]"
+                            )
                             return {
                                 "status": "failed",
                                 "error": f"Test failed: {test_result.get('error', 'Unknown error') if test_result else 'No test result'}",
                             }
                     except Exception as e:
-                        console.print(f"❌ [red]{source_name.upper()} test failed[/red]")
+                        console.print(
+                            f"❌ [red]{source_name.upper()} test failed[/red]"
+                        )
                         return {
                             "status": "failed",
                             "error": f"Test failed: {str(e)}",
@@ -965,9 +1007,11 @@ class DataCommands:
                     # Use SBD collector test method (async)
                     try:
                         test_result = await collector.test_collection("mlb")
-                        
+
                         if test_result and test_result.get("status") == "success":
-                            console.print(f"✅ [green]{source_name.upper()} test successful[/green]")
+                            console.print(
+                                f"✅ [green]{source_name.upper()} test successful[/green]"
+                            )
                             summary = (
                                 f"Test Status: {test_result['status']}\n"
                                 f"Raw records: {test_result.get('raw_records', 0)}\n"
@@ -978,17 +1022,21 @@ class DataCommands:
                             return {
                                 "status": "success",
                                 "output": summary,
-                                "records_collected": test_result.get('raw_records', 0),
-                                "records_stored": test_result.get('raw_records', 0),
+                                "records_collected": test_result.get("raw_records", 0),
+                                "records_stored": test_result.get("raw_records", 0),
                             }
                         else:
-                            console.print(f"❌ [red]{source_name.upper()} test failed[/red]")
+                            console.print(
+                                f"❌ [red]{source_name.upper()} test failed[/red]"
+                            )
                             return {
                                 "status": "failed",
                                 "error": f"Test failed: {test_result.get('error', 'Unknown error') if test_result else 'No test result'}",
                             }
                     except Exception as e:
-                        console.print(f"❌ [red]{source_name.upper()} test failed[/red]")
+                        console.print(
+                            f"❌ [red]{source_name.upper()} test failed[/red]"
+                        )
                         return {
                             "status": "failed",
                             "error": f"Test failed: {str(e)}",
@@ -998,7 +1046,9 @@ class DataCommands:
                     test_result = collector.test_collection()
 
                     if test_result and test_result.get("status") == "success":
-                        console.print(f"✅ [green]{source_name.upper()} test successful[/green]")
+                        console.print(
+                            f"✅ [green]{source_name.upper()} test successful[/green]"
+                        )
                         summary = (
                             f"Test Status: {test_result['status']}\n"
                             f"Raw records: {test_result['raw_records']}\n"
@@ -1009,19 +1059,27 @@ class DataCommands:
                         return {
                             "status": "success",
                             "output": summary,
-                            "records_collected": test_result['raw_records'],
-                            "records_stored": test_result['stored'],
+                            "records_collected": test_result["raw_records"],
+                            "records_stored": test_result["stored"],
                         }
                     else:
-                        console.print(f"❌ [red]{source_name.upper()} test failed[/red]")
-                        error_msg = test_result.get("error", "Unknown error") if test_result else "No test result"
+                        console.print(
+                            f"❌ [red]{source_name.upper()} test failed[/red]"
+                        )
+                        error_msg = (
+                            test_result.get("error", "Unknown error")
+                            if test_result
+                            else "No test result"
+                        )
                         return {
                             "status": "failed",
                             "error": f"Test failed: {error_msg}",
                         }
             else:
                 # Run production collection
-                console.print(f"🚀 [blue]Running production collection for {source_name}...[/blue]")
+                console.print(
+                    f"🚀 [blue]Running production collection for {source_name}...[/blue]"
+                )
 
                 if source_name in ["vsin", "sbd"]:
                     # Use collect_game_data for VSIN/SBD
@@ -1035,43 +1093,47 @@ class DataCommands:
                     request = CollectionRequest(
                         source=DataSource.SPORTS_BOOK_REVIEW,
                         start_date=date.today(),
-                        sport="mlb"
+                        sport="mlb",
                     )
                     games_data = await collector.collect_data(request)
-                    stored_count = len(games_data)  # For now, just count collected games
+                    stored_count = len(
+                        games_data
+                    )  # For now, just count collected games
                 elif source_name == "action_network":
                     # Use consolidated collector for Action Network
                     from datetime import date
+
                     from ....data.collection.base import CollectionRequest
-                    
+
                     request = CollectionRequest(
-                        source=DataSource.ACTION_NETWORK,
-                        start_date=date.today()
+                        source=DataSource.ACTION_NETWORK, start_date=date.today()
                     )
-                    
+
                     await collector.collect_data(request)
                     stats = collector.get_stats()
-                    stored_count = stats['total_inserted']
+                    stored_count = stats["total_inserted"]
                 elif source_name == "mlb_stats_api":
                     # Use MLB Stats API collector for real collection
                     from datetime import date
+
                     from ....data.collection.base import CollectionRequest
-                    
+
                     request = CollectionRequest(
-                        source=DataSource.MLB_STATS_API,
-                        start_date=date.today()
+                        source=DataSource.MLB_STATS_API, start_date=date.today()
                     )
-                    
+
                     await collector.collect_data(request)
                     stats = collector.get_stats()
-                    stored_count = stats['games_stored']
+                    stored_count = stats["games_stored"]
                 else:
                     # Use collect_and_store for other sources
                     result = collector.collect_and_store()
                     stored_count = result.records_stored if result else 0
 
                 if stored_count > 0:
-                    console.print(f"✅ [green]{source_name.upper()} collection successful[/green]")
+                    console.print(
+                        f"✅ [green]{source_name.upper()} collection successful[/green]"
+                    )
                     summary = (
                         f"Records stored: {stored_count}\n"
                         f"Source: {source_name.upper()}\n"
@@ -1083,7 +1145,9 @@ class DataCommands:
                         "records_stored": stored_count,
                     }
                 else:
-                    console.print(f"❌ [red]{source_name.upper()} collection failed[/red]")
+                    console.print(
+                        f"❌ [red]{source_name.upper()} collection failed[/red]"
+                    )
                     return {
                         "status": "failed",
                         "error": "No records were stored",
@@ -1091,10 +1155,11 @@ class DataCommands:
 
         except Exception as e:
             import traceback
+
             console.print(
                 f"❌ [red]Error running unified {source_name} collector: {e}[/red]"
             )
-            console.print(f"[red]Full traceback:[/red]")
+            console.print("[red]Full traceback:[/red]")
             console.print(traceback.format_exc())
             return {"status": "error", "error": str(e)}
 
@@ -1122,7 +1187,11 @@ class DataCommands:
             "Action Network", "🟢 Production Ready", "✅ Unified", "90%", "✅ Complete"
         )
         table.add_row(
-            "Sports Book Review (SBR)", "🟡 Partial", "✅ Unified", "40%", "🔄 In Progress"
+            "Sports Book Review (SBR)",
+            "🟡 Partial",
+            "✅ Unified",
+            "40%",
+            "🔄 In Progress",
         )
         table.add_row(
             "MLB Stats API", "🟢 Production Ready", "✅ Unified", "85%", "✅ Complete"
@@ -1701,10 +1770,18 @@ class DataCommands:
             console.print(f"❌ Failed to save historical data: {str(e)}")
             return False
 
-    async def _collect_sbr_line_history(self, sbr_game_id: str, sportsbooks: str, bet_types: str, analyze_movements: bool):
+    async def _collect_sbr_line_history(
+        self,
+        sbr_game_id: str,
+        sportsbooks: str,
+        bet_types: str,
+        analyze_movements: bool,
+    ):
         """Collect comprehensive line history for a specific SBR game."""
         try:
-            console.print(f"🏈 [bold]Collecting SBR Line History for Game {sbr_game_id}[/bold]")
+            console.print(
+                f"🏈 [bold]Collecting SBR Line History for Game {sbr_game_id}[/bold]"
+            )
 
             # Import required modules
             from src.data.collection.base import CollectorConfig
@@ -1716,17 +1793,21 @@ class DataCommands:
             )
 
             # Initialize collector
-            collector = SBRLineHistoryCollector(CollectorConfig(
-                source="sports_betting_report",
-                base_url="https://www.sportsbookreview.com"
-            ))
+            collector = SBRLineHistoryCollector(
+                CollectorConfig(
+                    source="sports_betting_report",
+                    base_url="https://www.sportsbookreview.com",
+                )
+            )
 
             # Set filters if specified
             if sportsbooks:
-                collector.filter_sportsbooks = sportsbooks.split(',')
-                console.print(f"📊 Filtering sportsbooks: {collector.filter_sportsbooks}")
+                collector.filter_sportsbooks = sportsbooks.split(",")
+                console.print(
+                    f"📊 Filtering sportsbooks: {collector.filter_sportsbooks}"
+                )
             if bet_types:
-                collector.filter_bet_types = bet_types.split(',')
+                collector.filter_bet_types = bet_types.split(",")
                 console.print(f"🎯 Filtering bet types: {collector.filter_bet_types}")
 
             # Collect data with progress tracking
@@ -1738,7 +1819,9 @@ class DataCommands:
                 task = progress.add_task("Collecting line history...", total=None)
 
                 try:
-                    history_data = await collector.collect_simple_line_history(sbr_game_id)
+                    history_data = await collector.collect_simple_line_history(
+                        sbr_game_id
+                    )
                     progress.update(task, description="✅ Collection completed")
                 except Exception as e:
                     progress.update(task, description=f"❌ Collection failed: {str(e)}")
@@ -1753,7 +1836,9 @@ class DataCommands:
             repository = SBRLineHistoryRepository()
             stored_count = repository.store_line_history(history_data)
 
-            console.print(f"✅ Collected and stored {stored_count} line history records")
+            console.print(
+                f"✅ Collected and stored {stored_count} line history records"
+            )
 
             # Group by sportsbook and bet type for summary
             summary = {}
@@ -1778,23 +1863,27 @@ class DataCommands:
 
                 if movements:
                     stored_movements = repository.store_line_movements(movements)
-                    console.print(f"📈 Found and stored {stored_movements} significant line movements")
+                    console.print(
+                        f"📈 Found and stored {stored_movements} significant line movements"
+                    )
 
                     # Display movement summary
                     movement_table = Table(title="Line Movement Analysis")
                     movement_table.add_column("Sportsbook", style="cyan")
                     movement_table.add_column("Bet Type", style="blue")
                     movement_table.add_column("Direction", style="yellow")
-                    movement_table.add_column("Magnitude", justify="right", style="green")
+                    movement_table.add_column(
+                        "Magnitude", justify="right", style="green"
+                    )
                     movement_table.add_column("Type", style="magenta")
 
                     for movement in movements[:10]:  # Show top 10
                         movement_table.add_row(
-                            movement['sportsbook'],
-                            movement['bet_type'],
-                            movement['direction'],
-                            str(movement['magnitude']),
-                            movement['movement_type']
+                            movement["sportsbook"],
+                            movement["bet_type"],
+                            movement["direction"],
+                            str(movement["magnitude"]),
+                            movement["movement_type"],
                         )
 
                     console.print(movement_table)
@@ -1814,6 +1903,7 @@ class DataCommands:
                 console.print(f"📅 Target date: {date}")
             else:
                 from datetime import date as dt
+
                 date = dt.today().strftime("%Y-%m-%d")
                 console.print(f"📅 Using today's date: {date}")
 
@@ -1830,14 +1920,18 @@ class DataCommands:
             console.print("   • Generate comprehensive collection reports")
 
             console.print("\n💡 [bold]For now, use individual game collection:[/bold]")
-            console.print("   uv run -m src.interfaces.cli data sbr-line-history <game_id>")
+            console.print(
+                "   uv run -m src.interfaces.cli data sbr-line-history <game_id>"
+            )
 
         except Exception as e:
             console.print(f"❌ Error in bulk SBR collection: {str(e)}")
             raise
 
     # SBR Game ID Collection Command Implementations
-    async def _sbr_collect_games(self, date: str, start_date: str, end_date: str, dry_run: bool):
+    async def _sbr_collect_games(
+        self, date: str, start_date: str, end_date: str, dry_run: bool
+    ):
         """Collect SBR game IDs for specific date or date range."""
         try:
             from datetime import date as dt
@@ -1870,12 +1964,14 @@ class DataCommands:
                     TextColumn("[progress.description]{task.description}"),
                     console=console,
                 ) as progress:
-                    task = progress.add_task("Collecting games for date range...", total=None)
+                    task = progress.add_task(
+                        "Collecting games for date range...", total=None
+                    )
 
                     request = CollectionRequest(
                         source=DataSource.SPORTS_BOOK_REVIEW_DEPRECATED,
                         start_date=start_dt,
-                        end_date=end_dt
+                        end_date=end_dt,
                     )
 
                     games = await collector.collect_data(request)
@@ -1898,7 +1994,9 @@ class DataCommands:
                 ) as progress:
                     task = progress.add_task("Collecting games for date...", total=None)
 
-                    result = await orchestration_service.collect_games_for_date(target_date, store_in_db=True)
+                    result = await orchestration_service.collect_games_for_date(
+                        target_date, store_in_db=True
+                    )
                     progress.update(task, description="✅ Collection completed")
 
                     # Display results
@@ -1916,28 +2014,36 @@ class DataCommands:
 
                             for game in result["games"][:10]:  # Show first 10
                                 table.add_row(
-                                    game.get('sbr_game_id', 'N/A'),
-                                    game.get('away_team', 'N/A'),
-                                    game.get('home_team', 'N/A'),
-                                    game.get('game_time', 'N/A'),
-                                    game.get('game_status', 'scheduled')
+                                    game.get("sbr_game_id", "N/A"),
+                                    game.get("away_team", "N/A"),
+                                    game.get("home_team", "N/A"),
+                                    game.get("game_time", "N/A"),
+                                    game.get("game_status", "scheduled"),
                                 )
 
                             console.print(table)
 
                             if result["games_found"] > 10:
-                                console.print(f"... and {result['games_found'] - 10} more games")
+                                console.print(
+                                    f"... and {result['games_found'] - 10} more games"
+                                )
 
                             # Show database storage results
                             console.print("💾 Storing games in database...")
                             if result["games_processed"] > 0:
-                                console.print(f"✅ Stored {result['games_processed']} games in database")
+                                console.print(
+                                    f"✅ Stored {result['games_processed']} games in database"
+                                )
                             else:
-                                console.print("📊 Database storage implementation pending")
+                                console.print(
+                                    "📊 Database storage implementation pending"
+                                )
                         else:
                             console.print("⚠️ No games found for the specified date(s)")
                     else:
-                        console.print(f"❌ Collection failed: {result.get('error', 'Unknown error')}")
+                        console.print(
+                            f"❌ Collection failed: {result.get('error', 'Unknown error')}"
+                        )
 
                     return
 
@@ -1950,7 +2056,9 @@ class DataCommands:
                     console.print("🔍 DRY RUN: Would collect games for today")
                     return
 
-                result = await orchestration_service.collect_games_for_date(target_date, store_in_db=True)
+                result = await orchestration_service.collect_games_for_date(
+                    target_date, store_in_db=True
+                )
 
                 if result["success"] and result["games_found"] > 0:
                     console.print(f"✅ Collected {result['games_found']} games")
@@ -1994,21 +2102,25 @@ class DataCommands:
                 task = progress.add_task("Collecting season games...", total=None)
 
                 summary = await orchestration_service.collect_season_games(
-                    year=year,
-                    batch_size=batch_size,
-                    resume=resume
+                    year=year, batch_size=batch_size, resume=resume
                 )
                 progress.update(task, description="✅ Season collection completed")
 
             # Display results
             console.print("\n📊 Season Collection Summary:")
-            console.print(f"  🎮 Total games collected: {summary['total_games_collected']}")
+            console.print(
+                f"  🎮 Total games collected: {summary['total_games_collected']}"
+            )
             console.print(f"  📅 Dates processed: {summary['dates_processed']}")
             console.print(f"  ✅ Successful dates: {summary['successful_dates']}")
             console.print(f"  📈 Success rate: {summary['success_rate']:.1f}%")
 
-            if summary.get('batch_results'):
-                failed_dates = [r['date'] for r in summary['batch_results'] if not r.get('success', False)]
+            if summary.get("batch_results"):
+                failed_dates = [
+                    r["date"]
+                    for r in summary["batch_results"]
+                    if not r.get("success", False)
+                ]
                 if failed_dates:
                     console.print(f"\n⚠️ Failed dates: {', '.join(failed_dates[:5])}")
                     if len(failed_dates) > 5:
@@ -2025,6 +2137,7 @@ class DataCommands:
 
             try:
                 from src.data.database.sbr_game_repository import SBRGameRepository
+
                 repository = SBRGameRepository()
                 statistics = await repository.get_collection_statistics(season_year)
 
@@ -2041,15 +2154,37 @@ class DataCommands:
                 completion_rate = overall.get("line_history_completion_rate", 0)
 
                 # Determine status indicators
-                game_status = "🟢 Good" if total_games > 1000 else "🟡 Partial" if total_games > 100 else "🔴 Low"
-                line_status = "🟢 Good" if completion_rate > 80 else "🟡 Partial" if completion_rate > 50 else "🔴 Low"
+                game_status = (
+                    "🟢 Good"
+                    if total_games > 1000
+                    else "🟡 Partial"
+                    if total_games > 100
+                    else "🔴 Low"
+                )
+                line_status = (
+                    "🟢 Good"
+                    if completion_rate > 80
+                    else "🟡 Partial"
+                    if completion_rate > 50
+                    else "🔴 Low"
+                )
 
                 table.add_row("Games Collected", f"{total_games:,}", game_status)
                 table.add_row("Expected Games", "2,430", "📊 Target")
-                table.add_row("Collection Rate", f"{(total_games/2430*100):.1f}%" if total_games > 0 else "0%", game_status)
-                table.add_row("Line History Collected", f"{line_history_games:,}", line_status)
-                table.add_row("Line History Rate", f"{completion_rate:.1f}%", line_status)
-                table.add_row("Unique Dates", str(overall.get("unique_dates", 0)), "📅 Info")
+                table.add_row(
+                    "Collection Rate",
+                    f"{(total_games / 2430 * 100):.1f}%" if total_games > 0 else "0%",
+                    game_status,
+                )
+                table.add_row(
+                    "Line History Collected", f"{line_history_games:,}", line_status
+                )
+                table.add_row(
+                    "Line History Rate", f"{completion_rate:.1f}%", line_status
+                )
+                table.add_row(
+                    "Unique Dates", str(overall.get("unique_dates", 0)), "📅 Info"
+                )
 
                 console.print(table)
 
@@ -2065,13 +2200,21 @@ class DataCommands:
                     recent_table.add_column("Time (s)", style="magenta")
 
                     for collection in recent[:10]:
-                        status_icon = "✅" if collection["status"] == "completed" else "❌" if collection["status"] == "failed" else "🔄"
+                        status_icon = (
+                            "✅"
+                            if collection["status"] == "completed"
+                            else "❌"
+                            if collection["status"] == "failed"
+                            else "🔄"
+                        )
                         recent_table.add_row(
                             collection["date"],
                             f"{status_icon} {collection['status']}",
                             str(collection["games_found"]),
                             str(collection["games_processed"]),
-                            str(collection["execution_time"]) if collection["execution_time"] else "N/A"
+                            str(collection["execution_time"])
+                            if collection["execution_time"]
+                            else "N/A",
                         )
 
                     console.print(recent_table)
@@ -2086,8 +2229,20 @@ class DataCommands:
                     monthly_table.add_column("Line History", style="blue")
                     monthly_table.add_column("Completion Rate", style="yellow")
 
-                    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+                    month_names = [
+                        "Jan",
+                        "Feb",
+                        "Mar",
+                        "Apr",
+                        "May",
+                        "Jun",
+                        "Jul",
+                        "Aug",
+                        "Sep",
+                        "Oct",
+                        "Nov",
+                        "Dec",
+                    ]
 
                     for month_data in monthly:
                         month_name = month_names[month_data["month"] - 1]
@@ -2095,13 +2250,15 @@ class DataCommands:
                             f"{month_name} {month_data['year']}",
                             str(month_data["games_collected"]),
                             str(month_data["line_history_completed"]),
-                            f"{month_data['completion_rate']:.1f}%"
+                            f"{month_data['completion_rate']:.1f}%",
                         )
 
                     console.print(monthly_table)
 
             except ImportError:
-                console.print("🚧 [yellow]Repository not available - showing sample status[/yellow]")
+                console.print(
+                    "🚧 [yellow]Repository not available - showing sample status[/yellow]"
+                )
                 # Fallback to sample display
                 table = Table(title=f"SBR Collection Status - {season_year}")
                 table.add_column("Metric", style="cyan")
@@ -2120,7 +2277,9 @@ class DataCommands:
             console.print(f"❌ Error showing SBR status: {str(e)}")
             raise
 
-    async def _sbr_collect_line_history_batch(self, batch_size: int, max_games: int, season_year: int):
+    async def _sbr_collect_line_history_batch(
+        self, batch_size: int, max_games: int, season_year: int
+    ):
         """Collect line history for games with collected SBR game IDs."""
         try:
             console.print("📈 [bold]SBR Line History Batch Collection[/bold]")
@@ -2129,7 +2288,9 @@ class DataCommands:
             console.print(f"📅 Season: {season_year}")
 
             # This would integrate with the repository to get games needing line history
-            console.print("🚧 [yellow]Batch line history collection implementation pending[/yellow]")
+            console.print(
+                "🚧 [yellow]Batch line history collection implementation pending[/yellow]"
+            )
             console.print("   This feature will:")
             console.print("   • Query database for games without line history")
             console.print("   • Process games in batches to avoid overwhelming SBR")
@@ -2151,7 +2312,9 @@ class DataCommands:
 
             console.print(f"✅ Would process {batch_size} games in this batch")
             console.print("\n💡 [bold]For now, use individual game collection:[/bold]")
-            console.print("   uv run -m src.interfaces.cli data sbr-line-history <game_id>")
+            console.print(
+                "   uv run -m src.interfaces.cli data sbr-line-history <game_id>"
+            )
 
         except Exception as e:
             console.print(f"❌ Error in batch line history collection: {str(e)}")
@@ -2161,10 +2324,10 @@ class DataCommands:
         """Check for completed game outcomes after data collection."""
         try:
             console.print("\n🏁 [bold blue]Checking Game Outcomes[/bold blue]")
-            
+
             # Import the game outcome service
             from src.services.game_outcome_service import check_game_outcomes
-            
+
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
@@ -2172,23 +2335,29 @@ class DataCommands:
                 transient=True,
             ) as progress:
                 task = progress.add_task("Checking for completed games...", total=None)
-                
+
                 # Check outcomes for the last 7 days
                 results = await check_game_outcomes(date_range=None, force_update=False)
-                
+
                 progress.remove_task(task)
-            
+
             # Display outcome results
             if results["updated_outcomes"] > 0:
-                console.print(f"✅ [green]Updated {results['updated_outcomes']} game outcomes[/green]")
+                console.print(
+                    f"✅ [green]Updated {results['updated_outcomes']} game outcomes[/green]"
+                )
             elif results["processed_games"] == 0:
                 console.print("ℹ️ [blue]No games found needing outcome updates[/blue]")
             else:
-                console.print(f"ℹ️ [blue]Processed {results['processed_games']} games, {results['skipped_games']} not completed yet[/blue]")
-            
+                console.print(
+                    f"ℹ️ [blue]Processed {results['processed_games']} games, {results['skipped_games']} not completed yet[/blue]"
+                )
+
             if results["errors"]:
-                console.print(f"⚠️ [yellow]{len(results['errors'])} errors occurred during outcome checking[/yellow]")
-                
+                console.print(
+                    f"⚠️ [yellow]{len(results['errors'])} errors occurred during outcome checking[/yellow]"
+                )
+
         except Exception as e:
             console.print(f"⚠️ [yellow]Game outcome checking failed: {str(e)}[/yellow]")
             # Don't raise - outcome checking failure shouldn't stop data collection

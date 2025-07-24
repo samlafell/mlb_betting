@@ -19,8 +19,10 @@ from rich.panel import Panel
 from rich.table import Table
 
 from src.analysis.processors.movement_analyzer import MovementAnalyzer
+from src.data.database.repositories.analysis_reports_repository import (
+    AnalysisReportsRepository,
+)
 from src.data.models.unified.movement_analysis import MovementAnalysisReport
-from src.data.database.repositories.analysis_reports_repository import AnalysisReportsRepository
 
 console = Console()
 
@@ -291,7 +293,9 @@ async def _extract_game_urls(
             CollectorConfig,
             DataSource,
         )
-        from src.data.collection.consolidated_action_network_collector import ActionNetworkCollector
+        from src.data.collection.consolidated_action_network_collector import (
+            ActionNetworkCollector,
+        )
 
         # Create collector config
         config = CollectorConfig(
@@ -339,28 +343,36 @@ async def _extract_game_urls(
 
         for game_data in collected_data:
             # Extract game information from Action Network API structure
-            teams = game_data.get('teams', [])
-            home_team_id = game_data.get('home_team_id')
-            away_team_id = game_data.get('away_team_id')
-            
+            teams = game_data.get("teams", [])
+            home_team_id = game_data.get("home_team_id")
+            away_team_id = game_data.get("away_team_id")
+
             # Initialize team names
-            away_team = 'Unknown'
-            home_team = 'Unknown'
-            
+            away_team = "Unknown"
+            home_team = "Unknown"
+
             # Find home and away teams by matching IDs
             for team in teams:
-                team_id = team.get('id')
+                team_id = team.get("id")
                 if team_id == home_team_id:
-                    home_team = team.get('full_name', team.get('display_name', 'Unknown'))
+                    home_team = team.get(
+                        "full_name", team.get("display_name", "Unknown")
+                    )
                 elif team_id == away_team_id:
-                    away_team = team.get('full_name', team.get('display_name', 'Unknown'))
-            
-            game_id = game_data.get('id')
-            start_time = game_data.get('start_time') or datetime.now().isoformat()
-            
+                    away_team = team.get(
+                        "full_name", team.get("display_name", "Unknown")
+                    )
+
+            game_id = game_data.get("id")
+            start_time = game_data.get("start_time") or datetime.now().isoformat()
+
             # Generate history URL for Action Network
-            history_url = f"https://api.actionnetwork.com/web/v2/markets/event/{game_id}/history" if game_id else ""
-            
+            history_url = (
+                f"https://api.actionnetwork.com/web/v2/markets/event/{game_id}/history"
+                if game_id
+                else ""
+            )
+
             game_info = {
                 "game_id": game_id,
                 "home_team": home_team,
@@ -436,9 +448,12 @@ async def _collect_historical_data(
     """Collect historical line movement data from game URLs using unified system."""
     try:
         import json
+
         import aiohttp
 
-        from src.data.collection.consolidated_action_network_collector import ActionNetworkHistoryParser
+        from src.data.collection.consolidated_action_network_collector import (
+            ActionNetworkHistoryParser,
+        )
 
         # Load game URLs from file
         with open(urls_file) as f:
@@ -481,9 +496,9 @@ async def _collect_historical_data(
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Sec-Fetch-Dest": "empty",
             "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "same-site"
+            "Sec-Fetch-Site": "same-site",
         }
-        
+
         timeout = aiohttp.ClientTimeout(total=30)
         async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
             for i, game in enumerate(games, 1):
@@ -520,7 +535,7 @@ async def _collect_historical_data(
                         async with session.get(history_url) as response:
                             if response.status == 200:
                                 history_response = await response.json()
-                                
+
                                 # Parse the historical data
                                 historical_data = history_parser.parse_history_response(
                                     response_data=history_response,
@@ -530,7 +545,7 @@ async def _collect_historical_data(
                                     game_datetime=game_datetime,
                                     history_url=history_url,
                                 )
-                                
+
                                 if historical_data:
                                     all_historical_data.append(
                                         {
@@ -544,8 +559,10 @@ async def _collect_historical_data(
                                     )
 
                                     # Count movements
-                                    total_movements += len(historical_data.historical_entries)
-                                    
+                                    total_movements += len(
+                                        historical_data.historical_entries
+                                    )
+
                                     successful_collections += 1
                                     console.print(
                                         f"[green]✅ Collected historical data for {away_team} @ {home_team}[/green]"
@@ -662,7 +679,7 @@ async def _analyze_opportunities(
 
         # Generate pipeline run ID for this analysis
         pipeline_run_id = f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        
+
         # Analyze each game
         game_analyses = []
         total_rlm = 0
@@ -675,24 +692,32 @@ async def _analyze_opportunities(
                 historical_entries = game_data.get("historical_data", {})
                 if not historical_entries:
                     continue
-                    
-                analysis = await analyzer.analyze_game_movements({
-                    "game_id": game_data.get("game_id"),
-                    "home_team": game_data.get("home_team"),
-                    "away_team": game_data.get("away_team"),
-                    "game_datetime": game_data.get("game_datetime"),
-                    "raw_data": historical_entries  # Pass the historical data
-                })
+
+                analysis = await analyzer.analyze_game_movements(
+                    {
+                        "game_id": game_data.get("game_id"),
+                        "home_team": game_data.get("home_team"),
+                        "away_team": game_data.get("away_team"),
+                        "game_datetime": game_data.get("game_datetime"),
+                        "raw_data": historical_entries,  # Pass the historical data
+                    }
+                )
                 game_analyses.append(analysis)
 
                 # Count opportunities
                 if analysis.rlm_indicators:
                     total_rlm += len(analysis.rlm_indicators)
-                    
+
                 if analysis.cross_book_movements:
-                    steam_count = len([c for c in analysis.cross_book_movements if c.steam_move_detected])
+                    steam_count = len(
+                        [
+                            c
+                            for c in analysis.cross_book_movements
+                            if c.steam_move_detected
+                        ]
+                    )
                     total_steam += steam_count
-                    
+
                 if analysis.arbitrage_opportunities:
                     total_arbitrage += len(analysis.arbitrage_opportunities)
 
@@ -726,9 +751,11 @@ async def _analyze_opportunities(
                 pipeline_run_id=pipeline_run_id,
                 analysis_report=report,
             )
-            
-            console.print(f"[green]✅ Saved analysis report to database (ID: {analysis_report_id})[/green]")
-            
+
+            console.print(
+                f"[green]✅ Saved analysis report to database (ID: {analysis_report_id})[/green]"
+            )
+
             # Optional: Still save minimal JSON for debugging (but don't duplicate data)
             if verbose:
                 debug_summary = {
@@ -736,28 +763,32 @@ async def _analyze_opportunities(
                     "total_games_analyzed": report.total_games_analyzed,
                     "total_opportunities": total_rlm + total_steam + total_arbitrage,
                     "database_report_id": analysis_report_id,
-                    "note": "Full analysis data saved to PostgreSQL database"
+                    "note": "Full analysis data saved to PostgreSQL database",
                 }
-                
+
                 with open(analysis_file, "w") as f:
                     json.dump(debug_summary, f, indent=2)
-                    
+
                 with open(opportunities_file, "w") as f:
-                    json.dump({
-                        "generated_at": datetime.now().isoformat(),
-                        "database_report_id": analysis_report_id,
-                        "summary": {
-                            "total_rlm_opportunities": total_rlm,
-                            "total_steam_moves": total_steam,
-                            "total_arbitrage_opportunities": total_arbitrage,
+                    json.dump(
+                        {
+                            "generated_at": datetime.now().isoformat(),
+                            "database_report_id": analysis_report_id,
+                            "summary": {
+                                "total_rlm_opportunities": total_rlm,
+                                "total_steam_moves": total_steam,
+                                "total_arbitrage_opportunities": total_arbitrage,
+                            },
+                            "note": "Detailed opportunities saved to PostgreSQL. Use CLI 'opportunities' command to view.",
                         },
-                        "note": "Detailed opportunities saved to PostgreSQL. Use CLI 'opportunities' command to view."
-                    }, f, indent=2)
-            
+                        f,
+                        indent=2,
+                    )
+
         except Exception as db_error:
             console.print(f"[red]⚠️  Database save failed: {db_error}[/red]")
             console.print("[yellow]Falling back to JSON file storage...[/yellow]")
-            
+
             # Fallback to original JSON storage if database fails
             with open(analysis_file, "w") as f:
                 json.dump(report.dict(), f, indent=2, default=str)
@@ -770,7 +801,7 @@ async def _analyze_opportunities(
                     "total_steam_moves": total_steam,
                     "total_arbitrage_opportunities": total_arbitrage,
                 },
-                "note": "Database storage failed, using JSON fallback"
+                "note": "Database storage failed, using JSON fallback",
             }
 
             with open(opportunities_file, "w") as f:
@@ -941,8 +972,10 @@ def opportunities(hours: int, limit: int, fallback_json: bool):
     try:
         # Try to get opportunities from database first
         reports_repo = AnalysisReportsRepository()
-        opportunities_data = asyncio.run(reports_repo.get_latest_opportunities(hours=hours))
-        
+        opportunities_data = asyncio.run(
+            reports_repo.get_latest_opportunities(hours=hours)
+        )
+
         if opportunities_data:
             console.print(
                 Panel.fit(
@@ -954,9 +987,13 @@ def opportunities(hours: int, limit: int, fallback_json: bool):
             )
 
             # Group opportunities by type
-            rlm_opps = [o for o in opportunities_data if o['opportunity_type'] == 'rlm']
-            steam_opps = [o for o in opportunities_data if o['opportunity_type'] == 'steam']
-            arb_opps = [o for o in opportunities_data if o['opportunity_type'] == 'arbitrage']
+            rlm_opps = [o for o in opportunities_data if o["opportunity_type"] == "rlm"]
+            steam_opps = [
+                o for o in opportunities_data if o["opportunity_type"] == "steam"
+            ]
+            arb_opps = [
+                o for o in opportunities_data if o["opportunity_type"] == "arbitrage"
+            ]
 
             # Summary table
             table = Table(title="Opportunities Summary")
@@ -985,22 +1022,28 @@ def opportunities(hours: int, limit: int, fallback_json: bool):
             # Display top opportunities by type
             if rlm_opps:
                 console.print("\n[bold red]🔄 RLM Opportunities:[/bold red]")
-                for i, opp in enumerate(rlm_opps[:limit//3], 1):
+                for i, opp in enumerate(rlm_opps[: limit // 3], 1):
                     console.print(
                         f"{i}. {opp['away_team']} @ {opp['home_team']} - {opp['market_type']} ({opp['strength']})"
                     )
 
             if steam_opps:
                 console.print("\n[bold green]🚂 Steam Moves:[/bold green]")
-                for i, move in enumerate(steam_opps[:limit//3], 1):
+                for i, move in enumerate(steam_opps[: limit // 3], 1):
                     console.print(
                         f"{i}. {move['away_team']} @ {move['home_team']} - {move['market_type']} ({move['strength']})"
                     )
 
             if arb_opps:
-                console.print("\n[bold yellow]💰 Arbitrage Opportunities:[/bold yellow]")
-                for i, arb in enumerate(arb_opps[:limit//3], 1):
-                    profit = f"{arb.get('profit_potential', 0):.2f}%" if arb.get('profit_potential') else "TBD"
+                console.print(
+                    "\n[bold yellow]💰 Arbitrage Opportunities:[/bold yellow]"
+                )
+                for i, arb in enumerate(arb_opps[: limit // 3], 1):
+                    profit = (
+                        f"{arb.get('profit_potential', 0):.2f}%"
+                        if arb.get("profit_potential")
+                        else "TBD"
+                    )
                     console.print(
                         f"{i}. {arb['away_team']} @ {arb['home_team']} - {arb['market_type']} (Profit: {profit})"
                     )
@@ -1010,20 +1053,22 @@ def opportunities(hours: int, limit: int, fallback_json: bool):
     except Exception as db_error:
         console.print(f"[red]⚠️ Database error: {db_error}[/red]")
         if not fallback_json:
-            console.print("[yellow]Use --fallback-json flag to try JSON files instead[/yellow]")
+            console.print(
+                "[yellow]Use --fallback-json flag to try JSON files instead[/yellow]"
+            )
             return
 
     # Fallback to JSON files
     if fallback_json or True:  # Always fallback for now during transition
         console.print("[yellow]Falling back to JSON file search...[/yellow]")
-        
+
         output_dir = Path("output")
         pattern = "betting_opportunities_*.json"
         latest_file = _find_most_recent_file(output_dir, pattern)
 
         if not latest_file:
             console.print(
-                f"[red]❌ No opportunities found in database or JSON files[/red]"
+                "[red]❌ No opportunities found in database or JSON files[/red]"
             )
             return
 

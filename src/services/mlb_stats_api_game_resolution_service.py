@@ -25,6 +25,7 @@ logger = structlog.get_logger(__name__)
 
 class MatchConfidence(Enum):
     """Confidence levels for game matching."""
+
     HIGH = "HIGH"
     MEDIUM = "MEDIUM"
     LOW = "LOW"
@@ -34,6 +35,7 @@ class MatchConfidence(Enum):
 @dataclass
 class GameMatchResult:
     """Result of a game matching operation."""
+
     game_id: int | None
     mlb_game_id: str | None
     confidence: MatchConfidence
@@ -44,18 +46,19 @@ class GameMatchResult:
 @dataclass
 class TeamMapping:
     """Team name mapping information."""
+
     official_name: str
     abbreviation: str
     aliases: list[str]
     mlb_team_id: int
     conference: str  # AL or NL
-    division: str    # EAST, CENTRAL, WEST
+    division: str  # EAST, CENTRAL, WEST
 
 
 class MLBStatsAPIGameResolutionService:
     """
     Enhanced MLB Stats API Game Resolution Service.
-    
+
     Provides comprehensive game ID resolution and team name standardization
     for the unified betting lines system.
     """
@@ -74,46 +77,206 @@ class MLBStatsAPIGameResolutionService:
         """Initialize comprehensive team name mappings."""
         self.team_mappings = {
             # American League East
-            "BAL": TeamMapping("Baltimore Orioles", "BAL", ["Baltimore", "Orioles", "O's"], 110, "AL", "EAST"),
-            "BOS": TeamMapping("Boston Red Sox", "BOS", ["Boston", "Red Sox", "Sox"], 111, "AL", "EAST"),
-            "NYY": TeamMapping("New York Yankees", "NYY", ["New York", "Yankees", "NY Yankees", "Yanks"], 147, "AL", "EAST"),
-            "TB": TeamMapping("Tampa Bay Rays", "TB", ["Tampa Bay", "Rays", "Tampa", "Devil Rays"], 139, "AL", "EAST"),
-            "TOR": TeamMapping("Toronto Blue Jays", "TOR", ["Toronto", "Blue Jays", "Jays"], 141, "AL", "EAST"),
-
+            "BAL": TeamMapping(
+                "Baltimore Orioles",
+                "BAL",
+                ["Baltimore", "Orioles", "O's"],
+                110,
+                "AL",
+                "EAST",
+            ),
+            "BOS": TeamMapping(
+                "Boston Red Sox", "BOS", ["Boston", "Red Sox", "Sox"], 111, "AL", "EAST"
+            ),
+            "NYY": TeamMapping(
+                "New York Yankees",
+                "NYY",
+                ["New York", "Yankees", "NY Yankees", "Yanks"],
+                147,
+                "AL",
+                "EAST",
+            ),
+            "TB": TeamMapping(
+                "Tampa Bay Rays",
+                "TB",
+                ["Tampa Bay", "Rays", "Tampa", "Devil Rays"],
+                139,
+                "AL",
+                "EAST",
+            ),
+            "TOR": TeamMapping(
+                "Toronto Blue Jays",
+                "TOR",
+                ["Toronto", "Blue Jays", "Jays"],
+                141,
+                "AL",
+                "EAST",
+            ),
             # American League Central
-            "CHW": TeamMapping("Chicago White Sox", "CHW", ["Chicago", "White Sox", "ChiSox", "CWS"], 145, "AL", "CENTRAL"),
-            "CLE": TeamMapping("Cleveland Guardians", "CLE", ["Cleveland", "Guardians", "Indians"], 114, "AL", "CENTRAL"),
-            "DET": TeamMapping("Detroit Tigers", "DET", ["Detroit", "Tigers"], 116, "AL", "CENTRAL"),
-            "KC": TeamMapping("Kansas City Royals", "KC", ["Kansas City", "Royals", "K.C."], 118, "AL", "CENTRAL"),
-            "MIN": TeamMapping("Minnesota Twins", "MIN", ["Minnesota", "Twins"], 142, "AL", "CENTRAL"),
-
+            "CHW": TeamMapping(
+                "Chicago White Sox",
+                "CHW",
+                ["Chicago", "White Sox", "ChiSox", "CWS"],
+                145,
+                "AL",
+                "CENTRAL",
+            ),
+            "CLE": TeamMapping(
+                "Cleveland Guardians",
+                "CLE",
+                ["Cleveland", "Guardians", "Indians"],
+                114,
+                "AL",
+                "CENTRAL",
+            ),
+            "DET": TeamMapping(
+                "Detroit Tigers", "DET", ["Detroit", "Tigers"], 116, "AL", "CENTRAL"
+            ),
+            "KC": TeamMapping(
+                "Kansas City Royals",
+                "KC",
+                ["Kansas City", "Royals", "K.C."],
+                118,
+                "AL",
+                "CENTRAL",
+            ),
+            "MIN": TeamMapping(
+                "Minnesota Twins", "MIN", ["Minnesota", "Twins"], 142, "AL", "CENTRAL"
+            ),
             # American League West
-            "HOU": TeamMapping("Houston Astros", "HOU", ["Houston", "Astros"], 117, "AL", "WEST"),
-            "LAA": TeamMapping("Los Angeles Angels", "LAA", ["Los Angeles", "Angels", "LA Angels", "Anaheim"], 108, "AL", "WEST"),
-            "OAK": TeamMapping("Oakland Athletics", "OAK", ["Oakland", "Athletics", "A's"], 133, "AL", "WEST"),
-            "SEA": TeamMapping("Seattle Mariners", "SEA", ["Seattle", "Mariners", "M's"], 136, "AL", "WEST"),
-            "TEX": TeamMapping("Texas Rangers", "TEX", ["Texas", "Rangers"], 140, "AL", "WEST"),
-
+            "HOU": TeamMapping(
+                "Houston Astros", "HOU", ["Houston", "Astros"], 117, "AL", "WEST"
+            ),
+            "LAA": TeamMapping(
+                "Los Angeles Angels",
+                "LAA",
+                ["Los Angeles", "Angels", "LA Angels", "Anaheim"],
+                108,
+                "AL",
+                "WEST",
+            ),
+            "OAK": TeamMapping(
+                "Oakland Athletics",
+                "OAK",
+                ["Oakland", "Athletics", "A's"],
+                133,
+                "AL",
+                "WEST",
+            ),
+            "SEA": TeamMapping(
+                "Seattle Mariners",
+                "SEA",
+                ["Seattle", "Mariners", "M's"],
+                136,
+                "AL",
+                "WEST",
+            ),
+            "TEX": TeamMapping(
+                "Texas Rangers", "TEX", ["Texas", "Rangers"], 140, "AL", "WEST"
+            ),
             # National League East
-            "ATL": TeamMapping("Atlanta Braves", "ATL", ["Atlanta", "Braves"], 144, "NL", "EAST"),
-            "MIA": TeamMapping("Miami Marlins", "MIA", ["Miami", "Marlins", "Florida"], 146, "NL", "EAST"),
-            "NYM": TeamMapping("New York Mets", "NYM", ["New York", "Mets", "NY Mets"], 121, "NL", "EAST"),
-            "PHI": TeamMapping("Philadelphia Phillies", "PHI", ["Philadelphia", "Phillies", "Phils"], 143, "NL", "EAST"),
-            "WSH": TeamMapping("Washington Nationals", "WSH", ["Washington", "Nationals", "Nats"], 120, "NL", "EAST"),
-
+            "ATL": TeamMapping(
+                "Atlanta Braves", "ATL", ["Atlanta", "Braves"], 144, "NL", "EAST"
+            ),
+            "MIA": TeamMapping(
+                "Miami Marlins",
+                "MIA",
+                ["Miami", "Marlins", "Florida"],
+                146,
+                "NL",
+                "EAST",
+            ),
+            "NYM": TeamMapping(
+                "New York Mets",
+                "NYM",
+                ["New York", "Mets", "NY Mets"],
+                121,
+                "NL",
+                "EAST",
+            ),
+            "PHI": TeamMapping(
+                "Philadelphia Phillies",
+                "PHI",
+                ["Philadelphia", "Phillies", "Phils"],
+                143,
+                "NL",
+                "EAST",
+            ),
+            "WSH": TeamMapping(
+                "Washington Nationals",
+                "WSH",
+                ["Washington", "Nationals", "Nats"],
+                120,
+                "NL",
+                "EAST",
+            ),
             # National League Central
-            "CHC": TeamMapping("Chicago Cubs", "CHC", ["Chicago", "Cubs", "ChiCubs"], 112, "NL", "CENTRAL"),
-            "CIN": TeamMapping("Cincinnati Reds", "CIN", ["Cincinnati", "Reds"], 113, "NL", "CENTRAL"),
-            "MIL": TeamMapping("Milwaukee Brewers", "MIL", ["Milwaukee", "Brewers"], 158, "NL", "CENTRAL"),
-            "PIT": TeamMapping("Pittsburgh Pirates", "PIT", ["Pittsburgh", "Pirates"], 134, "NL", "CENTRAL"),
-            "STL": TeamMapping("St. Louis Cardinals", "STL", ["St. Louis", "Cardinals", "StL", "Cards"], 138, "NL", "CENTRAL"),
-
+            "CHC": TeamMapping(
+                "Chicago Cubs",
+                "CHC",
+                ["Chicago", "Cubs", "ChiCubs"],
+                112,
+                "NL",
+                "CENTRAL",
+            ),
+            "CIN": TeamMapping(
+                "Cincinnati Reds", "CIN", ["Cincinnati", "Reds"], 113, "NL", "CENTRAL"
+            ),
+            "MIL": TeamMapping(
+                "Milwaukee Brewers",
+                "MIL",
+                ["Milwaukee", "Brewers"],
+                158,
+                "NL",
+                "CENTRAL",
+            ),
+            "PIT": TeamMapping(
+                "Pittsburgh Pirates",
+                "PIT",
+                ["Pittsburgh", "Pirates"],
+                134,
+                "NL",
+                "CENTRAL",
+            ),
+            "STL": TeamMapping(
+                "St. Louis Cardinals",
+                "STL",
+                ["St. Louis", "Cardinals", "StL", "Cards"],
+                138,
+                "NL",
+                "CENTRAL",
+            ),
             # National League West
-            "ARI": TeamMapping("Arizona Diamondbacks", "ARI", ["Arizona", "Diamondbacks", "D-backs"], 109, "NL", "WEST"),
-            "COL": TeamMapping("Colorado Rockies", "COL", ["Colorado", "Rockies"], 115, "NL", "WEST"),
-            "LAD": TeamMapping("Los Angeles Dodgers", "LAD", ["Los Angeles", "Dodgers", "LA Dodgers"], 119, "NL", "WEST"),
-            "SD": TeamMapping("San Diego Padres", "SD", ["San Diego", "Padres"], 135, "NL", "WEST"),
-            "SF": TeamMapping("San Francisco Giants", "SF", ["San Francisco", "Giants", "SF Giants"], 137, "NL", "WEST"),
+            "ARI": TeamMapping(
+                "Arizona Diamondbacks",
+                "ARI",
+                ["Arizona", "Diamondbacks", "D-backs"],
+                109,
+                "NL",
+                "WEST",
+            ),
+            "COL": TeamMapping(
+                "Colorado Rockies", "COL", ["Colorado", "Rockies"], 115, "NL", "WEST"
+            ),
+            "LAD": TeamMapping(
+                "Los Angeles Dodgers",
+                "LAD",
+                ["Los Angeles", "Dodgers", "LA Dodgers"],
+                119,
+                "NL",
+                "WEST",
+            ),
+            "SD": TeamMapping(
+                "San Diego Padres", "SD", ["San Diego", "Padres"], 135, "NL", "WEST"
+            ),
+            "SF": TeamMapping(
+                "San Francisco Giants",
+                "SF",
+                ["San Francisco", "Giants", "SF Giants"],
+                137,
+                "NL",
+                "WEST",
+            ),
         }
 
     async def initialize(self):
@@ -140,7 +303,7 @@ class MLBStatsAPIGameResolutionService:
             while current_date <= end_date:
                 games = await self._fetch_mlb_games_for_date(current_date)
                 for game in games:
-                    self.game_cache[game['gamePk']] = game
+                    self.game_cache[game["gamePk"]] = game
                 current_date += timedelta(days=1)
 
                 # Rate limiting
@@ -156,9 +319,9 @@ class MLBStatsAPIGameResolutionService:
         try:
             url = "https://statsapi.mlb.com/api/v1/schedule"
             params = {
-                'sportId': '1',
-                'date': game_date.isoformat(),
-                'hydrate': 'game(content(editorial(recap)),decisions),linescore,boxscore'
+                "sportId": "1",
+                "date": game_date.isoformat(),
+                "hydrate": "game(content(editorial(recap)),decisions),linescore,boxscore",
             }
 
             async with self.session.get(url, params=params) as response:
@@ -166,13 +329,15 @@ class MLBStatsAPIGameResolutionService:
                     data = await response.json()
                     games = []
 
-                    for date_entry in data.get('dates', []):
-                        for game in date_entry.get('games', []):
+                    for date_entry in data.get("dates", []):
+                        for game in date_entry.get("games", []):
                             games.append(game)
 
                     return games
                 else:
-                    self.logger.warning("MLB API request failed", status=response.status, date=game_date)
+                    self.logger.warning(
+                        "MLB API request failed", status=response.status, date=game_date
+                    )
                     return []
 
         except Exception as e:
@@ -182,10 +347,10 @@ class MLBStatsAPIGameResolutionService:
     def standardize_team_name(self, team_name: str) -> str | None:
         """
         Standardize team name to official abbreviation.
-        
+
         Args:
             team_name: Team name in any format
-            
+
         Returns:
             Standardized team abbreviation or None if not found
         """
@@ -210,35 +375,35 @@ class MLBStatsAPIGameResolutionService:
 
         # Fuzzy matching for common variations
         fuzzy_mappings = {
-            'yanks': 'NYY',
-            'sox': 'BOS',  # Default to Red Sox for 'sox' - context needed for White Sox
-            'mets': 'NYM',
-            'cubs': 'CHC',
-            'cards': 'STL',
-            'nats': 'WSH',
-            'jays': 'TOR',
-            'rays': 'TB',
-            'astros': 'HOU',
-            'dodgers': 'LAD',
-            'giants': 'SF',
-            'padres': 'SD',
-            'mariners': 'SEA',
-            'angels': 'LAA',
-            'rangers': 'TEX',
-            'athletics': 'OAK',
-            'twins': 'MIN',
-            'tigers': 'DET',
-            'royals': 'KC',
-            'guardians': 'CLE',
-            'orioles': 'BAL',
-            'phillies': 'PHI',
-            'braves': 'ATL',
-            'marlins': 'MIA',
-            'reds': 'CIN',
-            'brewers': 'MIL',
-            'pirates': 'PIT',
-            'diamondbacks': 'ARI',
-            'rockies': 'COL',
+            "yanks": "NYY",
+            "sox": "BOS",  # Default to Red Sox for 'sox' - context needed for White Sox
+            "mets": "NYM",
+            "cubs": "CHC",
+            "cards": "STL",
+            "nats": "WSH",
+            "jays": "TOR",
+            "rays": "TB",
+            "astros": "HOU",
+            "dodgers": "LAD",
+            "giants": "SF",
+            "padres": "SD",
+            "mariners": "SEA",
+            "angels": "LAA",
+            "rangers": "TEX",
+            "athletics": "OAK",
+            "twins": "MIN",
+            "tigers": "DET",
+            "royals": "KC",
+            "guardians": "CLE",
+            "orioles": "BAL",
+            "phillies": "PHI",
+            "braves": "ATL",
+            "marlins": "MIA",
+            "reds": "CIN",
+            "brewers": "MIL",
+            "pirates": "PIT",
+            "diamondbacks": "ARI",
+            "rockies": "COL",
         }
 
         for keyword, abbr in fuzzy_mappings.items():
@@ -251,10 +416,10 @@ class MLBStatsAPIGameResolutionService:
     def get_team_info(self, team_identifier: str) -> TeamMapping | None:
         """
         Get comprehensive team information.
-        
+
         Args:
             team_identifier: Team name or abbreviation
-            
+
         Returns:
             TeamMapping object or None if not found
         """
@@ -269,18 +434,18 @@ class MLBStatsAPIGameResolutionService:
         source: DataSource,
         home_team: str = None,
         away_team: str = None,
-        game_date: date = None
+        game_date: date = None,
     ) -> GameMatchResult:
         """
         Resolve external game ID to internal game ID.
-        
+
         Args:
             external_id: External game identifier
             source: Data source
             home_team: Home team name (optional, improves matching)
             away_team: Away team name (optional, improves matching)
             game_date: Game date (optional, improves matching)
-            
+
         Returns:
             GameMatchResult with matching information
         """
@@ -295,7 +460,10 @@ class MLBStatsAPIGameResolutionService:
                 api_result = await self._match_game_with_mlb_api(
                     home_team, away_team, game_date, external_id, source
                 )
-                if api_result.mlb_game_id and api_result.confidence != MatchConfidence.NONE:
+                if (
+                    api_result.mlb_game_id
+                    and api_result.confidence != MatchConfidence.NONE
+                ):
                     # Store the match in database for future use
                     await self._store_game_match(api_result, external_id, source)
                     return api_result
@@ -306,23 +474,27 @@ class MLBStatsAPIGameResolutionService:
                 mlb_game_id=None,
                 confidence=MatchConfidence.NONE,
                 match_method="no_match",
-                match_details={"external_id": external_id, "source": source.value}
+                match_details={"external_id": external_id, "source": source.value},
             )
 
         except Exception as e:
-            self.logger.error("Error resolving game ID",
-                            external_id=external_id,
-                            source=source.value,
-                            error=str(e))
+            self.logger.error(
+                "Error resolving game ID",
+                external_id=external_id,
+                source=source.value,
+                error=str(e),
+            )
             return GameMatchResult(
                 game_id=None,
                 mlb_game_id=None,
                 confidence=MatchConfidence.NONE,
                 match_method="error",
-                match_details={"error": str(e)}
+                match_details={"error": str(e)},
             )
 
-    async def _lookup_game_in_database(self, external_id: str, source: DataSource) -> GameMatchResult:
+    async def _lookup_game_in_database(
+        self, external_id: str, source: DataSource
+    ) -> GameMatchResult:
         """Look up game in database by external ID."""
         try:
             with psycopg2.connect(
@@ -331,16 +503,16 @@ class MLBStatsAPIGameResolutionService:
                 database=self.settings.database.database,
                 user=self.settings.database.user,
                 password=self.settings.database.password,
-                cursor_factory=RealDictCursor
+                cursor_factory=RealDictCursor,
             ) as conn:
                 with conn.cursor() as cur:
                     # Map source to database column
                     source_column_map = {
-                        DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: 'sportsbookreview_game_id',
-                        DataSource.ACTION_NETWORK: 'action_network_game_id',
-                        DataSource.VSIN: 'vsin_game_id',
-                        DataSource.SPORTS_BETTING_DIME: 'sbd_game_id',
-                        DataSource.MLB_STATS_API: 'mlb_stats_api_game_id'
+                        DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: "sportsbookreview_game_id",
+                        DataSource.ACTION_NETWORK: "action_network_game_id",
+                        DataSource.VSIN: "vsin_game_id",
+                        DataSource.SPORTS_BETTING_DIME: "sbd_game_id",
+                        DataSource.MLB_STATS_API: "mlb_stats_api_game_id",
                     }
 
                     column = source_column_map.get(source)
@@ -350,29 +522,31 @@ class MLBStatsAPIGameResolutionService:
                             mlb_game_id=None,
                             confidence=MatchConfidence.NONE,
                             match_method="unsupported_source",
-                            match_details={"source": source.value}
+                            match_details={"source": source.value},
                         )
 
                     # Query the database
                     cur.execute(
                         f"SELECT id, mlb_stats_api_game_id, home_team, away_team, game_date FROM core_betting.games WHERE {column} = %s",
-                        (external_id,)
+                        (external_id,),
                     )
 
                     result = cur.fetchone()
                     if result:
                         return GameMatchResult(
-                            game_id=result['id'],
-                            mlb_game_id=result['mlb_stats_api_game_id'],
+                            game_id=result["id"],
+                            mlb_game_id=result["mlb_stats_api_game_id"],
                             confidence=MatchConfidence.HIGH,
                             match_method="database_lookup",
                             match_details={
                                 "external_id": external_id,
                                 "source": source.value,
-                                "home_team": result['home_team'],
-                                "away_team": result['away_team'],
-                                "game_date": result['game_date'].isoformat() if result['game_date'] else None
-                            }
+                                "home_team": result["home_team"],
+                                "away_team": result["away_team"],
+                                "game_date": result["game_date"].isoformat()
+                                if result["game_date"]
+                                else None,
+                            },
                         )
 
                     return GameMatchResult(
@@ -380,7 +554,10 @@ class MLBStatsAPIGameResolutionService:
                         mlb_game_id=None,
                         confidence=MatchConfidence.NONE,
                         match_method="not_found_in_database",
-                        match_details={"external_id": external_id, "source": source.value}
+                        match_details={
+                            "external_id": external_id,
+                            "source": source.value,
+                        },
                     )
 
         except Exception as e:
@@ -393,7 +570,7 @@ class MLBStatsAPIGameResolutionService:
         away_team: str,
         game_date: date = None,
         external_id: str = None,
-        source: DataSource = None
+        source: DataSource = None,
     ) -> GameMatchResult:
         """Match game with MLB Stats API data."""
         try:
@@ -411,8 +588,8 @@ class MLBStatsAPIGameResolutionService:
                         "home_team": home_team,
                         "away_team": away_team,
                         "home_abbr": home_abbr,
-                        "away_abbr": away_abbr
-                    }
+                        "away_abbr": away_abbr,
+                    },
                 )
 
             # Get team info
@@ -430,46 +607,65 @@ class MLBStatsAPIGameResolutionService:
 
             for search_date in search_dates:
                 games = await self._fetch_mlb_games_for_date(search_date)
-                
+
                 self.logger.debug(
                     "Searching for game matches",
                     search_date=search_date,
                     games_found=len(games),
                     looking_for_home=home_abbr,
-                    looking_for_away=away_abbr
+                    looking_for_away=away_abbr,
                 )
 
                 for game in games:
-                    game_home_id = game.get('teams', {}).get('home', {}).get('team', {}).get('id')
-                    game_away_id = game.get('teams', {}).get('away', {}).get('team', {}).get('id')
-                    game_pk = str(game['gamePk'])
-                    
+                    game_home_id = (
+                        game.get("teams", {}).get("home", {}).get("team", {}).get("id")
+                    )
+                    game_away_id = (
+                        game.get("teams", {}).get("away", {}).get("team", {}).get("id")
+                    )
+                    game_pk = str(game["gamePk"])
+
                     # Get team names for logging
-                    game_home_name = game.get('teams', {}).get('home', {}).get('team', {}).get('name', 'Unknown')
-                    game_away_name = game.get('teams', {}).get('away', {}).get('team', {}).get('name', 'Unknown')
-                    
+                    game_home_name = (
+                        game.get("teams", {})
+                        .get("home", {})
+                        .get("team", {})
+                        .get("name", "Unknown")
+                    )
+                    game_away_name = (
+                        game.get("teams", {})
+                        .get("away", {})
+                        .get("team", {})
+                        .get("name", "Unknown")
+                    )
+
                     self.logger.debug(
                         "Checking game match",
                         game_pk=game_pk,
                         api_home=f"{game_home_name} (ID: {game_home_id})",
                         api_away=f"{game_away_name} (ID: {game_away_id})",
                         db_home=f"{home_abbr} (ID: {home_team_info.mlb_team_id})",
-                        db_away=f"{away_abbr} (ID: {away_team_info.mlb_team_id})"
+                        db_away=f"{away_abbr} (ID: {away_team_info.mlb_team_id})",
                     )
 
                     # Try exact match first (database home/away = API home/away)
-                    if (game_home_id == home_team_info.mlb_team_id and
-                        game_away_id == away_team_info.mlb_team_id):
-
+                    if (
+                        game_home_id == home_team_info.mlb_team_id
+                        and game_away_id == away_team_info.mlb_team_id
+                    ):
                         self.logger.info(
                             "Found exact team match",
                             game_pk=game_pk,
                             match_type="exact",
                             home_team=home_abbr,
-                            away_team=away_abbr
+                            away_team=away_abbr,
                         )
 
-                        confidence = MatchConfidence.HIGH if game_date else MatchConfidence.MEDIUM
+                        confidence = (
+                            MatchConfidence.HIGH
+                            if game_date
+                            else MatchConfidence.MEDIUM
+                        )
                         return GameMatchResult(
                             game_id=None,  # Will be set when stored
                             mlb_game_id=game_pk,
@@ -482,14 +678,15 @@ class MLBStatsAPIGameResolutionService:
                                 "game_date": search_date.isoformat(),
                                 "external_id": external_id,
                                 "source": source.value if source else None,
-                                "match_type": "exact"
-                            }
+                                "match_type": "exact",
+                            },
                         )
-                    
-                    # Try reversed match (database home/away = API away/home)
-                    elif (game_home_id == away_team_info.mlb_team_id and
-                          game_away_id == home_team_info.mlb_team_id):
 
+                    # Try reversed match (database home/away = API away/home)
+                    elif (
+                        game_home_id == away_team_info.mlb_team_id
+                        and game_away_id == home_team_info.mlb_team_id
+                    ):
                         self.logger.info(
                             "Found reversed team match",
                             game_pk=game_pk,
@@ -497,11 +694,13 @@ class MLBStatsAPIGameResolutionService:
                             db_home=home_abbr,
                             db_away=away_abbr,
                             api_home=game_home_name,
-                            api_away=game_away_name
+                            api_away=game_away_name,
                         )
 
                         # Slightly lower confidence for reversed matches
-                        confidence = MatchConfidence.MEDIUM if game_date else MatchConfidence.LOW
+                        confidence = (
+                            MatchConfidence.MEDIUM if game_date else MatchConfidence.LOW
+                        )
                         return GameMatchResult(
                             game_id=None,  # Will be set when stored
                             mlb_game_id=game_pk,
@@ -516,8 +715,8 @@ class MLBStatsAPIGameResolutionService:
                                 "source": source.value if source else None,
                                 "match_type": "reversed",
                                 "api_home_team": game_home_name,
-                                "api_away_team": game_away_name
-                            }
+                                "api_away_team": game_away_name,
+                            },
                         )
 
             # No match found - provide detailed debugging info
@@ -529,9 +728,9 @@ class MLBStatsAPIGameResolutionService:
                 away_abbr=away_abbr,
                 home_mlb_id=home_team_info.mlb_team_id,
                 away_mlb_id=away_team_info.mlb_team_id,
-                search_dates=[d.isoformat() for d in search_dates]
+                search_dates=[d.isoformat() for d in search_dates],
             )
-            
+
             return GameMatchResult(
                 game_id=None,
                 mlb_game_id=None,
@@ -545,15 +744,17 @@ class MLBStatsAPIGameResolutionService:
                     "home_mlb_id": home_team_info.mlb_team_id,
                     "away_mlb_id": away_team_info.mlb_team_id,
                     "search_dates": [d.isoformat() for d in search_dates],
-                    "tried_both_directions": True
-                }
+                    "tried_both_directions": True,
+                },
             )
 
         except Exception as e:
             self.logger.error("Error matching with MLB API", error=str(e))
             raise
 
-    async def _store_game_match(self, match_result: GameMatchResult, external_id: str, source: DataSource):
+    async def _store_game_match(
+        self, match_result: GameMatchResult, external_id: str, source: DataSource
+    ):
         """Store a successful game match in the database."""
         try:
             with psycopg2.connect(
@@ -562,15 +763,15 @@ class MLBStatsAPIGameResolutionService:
                 database=self.settings.database.database,
                 user=self.settings.database.user,
                 password=self.settings.database.password,
-                cursor_factory=RealDictCursor
+                cursor_factory=RealDictCursor,
             ) as conn:
                 with conn.cursor() as cur:
                     # Map source to database column
                     source_column_map = {
-                        DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: 'sportsbookreview_game_id',
-                        DataSource.ACTION_NETWORK: 'action_network_game_id',
-                        DataSource.VSIN: 'vsin_game_id',
-                        DataSource.SPORTS_BETTING_DIME: 'sbd_game_id'
+                        DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: "sportsbookreview_game_id",
+                        DataSource.ACTION_NETWORK: "action_network_game_id",
+                        DataSource.VSIN: "vsin_game_id",
+                        DataSource.SPORTS_BETTING_DIME: "sbd_game_id",
                     }
 
                     column = source_column_map.get(source)
@@ -582,7 +783,7 @@ class MLBStatsAPIGameResolutionService:
                     # Check if game already exists
                     cur.execute(
                         "SELECT id FROM core_betting.games WHERE mlb_stats_api_game_id = %s",
-                        (match_result.mlb_game_id,)
+                        (match_result.mlb_game_id,),
                     )
 
                     existing_game = cur.fetchone()
@@ -590,9 +791,9 @@ class MLBStatsAPIGameResolutionService:
                         # Update existing game with new external ID
                         cur.execute(
                             f"UPDATE core_betting.games SET {column} = %s, updated_at = NOW() WHERE id = %s",
-                            (external_id, existing_game['id'])
+                            (external_id, existing_game["id"]),
                         )
-                        match_result.game_id = existing_game['id']
+                        match_result.game_id = existing_game["id"]
                     else:
                         # Insert new game
                         cur.execute(
@@ -605,17 +806,21 @@ class MLBStatsAPIGameResolutionService:
                             (
                                 match_result.mlb_game_id,
                                 external_id,
-                                details.get('home_team'),
-                                details.get('away_team'),
-                                details.get('game_date'),
-                                details.get('game_date'),  # Use game_date as datetime for now
-                                'HIGH' if match_result.confidence == MatchConfidence.HIGH else 'MEDIUM',
-                                True
-                            )
+                                details.get("home_team"),
+                                details.get("away_team"),
+                                details.get("game_date"),
+                                details.get(
+                                    "game_date"
+                                ),  # Use game_date as datetime for now
+                                "HIGH"
+                                if match_result.confidence == MatchConfidence.HIGH
+                                else "MEDIUM",
+                                True,
+                            ),
                         )
 
                         result = cur.fetchone()
-                        match_result.game_id = result['id']
+                        match_result.game_id = result["id"]
 
                     conn.commit()
 
@@ -626,10 +831,10 @@ class MLBStatsAPIGameResolutionService:
     async def enrich_game_with_mlb_data(self, game_id: int) -> bool:
         """
         Enrich game with MLB Stats API data.
-        
+
         Args:
             game_id: Internal game ID
-            
+
         Returns:
             True if enrichment was successful, False otherwise
         """
@@ -640,24 +845,26 @@ class MLBStatsAPIGameResolutionService:
                 database=self.settings.database.database,
                 user=self.settings.database.user,
                 password=self.settings.database.password,
-                cursor_factory=RealDictCursor
+                cursor_factory=RealDictCursor,
             ) as conn:
                 with conn.cursor() as cur:
                     # Get game info
                     cur.execute(
                         "SELECT mlb_stats_api_game_id, has_mlb_enrichment FROM core_betting.games WHERE id = %s",
-                        (game_id,)
+                        (game_id,),
                     )
 
                     game_record = cur.fetchone()
-                    if not game_record or not game_record['mlb_stats_api_game_id']:
+                    if not game_record or not game_record["mlb_stats_api_game_id"]:
                         return False
 
-                    if game_record['has_mlb_enrichment']:
+                    if game_record["has_mlb_enrichment"]:
                         return True  # Already enriched
 
                     # Fetch game data from MLB API
-                    game_data = await self._fetch_game_details(game_record['mlb_stats_api_game_id'])
+                    game_data = await self._fetch_game_details(
+                        game_record["mlb_stats_api_game_id"]
+                    )
                     if not game_data:
                         return False
 
@@ -686,26 +893,28 @@ class MLBStatsAPIGameResolutionService:
                         WHERE id = %s
                         """,
                         (
-                            enrichment_data.get('venue_name'),
-                            enrichment_data.get('venue_id'),
-                            enrichment_data.get('season'),
-                            enrichment_data.get('game_status'),
-                            enrichment_data.get('home_score'),
-                            enrichment_data.get('away_score'),
-                            enrichment_data.get('winning_team'),
-                            enrichment_data.get('weather_condition'),
-                            enrichment_data.get('temperature'),
-                            enrichment_data.get('wind_speed'),
-                            enrichment_data.get('wind_direction'),
-                            game_id
-                        )
+                            enrichment_data.get("venue_name"),
+                            enrichment_data.get("venue_id"),
+                            enrichment_data.get("season"),
+                            enrichment_data.get("game_status"),
+                            enrichment_data.get("home_score"),
+                            enrichment_data.get("away_score"),
+                            enrichment_data.get("winning_team"),
+                            enrichment_data.get("weather_condition"),
+                            enrichment_data.get("temperature"),
+                            enrichment_data.get("wind_speed"),
+                            enrichment_data.get("wind_direction"),
+                            game_id,
+                        ),
                     )
 
                     conn.commit()
                     return True
 
         except Exception as e:
-            self.logger.error("Error enriching game with MLB data", game_id=game_id, error=str(e))
+            self.logger.error(
+                "Error enriching game with MLB data", game_id=game_id, error=str(e)
+            )
             return False
 
     async def _fetch_game_details(self, mlb_game_id: str) -> dict[str, Any] | None:
@@ -717,11 +926,17 @@ class MLBStatsAPIGameResolutionService:
                 if response.status == 200:
                     return await response.json()
                 else:
-                    self.logger.warning("MLB API request failed", status=response.status, mlb_game_id=mlb_game_id)
+                    self.logger.warning(
+                        "MLB API request failed",
+                        status=response.status,
+                        mlb_game_id=mlb_game_id,
+                    )
                     return None
 
         except Exception as e:
-            self.logger.error("Error fetching game details", mlb_game_id=mlb_game_id, error=str(e))
+            self.logger.error(
+                "Error fetching game details", mlb_game_id=mlb_game_id, error=str(e)
+            )
             return None
 
     def _extract_enrichment_data(self, game_data: dict[str, Any]) -> dict[str, Any]:
@@ -729,55 +944,61 @@ class MLBStatsAPIGameResolutionService:
         enrichment = {}
 
         try:
-            game_info = game_data.get('gameData', {})
-            live_data = game_data.get('liveData', {})
+            game_info = game_data.get("gameData", {})
+            live_data = game_data.get("liveData", {})
 
             # Venue information
-            venue = game_info.get('venue', {})
-            enrichment['venue_name'] = venue.get('name')
-            enrichment['venue_id'] = venue.get('id')
+            venue = game_info.get("venue", {})
+            enrichment["venue_name"] = venue.get("name")
+            enrichment["venue_id"] = venue.get("id")
 
             # Season information
-            enrichment['season'] = game_info.get('game', {}).get('season')
+            enrichment["season"] = game_info.get("game", {}).get("season")
 
             # Game status
-            status = game_info.get('status', {})
-            enrichment['game_status'] = status.get('detailedState', '').lower()
+            status = game_info.get("status", {})
+            enrichment["game_status"] = status.get("detailedState", "").lower()
 
             # Scores
-            linescore = live_data.get('linescore', {})
+            linescore = live_data.get("linescore", {})
             if linescore:
-                enrichment['home_score'] = linescore.get('teams', {}).get('home', {}).get('runs')
-                enrichment['away_score'] = linescore.get('teams', {}).get('away', {}).get('runs')
+                enrichment["home_score"] = (
+                    linescore.get("teams", {}).get("home", {}).get("runs")
+                )
+                enrichment["away_score"] = (
+                    linescore.get("teams", {}).get("away", {}).get("runs")
+                )
 
                 # Determine winner
-                home_score = enrichment.get('home_score', 0)
-                away_score = enrichment.get('away_score', 0)
+                home_score = enrichment.get("home_score", 0)
+                away_score = enrichment.get("away_score", 0)
                 if home_score > away_score:
-                    enrichment['winning_team'] = 'home'
+                    enrichment["winning_team"] = "home"
                 elif away_score > home_score:
-                    enrichment['winning_team'] = 'away'
+                    enrichment["winning_team"] = "away"
 
             # Weather information
-            weather = game_info.get('weather', {})
+            weather = game_info.get("weather", {})
             if weather:
-                enrichment['weather_condition'] = weather.get('condition')
-                enrichment['temperature'] = weather.get('temp')
-                enrichment['wind_speed'] = weather.get('wind')
-                enrichment['wind_direction'] = weather.get('windDirection')
+                enrichment["weather_condition"] = weather.get("condition")
+                enrichment["temperature"] = weather.get("temp")
+                enrichment["wind_speed"] = weather.get("wind")
+                enrichment["wind_direction"] = weather.get("windDirection")
 
         except Exception as e:
             self.logger.error("Error extracting enrichment data", error=str(e))
 
         return enrichment
 
-    async def bulk_resolve_games(self, game_requests: list[dict[str, Any]]) -> list[GameMatchResult]:
+    async def bulk_resolve_games(
+        self, game_requests: list[dict[str, Any]]
+    ) -> list[GameMatchResult]:
         """
         Bulk resolve multiple games for efficiency.
-        
+
         Args:
             game_requests: List of dicts with keys: external_id, source, home_team, away_team, game_date
-            
+
         Returns:
             List of GameMatchResult objects
         """
@@ -786,11 +1007,11 @@ class MLBStatsAPIGameResolutionService:
         for request in game_requests:
             try:
                 result = await self.resolve_game_id(
-                    external_id=request['external_id'],
-                    source=request['source'],
-                    home_team=request.get('home_team'),
-                    away_team=request.get('away_team'),
-                    game_date=request.get('game_date')
+                    external_id=request["external_id"],
+                    source=request["source"],
+                    home_team=request.get("home_team"),
+                    away_team=request.get("away_team"),
+                    game_date=request.get("game_date"),
                 )
                 results.append(result)
 
@@ -798,49 +1019,59 @@ class MLBStatsAPIGameResolutionService:
                 await asyncio.sleep(0.1)
 
             except Exception as e:
-                self.logger.error("Error in bulk resolve", request=request, error=str(e))
-                results.append(GameMatchResult(
-                    game_id=None,
-                    mlb_game_id=None,
-                    confidence=MatchConfidence.NONE,
-                    match_method="bulk_error",
-                    match_details={"error": str(e)}
-                ))
+                self.logger.error(
+                    "Error in bulk resolve", request=request, error=str(e)
+                )
+                results.append(
+                    GameMatchResult(
+                        game_id=None,
+                        mlb_game_id=None,
+                        confidence=MatchConfidence.NONE,
+                        match_method="bulk_error",
+                        match_details={"error": str(e)},
+                    )
+                )
 
         return results
 
     def validate_team_matchup(self, home_team: str, away_team: str) -> bool:
         """
         Validate that a team matchup is valid (teams exist and are different).
-        
+
         Args:
             home_team: Home team identifier
             away_team: Away team identifier
-            
+
         Returns:
             True if valid matchup, False otherwise
         """
         home_abbr = self.standardize_team_name(home_team)
         away_abbr = self.standardize_team_name(away_team)
 
-        return (home_abbr and away_abbr and
-                home_abbr != away_abbr and
-                home_abbr in self.team_mappings and
-                away_abbr in self.team_mappings)
+        return (
+            home_abbr
+            and away_abbr
+            and home_abbr != away_abbr
+            and home_abbr in self.team_mappings
+            and away_abbr in self.team_mappings
+        )
 
-    def get_division_matchups(self, division: str, conference: str) -> list[tuple[str, str]]:
+    def get_division_matchups(
+        self, division: str, conference: str
+    ) -> list[tuple[str, str]]:
         """
         Get all possible matchups within a division.
-        
+
         Args:
             division: Division name (EAST, CENTRAL, WEST)
             conference: Conference name (AL, NL)
-            
+
         Returns:
             List of (home_team, away_team) tuples
         """
         division_teams = [
-            abbr for abbr, mapping in self.team_mappings.items()
+            abbr
+            for abbr, mapping in self.team_mappings.items()
             if mapping.division == division and mapping.conference == conference
         ]
 
@@ -855,6 +1086,7 @@ class MLBStatsAPIGameResolutionService:
 
 # Example usage
 if __name__ == "__main__":
+
     async def main():
         service = MLBStatsAPIGameResolutionService()
         await service.initialize()
@@ -873,7 +1105,7 @@ if __name__ == "__main__":
                 source=DataSource.ACTION_NETWORK,
                 home_team="Yankees",
                 away_team="Red Sox",
-                game_date=date.today()
+                game_date=date.today(),
             )
             print(f"Resolution result: {result}")
 

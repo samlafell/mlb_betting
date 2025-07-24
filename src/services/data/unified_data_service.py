@@ -16,7 +16,9 @@ import structlog
 
 from ...core.config import get_settings
 from ...core.exceptions import DataError
-from ...data.collection.consolidated_action_network_collector import ActionNetworkHistoryParser
+from ...data.collection.consolidated_action_network_collector import (
+    ActionNetworkHistoryParser,
+)
 from ...data.database.action_network_repository import ActionNetworkRepository
 from ...data.database.connection import get_connection
 from ...data.models.unified.actionnetwork import ActionNetworkHistoricalData
@@ -111,26 +113,31 @@ class UnifiedDataService:
 
             # Collect historical data using HTTP client
             import aiohttp
+
             async with aiohttp.ClientSession() as session:
                 async with session.get(game_data["history_url"]) as response:
                     if response.status == 200:
                         history_response = await response.json()
-                        result_data = self.action_network_history_parser.parse_history_response(
-                            response_data=history_response,
-                            game_id=game_data["game_id"],
-                            home_team=game_data["home_team"],
-                            away_team=game_data["away_team"],
-                            game_datetime=game_data["game_datetime"],
-                            history_url=game_data["history_url"],
+                        result_data = (
+                            self.action_network_history_parser.parse_history_response(
+                                response_data=history_response,
+                                game_id=game_data["game_id"],
+                                home_team=game_data["home_team"],
+                                away_team=game_data["away_team"],
+                                game_datetime=game_data["game_datetime"],
+                                history_url=game_data["history_url"],
+                            )
                         )
-                        
+
                         # Create a mock result object for compatibility
                         class MockResult:
                             def __init__(self, data):
                                 self.success = data is not None
                                 self.data = [data] if data else []
-                                self.errors = [] if data else ["Failed to parse history response"]
-                        
+                                self.errors = (
+                                    [] if data else ["Failed to parse history response"]
+                                )
+
                         result = MockResult(result_data)
                     else:
                         result = MockResult(None)
@@ -195,8 +202,9 @@ class UnifiedDataService:
 
             # Collect historical data for all games
             import aiohttp
+
             results = []
-            
+
             async with aiohttp.ClientSession() as session:
                 for game_data in games_data:
                     try:
@@ -211,19 +219,23 @@ class UnifiedDataService:
                                     game_datetime=game_data["game_datetime"],
                                     history_url=game_data["history_url"],
                                 )
-                                
+
                                 # Create a mock result object for compatibility
                                 class MockResult:
                                     def __init__(self, data):
                                         self.success = data is not None
                                         self.data = [data] if data else []
-                                        self.errors = [] if data else ["Failed to parse history response"]
+                                        self.errors = (
+                                            []
+                                            if data
+                                            else ["Failed to parse history response"]
+                                        )
                                         self.metadata = game_data
-                                
+
                                 results.append(MockResult(result_data))
                             else:
                                 results.append(MockResult(None))
-                    except Exception as e:
+                    except Exception:
                         results.append(MockResult(None))
 
             # Extract successful results
@@ -635,7 +647,6 @@ class UnifiedDataService:
                 else None
             ),
         }
-
 
 
 # Convenience function for easy access

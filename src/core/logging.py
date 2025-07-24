@@ -91,8 +91,9 @@ class UnifiedLogger:
 
         # Filter out reserved keys from extra_context to avoid conflicts
         filtered_extra_context = {
-            k: v for k, v in self.extra_context.items()
-            if k not in ['component', 'correlation_id']
+            k: v
+            for k, v in self.extra_context.items()
+            if k not in ["component", "correlation_id"]
         }
 
         # Bind common context

@@ -19,9 +19,9 @@ from .collector_health_service import (
 )
 
 __all__ = [
-    'HealthMonitoringOrchestrator',
-    'CollectorHealthMonitor',
-    'HealthStatus',
-    'AlertSeverity',
-    'CollectorHealthStatus'
+    "HealthMonitoringOrchestrator",
+    "CollectorHealthMonitor",
+    "HealthStatus",
+    "AlertSeverity",
+    "CollectorHealthStatus",
 ]

@@ -59,19 +59,20 @@ class MonitoringCommands:
 
         @monitoring_group.command("health-check")
         @click.option(
-            '--collector',
-            type=click.Choice(['vsin', 'sbd', 'action_network', 'mlb_stats_api', 'odds_api'], case_sensitive=False),
-            help='Specific collector to check'
+            "--collector",
+            type=click.Choice(
+                ["vsin", "sbd", "action_network", "mlb_stats_api", "odds_api"],
+                case_sensitive=False,
+            ),
+            help="Specific collector to check",
         )
         @click.option(
-            '--detailed',
+            "--detailed",
             is_flag=True,
-            help='Show detailed health information including check metadata'
+            help="Show detailed health information including check metadata",
         )
         @click.option(
-            '--json-output',
-            is_flag=True,
-            help='Output results in JSON format'
+            "--json-output", is_flag=True, help="Output results in JSON format"
         )
         def health_check(collector: str | None, detailed: bool, json_output: bool):
             """Run health checks on data collectors."""
@@ -90,8 +91,12 @@ class MonitoringCommands:
 
                     if collector:
                         # Check specific collector
-                        console.print(f"🔍 Running health check for [bold]{collector}[/bold] collector...")
-                        result = await health_monitor.check_specific_collector(collector)
+                        console.print(
+                            f"🔍 Running health check for [bold]{collector}[/bold] collector..."
+                        )
+                        result = await health_monitor.check_specific_collector(
+                            collector
+                        )
 
                         if result:
                             if json_output:
@@ -99,11 +104,15 @@ class MonitoringCommands:
                             else:
                                 _display_single_health_result(result, detailed)
                         else:
-                            console.print(f"❌ Collector '{collector}' not found or failed to check")
+                            console.print(
+                                f"❌ Collector '{collector}' not found or failed to check"
+                            )
                             return
                     else:
                         # Check all collectors
-                        console.print("🔍 Running health checks for [bold]all collectors[/bold]...")
+                        console.print(
+                            "🔍 Running health checks for [bold]all collectors[/bold]..."
+                        )
                         results = await health_monitor.check_all_collectors()
 
                         if json_output:
@@ -119,20 +128,21 @@ class MonitoringCommands:
 
         @monitoring_group.command("performance")
         @click.option(
-            '--collector',
-            type=click.Choice(['vsin', 'sbd', 'action_network', 'mlb_stats_api', 'odds_api'], case_sensitive=False),
-            help='Filter by specific collector'
+            "--collector",
+            type=click.Choice(
+                ["vsin", "sbd", "action_network", "mlb_stats_api", "odds_api"],
+                case_sensitive=False,
+            ),
+            help="Filter by specific collector",
         )
         @click.option(
-            '--hours',
+            "--hours",
             default=24,
             type=click.IntRange(1, 168),  # 1 hour to 1 week
-            help='Hours of performance history to analyze (1-168 hours)'
+            help="Hours of performance history to analyze (1-168 hours)",
         )
         @click.option(
-            '--show-trends',
-            is_flag=True,
-            help='Show performance trends and analysis'
+            "--show-trends", is_flag=True, help="Show performance trends and analysis"
         )
         def performance_report(collector: str | None, hours: int, show_trends: bool):
             """Generate performance report for data collectors."""
@@ -149,10 +159,16 @@ class MonitoringCommands:
                         health_monitor.register_collector(coll)
 
                     # Get performance data
-                    console.print(f"📊 Generating performance report for last [bold]{hours} hours[/bold]...")
+                    console.print(
+                        f"📊 Generating performance report for last [bold]{hours} hours[/bold]..."
+                    )
 
                     if collector:
-                        results = {collector: await health_monitor.check_specific_collector(collector)}
+                        results = {
+                            collector: await health_monitor.check_specific_collector(
+                                collector
+                            )
+                        }
                     else:
                         results = await health_monitor.check_all_collectors()
 
@@ -166,16 +182,12 @@ class MonitoringCommands:
 
         @monitoring_group.command("start-monitoring")
         @click.option(
-            '--interval',
+            "--interval",
             default=300,
             type=click.IntRange(30, 3600),  # 30 seconds to 1 hour
-            help='Check interval in seconds (30-3600, default: 300 = 5 minutes)'
+            help="Check interval in seconds (30-3600, default: 300 = 5 minutes)",
         )
-        @click.option(
-            '--daemon',
-            is_flag=True,
-            help='Run as daemon in background'
-        )
+        @click.option("--daemon", is_flag=True, help="Run as daemon in background")
         def start_monitoring(interval: int, daemon: bool):
             """Start continuous health monitoring service."""
 
@@ -215,20 +227,23 @@ class MonitoringCommands:
 
         @monitoring_group.command("alerts")
         @click.option(
-            '--severity',
-            type=click.Choice(['info', 'warning', 'critical']),
-            help='Filter by alert severity'
+            "--severity",
+            type=click.Choice(["info", "warning", "critical"]),
+            help="Filter by alert severity",
         )
         @click.option(
-            '--hours',
+            "--hours",
             default=24,
             type=click.IntRange(1, 720),  # 1 hour to 30 days
-            help='Hours of alert history to show (1-720 hours)'
+            help="Hours of alert history to show (1-720 hours)",
         )
         @click.option(
-            '--collector',
-            type=click.Choice(['vsin', 'sbd', 'action_network', 'mlb_stats_api', 'odds_api'], case_sensitive=False),
-            help='Filter by specific collector'
+            "--collector",
+            type=click.Choice(
+                ["vsin", "sbd", "action_network", "mlb_stats_api", "odds_api"],
+                case_sensitive=False,
+            ),
+            help="Filter by specific collector",
         )
         def alert_history(severity: str | None, hours: int, collector: str | None):
             """Show recent alert history and statistics."""
@@ -240,7 +255,9 @@ class MonitoringCommands:
                 console.print(f"📋 Alert history for last [bold]{hours} hours[/bold]")
 
                 if severity:
-                    console.print(f"🔍 Filtered by severity: [bold]{severity.upper()}[/bold]")
+                    console.print(
+                        f"🔍 Filtered by severity: [bold]{severity.upper()}[/bold]"
+                    )
 
                 if collector:
                     console.print(f"🔍 Filtered by collector: [bold]{collector}[/bold]")
@@ -256,22 +273,25 @@ class MonitoringCommands:
 
         @monitoring_group.command("diagnose")
         @click.option(
-            '--collector',
+            "--collector",
             required=True,
-            type=click.Choice(['vsin', 'sbd', 'action_network', 'mlb_stats_api', 'odds_api'], case_sensitive=False),
-            help='Collector to diagnose'
+            type=click.Choice(
+                ["vsin", "sbd", "action_network", "mlb_stats_api", "odds_api"],
+                case_sensitive=False,
+            ),
+            help="Collector to diagnose",
         )
         @click.option(
-            '--fix',
-            is_flag=True,
-            help='Attempt automatic fixes for common issues'
+            "--fix", is_flag=True, help="Attempt automatic fixes for common issues"
         )
         def diagnose_collector(collector: str, fix: bool):
             """Run comprehensive diagnostics on a specific collector."""
 
             async def _diagnose():
                 try:
-                    console.print(f"🔧 Running diagnostics for [bold]{collector}[/bold] collector...")
+                    console.print(
+                        f"🔧 Running diagnostics for [bold]{collector}[/bold] collector..."
+                    )
 
                     config = UnifiedSettings()
                     orchestrator = CollectionOrchestrator(config)
@@ -337,7 +357,7 @@ def _display_health_summary(results: dict[str, CollectorHealthStatus], detailed:
             status_text,
             f"{status.uptime_percentage:.1f}%",
             perf_text,
-            status.last_updated.strftime("%H:%M:%S")
+            status.last_updated.strftime("%H:%M:%S"),
         ]
 
         if detailed:
@@ -355,8 +375,12 @@ def _display_health_summary(results: dict[str, CollectorHealthStatus], detailed:
 
     # Summary statistics
     total_collectors = len(results)
-    healthy_count = len([r for r in results.values() if r.overall_status == HealthStatus.HEALTHY])
-    critical_count = len([r for r in results.values() if r.overall_status == HealthStatus.CRITICAL])
+    healthy_count = len(
+        [r for r in results.values() if r.overall_status == HealthStatus.HEALTHY]
+    )
+    critical_count = len(
+        [r for r in results.values() if r.overall_status == HealthStatus.CRITICAL]
+    )
 
     summary_text = f"📊 Summary: {healthy_count}/{total_collectors} healthy"
     if critical_count > 0:
@@ -387,10 +411,12 @@ def _display_single_health_result(result: CollectorHealthStatus, detailed: bool)
 Status: [{status_color}]{result.overall_status.value.upper()}[/{status_color}]
 Uptime: {result.uptime_percentage:.1f}%
 Performance Score: {result.performance_score:.1f}/100
-Last Updated: {result.last_updated.strftime('%Y-%m-%d %H:%M:%S')}
+Last Updated: {result.last_updated.strftime("%Y-%m-%d %H:%M:%S")}
 """
 
-    console.print(Panel(panel_content, title="Health Status", border_style=status_color))
+    console.print(
+        Panel(panel_content, title="Health Status", border_style=status_color)
+    )
 
     # Individual check results
     if detailed:
@@ -410,23 +436,20 @@ Last Updated: {result.last_updated.strftime('%Y-%m-%d %H:%M:%S')}
             else:
                 check_status = "[dim]❓ UNKNOWN[/dim]"
 
-            response_time = f"{check.response_time:.3f}s" if check.response_time else "N/A"
+            response_time = (
+                f"{check.response_time:.3f}s" if check.response_time else "N/A"
+            )
             details = check.error_message or "OK"
 
             check_table.add_row(
-                check.check_type.value.title(),
-                check_status,
-                response_time,
-                details
+                check.check_type.value.title(), check_status, response_time, details
             )
 
         console.print(check_table)
 
 
 def _display_performance_report(
-    results: dict[str, CollectorHealthStatus],
-    hours: int,
-    show_trends: bool
+    results: dict[str, CollectorHealthStatus], hours: int, show_trends: bool
 ):
     """Display performance report for collectors."""
 
@@ -440,10 +463,13 @@ def _display_performance_report(
     for name, status in results.items():
         # Calculate average response time from checks
         response_times = [
-            check.response_time for check in status.checks
+            check.response_time
+            for check in status.checks
             if check.response_time is not None
         ]
-        avg_response_time = sum(response_times) / len(response_times) if response_times else 0
+        avg_response_time = (
+            sum(response_times) / len(response_times) if response_times else 0
+        )
 
         # Performance score formatting
         perf_score = status.performance_score
@@ -467,7 +493,7 @@ def _display_performance_report(
             perf_text,
             f"{status.uptime_percentage:.1f}%",
             f"{avg_response_time:.3f}s",
-            status_text
+            status_text,
         )
 
     console.print(table)
@@ -491,18 +517,15 @@ def _display_alert_history(alerts: list):
     table.add_column("Message")
 
     for alert in alerts:
-        if alert['severity'] == 'critical':
+        if alert["severity"] == "critical":
             severity_text = "[red]🔴 CRITICAL[/red]"
-        elif alert['severity'] == 'warning':
+        elif alert["severity"] == "warning":
             severity_text = "[yellow]🟡 WARNING[/yellow]"
         else:
             severity_text = "[blue]🔵 INFO[/blue]"
 
         table.add_row(
-            alert['time'],
-            alert['collector'],
-            severity_text,
-            alert['message']
+            alert["time"], alert["collector"], severity_text, alert["message"]
         )
 
     console.print(table)
@@ -524,7 +547,9 @@ def _display_diagnostic_report(result: CollectorHealthStatus, attempt_fix: bool)
     # Detailed check analysis
     for check in result.checks:
         if check.status != HealthStatus.HEALTHY:
-            console.print(f"\n❌ [red]{check.check_type.value.title()} Check Failed[/red]")
+            console.print(
+                f"\n❌ [red]{check.check_type.value.title()} Check Failed[/red]"
+            )
             console.print(f"   Error: {check.error_message}")
 
             if attempt_fix:
@@ -553,57 +578,59 @@ def _output_json_result(results: dict[str, CollectorHealthStatus]):
     json_data = {}
     for name, status in results.items():
         json_data[name] = {
-            'status': status.overall_status.value,
-            'uptime_percentage': status.uptime_percentage,
-            'performance_score': status.performance_score,
-            'last_updated': status.last_updated.isoformat(),
-            'checks': [
+            "status": status.overall_status.value,
+            "uptime_percentage": status.uptime_percentage,
+            "performance_score": status.performance_score,
+            "last_updated": status.last_updated.isoformat(),
+            "checks": [
                 {
-                    'type': check.check_type.value,
-                    'status': check.status.value,
-                    'response_time': check.response_time,
-                    'error_message': check.error_message,
-                    'metadata': check.metadata
+                    "type": check.check_type.value,
+                    "status": check.status.value,
+                    "response_time": check.response_time,
+                    "error_message": check.error_message,
+                    "metadata": check.metadata,
                 }
                 for check in status.checks
-            ]
+            ],
         }
 
     console.print(json.dumps(json_data, indent=2))
 
 
-def _get_simulated_alert_history(severity: str | None, hours: int, collector: str | None) -> list:
+def _get_simulated_alert_history(
+    severity: str | None, hours: int, collector: str | None
+) -> list:
     """Get simulated alert history for demonstration."""
 
     # Simulate some alerts for demonstration
     alerts = [
         {
-            'time': '2025-07-15 14:30:00',
-            'collector': 'vsin',
-            'severity': 'warning',
-            'message': 'Slow response time detected (8.5s average)'
+            "time": "2025-07-15 14:30:00",
+            "collector": "vsin",
+            "severity": "warning",
+            "message": "Slow response time detected (8.5s average)",
         },
         {
-            'time': '2025-07-15 13:15:00',
-            'collector': 'action_network',
-            'severity': 'critical',
-            'message': 'Connection timeout - unable to reach API'
+            "time": "2025-07-15 13:15:00",
+            "collector": "action_network",
+            "severity": "critical",
+            "message": "Connection timeout - unable to reach API",
         },
         {
-            'time': '2025-07-15 12:45:00',
-            'collector': 'sbd',
-            'severity': 'warning',
-            'message': 'Data parsing issues - missing required fields'
-        }
+            "time": "2025-07-15 12:45:00",
+            "collector": "sbd",
+            "severity": "warning",
+            "message": "Data parsing issues - missing required fields",
+        },
     ]
 
     # Filter by criteria
     filtered_alerts = alerts
 
     if severity:
-        filtered_alerts = [a for a in filtered_alerts if a['severity'] == severity]
+        filtered_alerts = [a for a in filtered_alerts if a["severity"] == severity]
 
     if collector:
-        filtered_alerts = [a for a in filtered_alerts if a['collector'] == collector]
+        filtered_alerts = [a for a in filtered_alerts if a["collector"] == collector]
 
     return filtered_alerts

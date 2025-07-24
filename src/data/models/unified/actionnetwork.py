@@ -291,7 +291,9 @@ class ActionNetworkHistoricalData(IdentifiedModel, ValidatedModel):
         for entry in self.historical_entries:
             for market_type in ["moneyline", "spread", "total"]:
                 market_data = getattr(entry, market_type, None)
-                if market_data and (market_data.home_bet_info or market_data.away_bet_info):
+                if market_data and (
+                    market_data.home_bet_info or market_data.away_bet_info
+                ):
                     summary[market_type]["has_splits"] = True
                     summary[market_type]["entries_with_splits"] += 1
 

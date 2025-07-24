@@ -57,16 +57,20 @@ __all__ = [
 
 # Import refactored collectors directly for better compatibility
 try:
+    from .consolidated_action_network_collector import (
+        ActionNetworkCollector as ConsolidatedActionNetworkCollector,
+    )
     from .sbd_unified_collector_api import SBDUnifiedCollectorAPI
     from .vsin_unified_collector import VSINUnifiedCollector
-    from .consolidated_action_network_collector import ActionNetworkCollector as ConsolidatedActionNetworkCollector
-    
+
     # Add refactored collectors to exports
-    __all__.extend([
-        "SBDUnifiedCollectorAPI",
-        "VSINUnifiedCollector", 
-        "ConsolidatedActionNetworkCollector"
-    ])
+    __all__.extend(
+        [
+            "SBDUnifiedCollectorAPI",
+            "VSINUnifiedCollector",
+            "ConsolidatedActionNetworkCollector",
+        ]
+    )
 except ImportError:
     # Refactored collectors not available, stick with legacy ones
     pass
