@@ -787,6 +787,7 @@ class DataCommands:
                 ActionNetworkCollector,
                 CollectionMode,
             )
+            from ....data.collection.collectors import OddsAPICollector
             from ....data.collection.mlb_stats_api_collector import MLBStatsAPICollector
             from ....data.collection.sbd_unified_collector_api import (
                 SBDUnifiedCollectorAPI as SBDUnifiedCollector,
@@ -802,6 +803,7 @@ class DataCommands:
                 "vsin": VSINUnifiedCollector,
                 "sbd": SBDUnifiedCollector,
                 "mlb_stats_api": MLBStatsAPICollector,
+                "odds_api": OddsAPICollector,
             }
 
             collector_class = collector_mapping.get(source_name)
@@ -838,6 +840,12 @@ class DataCommands:
                 config = CollectorConfig(
                     source=DataSource.SPORTS_BETTING_DIME, enabled=True
                 )
+                collector = collector_class(config)
+            elif source_name == "odds_api":
+                # Odds API collector uses CollectorConfig pattern
+                from ....data.collection.base import CollectorConfig, DataSource
+
+                config = CollectorConfig(source=DataSource.ODDS_API, enabled=True)
                 collector = collector_class(config)
             else:
                 collector = collector_class()
@@ -1041,6 +1049,44 @@ class DataCommands:
                             "status": "failed",
                             "error": f"Test failed: {str(e)}",
                         }
+                elif source_name == "odds_api":
+                    # Use Odds API collector test method (async)
+                    try:
+                        test_result = await collector.test_collection("mlb")
+
+                        if test_result and test_result.get("status") == "success":
+                            console.print(
+                                f"✅ [green]{source_name.upper()} test successful[/green]"
+                            )
+                            summary = (
+                                f"Test Status: {test_result['status']}\n"
+                                f"Raw records: {test_result.get('raw_records', 0)}\n"
+                                f"Processed: {test_result.get('valid_records', 0)}\n"
+                                f"Stored: {test_result.get('raw_records', 0)}\n"
+                                f"Collection result: {test_result.get('status', 'success')}"
+                            )
+                            return {
+                                "status": "success",
+                                "output": summary,
+                                "records_collected": test_result.get("raw_records", 0),
+                                "records_stored": test_result.get("raw_records", 0),
+                            }
+                        else:
+                            console.print(
+                                f"❌ [red]{source_name.upper()} test failed[/red]"
+                            )
+                            return {
+                                "status": "failed",
+                                "error": f"Test failed: {test_result.get('error', 'Unknown error') if test_result else 'No test result'}",
+                            }
+                    except Exception as e:
+                        console.print(
+                            f"❌ [red]{source_name.upper()} test failed[/red]"
+                        )
+                        return {
+                            "status": "failed",
+                            "error": f"Test failed: {str(e)}",
+                        }
                 else:
                     # Use existing test_collection for other sources
                     test_result = collector.test_collection()
@@ -1125,6 +1171,18 @@ class DataCommands:
                     await collector.collect_data(request)
                     stats = collector.get_stats()
                     stored_count = stats["games_stored"]
+                elif source_name == "odds_api":
+                    # Use Odds API collector for real collection
+                    from datetime import date
+
+                    from ....data.collection.base import CollectionRequest
+
+                    request = CollectionRequest(
+                        source=DataSource.ODDS_API, start_date=date.today()
+                    )
+
+                    await collector.collect_data(request)
+                    stored_count = await collector.collect_game_data("mlb")
                 else:
                     # Use collect_and_store for other sources
                     result = collector.collect_and_store()

@@ -1248,6 +1248,164 @@ class OddsAPICollector(BaseCollector):
             self.logger.error("Odds API collection failed", error=str(e))
             raise
 
+    def _process_odds_api_game(self, game_data: dict[str, Any], sport: str) -> dict[str, Any] | None:
+        """Process individual game data from The Odds API."""
+        try:
+            # Extract basic game information
+            game_info = {
+                "id": game_data.get("id"),
+                "sport_key": game_data.get("sport_key", sport),
+                "sport_title": game_data.get("sport_title", "Baseball"),
+                "commence_time": game_data.get("commence_time"),
+                "home_team": game_data.get("home_team"),
+                "away_team": game_data.get("away_team"),
+                "bookmakers": [],
+                "timestamp": datetime.now().isoformat(),
+            }
+            
+            # Process bookmaker odds
+            for bookmaker in game_data.get("bookmakers", []):
+                bookmaker_data = {
+                    "key": bookmaker.get("key"),
+                    "title": bookmaker.get("title"),
+                    "last_update": bookmaker.get("last_update"),
+                    "markets": {}
+                }
+                
+                # Process each market (h2h, spreads, totals)
+                for market in bookmaker.get("markets", []):
+                    market_key = market.get("key")
+                    market_data = {
+                        "key": market_key,
+                        "last_update": market.get("last_update"),
+                        "outcomes": []
+                    }
+                    
+                    # Process outcomes for each market
+                    for outcome in market.get("outcomes", []):
+                        outcome_data = {
+                            "name": outcome.get("name"),
+                            "price": outcome.get("price"),
+                        }
+                        
+                        # Add spread/total specific fields
+                        if "point" in outcome:
+                            outcome_data["point"] = outcome.get("point")
+                        
+                        market_data["outcomes"].append(outcome_data)
+                    
+                    bookmaker_data["markets"][market_key] = market_data
+                
+                game_info["bookmakers"].append(bookmaker_data)
+            
+            # Add derived analysis
+            game_info["analysis"] = self._analyze_odds_data(game_info)
+            
+            return game_info
+        
+        except Exception as e:
+            self.logger.error("Failed to process Odds API game", game_id=game_data.get("id"), error=str(e))
+            return None
+
+    def _analyze_odds_data(self, game_data: dict[str, Any]) -> dict[str, Any]:
+        """Analyze odds data for betting insights."""
+        analysis = {
+            "total_bookmakers": len(game_data.get("bookmakers", [])),
+            "markets_available": set(),
+            "price_ranges": {},
+            "consensus": {}
+        }
+        
+        try:
+            bookmakers = game_data.get("bookmakers", [])
+            
+            # Collect all available markets
+            for bookmaker in bookmakers:
+                markets = bookmaker.get("markets", {})
+                analysis["markets_available"].update(markets.keys())
+            
+            # Convert set to list for JSON serialization
+            analysis["markets_available"] = list(analysis["markets_available"])
+            
+            # Analyze price ranges for each market
+            for market_key in analysis["markets_available"]:
+                prices = []
+                for bookmaker in bookmakers:
+                    market = bookmaker.get("markets", {}).get(market_key)
+                    if market:
+                        for outcome in market.get("outcomes", []):
+                            price = outcome.get("price")
+                            if price:
+                                prices.append(price)
+                
+                if prices:
+                    analysis["price_ranges"][market_key] = {
+                        "min": min(prices),
+                        "max": max(prices),
+                        "avg": sum(prices) / len(prices),
+                        "count": len(prices)
+                    }
+            
+            # Simple consensus calculation (could be enhanced)
+            if "h2h" in analysis["markets_available"]:
+                analysis["consensus"]["moneyline"] = self._calculate_consensus(bookmakers, "h2h")
+            if "spreads" in analysis["markets_available"]:
+                analysis["consensus"]["spread"] = self._calculate_consensus(bookmakers, "spreads")
+            if "totals" in analysis["markets_available"]:
+                analysis["consensus"]["total"] = self._calculate_consensus(bookmakers, "totals")
+                
+        except Exception as e:
+            self.logger.warning("Failed to analyze odds data", error=str(e))
+        
+        return analysis
+
+    def _calculate_consensus(self, bookmakers: list[dict], market_key: str) -> dict[str, Any]:
+        """Calculate consensus odds for a specific market."""
+        consensus = {"home": [], "away": [], "total_books": 0}
+        
+        try:
+            for bookmaker in bookmakers:
+                market = bookmaker.get("markets", {}).get(market_key)
+                if not market:
+                    continue
+                
+                outcomes = market.get("outcomes", [])
+                if len(outcomes) >= 2:
+                    consensus["total_books"] += 1
+                    
+                    # For h2h and spreads
+                    if market_key in ["h2h", "spreads"]:
+                        for outcome in outcomes:
+                            name = outcome.get("name", "").lower()
+                            price = outcome.get("price")
+                            if price:
+                                if any(team.lower() in name for team in [bookmaker.get("home_team", "").lower()]):
+                                    consensus["home"].append(price)
+                                else:
+                                    consensus["away"].append(price)
+                    
+                    # For totals
+                    elif market_key == "totals":
+                        for outcome in outcomes:
+                            name = outcome.get("name", "").lower()
+                            price = outcome.get("price")
+                            if price:
+                                if "over" in name:
+                                    consensus["home"].append(price)  # Use home for over
+                                elif "under" in name:
+                                    consensus["away"].append(price)  # Use away for under
+            
+            # Calculate averages
+            if consensus["home"]:
+                consensus["home_avg"] = sum(consensus["home"]) / len(consensus["home"])
+            if consensus["away"]:
+                consensus["away_avg"] = sum(consensus["away"]) / len(consensus["away"])
+                
+        except Exception as e:
+            self.logger.warning("Failed to calculate consensus", market=market_key, error=str(e))
+        
+        return consensus
+
     def _get_sample_odds_data(self) -> list[dict[str, Any]]:
         """Generate sample Odds API data."""
         return [
@@ -1287,6 +1445,90 @@ class OddsAPICollector(BaseCollector):
         normalized["source"] = DataSource.ODDS_API.value
         normalized["collected_at"] = datetime.now().isoformat()
         return normalized
+
+    async def test_collection(self, sport: str = "baseball_mlb") -> dict[str, Any]:
+        """Test Odds API data collection."""
+        try:
+            self.logger.info("Testing Odds API collection", sport=sport)
+
+            # Create test collection request
+            from .base import CollectionRequest
+
+            test_request = CollectionRequest(
+                source=DataSource.ODDS_API,
+                sport=sport,
+                dry_run=True,
+                additional_params={"sport": sport}
+            )
+
+            # Test data collection
+            test_data = await self.collect_data(test_request)
+
+            # Validate test results
+            valid_count = sum(1 for record in test_data if self.validate_record(record))
+
+            if test_data:
+                return {
+                    "status": "success",
+                    "data_source": "odds_api",
+                    "raw_records": len(test_data),
+                    "valid_records": valid_count,
+                    "validation_rate": valid_count / len(test_data) if test_data else 0,
+                    "collection_result": "success",
+                    "sample_record": self.normalize_record(test_data[0]) if test_data else None,
+                    "is_real_data": bool(self.api_key),
+                    "test_mode": "with_api_key" if self.api_key else "sample_data_mode"
+                }
+            else:
+                return {
+                    "status": "no_data",
+                    "data_source": "odds_api",
+                    "raw_records": 0,
+                    "valid_records": 0,
+                    "validation_rate": 0,
+                    "message": "No data collected from Odds API",
+                    "test_mode": "with_api_key" if self.api_key else "sample_data_mode"
+                }
+
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": str(e),
+                "raw_records": 0,
+                "valid_records": 0,
+                "validation_rate": 0,
+                "test_mode": "with_api_key" if self.api_key else "sample_data_mode"
+            }
+
+    async def collect_game_data(self, sport: str = "baseball_mlb") -> int:
+        """Convenience method to collect all odds data for a sport."""
+        try:
+            # Create collection request
+            from .base import CollectionRequest
+
+            request = CollectionRequest(
+                source=DataSource.ODDS_API,
+                sport=sport,
+                additional_params={"sport": sport}
+            )
+
+            # Use standardized collection interface
+            raw_data = await self.collect_data(request)
+
+            if raw_data:
+                self.logger.info(
+                    "Odds API collection completed",
+                    sport=sport,
+                    status="success",
+                    processed=len(raw_data)
+                )
+                return len(raw_data)
+            else:
+                return 0
+
+        except Exception as e:
+            self.logger.error("Error in collect_game_data", error=str(e))
+            return 0
 
 
 # Register collectors with the factory
