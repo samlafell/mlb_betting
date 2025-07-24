@@ -7,6 +7,7 @@ Collects comprehensive odds and betting splits from 9+ major sportsbooks.
 Provides rich data including sharp action indicators and line movement tracking.
 
 This replaces the web scraping approach with direct API access for higher reliability.
+Refactored to use BaseCollector and proper Pydantic models.
 """
 
 import asyncio
@@ -14,16 +15,21 @@ import json
 from datetime import datetime
 from typing import Any
 
-import requests
+import aiohttp
 import structlog
 
-from .base import DataSource
-from .unified_betting_lines_collector import UnifiedBettingLinesCollector
+from .base import (
+    BaseCollector,
+    CollectorConfig, 
+    CollectionRequest,
+    CollectionResult,
+    DataSource
+)
 
 logger = structlog.get_logger(__name__)
 
 
-class SBDUnifiedCollectorAPI(UnifiedBettingLinesCollector):
+class SBDUnifiedCollectorAPI(BaseCollector):
     """
     SBD (Sports Betting Dime) collector using WordPress JSON API.
 
@@ -34,10 +40,13 @@ class SBDUnifiedCollectorAPI(UnifiedBettingLinesCollector):
     - Best odds identification across all books
     """
 
-    def __init__(self):
-        super().__init__(DataSource.SPORTS_BETTING_DIME)
-        self.base_url = "https://www.sportsbettingdime.com"
-        self.api_url = f"{self.base_url}/wp-json/adpt/v1/mlb-odds"
+    def __init__(self, config: CollectorConfig):
+        super().__init__(config)
+        # Use config.base_url or fallback to default
+        self.base_url = config.base_url or "https://www.sportsbettingdime.com"
+        # Use config.params for API path or fallback to default
+        api_path = config.params.get("api_path", "/wp-json/adpt/v1/mlb-odds")
+        self.api_url = f"{self.base_url}{api_path}"
 
         # Major sportsbook IDs discovered from API
         self.sportsbook_mapping = {
@@ -64,30 +73,29 @@ class SBDUnifiedCollectorAPI(UnifiedBettingLinesCollector):
             {"data_format": "totals", "name": "Totals", "unified_type": "totals"},
         ]
 
-    def collect_raw_data(self, sport: str = "mlb", **kwargs) -> list[dict[str, Any]]:
+    async def collect_data(self, request: CollectionRequest) -> list[dict[str, Any]]:
         """
         Collect raw betting data from SBD API.
 
         Args:
-            sport: Sport type (default: mlb)
-            **kwargs: Additional parameters
+            request: Collection request with parameters
 
         Returns:
             List of raw betting line dictionaries
         """
         try:
-            # Check if we're already in an event loop
-            try:
-                asyncio.get_running_loop()
-                # We're in an event loop - collect real data using API
-                self.logger.info(
-                    "SBD API collector running in async context - using real SBD API"
-                )
+            sport = request.additional_params.get("sport", "mlb")
+            self.logger.info(
+                "Starting SBD API data collection",
+                sport=sport,
+                dry_run=request.dry_run
+            )
 
-                # Collect real data using SBD API
-                real_data = self._collect_with_api(sport)
-                if real_data:
-                    # Convert to three-tier format and store
+            # Collect real data using SBD API
+            real_data = await self._collect_with_api(sport)
+            if real_data:
+                # Convert to three-tier format and store if not dry run
+                if not request.dry_run:
                     for game_data in real_data:
                         # Process each real game
                         raw_records = self._convert_to_unified_format(
@@ -99,19 +107,15 @@ class SBDUnifiedCollectorAPI(UnifiedBettingLinesCollector):
                                 f"Stored {stored_count} real SBD API records in raw_data"
                             )
 
-                return real_data
-
-            except RuntimeError:
-                # No event loop running, collect real data directly
-                return self._collect_with_api(sport)
+            return real_data
 
         except Exception as e:
             self.logger.error(
                 "Failed to collect SBD API data", sport=sport, error=str(e)
             )
-            return []
+            raise
 
-    def _collect_with_api(self, sport: str) -> list[dict[str, Any]]:
+    async def _collect_with_api(self, sport: str) -> list[dict[str, Any]]:
         """Collect data using SBD WordPress JSON API."""
         try:
             # Build API URL with all sportsbook IDs and US format
@@ -133,12 +137,12 @@ class SBDUnifiedCollectorAPI(UnifiedBettingLinesCollector):
                 "DNT": "1",
             }
 
-            # Make API request
-            response = requests.get(api_url, headers=headers, timeout=30)
-            response.raise_for_status()
+            # Make API request using async HTTP session
+            async with self.session.get(api_url, headers=headers) as response:
+                response.raise_for_status()
+                api_data = await response.json()
 
-            # Parse JSON response
-            api_data = response.json()
+            # API data already parsed above
 
             if not api_data or "data" not in api_data:
                 self.logger.warning("No data found in SBD API response")
@@ -528,7 +532,73 @@ class SBDUnifiedCollectorAPI(UnifiedBettingLinesCollector):
 
         return stored_count
 
-    def collect_game_data(self, sport: str = "mlb") -> int:
+    def validate_record(self, record: dict[str, Any]) -> bool:
+        """
+        Validate SBD record structure.
+        
+        Args:
+            record: Raw data record from SBD API
+            
+        Returns:
+            True if valid, False otherwise
+        """
+        required_fields = [
+            "external_game_id", "game_name", "away_team", "home_team",
+            "game_datetime", "betting_records"
+        ]
+        
+        # Check basic structure
+        if not all(field in record for field in required_fields):
+            return False
+            
+        # Validate betting records exist
+        betting_records = record.get("betting_records", [])
+        if not isinstance(betting_records, list) or len(betting_records) == 0:
+            return False
+            
+        # Validate at least one betting record has required fields
+        for betting_record in betting_records:
+            if not isinstance(betting_record, dict):
+                continue
+            if all(field in betting_record for field in ["sportsbook", "bet_type", "timestamp"]):
+                return True
+                
+        return False
+        
+    def normalize_record(self, record: dict[str, Any]) -> dict[str, Any]:
+        """
+        Normalize SBD record to standard format.
+        
+        Args:
+            record: Raw data record
+            
+        Returns:
+            Normalized data record with collection metadata
+        """
+        normalized = record.copy()
+        
+        # Add standardized metadata
+        normalized["source"] = self.source.value
+        normalized["collected_at_est"] = datetime.now().isoformat()
+        normalized["collector_version"] = "sbd_api_v2_unified"
+        
+        # Ensure consistent team name formatting
+        if "away_team" in normalized:
+            normalized["away_team_normalized"] = str(normalized["away_team"]).strip()
+        if "home_team" in normalized:
+            normalized["home_team_normalized"] = str(normalized["home_team"]).strip()
+            
+        # Add data quality indicators
+        normalized["has_betting_splits"] = bool(normalized.get("betting_splits"))
+        normalized["betting_record_count"] = len(normalized.get("betting_records", []))
+        normalized["sportsbook_count"] = len(set(
+            br.get("sportsbook") for br in normalized.get("betting_records", [])
+            if br.get("sportsbook")
+        ))
+        
+        return normalized
+
+    async def collect_game_data(self, sport: str = "mlb") -> int:
         """
         Convenience method to collect all betting data for a sport using API.
 
@@ -539,8 +609,15 @@ class SBDUnifiedCollectorAPI(UnifiedBettingLinesCollector):
             Number of records stored
         """
         try:
-            # Use direct data collection since SBD API handles its own storage
-            raw_data = self.collect_raw_data(sport=sport)
+            # Create collection request
+            request = CollectionRequest(
+                source=self.source,
+                sport=sport,
+                additional_params={"sport": sport}
+            )
+            
+            # Use standardized collection interface
+            raw_data = await self.collect_data(request)
             
             if raw_data:
                 self.logger.info(
@@ -558,7 +635,7 @@ class SBDUnifiedCollectorAPI(UnifiedBettingLinesCollector):
             self.logger.error("Error in collect_game_data", error=str(e))
             return 0
 
-    def test_collection(self, sport: str = "mlb") -> dict[str, Any]:
+    async def test_collection(self, sport: str = "mlb") -> dict[str, Any]:
         """
         Test method for validating SBD API collection.
 
@@ -571,19 +648,29 @@ class SBDUnifiedCollectorAPI(UnifiedBettingLinesCollector):
         try:
             self.logger.info("Testing SBD API collection", sport=sport)
 
-            # Test data collection
-            raw_data = self.collect_raw_data(sport=sport)
+            # Create test collection request
+            test_request = CollectionRequest(
+                source=self.source,
+                sport=sport,
+                dry_run=True,
+                additional_params={"sport": sport}
+            )
+            
+            # Test data collection using the standardized interface
+            raw_data = await self.collect_data(test_request)
 
-            # Test storage - SBD API handles its own storage in collect_raw_data
+            # Test validation on sample records
+            valid_count = sum(1 for record in raw_data if self.validate_record(record))
+            
             if raw_data:
                 return {
                     "status": "success",
                     "data_source": "real_sbd_api",
                     "raw_records": len(raw_data),
-                    "processed": len(raw_data),
-                    "stored": 0,  # Storage is handled in collect_raw_data
+                    "valid_records": valid_count,
+                    "validation_rate": valid_count / len(raw_data) if raw_data else 0,
                     "collection_result": "success",
-                    "sample_record": raw_data[0] if raw_data else None,
+                    "sample_record": self.normalize_record(raw_data[0]) if raw_data else None,
                     "is_real_data": True,
                     "sportsbooks_included": len(self.sportsbook_ids),
                     "api_endpoint": self.api_url,
@@ -593,8 +680,8 @@ class SBDUnifiedCollectorAPI(UnifiedBettingLinesCollector):
                     "status": "no_data",
                     "data_source": "sbd_api",
                     "raw_records": 0,
-                    "processed": 0,
-                    "stored": 0,
+                    "valid_records": 0,
+                    "validation_rate": 0,
                     "message": "No data collected from SBD API",
                 }
 
@@ -603,20 +690,35 @@ class SBDUnifiedCollectorAPI(UnifiedBettingLinesCollector):
                 "status": "error",
                 "error": str(e),
                 "raw_records": 0,
-                "processed": 0,
-                "stored": 0,
+                "valid_records": 0,
+                "validation_rate": 0,
             }
 
 
 # Example usage
 if __name__ == "__main__":
-    collector = SBDUnifiedCollectorAPI()
+    from .base import CollectorConfig
+    
+    # Create configuration using the standardized CollectorConfig
+    config = CollectorConfig(
+        source=DataSource.SBD,
+        base_url="https://www.sportsbettingdime.com",
+        rate_limit_per_minute=60,
+        timeout_seconds=30,
+        params={"api_path": "/wp-json/adpt/v1/mlb-odds"}
+    )
+    
+    collector = SBDUnifiedCollectorAPI(config)
 
-    # Test collection
-    test_result = collector.test_collection("mlb")
-    print(f"Test result: {test_result}")
+    # Test collection using async context
+    async def main():
+        async with collector:
+            test_result = await collector.test_collection("mlb")
+            print(f"Test result: {test_result}")
 
-    # Production collection
-    if test_result["status"] == "success":
-        stored_count = collector.collect_game_data("mlb")
-        print(f"Stored {stored_count} real API records")
+            # Production collection
+            if test_result["status"] == "success":
+                stored_count = await collector.collect_game_data("mlb")
+                print(f"Stored {stored_count} real API records")
+    
+    asyncio.run(main())

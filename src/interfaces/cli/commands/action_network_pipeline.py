@@ -291,7 +291,7 @@ async def _extract_game_urls(
             CollectorConfig,
             DataSource,
         )
-        from src.data.collection.collectors import ActionNetworkCollector
+        from src.data.collection.consolidated_action_network_collector import ActionNetworkCollector
 
         # Create collector config
         config = CollectorConfig(
@@ -338,14 +338,36 @@ async def _extract_game_urls(
         }
 
         for game_data in collected_data:
-            # Extract game information
+            # Extract game information from Action Network API structure
+            teams = game_data.get('teams', [])
+            home_team_id = game_data.get('home_team_id')
+            away_team_id = game_data.get('away_team_id')
+            
+            # Initialize team names
+            away_team = 'Unknown'
+            home_team = 'Unknown'
+            
+            # Find home and away teams by matching IDs
+            for team in teams:
+                team_id = team.get('id')
+                if team_id == home_team_id:
+                    home_team = team.get('full_name', team.get('display_name', 'Unknown'))
+                elif team_id == away_team_id:
+                    away_team = team.get('full_name', team.get('display_name', 'Unknown'))
+            
+            game_id = game_data.get('id')
+            start_time = game_data.get('start_time') or datetime.now().isoformat()
+            
+            # Generate history URL for Action Network
+            history_url = f"https://api.actionnetwork.com/web/v2/markets/event/{game_id}/history" if game_id else ""
+            
             game_info = {
-                "game_id": game_data.get("game_id"),
-                "home_team": game_data.get("home_team", {}).get("name", "Unknown"),
-                "away_team": game_data.get("away_team", {}).get("name", "Unknown"),
-                "start_time": game_data.get("game_date") or datetime.now().isoformat(),
-                "history_url": game_data.get("history_url", ""),
-                "collected_at": game_data.get("collected_at"),
+                "game_id": game_id,
+                "home_team": home_team,
+                "away_team": away_team,
+                "start_time": start_time,
+                "history_url": history_url,
+                "collected_at": datetime.now().isoformat(),
             }
             games_data["games"].append(game_info)
 
@@ -414,8 +436,9 @@ async def _collect_historical_data(
     """Collect historical line movement data from game URLs using unified system."""
     try:
         import json
+        import aiohttp
 
-        from src.data.collection.actionnetwork import ActionNetworkHistoryCollector
+        from src.data.collection.consolidated_action_network_collector import ActionNetworkHistoryParser
 
         # Load game URLs from file
         with open(urls_file) as f:
@@ -437,8 +460,8 @@ async def _collect_historical_data(
                 f"[yellow]Limited to {max_games} games for processing[/yellow]"
             )
 
-        # Initialize Action Network history collector
-        history_collector = ActionNetworkHistoryCollector()
+        # Initialize Action Network history parser
+        history_parser = ActionNetworkHistoryParser()
 
         # Collect historical data for each game
         all_historical_data = []
@@ -449,98 +472,103 @@ async def _collect_historical_data(
             f"[blue]Processing {len(games)} games for historical data...[/blue]"
         )
 
-        for i, game in enumerate(games, 1):
-            try:
-                game_id = game.get("game_id")
-                home_team = game.get("home_team", "Unknown")
-                away_team = game.get("away_team", "Unknown")
-                history_url = game.get("history_url", "")
+        # Create session with proper headers for Action Network API
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.actionnetwork.com/",
+            "Origin": "https://www.actionnetwork.com",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-site"
+        }
+        
+        timeout = aiohttp.ClientTimeout(total=30)
+        async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
+            for i, game in enumerate(games, 1):
+                try:
+                    game_id = game.get("game_id")
+                    home_team = game.get("home_team", "Unknown")
+                    away_team = game.get("away_team", "Unknown")
+                    history_url = game.get("history_url", "")
 
-                # Parse game datetime
-                game_datetime_str = game.get("start_time", "")
-                if game_datetime_str:
-                    try:
-                        game_datetime = datetime.fromisoformat(
-                            game_datetime_str.replace("Z", "+00:00")
-                        )
-                    except:
-                        game_datetime = datetime.now()
-                else:
-                    game_datetime = datetime.now()
-
-                if not history_url:
-                    console.print(
-                        f"[yellow]Skipping game {i}/{len(games)}: No history URL[/yellow]"
-                    )
-                    continue
-
-                console.print(
-                    f"[cyan]Collecting {i}/{len(games)}: {away_team} @ {home_team}[/cyan]"
-                )
-
-                # Collect historical data for this game
-                result = await history_collector.collect_history_data(
-                    history_url=history_url,
-                    game_id=game_id,
-                    home_team=home_team,
-                    away_team=away_team,
-                    game_datetime=game_datetime,
-                )
-
-                if result.success and result.data:
-                    # Extract the historical data from the result
-                    historical_data = result.data[0] if result.data else None
-                    if historical_data:
-                        all_historical_data.append(
-                            {
-                                "game_id": game_id,
-                                "home_team": home_team,
-                                "away_team": away_team,
-                                "game_datetime": game_datetime.isoformat(),
-                                "history_url": history_url,
-                                "historical_data": historical_data,
-                                "collection_result": {
-                                    "success": result.success,
-                                    "timestamp": result.timestamp.isoformat(),
-                                    "metadata": result.metadata,
-                                },
-                            }
-                        )
-
-                        # Count movements (approximate)
-                        if hasattr(historical_data, "historical_entries"):
-                            total_movements += len(historical_data.historical_entries)
-                        elif isinstance(historical_data, dict):
-                            total_movements += len(
-                                historical_data.get("historical_entries", [])
+                    # Parse game datetime
+                    game_datetime_str = game.get("start_time", "")
+                    if game_datetime_str:
+                        try:
+                            game_datetime = datetime.fromisoformat(
+                                game_datetime_str.replace("Z", "+00:00")
                             )
-
-                        successful_collections += 1
-                        console.print(
-                            f"[green]✅ Collected historical data for {away_team} @ {home_team}[/green]"
-                        )
+                        except:
+                            game_datetime = datetime.now()
                     else:
+                        game_datetime = datetime.now()
+
+                    if not history_url:
                         console.print(
-                            f"[yellow]⚠️ No historical data returned for {away_team} @ {home_team}[/yellow]"
+                            f"[yellow]Skipping game {i}/{len(games)}: No history URL[/yellow]"
                         )
-                else:
+                        continue
+
                     console.print(
-                        f"[red]❌ Failed to collect for {away_team} @ {home_team}[/red]"
+                        f"[cyan]Collecting {i}/{len(games)}: {away_team} @ {home_team}[/cyan]"
                     )
-                    if result.errors:
+
+                    # Fetch historical data from API
+                    try:
+                        async with session.get(history_url) as response:
+                            if response.status == 200:
+                                history_response = await response.json()
+                                
+                                # Parse the historical data
+                                historical_data = history_parser.parse_history_response(
+                                    response_data=history_response,
+                                    game_id=game_id,
+                                    home_team=home_team,
+                                    away_team=away_team,
+                                    game_datetime=game_datetime,
+                                    history_url=history_url,
+                                )
+                                
+                                if historical_data:
+                                    all_historical_data.append(
+                                        {
+                                            "game_id": game_id,
+                                            "home_team": home_team,
+                                            "away_team": away_team,
+                                            "game_datetime": game_datetime.isoformat(),
+                                            "history_url": history_url,
+                                            "historical_data": historical_data.dict(),
+                                        }
+                                    )
+
+                                    # Count movements
+                                    total_movements += len(historical_data.historical_entries)
+                                    
+                                    successful_collections += 1
+                                    console.print(
+                                        f"[green]✅ Collected historical data for {away_team} @ {home_team}[/green]"
+                                    )
+                                else:
+                                    console.print(
+                                        f"[yellow]⚠️ No historical data returned for {away_team} @ {home_team}[/yellow]"
+                                    )
+                            else:
+                                console.print(
+                                    f"[red]❌ API request failed (status {response.status}) for {away_team} @ {home_team}[/red]"
+                                )
+                    except Exception as api_error:
                         console.print(
-                            f"[red]   Errors: {', '.join(result.errors)}[/red]"
+                            f"[red]❌ API error for {away_team} @ {home_team}: {str(api_error)}[/red]"
                         )
 
-                # Small delay to be respectful to the API
-                await asyncio.sleep(0.5)
+                    # Small delay to be respectful to the API
+                    await asyncio.sleep(0.5)
 
-            except Exception as e:
-                console.print(f"[red]❌ Error processing game {i}: {str(e)}[/red]")
-                continue
-
-        # Clean up the collector
-        await history_collector.close()
+                except Exception as e:
+                    console.print(f"[red]❌ Error processing game {i}: {str(e)}[/red]")
+                    continue
 
         # Save all collected historical data
         output_data = {

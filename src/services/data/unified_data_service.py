@@ -16,7 +16,7 @@ import structlog
 
 from ...core.config import get_settings
 from ...core.exceptions import DataError
-from ...data.collection.actionnetwork import ActionNetworkHistoryCollector
+from ...data.collection.consolidated_action_network_collector import ActionNetworkHistoryParser
 from ...data.database.action_network_repository import ActionNetworkRepository
 from ...data.database.connection import get_connection
 from ...data.models.unified.actionnetwork import ActionNetworkHistoricalData
@@ -38,7 +38,7 @@ class UnifiedDataService:
         self.logger = logger.bind(service="UnifiedDataService")
 
         # Initialize collectors
-        self.action_network_history_collector = ActionNetworkHistoryCollector()
+        self.action_network_history_parser = ActionNetworkHistoryParser()
 
         # Initialize database connection and repository
         self.db_connection = None
@@ -109,14 +109,31 @@ class UnifiedDataService:
             if missing_fields:
                 raise DataError(f"Missing required fields: {missing_fields}")
 
-            # Collect historical data
-            result = await self.action_network_history_collector.collect_history_data(
-                history_url=game_data["history_url"],
-                game_id=game_data["game_id"],
-                home_team=game_data["home_team"],
-                away_team=game_data["away_team"],
-                game_datetime=game_data["game_datetime"],
-            )
+            # Collect historical data using HTTP client
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                async with session.get(game_data["history_url"]) as response:
+                    if response.status == 200:
+                        history_response = await response.json()
+                        result_data = self.action_network_history_parser.parse_history_response(
+                            response_data=history_response,
+                            game_id=game_data["game_id"],
+                            home_team=game_data["home_team"],
+                            away_team=game_data["away_team"],
+                            game_datetime=game_data["game_datetime"],
+                            history_url=game_data["history_url"],
+                        )
+                        
+                        # Create a mock result object for compatibility
+                        class MockResult:
+                            def __init__(self, data):
+                                self.success = data is not None
+                                self.data = [data] if data else []
+                                self.errors = [] if data else ["Failed to parse history response"]
+                        
+                        result = MockResult(result_data)
+                    else:
+                        result = MockResult(None)
 
             if result.success and result.data:
                 historical_data = result.data[
@@ -177,11 +194,37 @@ class UnifiedDataService:
             )
 
             # Collect historical data for all games
-            results = (
-                await self.action_network_history_collector.collect_multiple_histories(
-                    games_data
-                )
-            )
+            import aiohttp
+            results = []
+            
+            async with aiohttp.ClientSession() as session:
+                for game_data in games_data:
+                    try:
+                        async with session.get(game_data["history_url"]) as response:
+                            if response.status == 200:
+                                history_response = await response.json()
+                                result_data = self.action_network_history_parser.parse_history_response(
+                                    response_data=history_response,
+                                    game_id=game_data["game_id"],
+                                    home_team=game_data["home_team"],
+                                    away_team=game_data["away_team"],
+                                    game_datetime=game_data["game_datetime"],
+                                    history_url=game_data["history_url"],
+                                )
+                                
+                                # Create a mock result object for compatibility
+                                class MockResult:
+                                    def __init__(self, data):
+                                        self.success = data is not None
+                                        self.data = [data] if data else []
+                                        self.errors = [] if data else ["Failed to parse history response"]
+                                        self.metadata = game_data
+                                
+                                results.append(MockResult(result_data))
+                            else:
+                                results.append(MockResult(None))
+                    except Exception as e:
+                        results.append(MockResult(None))
 
             # Extract successful results
             historical_data_list = []
@@ -562,9 +605,6 @@ class UnifiedDataService:
     async def cleanup(self) -> None:
         """Clean up database connections and resources."""
         try:
-            if self.action_network_history_collector:
-                await self.action_network_history_collector.close()
-
             if self.db_connection:
                 await self.db_connection.close()
                 self.db_connection = None
@@ -596,14 +636,6 @@ class UnifiedDataService:
             ),
         }
 
-    async def cleanup(self):
-        """Clean up resources."""
-        try:
-            # Close any open connections
-            await self.action_network_history_collector.close()
-            self.logger.info("UnifiedDataService cleanup completed")
-        except Exception as e:
-            self.logger.error("Error during UnifiedDataService cleanup", error=str(e))
 
 
 # Convenience function for easy access

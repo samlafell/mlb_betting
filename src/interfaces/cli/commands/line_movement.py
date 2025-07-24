@@ -11,7 +11,7 @@ from typing import Optional
 
 import structlog
 
-from ....data.collection.enhanced_action_network_collector import EnhancedActionNetworkCollector
+from ....data.collection.consolidated_action_network_collector import ActionNetworkCollector, CollectionMode
 from ....data.collection.base import CollectorConfig, CollectionRequest, DataSource
 
 logger = structlog.get_logger(__name__)
@@ -117,8 +117,9 @@ async def _collect_historical_movements(target_date: datetime, backfill_days: in
         timeout_seconds=30
     )
     
-    async with EnhancedActionNetworkCollector(config) as collector:
-        
+    collector = ActionNetworkCollector(config, CollectionMode.HISTORICAL)
+    
+    try:
         total_movements = 0
         
         for day_offset in range(backfill_days):
@@ -128,20 +129,17 @@ async def _collect_historical_movements(target_date: datetime, backfill_days: in
             
             request = CollectionRequest(
                 source=DataSource.ACTION_NETWORK,
-                start_date=current_date,
-                dry_run=dry_run
+                start_date=current_date
             )
             
             try:
-                result = await collector.collect(
-                    start_date=current_date,
-                    dry_run=dry_run
-                )
+                result = await collector.collect_data(request)
                 
-                if result.success:
-                    click.echo(f"   ✅ Collected {len(result.data)} games")
+                if result:
+                    click.echo(f"   ✅ Collected {len(result)} games")
+                    total_movements += len(result)
                 else:
-                    click.echo(f"   ❌ Failed: {result.errors}")
+                    click.echo(f"   ❌ No data collected")
                     
             except Exception as e:
                 click.echo(f"   ❌ Error: {str(e)}")
@@ -149,7 +147,10 @@ async def _collect_historical_movements(target_date: datetime, backfill_days: in
         if dry_run:
             click.echo("\n🔍 Dry run completed - no data was inserted")
         else:
-            click.echo(f"\n✅ Historical movement collection completed")
+            click.echo(f"\n✅ Historical movement collection completed - {total_movements} total movements")
+            
+    finally:
+        await collector.client.close()
 
 
 async def _analyze_line_movements(game_id: Optional[int], date: Optional[datetime], 

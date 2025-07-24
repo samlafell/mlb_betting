@@ -17,15 +17,20 @@ import psycopg2.extras
 import structlog
 from bs4 import BeautifulSoup
 
-from .base import DataSource
-from .unified_betting_lines_collector import UnifiedBettingLinesCollector
+from .base import (
+    BaseCollector,
+    CollectorConfig,
+    CollectionRequest,
+    CollectionResult,
+    DataSource
+)
 
 # Note: MCP bridge removed - browser automation no longer available
 
 logger = structlog.get_logger(__name__)
 
 
-class VSINUnifiedCollector(UnifiedBettingLinesCollector):
+class VSINUnifiedCollector(BaseCollector):
     """
     VSIN collector using the unified betting lines pattern.
     
@@ -33,10 +38,10 @@ class VSINUnifiedCollector(UnifiedBettingLinesCollector):
     compatibility with existing VSIN data collection methods.
     """
 
-    def __init__(self):
-        super().__init__(DataSource.VSIN)
-        # Updated to production VSIN URL from original implementation
-        self.base_url = "https://data.vsin.com"
+    def __init__(self, config: CollectorConfig):
+        super().__init__(config)
+        # Use config.base_url or fallback to production VSIN URL
+        self.base_url = config.base_url or "https://data.vsin.com"
         
         # Sports URL mappings from original implementation
         self.sports_urls = {
@@ -100,42 +105,41 @@ class VSINUnifiedCollector(UnifiedBettingLinesCollector):
         sportsbook_param = self.sportsbook_views.get(sportsbook.lower(), '?')
         return f"{self.base_url}/{sport_path}/{sportsbook_param}"
 
-    def collect_raw_data(self, sport: str = "mlb", **kwargs) -> list[dict[str, Any]]:
+    async def collect_data(self, request: CollectionRequest) -> list[dict[str, Any]]:
         """
         Collect raw betting data from VSIN.
         
         Args:
-            sport: Sport type (default: mlb)
-            **kwargs: Additional parameters
+            request: Collection request with parameters
             
         Returns:
             List of raw betting line dictionaries
         """
         try:
-            # Check if we're already in an event loop (AGENT SBD's pattern)
-            try:
-                loop = asyncio.get_running_loop()
-                # We're in an event loop, can't use asyncio.run()
-                self.logger.info("VSIN collector running in async context - attempting live data collection")
-                
-                # Try live data collection with fallback to mock data
-                live_data = self._collect_vsin_data_sync(sport, **kwargs)
-                if live_data:
-                    self.logger.info(f"Successfully collected {len(live_data)} live VSIN records")
-                    return live_data
-                else:
-                    # Fallback to mock data if live collection fails
-                    self.logger.warning("Live collection failed, falling back to mock data")
-                    mock_data = self._generate_mock_data(sport)
-                    return mock_data
-                    
-            except RuntimeError:
-                # No event loop running, safe to use asyncio.run()
-                return asyncio.run(self._collect_vsin_data_async(sport, **kwargs))
+            sport = request.additional_params.get("sport", request.sport or "mlb")
+            sportsbook = request.additional_params.get("sportsbook", "dk")
+            
+            self.logger.info(
+                "Starting VSIN data collection",
+                sport=sport,
+                sportsbook=sportsbook,
+                dry_run=request.dry_run
+            )
+            
+            # Try live data collection with fallback to mock data
+            live_data = self._collect_vsin_data_sync(sport, sportsbook=sportsbook)
+            if live_data:
+                self.logger.info(f"Successfully collected {len(live_data)} live VSIN records")
+                return live_data
+            else:
+                # Fallback to mock data if live collection fails
+                self.logger.warning("Live collection failed, falling back to mock data")
+                mock_data = self._generate_mock_data(sport)
+                return mock_data
 
         except Exception as e:
             self.logger.error("Failed to collect VSIN data", sport=sport, error=str(e))
-            return []
+            raise
 
     def _collect_vsin_data_sync(self, sport: str, **kwargs) -> list[dict[str, Any]]:
         """
@@ -2109,10 +2113,105 @@ class VSINUnifiedCollector(UnifiedBettingLinesCollector):
                 }
             }
 
+    def validate_record(self, record: dict[str, Any]) -> bool:
+        """
+        Validate VSIN record structure.
+        
+        Args:
+            record: Raw data record from VSIN
+            
+        Returns:
+            True if valid, False otherwise
+        """
+        required_fields = ["teams", "data_source", "timestamp"]
+        
+        # Check basic structure
+        if not all(field in record for field in required_fields):
+            return False
+            
+        # Validate teams field has content
+        teams = record.get("teams", "")
+        if not teams or len(teams.strip()) < 3:
+            return False
+            
+        # Validate at least one betting metric is present
+        betting_metrics = [
+            "moneyline_handle", "moneyline_bets", "total_handle", 
+            "total_bets", "runline_handle", "runline_bets"
+        ]
+        
+        if not any(record.get(metric) for metric in betting_metrics):
+            return False
+            
+        return True
+        
+    def normalize_record(self, record: dict[str, Any]) -> dict[str, Any]:
+        """
+        Normalize VSIN record to standard format.
+        
+        Args:
+            record: Raw data record
+            
+        Returns:
+            Normalized data record with collection metadata
+        """
+        normalized = record.copy()
+        
+        # Add standardized metadata
+        normalized["source"] = self.source.value
+        normalized["collected_at_est"] = datetime.now().isoformat()
+        normalized["collector_version"] = "vsin_unified_v2"
+        
+        # Ensure consistent team name formatting
+        if "teams" in normalized:
+            teams_str = str(normalized["teams"]).strip()
+            normalized["teams_normalized"] = teams_str
+            
+            # Try to split teams into home/away if format allows
+            if " @ " in teams_str:
+                away, home = teams_str.split(" @ ", 1)
+                normalized["away_team"] = away.strip()
+                normalized["home_team"] = home.strip()
+            elif " vs " in teams_str:
+                team1, team2 = teams_str.split(" vs ", 1)
+                normalized["team1"] = team1.strip()
+                normalized["team2"] = team2.strip()
+                
+        # Add data quality indicators
+        normalized["has_moneyline_data"] = bool(
+            normalized.get("moneyline_handle") or normalized.get("moneyline_bets")
+        )
+        normalized["has_total_data"] = bool(
+            normalized.get("total_handle") or normalized.get("total_bets")
+        )
+        normalized["has_runline_data"] = bool(
+            normalized.get("runline_handle") or normalized.get("runline_bets")
+        )
+        
+        # Calculate completeness score
+        metrics_count = sum([
+            normalized["has_moneyline_data"],
+            normalized["has_total_data"], 
+            normalized["has_runline_data"]
+        ])
+        normalized["data_completeness_score"] = metrics_count / 3.0
+        
+        return normalized
+
 
 # Example usage
 if __name__ == "__main__":
-    collector = VSINUnifiedCollector()
+    from .base import CollectorConfig
+    
+    # Create configuration using the standardized CollectorConfig
+    config = CollectorConfig(
+        source=DataSource.VSIN,
+        base_url="https://data.vsin.com",
+        rate_limit_per_minute=30,  # VSIN has stricter limits
+        timeout_seconds=45
+    )
+    
+    collector = VSINUnifiedCollector(config)
 
     # Test improved VSIN collection with live data
     print("=== Testing Improved VSIN Collector ===")

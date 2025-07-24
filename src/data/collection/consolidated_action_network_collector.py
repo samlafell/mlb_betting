@@ -19,6 +19,15 @@ import structlog
 
 from .base import BaseCollector, CollectorConfig, CollectionRequest, CollectionResult
 from .smart_line_movement_filter import SmartLineMovementFilter
+from ..models.unified.actionnetwork import (
+    ActionNetworkBettingInfo,
+    ActionNetworkHistoricalData,
+    ActionNetworkHistoricalEntry,
+    ActionNetworkMarketData,
+    ActionNetworkPrice,
+    LineMovementPeriod,
+)
+from ...core.config import get_settings
 from ...core.datetime_utils import prepare_for_postgres, safe_game_datetime_parse, now_est
 from ...core.team_utils import normalize_team_name
 from ...core.sportsbook_utils import SportsbookResolver
@@ -82,13 +91,31 @@ class ActionNetworkClient:
         
         url = f"{self.api_base}/web/v2/markets/event/{game_id}/history"
         
+        # Add rate limiting - wait before history requests
+        await asyncio.sleep(0.5)
+        
         logger.info("Fetching game history", game_id=game_id, url=url)
         
-        async with session.get(url) as response:
+        # Add additional headers specifically for history endpoint
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": f"https://www.actionnetwork.com/mlb/game/{game_id}",
+            "Origin": "https://www.actionnetwork.com",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-site"
+        }
+        
+        async with session.get(url, headers=headers) as response:
             if response.status == 200:
                 return await response.json()
             else:
-                logger.error("History API request failed", status=response.status, game_id=game_id)
+                logger.error("History API request failed", 
+                           status=response.status, 
+                           game_id=game_id, 
+                           headers=dict(response.headers))
                 return {}
     
     async def close(self):
@@ -96,6 +123,312 @@ class ActionNetworkClient:
         if self.session:
             await self.session.close()
             self.session = None
+
+
+class ActionNetworkHistoryParser:
+    """
+    Parser for Action Network historical line movement data.
+
+    Processes raw JSON responses from Action Network history APIs
+    to extract structured line movement information.
+    """
+
+    def __init__(self):
+        """Initialize the Action Network history parser."""
+        self.logger = logger.bind(parser="ActionNetworkHistory")
+
+    def parse_history_response(
+        self,
+        response_data: Dict[str, Any],
+        game_id: int,
+        home_team: str,
+        away_team: str,
+        game_datetime: datetime,
+        history_url: str,
+    ) -> ActionNetworkHistoricalData | None:
+        """
+        Parse the raw response data from Action Network history API.
+
+        Args:
+            response_data: Raw JSON response from API
+            game_id: Action Network game ID
+            home_team: Home team name
+            away_team: Away team name
+            game_datetime: Scheduled game start time
+            history_url: History URL used for extraction
+
+        Returns:
+            Processed ActionNetworkHistoricalData or None if parsing fails
+        """
+        try:
+            # Log the raw response for debugging
+            self.logger.info(
+                "Raw API response received",
+                response_type=type(response_data).__name__,
+                response_keys=list(response_data.keys())
+                if isinstance(response_data, dict)
+                else "N/A",
+                response_length=len(response_data)
+                if isinstance(response_data, list | dict)
+                else "N/A",
+            )
+
+            # Handle both list and dict response formats
+            if isinstance(response_data, dict):
+                # If it's a dict, try to extract the list from common keys
+                if "data" in response_data:
+                    response_data = response_data["data"]
+                elif "history" in response_data:
+                    response_data = response_data["history"]
+                elif "results" in response_data:
+                    response_data = response_data["results"]
+                else:
+                    # Check if the dict has numeric keys (sportsbook IDs)
+                    # This is the new format where keys are sportsbook IDs
+                    if all(key.isdigit() for key in response_data.keys()):
+                        self.logger.info(
+                            "Detected sportsbook ID format",
+                            sportsbook_ids=list(response_data.keys()),
+                        )
+                        # Extract historical data from each sportsbook
+                        historical_entries = []
+                        for _sportsbook_id, sportsbook_data in response_data.items():
+                            if (
+                                isinstance(sportsbook_data, dict)
+                                and "event" in sportsbook_data
+                            ):
+                                historical_entries.append(sportsbook_data)
+                        response_data = historical_entries
+                    else:
+                        # If it's a single dict entry, wrap it in a list
+                        response_data = [response_data]
+
+            # Validate response structure
+            if not isinstance(response_data, list):
+                self.logger.error(
+                    "Expected list response from history API",
+                    response_type=type(response_data),
+                )
+                return None
+
+            if len(response_data) == 0:
+                self.logger.warning("Empty response from history API")
+                return None
+
+            historical_entries = []
+            pregame_count = 0
+            live_count = 0
+
+            # Process each entry in the response
+            for i, entry_data in enumerate(response_data):
+                if not isinstance(entry_data, dict):
+                    self.logger.warning(
+                        f"Skipping invalid entry at index {i}",
+                        entry_type=type(entry_data),
+                    )
+                    continue
+
+                # Extract event data
+                event_data = entry_data.get("event", {})
+                if not event_data:
+                    self.logger.warning(f"No event data in entry {i}")
+                    continue
+
+                # Determine if this is pregame or live data
+                # Based on your description: indices 0-1 are pregame, 2+ are live
+                period = (
+                    LineMovementPeriod.PREGAME if i < 2 else LineMovementPeriod.LIVE
+                )
+
+                # Extract market data
+                moneyline_data = self._extract_market_data(event_data, "moneyline")
+                spread_data = self._extract_market_data(event_data, "spread")
+                total_data = self._extract_market_data(event_data, "total")
+
+                # Create historical entry
+                historical_entry = ActionNetworkHistoricalEntry(
+                    event=event_data,
+                    period=period,
+                    moneyline=moneyline_data,
+                    spread=spread_data,
+                    total=total_data,
+                )
+
+                historical_entries.append(historical_entry)
+
+                if period == LineMovementPeriod.PREGAME:
+                    pregame_count += 1
+                else:
+                    live_count += 1
+
+            # Create the complete historical data object
+            historical_data = ActionNetworkHistoricalData(
+                game_id=game_id,
+                home_team=home_team,
+                away_team=away_team,
+                game_datetime=game_datetime,
+                historical_entries=historical_entries,
+                history_url=history_url,
+                total_entries=len(historical_entries),
+                pregame_entries=pregame_count,
+                live_entries=live_count,
+            )
+
+            self.logger.info(
+                "Successfully parsed Action Network history",
+                game_id=game_id,
+                total_entries=len(historical_entries),
+                pregame_entries=pregame_count,
+                live_entries=live_count,
+            )
+
+            return historical_data
+
+        except Exception as e:
+            self.logger.error(
+                "Failed to parse historical response", error=str(e), game_id=game_id
+            )
+            return None
+
+    def _extract_market_data(
+        self, event_data: Dict[str, Any], market_type: str
+    ) -> ActionNetworkMarketData | None:
+        """
+        Extract market data for a specific market type from event data.
+
+        Args:
+            event_data: Event data from the API response
+            market_type: Type of market ('moneyline', 'spread', 'total')
+
+        Returns:
+            ActionNetworkMarketData or None if not found
+        """
+        try:
+            market_data = event_data.get(market_type)
+            if not market_data:
+                return None
+
+            # Handle both dict and list formats
+            if isinstance(market_data, list):
+                # New format: market_data is a list of betting lines
+                # Find home and away sides
+                home_line = None
+                away_line = None
+
+                for line in market_data:
+                    if line.get("side") == "home":
+                        home_line = line
+                    elif line.get("side") == "away":
+                        away_line = line
+                    elif line.get("side") == "over" and market_type == "total":
+                        home_line = line  # Treat "over" as home for totals
+                    elif line.get("side") == "under" and market_type == "total":
+                        away_line = line  # Treat "under" as away for totals
+
+                # Extract pricing data
+                home_price = None
+                away_price = None
+                line_value = None
+                home_bet_info = None
+                away_bet_info = None
+
+                if home_line:
+                    home_price = ActionNetworkPrice(
+                        decimal=None,  # Not provided in this format
+                        american=home_line.get("odds"),
+                    )
+                    if market_type in ["spread", "total"]:
+                        line_value = home_line.get("value")
+
+                    # Extract betting info for home/over side
+                    bet_info_data = home_line.get("bet_info", {})
+                    if bet_info_data:
+                        home_bet_info = ActionNetworkBettingInfo(
+                            tickets=bet_info_data.get("tickets"),
+                            money=bet_info_data.get("money"),
+                        )
+
+                if away_line:
+                    away_price = ActionNetworkPrice(
+                        decimal=None,  # Not provided in this format
+                        american=away_line.get("odds"),
+                    )
+                    if market_type in ["spread", "total"] and not line_value:
+                        line_value = away_line.get("value")
+
+                    # Extract betting info for away/under side
+                    bet_info_data = away_line.get("bet_info", {})
+                    if bet_info_data:
+                        away_bet_info = ActionNetworkBettingInfo(
+                            tickets=bet_info_data.get("tickets"),
+                            money=bet_info_data.get("money"),
+                        )
+
+            else:
+                # Legacy format: market_data is a dict
+                home_price = None
+                away_price = None
+                line_value = None
+                home_bet_info = None
+                away_bet_info = None
+
+                if market_type == "moneyline":
+                    # Moneyline has home and away prices
+                    home_odds = market_data.get("home", {})
+                    away_odds = market_data.get("away", {})
+
+                    if home_odds:
+                        home_price = ActionNetworkPrice(
+                            decimal=home_odds.get("decimal"),
+                            american=home_odds.get("american"),
+                        )
+
+                    if away_odds:
+                        away_price = ActionNetworkPrice(
+                            decimal=away_odds.get("decimal"),
+                            american=away_odds.get("american"),
+                        )
+
+                elif market_type in ["spread", "total"]:
+                    # Spread and total have line values and pricing
+                    line_value = market_data.get("line") or market_data.get("value")
+
+                    # Extract pricing (may be in different formats)
+                    home_odds = market_data.get("home", {}) or market_data.get(
+                        "over", {}
+                    )
+                    away_odds = market_data.get("away", {}) or market_data.get(
+                        "under", {}
+                    )
+
+                    if home_odds:
+                        home_price = ActionNetworkPrice(
+                            decimal=home_odds.get("decimal"),
+                            american=home_odds.get("american"),
+                        )
+
+                    if away_odds:
+                        away_price = ActionNetworkPrice(
+                            decimal=away_odds.get("decimal"),
+                            american=away_odds.get("american"),
+                        )
+
+            # Create market data object
+            return ActionNetworkMarketData(
+                home=home_price,
+                away=away_price,
+                line=line_value,
+                home_bet_info=home_bet_info,
+                away_bet_info=away_bet_info,
+            )
+
+        except Exception as e:
+            self.logger.error(
+                "Error extracting market data",
+                market_type=market_type,
+                error=str(e),
+            )
+            return None
 
 
 class ActionNetworkCollector(BaseCollector):
@@ -111,14 +444,18 @@ class ActionNetworkCollector(BaseCollector):
     def __init__(self, config: CollectorConfig, mode: CollectionMode = CollectionMode.COMPREHENSIVE):
         super().__init__(config)
         self.mode = mode
+        # Use proper settings configuration for database connection
+        settings = get_settings()
         self.db_config = {
-            "host": "localhost",
-            "port": 5432,
-            "database": "mlb_betting",
-            "user": "samlafell"
+            "host": settings.database.host,
+            "port": settings.database.port,
+            "database": settings.database.database,
+            "user": settings.database.user,
+            "password": settings.database.password
         }
         self.client = ActionNetworkClient(self.db_config)
         self.filter = SmartLineMovementFilter()
+        self.history_parser = ActionNetworkHistoryParser()
         
         # Statistics tracking
         self.stats = {
@@ -247,7 +584,7 @@ class ActionNetworkCollector(BaseCollector):
         return game_mappings
     
     async def _store_raw_game_data(self, games: List[Dict[str, Any]], endpoint_url: str = None) -> None:
-        """Store raw game data to raw_data.action_network_games table."""
+        """Store raw game data to raw_data.action_network_games table with extracted readable info."""
         if not games:
             return
             
@@ -256,35 +593,75 @@ class ActionNetworkCollector(BaseCollector):
                 host=self.db_config["host"],
                 port=self.db_config["port"],
                 database=self.db_config["database"],
-                user=self.db_config["user"]
+                user=self.db_config["user"],
+                password=self.db_config["password"]
             )
             
             for game in games:
                 game_id = game.get('id')
                 if not game_id:
                     continue
+                
+                # Extract readable game information
+                teams = game.get('teams', [])
+                home_team = None
+                away_team = None
+                home_team_abbr = None
+                away_team_abbr = None
+                
+                if len(teams) >= 2:
+                    # Use home_team_id and away_team_id to correctly map teams
+                    home_team_id = game.get('home_team_id')
+                    away_team_id = game.get('away_team_id')
                     
-                # Store raw game data exactly as received from API
+                    # Find home and away teams by matching IDs
+                    for team in teams:
+                        team_id = team.get('id')
+                        if team_id == home_team_id:
+                            home_team = team.get('full_name', team.get('display_name', 'Unknown'))
+                            home_team_abbr = team.get('abbr', team.get('abbreviation'))
+                        elif team_id == away_team_id:
+                            away_team = team.get('full_name', team.get('display_name', 'Unknown'))
+                            away_team_abbr = team.get('abbr', team.get('abbreviation'))
+                
+                game_status = game.get('status', 'unknown')
+                start_time = safe_game_datetime_parse(game.get('start_time'))
+                game_date = start_time.date() if start_time else now_est().date()
+                    
+                # Store raw game data with extracted readable fields
                 await conn.execute("""
                     INSERT INTO raw_data.action_network_games (
-                        external_game_id, raw_response, endpoint_url, 
-                        response_status, game_date, collected_at, created_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        external_game_id, raw_response, endpoint_url, response_status,
+                        game_date, home_team, away_team, home_team_abbr, away_team_abbr,
+                        game_status, start_time, collected_at, created_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                     ON CONFLICT (external_game_id) DO UPDATE SET
                         raw_response = EXCLUDED.raw_response,
+                        home_team = EXCLUDED.home_team,
+                        away_team = EXCLUDED.away_team,
+                        home_team_abbr = EXCLUDED.home_team_abbr,
+                        away_team_abbr = EXCLUDED.away_team_abbr,
+                        game_status = EXCLUDED.game_status,
+                        start_time = EXCLUDED.start_time,
                         collected_at = EXCLUDED.collected_at
                 """,
                 str(game_id), 
-                json.dumps(game),  # Convert dict to JSON string for JSONB storage
+                json.dumps(game),  # Full raw data still preserved
                 endpoint_url or "https://api.actionnetwork.com/web/v2/scoreboard/publicbetting/mlb",
                 200,
-                safe_game_datetime_parse(game.get('start_time')).date() if game.get('start_time') else now_est().date(),
+                game_date,
+                home_team,
+                away_team, 
+                home_team_abbr,
+                away_team_abbr,
+                game_status,
+                start_time,
                 now_est(),
                 now_est()
                 )
             
             await conn.close()
-            logger.info(f"Stored {len(games)} games to raw_data.action_network_games")
+            logger.info(f"Stored {len(games)} games to raw_data.action_network_games with readable info")
             
         except Exception as e:
             logger.error("Error storing raw game data", error=str(e))
@@ -292,12 +669,24 @@ class ActionNetworkCollector(BaseCollector):
     async def _store_raw_odds_data(self, game_id: str, odds_data: Dict[str, Any], sportsbook_key: str = None) -> None:
         """Store raw odds data to raw_data.action_network_odds table."""
         try:
+            logger.info(f"Attempting to store odds data for game {game_id}, sportsbook {sportsbook_key}")
+            
             conn = await asyncpg.connect(
                 host=self.db_config["host"],
                 port=self.db_config["port"],
                 database=self.db_config["database"],
-                user=self.db_config["user"]
+                user=self.db_config["user"],
+                password=self.db_config["password"]
             )
+            
+            logger.info(f"Database connection established for game {game_id}")
+            
+            # Prepare data for insertion
+            collected_at = now_est()
+            created_at = now_est()
+            json_data = json.dumps(odds_data)
+            
+            logger.info(f"Prepared data: game_id={game_id}, sportsbook_key={sportsbook_key}, collected_at={collected_at}")
             
             await conn.execute("""
                 INSERT INTO raw_data.action_network_odds (
@@ -306,16 +695,18 @@ class ActionNetworkCollector(BaseCollector):
             """,
             str(game_id),
             sportsbook_key or "unknown", 
-            json.dumps(odds_data),  # Convert dict to JSON string for JSONB storage
-            now_est(),
-            now_est()
+            json_data,  # Convert dict to JSON string for JSONB storage
+            collected_at,
+            created_at
             )
             
             await conn.close()
-            logger.debug(f"Stored odds data for game {game_id}, sportsbook {sportsbook_key}")
+            logger.info(f"✅ Successfully stored odds data for game {game_id}, sportsbook {sportsbook_key}")
             
         except Exception as e:
-            logger.error("Error storing raw odds data", error=str(e), game_id=game_id)
+            logger.error(f"❌ Error storing raw odds data for game {game_id}, sportsbook {sportsbook_key}: {str(e)}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
     
     async def _store_raw_current_odds(self, games: List[Dict[str, Any]]) -> None:
         """Extract and store raw odds data from current games to raw_data.action_network_odds table."""
@@ -364,7 +755,8 @@ class ActionNetworkCollector(BaseCollector):
                 host=self.db_config["host"],
                 port=self.db_config["port"], 
                 database=self.db_config["database"],
-                user=self.db_config["user"]
+                user=self.db_config["user"],
+                password=self.db_config["password"]
             )
             
             # Create table if it doesn't exist
@@ -600,10 +992,20 @@ class ActionNetworkCollector(BaseCollector):
     
     def normalize_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
         """Add collection metadata to record."""
-        record["source"] = "ACTION_NETWORK"
-        record["collected_at"] = datetime.now()
-        record["collection_mode"] = self.mode.value
-        return record
+        normalized = record.copy()
+        
+        # Add standardized metadata
+        normalized["source"] = self.source.value
+        normalized["collected_at_est"] = datetime.now().isoformat()
+        normalized["collector_version"] = "action_network_consolidated_v2"
+        normalized["collection_mode"] = self.mode.value
+        
+        # Add data quality indicators
+        normalized["has_teams"] = bool(normalized.get("teams"))
+        normalized["has_markets"] = bool(normalized.get("markets"))
+        normalized["has_public_betting"] = bool(normalized.get("public_betting"))
+        
+        return normalized
     
     def get_stats(self) -> Dict[str, Any]:
         """Get collection statistics."""
