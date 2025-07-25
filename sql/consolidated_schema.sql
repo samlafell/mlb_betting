@@ -134,7 +134,7 @@ CREATE INDEX IF NOT EXISTS idx_raw_data_parsing_status ON raw_data.parsing_statu
 CREATE SCHEMA IF NOT EXISTS core_betting;
 
 -- Unified games table with all ID systems and enriched data
-CREATE TABLE IF NOT EXISTS core_betting.games (
+CREATE TABLE IF NOT EXISTS curated.games_complete (
     id SERIAL PRIMARY KEY,
     
     -- Multiple ID columns for cross-system integration
@@ -182,9 +182,9 @@ CREATE TABLE IF NOT EXISTS core_betting.games (
 );
 
 -- Game outcomes for backtesting and analysis
-CREATE TABLE IF NOT EXISTS core_betting.game_outcomes (
+CREATE TABLE IF NOT EXISTS curated.game_outcomes (
     id SERIAL PRIMARY KEY,
-    game_id INTEGER NOT NULL REFERENCES core_betting.games(id),
+    game_id INTEGER NOT NULL REFERENCES curated.games_complete(id),
     home_team VARCHAR(5) NOT NULL,
     away_team VARCHAR(5) NOT NULL,
     home_score INTEGER NOT NULL,
@@ -208,7 +208,7 @@ CREATE TABLE IF NOT EXISTS core_betting.game_outcomes (
 );
 
 -- Teams reference data
-CREATE TABLE IF NOT EXISTS core_betting.teams (
+CREATE TABLE IF NOT EXISTS curated.teams_master (
     id SERIAL PRIMARY KEY,
     team_id INTEGER NOT NULL UNIQUE, -- Action Network ID
     full_name VARCHAR(100) NOT NULL,
@@ -227,7 +227,7 @@ CREATE TABLE IF NOT EXISTS core_betting.teams (
 );
 
 -- Sportsbooks reference data
-CREATE TABLE IF NOT EXISTS core_betting.sportsbooks (
+CREATE TABLE IF NOT EXISTS curated.sportsbooks (
     id SERIAL PRIMARY KEY,
     name VARCHAR(50) NOT NULL UNIQUE,
     display_name VARCHAR(100),
@@ -238,10 +238,10 @@ CREATE TABLE IF NOT EXISTS core_betting.sportsbooks (
 );
 
 -- Betting lines - Moneyline
-CREATE TABLE IF NOT EXISTS core_betting.betting_lines_moneyline (
+CREATE TABLE IF NOT EXISTS curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' (
     id SERIAL PRIMARY KEY,
-    game_id INTEGER NOT NULL REFERENCES core_betting.games(id),
-    sportsbook_id INTEGER REFERENCES core_betting.sportsbooks(id),
+    game_id INTEGER NOT NULL REFERENCES curated.games_complete(id),
+    sportsbook_id INTEGER REFERENCES curated.sportsbooks(id),
     sportsbook VARCHAR(50) NOT NULL, -- Keep for backward compatibility
     
     -- Moneyline odds
@@ -280,10 +280,10 @@ CREATE TABLE IF NOT EXISTS core_betting.betting_lines_moneyline (
 );
 
 -- Betting lines - Spreads
-CREATE TABLE IF NOT EXISTS core_betting.betting_lines_spreads (
+CREATE TABLE IF NOT EXISTS curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's (
     id SERIAL PRIMARY KEY,
-    game_id INTEGER NOT NULL REFERENCES core_betting.games(id),
-    sportsbook_id INTEGER REFERENCES core_betting.sportsbooks(id),
+    game_id INTEGER NOT NULL REFERENCES curated.games_complete(id),
+    sportsbook_id INTEGER REFERENCES curated.sportsbooks(id),
     sportsbook VARCHAR(50) NOT NULL,
     
     -- Spread data
@@ -330,10 +330,10 @@ CREATE TABLE IF NOT EXISTS core_betting.betting_lines_spreads (
 );
 
 -- Betting lines - Totals
-CREATE TABLE IF NOT EXISTS core_betting.betting_lines_totals (
+CREATE TABLE IF NOT EXISTS curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' (
     id SERIAL PRIMARY KEY,
-    game_id INTEGER NOT NULL REFERENCES core_betting.games(id),
-    sportsbook_id INTEGER REFERENCES core_betting.sportsbooks(id),
+    game_id INTEGER NOT NULL REFERENCES curated.games_complete(id),
+    sportsbook_id INTEGER REFERENCES curated.sportsbooks(id),
     sportsbook VARCHAR(50) NOT NULL,
     
     -- Total data
@@ -376,9 +376,9 @@ CREATE TABLE IF NOT EXISTS core_betting.betting_lines_totals (
 );
 
 -- Line movements tracking
-CREATE TABLE IF NOT EXISTS core_betting.line_movements (
+CREATE TABLE IF NOT EXISTS curated.line_movements (
     id SERIAL PRIMARY KEY,
-    game_id INTEGER NOT NULL REFERENCES core_betting.games(id),
+    game_id INTEGER NOT NULL REFERENCES curated.games_complete(id),
     bet_type VARCHAR(20) NOT NULL CHECK (bet_type IN ('moneyline', 'spread', 'total')),
     sportsbook VARCHAR(50) NOT NULL,
     movement_timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -390,9 +390,9 @@ CREATE TABLE IF NOT EXISTS core_betting.line_movements (
 );
 
 -- Steam moves detection
-CREATE TABLE IF NOT EXISTS core_betting.steam_moves (
+CREATE TABLE IF NOT EXISTS curated.steam_moves (
     id SERIAL PRIMARY KEY,
-    game_id INTEGER NOT NULL REFERENCES core_betting.games(id),
+    game_id INTEGER NOT NULL REFERENCES curated.games_complete(id),
     bet_type VARCHAR(20) NOT NULL,
     detected_at TIMESTAMP WITH TIME ZONE NOT NULL,
     movement_pattern VARCHAR(100),
@@ -402,9 +402,9 @@ CREATE TABLE IF NOT EXISTS core_betting.steam_moves (
 );
 
 -- Betting splits aggregated data
-CREATE TABLE IF NOT EXISTS core_betting.betting_splits (
+CREATE TABLE IF NOT EXISTS curated.betting_splits (
     id SERIAL PRIMARY KEY,
-    game_id INTEGER NOT NULL REFERENCES core_betting.games(id),
+    game_id INTEGER NOT NULL REFERENCES curated.games_complete(id),
     split_type VARCHAR(20) NOT NULL CHECK (split_type IN ('moneyline', 'spread', 'total')),
     source VARCHAR(50) NOT NULL,
     book VARCHAR(50),
@@ -429,9 +429,9 @@ CREATE TABLE IF NOT EXISTS core_betting.betting_splits (
 );
 
 -- Sharp action indicators
-CREATE TABLE IF NOT EXISTS core_betting.sharp_action_indicators (
+CREATE TABLE IF NOT EXISTS curated.sharp_action_indicators (
     id SERIAL PRIMARY KEY,
-    game_id INTEGER NOT NULL REFERENCES core_betting.games(id),
+    game_id INTEGER NOT NULL REFERENCES curated.games_complete(id),
     bet_type VARCHAR(20) NOT NULL,
     indicator_type VARCHAR(50) NOT NULL, -- 'reverse_line_movement', 'steam_move', 'money_disparity'
     detected_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -441,15 +441,15 @@ CREATE TABLE IF NOT EXISTS core_betting.sharp_action_indicators (
 );
 
 -- Indexes for core_betting schema
-CREATE INDEX IF NOT EXISTS idx_core_betting_games_date ON core_betting.games(game_date);
-CREATE INDEX IF NOT EXISTS idx_core_betting_games_teams ON core_betting.games(home_team, away_team);
-CREATE INDEX IF NOT EXISTS idx_core_betting_games_mlb_id ON core_betting.games(mlb_stats_api_game_id);
-CREATE INDEX IF NOT EXISTS idx_core_betting_outcomes_game ON core_betting.game_outcomes(game_id);
-CREATE INDEX IF NOT EXISTS idx_core_betting_ml_game_timestamp ON core_betting.betting_lines_moneyline(game_id, odds_timestamp);
-CREATE INDEX IF NOT EXISTS idx_core_betting_spreads_game_timestamp ON core_betting.betting_lines_spreads(game_id, odds_timestamp);
-CREATE INDEX IF NOT EXISTS idx_core_betting_totals_game_timestamp ON core_betting.betting_lines_totals(game_id, odds_timestamp);
-CREATE INDEX IF NOT EXISTS idx_core_betting_splits_game_type ON core_betting.betting_splits(game_id, split_type);
-CREATE INDEX IF NOT EXISTS idx_core_betting_sharp_indicators ON core_betting.sharp_action_indicators(game_id, indicator_type);
+CREATE INDEX IF NOT EXISTS idx_core_betting_games_date ON curated.games_complete(game_date);
+CREATE INDEX IF NOT EXISTS idx_core_betting_games_teams ON curated.games_complete(home_team, away_team);
+CREATE INDEX IF NOT EXISTS idx_core_betting_games_mlb_id ON curated.games_complete(mlb_stats_api_game_id);
+CREATE INDEX IF NOT EXISTS idx_core_betting_outcomes_game ON curated.game_outcomes(game_id);
+CREATE INDEX IF NOT EXISTS idx_core_betting_ml_game_timestamp ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'(game_id, odds_timestamp);
+CREATE INDEX IF NOT EXISTS idx_core_betting_spreads_game_timestamp ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's(game_id, odds_timestamp);
+CREATE INDEX IF NOT EXISTS idx_core_betting_totals_game_timestamp ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'(game_id, odds_timestamp);
+CREATE INDEX IF NOT EXISTS idx_core_betting_splits_game_type ON curated.betting_splits(game_id, split_type);
+CREATE INDEX IF NOT EXISTS idx_core_betting_sharp_indicators ON curated.sharp_action_indicators(game_id, indicator_type);
 
 -- ==============================================================================
 -- 3. ANALYTICS SCHEMA - Derived analytics, signals, and strategy outputs
@@ -460,7 +460,7 @@ CREATE SCHEMA IF NOT EXISTS analytics;
 -- Strategy signals and recommendations
 CREATE TABLE IF NOT EXISTS analytics.strategy_signals (
     id SERIAL PRIMARY KEY,
-    game_id INTEGER NOT NULL REFERENCES core_betting.games(id),
+    game_id INTEGER NOT NULL REFERENCES curated.games_complete(id),
     strategy_name VARCHAR(100) NOT NULL,
     signal_type VARCHAR(50) NOT NULL, -- 'sharp_action', 'line_movement', 'splits_disparity'
     signal_strength DECIMAL(5,3) NOT NULL CHECK (signal_strength >= 0 AND signal_strength <= 1),
@@ -475,7 +475,7 @@ CREATE TABLE IF NOT EXISTS analytics.strategy_signals (
 -- Strategy recommendations (clean consolidated data)
 CREATE TABLE IF NOT EXISTS analytics.betting_recommendations (
     id VARCHAR PRIMARY KEY,
-    game_id INTEGER NOT NULL REFERENCES core_betting.games(id),
+    game_id INTEGER NOT NULL REFERENCES curated.games_complete(id),
     home_team VARCHAR(5) NOT NULL,
     away_team VARCHAR(5) NOT NULL,
     game_datetime TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -528,7 +528,7 @@ CREATE TABLE IF NOT EXISTS analytics.timing_analysis_results (
 -- Cross-market analysis
 CREATE TABLE IF NOT EXISTS analytics.cross_market_analysis (
     id SERIAL PRIMARY KEY,
-    game_id INTEGER NOT NULL REFERENCES core_betting.games(id),
+    game_id INTEGER NOT NULL REFERENCES curated.games_complete(id),
     analysis_type VARCHAR(50) NOT NULL, -- 'correlation', 'arbitrage', 'steam_detection'
     markets_compared JSONB NOT NULL, -- Array of market types compared
     analysis_results JSONB NOT NULL,
@@ -539,7 +539,7 @@ CREATE TABLE IF NOT EXISTS analytics.cross_market_analysis (
 -- Confidence scores tracking
 CREATE TABLE IF NOT EXISTS analytics.confidence_scores (
     id SERIAL PRIMARY KEY,
-    game_id INTEGER NOT NULL REFERENCES core_betting.games(id),
+    game_id INTEGER NOT NULL REFERENCES curated.games_complete(id),
     strategy_name VARCHAR(100) NOT NULL,
     confidence_type VARCHAR(50) NOT NULL, -- 'overall', 'timing', 'historical'
     score DECIMAL(5,3) NOT NULL CHECK (score >= 0 AND score <= 1),
@@ -842,8 +842,8 @@ BEGIN
         -- Try to find game outcome
         SELECT g.home_score, g.away_score, g.home_win, g.over, g.home_cover_spread
         INTO outcome
-        FROM core_betting.game_outcomes g
-        JOIN core_betting.games gm ON g.game_id = gm.id
+        FROM curated.game_outcomes g
+        JOIN curated.games_complete gm ON g.game_id = gm.id
         WHERE gm.mlb_stats_api_game_id = rec.game_pk
            OR (gm.home_team = rec.home_team 
                AND gm.away_team = rec.away_team 

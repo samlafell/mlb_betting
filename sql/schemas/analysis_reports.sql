@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS curated.rlm_opportunities (
     game_datetime TIMESTAMPTZ NOT NULL,
     
     -- Market details
-    sportsbook_id INTEGER REFERENCES core_betting.sportsbooks(id),
+    sportsbook_id INTEGER REFERENCES curated.sportsbooks(id),
     action_network_book_id INTEGER NOT NULL,
     market_type VARCHAR(20) NOT NULL CHECK (market_type IN ('moneyline', 'spread', 'total')),
     side VARCHAR(10) NOT NULL CHECK (side IN ('home', 'away', 'over', 'under')),
@@ -100,8 +100,8 @@ CREATE TABLE IF NOT EXISTS curated.arbitrage_opportunities (
     
     -- Arbitrage details
     market_type VARCHAR(20) NOT NULL CHECK (market_type IN ('moneyline', 'spread', 'total')),
-    book_a_id INTEGER REFERENCES core_betting.sportsbooks(id),
-    book_b_id INTEGER REFERENCES core_betting.sportsbooks(id),
+    book_a_id INTEGER REFERENCES curated.sportsbooks(id),
+    book_b_id INTEGER REFERENCES curated.sportsbooks(id),
     book_a_odds INTEGER NOT NULL,
     book_b_odds INTEGER NOT NULL,
     odds_discrepancy INTEGER NOT NULL, -- Absolute difference

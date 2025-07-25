@@ -70,11 +70,11 @@ DECLARE
 BEGIN
     -- Check Action Network data migration
     SELECT COUNT(*) INTO source_action_teams FROM action.dim_teams;
-    SELECT COUNT(*) INTO target_core_teams FROM core_betting.teams WHERE action_network_id IS NOT NULL;
+    SELECT COUNT(*) INTO target_core_teams FROM curated.teams_master WHERE action_network_id IS NOT NULL;
     
     -- Check Splits data migration  
     SELECT COUNT(*) INTO source_splits_games FROM splits.games;
-    SELECT COUNT(*) INTO target_supplementary_games FROM core_betting.supplementary_games;
+    SELECT COUNT(*) INTO target_supplementary_games FROM curated.games_complete;
     
     -- Check Strategy configurations migration
     SELECT COUNT(*) INTO source_strategy_configs FROM backtesting.strategy_configurations;
@@ -125,11 +125,11 @@ DECLARE
     test_status VARCHAR(20) := 'passed';
     error_msg TEXT := '';
 BEGIN
-    SELECT COUNT(*) INTO games_count FROM core_betting.games;
-    SELECT COUNT(*) INTO moneyline_count FROM core_betting.betting_lines_moneyline;
-    SELECT COUNT(*) INTO spreads_count FROM core_betting.betting_lines_spreads;
-    SELECT COUNT(*) INTO totals_count FROM core_betting.betting_lines_totals;
-    SELECT COUNT(*) INTO teams_count FROM core_betting.teams;
+    SELECT COUNT(*) INTO games_count FROM curated.games_complete;
+    SELECT COUNT(*) INTO moneyline_count FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline';
+    SELECT COUNT(*) INTO spreads_count FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's;
+    SELECT COUNT(*) INTO totals_count FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals';
+    SELECT COUNT(*) INTO teams_count FROM curated.teams_master;
     
     -- Validate minimum expected data
     IF games_count < 1000 THEN
@@ -174,18 +174,18 @@ DECLARE
 BEGIN
     -- Check for orphaned betting lines
     SELECT COUNT(*) INTO orphaned_moneyline 
-    FROM core_betting.betting_lines_moneyline ml
-    LEFT JOIN core_betting.games g ON ml.game_id = g.id
+    FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' ml
+    LEFT JOIN curated.games_complete g ON ml.game_id = g.id
     WHERE g.id IS NULL;
     
     SELECT COUNT(*) INTO orphaned_spreads 
-    FROM core_betting.betting_lines_spreads s
-    LEFT JOIN core_betting.games g ON s.game_id = g.id
+    FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's s
+    LEFT JOIN curated.games_complete g ON s.game_id = g.id
     WHERE g.id IS NULL;
     
     SELECT COUNT(*) INTO orphaned_totals 
-    FROM core_betting.betting_lines_totals t
-    LEFT JOIN core_betting.games g ON t.game_id = g.id
+    FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' t
+    LEFT JOIN curated.games_complete g ON t.game_id = g.id
     WHERE g.id IS NULL;
     
     IF orphaned_moneyline > 0 OR orphaned_spreads > 0 OR orphaned_totals > 0 THEN
@@ -291,8 +291,8 @@ DECLARE
 BEGIN
     -- Test simple cross-schema query
     SELECT COUNT(*) INTO cross_schema_result
-    FROM core_betting.games g
-    JOIN core_betting.betting_lines_moneyline ml ON g.id = ml.game_id
+    FROM curated.games_complete g
+    JOIN curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' ml ON g.id = ml.game_id
     WHERE g.game_date >= CURRENT_DATE - INTERVAL '30 days';
     
     IF cross_schema_result < 10 THEN

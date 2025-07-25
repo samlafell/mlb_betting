@@ -45,7 +45,7 @@ SELECT
         WHEN m.odds_timestamp > NOW() - INTERVAL '24 hours' THEN 'STALE'
         ELSE 'VERY_STALE'
     END as data_freshness
-FROM core_betting.betting_lines_moneyline m
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' m
 WHERE m.home_ml IS NOT NULL OR m.away_ml IS NOT NULL
 
 UNION ALL
@@ -81,7 +81,7 @@ SELECT
         WHEN s.odds_timestamp > NOW() - INTERVAL '24 hours' THEN 'STALE'
         ELSE 'VERY_STALE'
     END as data_freshness
-FROM core_betting.betting_lines_spreads s
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's s
 WHERE s.home_spread IS NOT NULL OR s.away_spread IS NOT NULL
 
 UNION ALL
@@ -117,7 +117,7 @@ SELECT
         WHEN t.odds_timestamp > NOW() - INTERVAL '24 hours' THEN 'STALE'
         ELSE 'VERY_STALE'
     END as data_freshness
-FROM core_betting.betting_lines_totals t
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' t
 WHERE t.total_line IS NOT NULL;
 
 -- =============================================================================

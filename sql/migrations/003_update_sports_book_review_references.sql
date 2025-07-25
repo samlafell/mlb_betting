@@ -40,7 +40,7 @@ END $$;
 -- =============================================================================
 
 -- Update source metadata in the sources table to reflect correct terminology
-UPDATE core_betting.sources 
+UPDATE curated.sources 
 SET 
     source_metadata = jsonb_set(
         COALESCE(source_metadata, '{}'::jsonb),
@@ -50,15 +50,15 @@ SET
 WHERE source_name = 'SPORTSBETTING_REPORT';
 
 -- Update any legacy references in betting lines tables
-UPDATE core_betting.betting_lines_moneyline 
+UPDATE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' 
 SET source = 'SPORTS_BOOK_REVIEW_DEPRECATED'::data_source_type
 WHERE source::text = 'SPORTSBETTING_REPORT';
 
-UPDATE core_betting.betting_lines_spreads 
+UPDATE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's 
 SET source = 'SPORTS_BOOK_REVIEW_DEPRECATED'::data_source_type  
 WHERE source::text = 'SPORTSBETTING_REPORT';
 
-UPDATE core_betting.betting_lines_totals 
+UPDATE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' 
 SET source = 'SPORTS_BOOK_REVIEW_DEPRECATED'::data_source_type
 WHERE source::text = 'SPORTSBETTING_REPORT';
 
@@ -67,7 +67,7 @@ WHERE source::text = 'SPORTSBETTING_REPORT';
 -- =============================================================================
 
 -- Update column comments to reflect correct terminology
-COMMENT ON COLUMN core_betting.games.sportsbookreview_game_id IS 
+COMMENT ON COLUMN curated.games_complete.sportsbookreview_game_id IS 
 'Unique identifier from Sports Book Review (SBR) - deprecated source, use SBRUnifiedCollector instead';
 
 -- Update table comments if they exist
@@ -127,7 +127,7 @@ END $$;
 -- =============================================================================
 
 -- Ensure the sources table has correct metadata for Sports Book Review
-INSERT INTO core_betting.sources (
+INSERT INTO curated.sources (
     source_name, 
     reliability_score, 
     source_metadata
@@ -140,7 +140,7 @@ INSERT INTO core_betting.sources (
     source_metadata = EXCLUDED.source_metadata;
 
 -- Update the old entry if it exists
-UPDATE core_betting.sources 
+UPDATE curated.sources 
 SET 
     source_metadata = jsonb_set(
         COALESCE(source_metadata, '{}'::jsonb),
@@ -164,7 +164,7 @@ WHERE source_name = 'SPORTSBETTING_REPORT';
 -- =============================================================================
 
 -- Create a function to validate the terminology updates
-CREATE OR REPLACE FUNCTION core_betting.validate_sports_book_review_updates()
+CREATE OR REPLACE FUNCTION curated.validate_sports_book_review_updates()
 RETURNS TABLE(
     check_name TEXT,
     status TEXT,
@@ -190,7 +190,7 @@ BEGIN
         'Source Metadata Check'::TEXT,
         CASE 
             WHEN EXISTS (
-                SELECT 1 FROM core_betting.sources 
+                SELECT 1 FROM curated.sources 
                 WHERE source_metadata->>'description' LIKE '%Sports Book Review%'
             ) THEN 'PASS'
             ELSE 'FAIL'
@@ -219,7 +219,7 @@ $$ LANGUAGE plpgsql;
 -- =============================================================================
 
 -- Log this migration
-INSERT INTO core_betting.data_migrations (
+INSERT INTO operational.schema_migrations (
     migration_name,
     source_table,
     target_table,
@@ -231,7 +231,7 @@ INSERT INTO core_betting.data_migrations (
     'Sports_Book_Review_Terminology_Update',
     'Multiple tables and enums',
     'Updated terminology throughout database',
-    (SELECT COUNT(*) FROM core_betting.sources WHERE source_metadata->>'description' LIKE '%Sports Book Review%'),
+    (SELECT COUNT(*) FROM curated.sources WHERE source_metadata->>'description' LIKE '%Sports Book Review%'),
     'COMPLETED',
     NOW(),
     NOW()
@@ -247,7 +247,7 @@ COMMIT;
 SELECT 'Migration 003 completed successfully - Sports Book Review terminology updated' as status;
 
 -- Display validation results
-SELECT * FROM core_betting.validate_sports_book_review_updates();
+SELECT * FROM curated.validate_sports_book_review_updates();
 
 -- Show updated source information
 SELECT 
@@ -255,7 +255,7 @@ SELECT
     source_metadata->>'description' as description,
     source_metadata->>'status' as status,
     source_metadata->>'replacement' as replacement
-FROM core_betting.sources 
+FROM curated.sources 
 WHERE source_name IN ('SPORTSBETTING_REPORT', 'SPORTS_BOOK_REVIEW_DEPRECATED')
 ORDER BY source_name;
 
@@ -276,7 +276,7 @@ BEGIN
         AND t.table_name LIKE 'betting_lines_%'
     LOOP
         EXECUTE format('
-            SELECT COUNT(*) FROM core_betting.%I 
+            SELECT COUNT(*) FROM curated.%I 
             WHERE source::text = ''SPORTSBETTING_REPORT''
         ', table_name) INTO old_refs_count;
         

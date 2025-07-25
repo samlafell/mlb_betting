@@ -13,25 +13,25 @@ BEGIN;
 -- ============================================================================
 
 -- Backup data_quality_dashboard view
-CREATE OR REPLACE VIEW core_betting.data_quality_dashboard_backup AS
-SELECT * FROM core_betting.data_quality_dashboard;
+CREATE OR REPLACE VIEW curated.data_quality_dashboard_backup AS
+SELECT * FROM curated.data_quality_dashboard;
 
 -- ============================================================================
 -- STEP 2: Drop dependent views temporarily
 -- ============================================================================
 
-DROP VIEW IF EXISTS core_betting.data_quality_dashboard CASCADE;
-DROP VIEW IF EXISTS core_betting.data_quality_trend CASCADE;
-DROP VIEW IF EXISTS core_betting.data_source_quality_analysis CASCADE;
-DROP VIEW IF EXISTS core_betting.sportsbook_mapping_status CASCADE;
-DROP VIEW IF EXISTS core_betting.unmapped_sportsbook_analysis CASCADE;
+DROP VIEW IF EXISTS curated.data_quality_dashboard CASCADE;
+DROP VIEW IF EXISTS curated.data_quality_trend CASCADE;
+DROP VIEW IF EXISTS curated.data_source_quality_analysis CASCADE;
+DROP VIEW IF EXISTS curated.sportsbook_mapping_status CASCADE;
+DROP VIEW IF EXISTS curated.unmapped_sportsbook_analysis CASCADE;
 DROP VIEW IF EXISTS analytics.unified_betting_lines CASCADE;
 
 -- ============================================================================
 -- STEP 3: Remove calculated columns from betting_lines_moneyline
 -- ============================================================================
 
-ALTER TABLE core_betting.betting_lines_moneyline 
+ALTER TABLE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' 
     DROP COLUMN IF EXISTS opening_home_ml,
     DROP COLUMN IF EXISTS opening_away_ml,
     DROP COLUMN IF EXISTS closing_home_ml,
@@ -46,7 +46,7 @@ ALTER TABLE core_betting.betting_lines_moneyline
 -- STEP 4: Remove calculated columns from betting_lines_spread  
 -- ============================================================================
 
-ALTER TABLE core_betting.betting_lines_spread 
+ALTER TABLE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread' 
     DROP COLUMN IF EXISTS opening_spread,
     DROP COLUMN IF EXISTS opening_home_price,
     DROP COLUMN IF EXISTS opening_away_price,
@@ -63,7 +63,7 @@ ALTER TABLE core_betting.betting_lines_spread
 -- STEP 5: Remove calculated columns from betting_lines_totals
 -- ============================================================================
 
-ALTER TABLE core_betting.betting_lines_totals 
+ALTER TABLE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' 
     DROP COLUMN IF EXISTS opening_total,
     DROP COLUMN IF EXISTS opening_over_price,
     DROP COLUMN IF EXISTS opening_under_price,
@@ -81,7 +81,7 @@ ALTER TABLE core_betting.betting_lines_totals
 -- STEP 6: Remove calculated columns from betting_lines_spreads (legacy table)
 -- ============================================================================
 
-ALTER TABLE core_betting.betting_lines_spreads 
+ALTER TABLE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's 
     DROP COLUMN IF EXISTS opening_home_spread,
     DROP COLUMN IF EXISTS opening_home_spread_price,
     DROP COLUMN IF EXISTS opening_away_spread,
@@ -101,7 +101,7 @@ ALTER TABLE core_betting.betting_lines_spreads
 -- ============================================================================
 
 -- Recreate data_quality_dashboard view without sharp_action references
-CREATE OR REPLACE VIEW core_betting.data_quality_dashboard AS
+CREATE OR REPLACE VIEW curated.data_quality_dashboard AS
 SELECT 
     'moneyline'::text AS table_name,
     count(*) AS total_rows,
@@ -114,7 +114,7 @@ SELECT
     count(CASE WHEN data_quality::text = 'HIGH'::text THEN 1 ELSE NULL::integer END) AS high_quality_count,
     count(CASE WHEN data_quality::text = 'MEDIUM'::text THEN 1 ELSE NULL::integer END) AS medium_quality_count,
     count(CASE WHEN data_quality::text = 'LOW'::text THEN 1 ELSE NULL::integer END) AS low_quality_count
-FROM core_betting.betting_lines_moneyline
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
 
 UNION ALL
 
@@ -130,7 +130,7 @@ SELECT
     count(CASE WHEN data_quality::text = 'HIGH'::text THEN 1 ELSE NULL::integer END) AS high_quality_count,
     count(CASE WHEN data_quality::text = 'MEDIUM'::text THEN 1 ELSE NULL::integer END) AS medium_quality_count,
     count(CASE WHEN data_quality::text = 'LOW'::text THEN 1 ELSE NULL::integer END) AS low_quality_count
-FROM core_betting.betting_lines_spread
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread'
 
 UNION ALL
 
@@ -146,30 +146,30 @@ SELECT
     count(CASE WHEN data_quality::text = 'HIGH'::text THEN 1 ELSE NULL::integer END) AS high_quality_count,
     count(CASE WHEN data_quality::text = 'MEDIUM'::text THEN 1 ELSE NULL::integer END) AS medium_quality_count,
     count(CASE WHEN data_quality::text = 'LOW'::text THEN 1 ELSE NULL::integer END) AS low_quality_count
-FROM core_betting.betting_lines_totals;
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals';
 
 -- Recreate sportsbook_mapping_status view (simplified)
-CREATE OR REPLACE VIEW core_betting.sportsbook_mapping_status AS
+CREATE OR REPLACE VIEW curated.sportsbook_mapping_status AS
 SELECT 
     'moneyline' as table_name,
     count(*) as total_records,
     count(sportsbook_id) as mapped_records,
     round(count(sportsbook_id)::numeric / count(*)::numeric * 100, 2) as mapping_percentage
-FROM core_betting.betting_lines_moneyline
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
 UNION ALL
 SELECT 
     'spread' as table_name,
     count(*) as total_records,
     count(sportsbook_id) as mapped_records,
     round(count(sportsbook_id)::numeric / count(*)::numeric * 100, 2) as mapping_percentage
-FROM core_betting.betting_lines_spread
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread'
 UNION ALL
 SELECT 
     'totals' as table_name,
     count(*) as total_records,
     count(sportsbook_id) as mapped_records,
     round(count(sportsbook_id)::numeric / count(*)::numeric * 100, 2) as mapping_percentage
-FROM core_betting.betting_lines_totals;
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals';
 
 -- ============================================================================
 -- VERIFICATION: Confirm clean schema

@@ -3,17 +3,17 @@
 -- Addresses data quality validation and tracking improvements
 
 -- Add data completeness score columns to all betting lines tables
-ALTER TABLE core_betting.betting_lines_moneyline 
+ALTER TABLE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' 
 ADD COLUMN IF NOT EXISTS data_completeness_score DECIMAL(3,2) DEFAULT 0.0;
 
-ALTER TABLE core_betting.betting_lines_spreads 
+ALTER TABLE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's 
 ADD COLUMN IF NOT EXISTS data_completeness_score DECIMAL(3,2) DEFAULT 0.0;
 
-ALTER TABLE core_betting.betting_lines_totals 
+ALTER TABLE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' 
 ADD COLUMN IF NOT EXISTS data_completeness_score DECIMAL(3,2) DEFAULT 0.0;
 
 -- Create comprehensive data validation function
-CREATE OR REPLACE FUNCTION core_betting.validate_and_score_betting_lines_data()
+CREATE OR REPLACE FUNCTION curated.validate_and_score_betting_lines_data()
 RETURNS TRIGGER AS $$
 DECLARE
     total_fields INTEGER := 0;
@@ -22,7 +22,7 @@ DECLARE
 BEGIN
     -- Resolve sportsbook_id if null but sportsbook name provided
     IF NEW.sportsbook_id IS NULL AND NEW.sportsbook IS NOT NULL THEN
-        NEW.sportsbook_id := core_betting.resolve_sportsbook_id(
+        NEW.sportsbook_id := curated.resolve_sportsbook_id(
             NEW.sportsbook,
             NEW.sportsbook,
             NEW.source
@@ -121,23 +121,23 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Apply the enhanced validation trigger to all betting lines tables
-DROP TRIGGER IF EXISTS validate_moneyline_data_enhanced ON core_betting.betting_lines_moneyline;
+DROP TRIGGER IF EXISTS validate_moneyline_data_enhanced ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline';
 CREATE TRIGGER validate_moneyline_data_enhanced
-    BEFORE INSERT OR UPDATE ON core_betting.betting_lines_moneyline
-    FOR EACH ROW EXECUTE FUNCTION core_betting.validate_and_score_betting_lines_data();
+    BEFORE INSERT OR UPDATE ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
+    FOR EACH ROW EXECUTE FUNCTION curated.validate_and_score_betting_lines_data();
 
-DROP TRIGGER IF EXISTS validate_spreads_data_enhanced ON core_betting.betting_lines_spreads;
+DROP TRIGGER IF EXISTS validate_spreads_data_enhanced ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's;
 CREATE TRIGGER validate_spreads_data_enhanced
-    BEFORE INSERT OR UPDATE ON core_betting.betting_lines_spreads
-    FOR EACH ROW EXECUTE FUNCTION core_betting.validate_and_score_betting_lines_data();
+    BEFORE INSERT OR UPDATE ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's
+    FOR EACH ROW EXECUTE FUNCTION curated.validate_and_score_betting_lines_data();
 
-DROP TRIGGER IF EXISTS validate_totals_data_enhanced ON core_betting.betting_lines_totals;
+DROP TRIGGER IF EXISTS validate_totals_data_enhanced ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals';
 CREATE TRIGGER validate_totals_data_enhanced
-    BEFORE INSERT OR UPDATE ON core_betting.betting_lines_totals
-    FOR EACH ROW EXECUTE FUNCTION core_betting.validate_and_score_betting_lines_data();
+    BEFORE INSERT OR UPDATE ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'
+    FOR EACH ROW EXECUTE FUNCTION curated.validate_and_score_betting_lines_data();
 
 -- Create comprehensive data quality monitoring views
-CREATE OR REPLACE VIEW core_betting.data_quality_dashboard AS
+CREATE OR REPLACE VIEW curated.data_quality_dashboard AS
 SELECT 
     'moneyline' as table_name,
     COUNT(*) as total_rows,
@@ -150,7 +150,7 @@ SELECT
     COUNT(CASE WHEN data_quality = 'HIGH' THEN 1 END) as high_quality_count,
     COUNT(CASE WHEN data_quality = 'MEDIUM' THEN 1 END) as medium_quality_count,
     COUNT(CASE WHEN data_quality = 'LOW' THEN 1 END) as low_quality_count
-FROM core_betting.betting_lines_moneyline
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
 UNION ALL
 SELECT 
     'spreads' as table_name,
@@ -164,7 +164,7 @@ SELECT
     COUNT(CASE WHEN data_quality = 'HIGH' THEN 1 END) as high_quality_count,
     COUNT(CASE WHEN data_quality = 'MEDIUM' THEN 1 END) as medium_quality_count,
     COUNT(CASE WHEN data_quality = 'LOW' THEN 1 END) as low_quality_count
-FROM core_betting.betting_lines_spreads
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's
 UNION ALL
 SELECT 
     'totals' as table_name,
@@ -178,10 +178,10 @@ SELECT
     COUNT(CASE WHEN data_quality = 'HIGH' THEN 1 END) as high_quality_count,
     COUNT(CASE WHEN data_quality = 'MEDIUM' THEN 1 END) as medium_quality_count,
     COUNT(CASE WHEN data_quality = 'LOW' THEN 1 END) as low_quality_count
-FROM core_betting.betting_lines_totals;
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals';
 
 -- Create quality trend monitoring view
-CREATE OR REPLACE VIEW core_betting.data_quality_trend AS
+CREATE OR REPLACE VIEW curated.data_quality_trend AS
 SELECT 
     table_name,
     date_trunc('day', created_at) as quality_date,
@@ -192,22 +192,22 @@ SELECT
     ROUND(COUNT(CASE WHEN data_quality = 'HIGH' THEN 1 END) * 100.0 / COUNT(*), 2) as high_quality_pct
 FROM (
     SELECT 'moneyline' as table_name, created_at, data_completeness_score, sportsbook_id, data_quality
-    FROM core_betting.betting_lines_moneyline
+    FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
     WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
     UNION ALL
     SELECT 'spreads' as table_name, created_at, data_completeness_score, sportsbook_id, data_quality
-    FROM core_betting.betting_lines_spreads
+    FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's
     WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
     UNION ALL
     SELECT 'totals' as table_name, created_at, data_completeness_score, sportsbook_id, data_quality
-    FROM core_betting.betting_lines_totals
+    FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'
     WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
 ) combined_data
 GROUP BY table_name, date_trunc('day', created_at)
 ORDER BY quality_date DESC, table_name;
 
 -- Create helper view to identify problematic data sources
-CREATE OR REPLACE VIEW core_betting.data_source_quality_analysis AS
+CREATE OR REPLACE VIEW curated.data_source_quality_analysis AS
 SELECT 
     source,
     COUNT(*) as total_records,
@@ -219,39 +219,39 @@ SELECT
     MAX(created_at) as latest_record
 FROM (
     SELECT source, sportsbook_id, sportsbook, data_completeness_score, created_at
-    FROM core_betting.betting_lines_moneyline
+    FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
     UNION ALL
     SELECT source, sportsbook_id, sportsbook, data_completeness_score, created_at
-    FROM core_betting.betting_lines_spreads
+    FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's
     UNION ALL
     SELECT source, sportsbook_id, sportsbook, data_completeness_score, created_at
-    FROM core_betting.betting_lines_totals
+    FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'
 ) combined_sources
 GROUP BY source
 ORDER BY avg_completeness DESC;
 
 -- Create indexes for performance on new columns
 CREATE INDEX IF NOT EXISTS idx_betting_lines_moneyline_completeness 
-ON core_betting.betting_lines_moneyline(data_completeness_score);
+ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'(data_completeness_score);
 
 CREATE INDEX IF NOT EXISTS idx_betting_lines_spreads_completeness 
-ON core_betting.betting_lines_spreads(data_completeness_score);
+ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's(data_completeness_score);
 
 CREATE INDEX IF NOT EXISTS idx_betting_lines_totals_completeness 
-ON core_betting.betting_lines_totals(data_completeness_score);
+ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'(data_completeness_score);
 
 -- Create composite indexes for quality monitoring
 CREATE INDEX IF NOT EXISTS idx_betting_lines_moneyline_quality_date 
-ON core_betting.betting_lines_moneyline(data_quality, created_at);
+ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'(data_quality, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_betting_lines_spreads_quality_date 
-ON core_betting.betting_lines_spreads(data_quality, created_at);
+ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's(data_quality, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_betting_lines_totals_quality_date 
-ON core_betting.betting_lines_totals(data_quality, created_at);
+ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'(data_quality, created_at);
 
 -- Update existing records with completeness scores (run this as a separate maintenance task)
 -- This should be run carefully on existing data
--- UPDATE core_betting.betting_lines_moneyline SET updated_at = updated_at WHERE id > 0;
--- UPDATE core_betting.betting_lines_spreads SET updated_at = updated_at WHERE id > 0;
--- UPDATE core_betting.betting_lines_totals SET updated_at = updated_at WHERE id > 0;
+-- UPDATE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' SET updated_at = updated_at WHERE id > 0;
+-- UPDATE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's SET updated_at = updated_at WHERE id > 0;
+-- UPDATE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' SET updated_at = updated_at WHERE id > 0;

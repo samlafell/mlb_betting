@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS curated.unified_betting_splits (
     -- Source identification and attribution
     data_source VARCHAR(20) NOT NULL CHECK (data_source IN ('vsin', 'sbd', 'action_network')),
     sportsbook_name VARCHAR(50) NOT NULL,
-    sportsbook_id INTEGER, -- References core_betting.sportsbooks when available
+    sportsbook_id INTEGER, -- References curated.sportsbooks when available
     sportsbook_external_id VARCHAR(50), -- Source-specific sportsbook ID
     
     -- Market identification

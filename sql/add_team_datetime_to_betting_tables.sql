@@ -6,37 +6,37 @@
 -- ==============================================================================
 
 -- Add columns to betting_lines_moneyline table
-ALTER TABLE core_betting.betting_lines_moneyline 
+ALTER TABLE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' 
 ADD COLUMN IF NOT EXISTS game_datetime TIMESTAMP WITH TIME ZONE,
 ADD COLUMN IF NOT EXISTS home_team VARCHAR(5),
 ADD COLUMN IF NOT EXISTS away_team VARCHAR(5);
 
 -- Add columns to betting_lines_spreads table
-ALTER TABLE core_betting.betting_lines_spreads 
+ALTER TABLE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's 
 ADD COLUMN IF NOT EXISTS game_datetime TIMESTAMP WITH TIME ZONE,
 ADD COLUMN IF NOT EXISTS home_team VARCHAR(5),
 ADD COLUMN IF NOT EXISTS away_team VARCHAR(5);
 
 -- Add columns to betting_lines_totals table
-ALTER TABLE core_betting.betting_lines_totals 
+ALTER TABLE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' 
 ADD COLUMN IF NOT EXISTS game_datetime TIMESTAMP WITH TIME ZONE,
 ADD COLUMN IF NOT EXISTS home_team VARCHAR(5),
 ADD COLUMN IF NOT EXISTS away_team VARCHAR(5);
 
 -- Add columns to betting_splits table
-ALTER TABLE core_betting.betting_splits 
+ALTER TABLE curated.betting_splits 
 ADD COLUMN IF NOT EXISTS game_datetime TIMESTAMP WITH TIME ZONE,
 ADD COLUMN IF NOT EXISTS home_team VARCHAR(5),
 ADD COLUMN IF NOT EXISTS away_team VARCHAR(5);
 
 -- Add columns to line_movements table
-ALTER TABLE core_betting.line_movements 
+ALTER TABLE curated.line_movements 
 ADD COLUMN IF NOT EXISTS game_datetime TIMESTAMP WITH TIME ZONE,
 ADD COLUMN IF NOT EXISTS home_team VARCHAR(5),
 ADD COLUMN IF NOT EXISTS away_team VARCHAR(5);
 
 -- Add columns to steam_moves table
-ALTER TABLE core_betting.steam_moves 
+ALTER TABLE curated.steam_moves 
 ADD COLUMN IF NOT EXISTS game_datetime TIMESTAMP WITH TIME ZONE,
 ADD COLUMN IF NOT EXISTS home_team VARCHAR(5),
 ADD COLUMN IF NOT EXISTS away_team VARCHAR(5);
@@ -46,104 +46,104 @@ ADD COLUMN IF NOT EXISTS away_team VARCHAR(5);
 -- ==============================================================================
 
 -- Update betting_lines_moneyline table
-UPDATE core_betting.betting_lines_moneyline 
+UPDATE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' 
 SET 
     game_datetime = g.game_datetime,
     home_team = g.home_team,
     away_team = g.away_team
-FROM core_betting.games g
-WHERE core_betting.betting_lines_moneyline.game_id = g.id
-AND core_betting.betting_lines_moneyline.game_datetime IS NULL;
+FROM curated.games_complete g
+WHERE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'.game_id = g.id
+AND curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'.game_datetime IS NULL;
 
 -- Update betting_lines_spreads table
-UPDATE core_betting.betting_lines_spreads 
+UPDATE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's 
 SET 
     game_datetime = g.game_datetime,
     home_team = g.home_team,
     away_team = g.away_team
-FROM core_betting.games g
-WHERE core_betting.betting_lines_spreads.game_id = g.id
-AND core_betting.betting_lines_spreads.game_datetime IS NULL;
+FROM curated.games_complete g
+WHERE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's.game_id = g.id
+AND curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's.game_datetime IS NULL;
 
 -- Update betting_lines_totals table
-UPDATE core_betting.betting_lines_totals 
+UPDATE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' 
 SET 
     game_datetime = g.game_datetime,
     home_team = g.home_team,
     away_team = g.away_team
-FROM core_betting.games g
-WHERE core_betting.betting_lines_totals.game_id = g.id
-AND core_betting.betting_lines_totals.game_datetime IS NULL;
+FROM curated.games_complete g
+WHERE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'.game_id = g.id
+AND curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'.game_datetime IS NULL;
 
 -- Update betting_splits table
-UPDATE core_betting.betting_splits 
+UPDATE curated.betting_splits 
 SET 
     game_datetime = g.game_datetime,
     home_team = g.home_team,
     away_team = g.away_team
-FROM core_betting.games g
-WHERE core_betting.betting_splits.game_id = g.id
-AND core_betting.betting_splits.game_datetime IS NULL;
+FROM curated.games_complete g
+WHERE curated.betting_splits.game_id = g.id
+AND curated.betting_splits.game_datetime IS NULL;
 
 -- Update line_movements table
-UPDATE core_betting.line_movements 
+UPDATE curated.line_movements 
 SET 
     game_datetime = g.game_datetime,
     home_team = g.home_team,
     away_team = g.away_team
-FROM core_betting.games g
-WHERE core_betting.line_movements.game_id = g.id
-AND core_betting.line_movements.game_datetime IS NULL;
+FROM curated.games_complete g
+WHERE curated.line_movements.game_id = g.id
+AND curated.line_movements.game_datetime IS NULL;
 
 -- Update steam_moves table
-UPDATE core_betting.steam_moves 
+UPDATE curated.steam_moves 
 SET 
     game_datetime = g.game_datetime,
     home_team = g.home_team,
     away_team = g.away_team
-FROM core_betting.games g
-WHERE core_betting.steam_moves.game_id = g.id
-AND core_betting.steam_moves.game_datetime IS NULL;
+FROM curated.games_complete g
+WHERE curated.steam_moves.game_id = g.id
+AND curated.steam_moves.game_datetime IS NULL;
 
 -- ==============================================================================
 -- CREATE INDEXES FOR BETTER PERFORMANCE
 -- ==============================================================================
 
 -- Indexes for betting_lines_moneyline
-CREATE INDEX IF NOT EXISTS idx_betting_lines_moneyline_game_datetime ON core_betting.betting_lines_moneyline(game_datetime);
-CREATE INDEX IF NOT EXISTS idx_betting_lines_moneyline_teams ON core_betting.betting_lines_moneyline(home_team, away_team);
-CREATE INDEX IF NOT EXISTS idx_betting_lines_moneyline_home_team ON core_betting.betting_lines_moneyline(home_team);
-CREATE INDEX IF NOT EXISTS idx_betting_lines_moneyline_away_team ON core_betting.betting_lines_moneyline(away_team);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_moneyline_game_datetime ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'(game_datetime);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_moneyline_teams ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'(home_team, away_team);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_moneyline_home_team ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'(home_team);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_moneyline_away_team ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'(away_team);
 
 -- Indexes for betting_lines_spreads
-CREATE INDEX IF NOT EXISTS idx_betting_lines_spreads_game_datetime ON core_betting.betting_lines_spreads(game_datetime);
-CREATE INDEX IF NOT EXISTS idx_betting_lines_spreads_teams ON core_betting.betting_lines_spreads(home_team, away_team);
-CREATE INDEX IF NOT EXISTS idx_betting_lines_spreads_home_team ON core_betting.betting_lines_spreads(home_team);
-CREATE INDEX IF NOT EXISTS idx_betting_lines_spreads_away_team ON core_betting.betting_lines_spreads(away_team);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_spreads_game_datetime ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's(game_datetime);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_spreads_teams ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's(home_team, away_team);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_spreads_home_team ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's(home_team);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_spreads_away_team ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's(away_team);
 
 -- Indexes for betting_lines_totals
-CREATE INDEX IF NOT EXISTS idx_betting_lines_totals_game_datetime ON core_betting.betting_lines_totals(game_datetime);
-CREATE INDEX IF NOT EXISTS idx_betting_lines_totals_teams ON core_betting.betting_lines_totals(home_team, away_team);
-CREATE INDEX IF NOT EXISTS idx_betting_lines_totals_home_team ON core_betting.betting_lines_totals(home_team);
-CREATE INDEX IF NOT EXISTS idx_betting_lines_totals_away_team ON core_betting.betting_lines_totals(away_team);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_totals_game_datetime ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'(game_datetime);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_totals_teams ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'(home_team, away_team);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_totals_home_team ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'(home_team);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_totals_away_team ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'(away_team);
 
 -- Indexes for betting_splits
-CREATE INDEX IF NOT EXISTS idx_betting_splits_game_datetime ON core_betting.betting_splits(game_datetime);
-CREATE INDEX IF NOT EXISTS idx_betting_splits_teams ON core_betting.betting_splits(home_team, away_team);
-CREATE INDEX IF NOT EXISTS idx_betting_splits_home_team ON core_betting.betting_splits(home_team);
-CREATE INDEX IF NOT EXISTS idx_betting_splits_away_team ON core_betting.betting_splits(away_team);
+CREATE INDEX IF NOT EXISTS idx_betting_splits_game_datetime ON curated.betting_splits(game_datetime);
+CREATE INDEX IF NOT EXISTS idx_betting_splits_teams ON curated.betting_splits(home_team, away_team);
+CREATE INDEX IF NOT EXISTS idx_betting_splits_home_team ON curated.betting_splits(home_team);
+CREATE INDEX IF NOT EXISTS idx_betting_splits_away_team ON curated.betting_splits(away_team);
 
 -- Indexes for line_movements
-CREATE INDEX IF NOT EXISTS idx_line_movements_game_datetime ON core_betting.line_movements(game_datetime);
-CREATE INDEX IF NOT EXISTS idx_line_movements_teams ON core_betting.line_movements(home_team, away_team);
-CREATE INDEX IF NOT EXISTS idx_line_movements_home_team ON core_betting.line_movements(home_team);
-CREATE INDEX IF NOT EXISTS idx_line_movements_away_team ON core_betting.line_movements(away_team);
+CREATE INDEX IF NOT EXISTS idx_line_movements_game_datetime ON curated.line_movements(game_datetime);
+CREATE INDEX IF NOT EXISTS idx_line_movements_teams ON curated.line_movements(home_team, away_team);
+CREATE INDEX IF NOT EXISTS idx_line_movements_home_team ON curated.line_movements(home_team);
+CREATE INDEX IF NOT EXISTS idx_line_movements_away_team ON curated.line_movements(away_team);
 
 -- Indexes for steam_moves
-CREATE INDEX IF NOT EXISTS idx_steam_moves_game_datetime ON core_betting.steam_moves(game_datetime);
-CREATE INDEX IF NOT EXISTS idx_steam_moves_teams ON core_betting.steam_moves(home_team, away_team);
-CREATE INDEX IF NOT EXISTS idx_steam_moves_home_team ON core_betting.steam_moves(home_team);
-CREATE INDEX IF NOT EXISTS idx_steam_moves_away_team ON core_betting.steam_moves(away_team);
+CREATE INDEX IF NOT EXISTS idx_steam_moves_game_datetime ON curated.steam_moves(game_datetime);
+CREATE INDEX IF NOT EXISTS idx_steam_moves_teams ON curated.steam_moves(home_team, away_team);
+CREATE INDEX IF NOT EXISTS idx_steam_moves_home_team ON curated.steam_moves(home_team);
+CREATE INDEX IF NOT EXISTS idx_steam_moves_away_team ON curated.steam_moves(away_team);
 
 -- ==============================================================================
 -- CREATE TRIGGERS TO AUTOMATICALLY POPULATE NEW COLUMNS
@@ -162,7 +162,7 @@ BEGIN
         NEW.game_datetime,
         NEW.home_team,
         NEW.away_team
-    FROM core_betting.games g
+    FROM curated.games_complete g
     WHERE g.id = NEW.game_id;
     
     RETURN NEW;
@@ -171,37 +171,37 @@ $$ LANGUAGE plpgsql;
 
 -- Create triggers for all betting tables
 CREATE TRIGGER trigger_populate_game_info_moneyline
-    BEFORE INSERT ON core_betting.betting_lines_moneyline
+    BEFORE INSERT ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
     FOR EACH ROW
     WHEN (NEW.game_datetime IS NULL OR NEW.home_team IS NULL OR NEW.away_team IS NULL)
     EXECUTE FUNCTION populate_game_info();
 
 CREATE TRIGGER trigger_populate_game_info_spreads
-    BEFORE INSERT ON core_betting.betting_lines_spreads
+    BEFORE INSERT ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's
     FOR EACH ROW
     WHEN (NEW.game_datetime IS NULL OR NEW.home_team IS NULL OR NEW.away_team IS NULL)
     EXECUTE FUNCTION populate_game_info();
 
 CREATE TRIGGER trigger_populate_game_info_totals
-    BEFORE INSERT ON core_betting.betting_lines_totals
+    BEFORE INSERT ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'
     FOR EACH ROW
     WHEN (NEW.game_datetime IS NULL OR NEW.home_team IS NULL OR NEW.away_team IS NULL)
     EXECUTE FUNCTION populate_game_info();
 
 CREATE TRIGGER trigger_populate_game_info_splits
-    BEFORE INSERT ON core_betting.betting_splits
+    BEFORE INSERT ON curated.betting_splits
     FOR EACH ROW
     WHEN (NEW.game_datetime IS NULL OR NEW.home_team IS NULL OR NEW.away_team IS NULL)
     EXECUTE FUNCTION populate_game_info();
 
 CREATE TRIGGER trigger_populate_game_info_line_movements
-    BEFORE INSERT ON core_betting.line_movements
+    BEFORE INSERT ON curated.line_movements
     FOR EACH ROW
     WHEN (NEW.game_datetime IS NULL OR NEW.home_team IS NULL OR NEW.away_team IS NULL)
     EXECUTE FUNCTION populate_game_info();
 
 CREATE TRIGGER trigger_populate_game_info_steam_moves
-    BEFORE INSERT ON core_betting.steam_moves
+    BEFORE INSERT ON curated.steam_moves
     FOR EACH ROW
     WHEN (NEW.game_datetime IS NULL OR NEW.home_team IS NULL OR NEW.away_team IS NULL)
     EXECUTE FUNCTION populate_game_info();
@@ -217,7 +217,7 @@ SELECT
     COUNT(game_datetime) as populated_datetime,
     COUNT(home_team) as populated_home_team,
     COUNT(away_team) as populated_away_team
-FROM core_betting.betting_lines_totals
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'
 
 UNION ALL
 
@@ -227,7 +227,7 @@ SELECT
     COUNT(game_datetime) as populated_datetime,
     COUNT(home_team) as populated_home_team,
     COUNT(away_team) as populated_away_team
-FROM core_betting.betting_lines_moneyline
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
 
 UNION ALL
 
@@ -237,7 +237,7 @@ SELECT
     COUNT(game_datetime) as populated_datetime,
     COUNT(home_team) as populated_home_team,
     COUNT(away_team) as populated_away_team
-FROM core_betting.betting_lines_spreads;
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's;
 
 -- Sample data to verify the changes
 SELECT 
@@ -249,7 +249,7 @@ SELECT
     total_line,
     over_price,
     under_price
-FROM core_betting.betting_lines_totals 
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' 
 WHERE game_datetime IS NOT NULL
 ORDER BY game_datetime DESC
 LIMIT 5;
@@ -258,26 +258,26 @@ LIMIT 5;
 -- COMMENTS FOR DOCUMENTATION
 -- ==============================================================================
 
-COMMENT ON COLUMN core_betting.betting_lines_moneyline.game_datetime IS 'Game datetime for easier identification (denormalized from games table)';
-COMMENT ON COLUMN core_betting.betting_lines_moneyline.home_team IS 'Home team abbreviation for easier identification (denormalized from games table)';
-COMMENT ON COLUMN core_betting.betting_lines_moneyline.away_team IS 'Away team abbreviation for easier identification (denormalized from games table)';
+COMMENT ON COLUMN curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'.game_datetime IS 'Game datetime for easier identification (denormalized from games table)';
+COMMENT ON COLUMN curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'.home_team IS 'Home team abbreviation for easier identification (denormalized from games table)';
+COMMENT ON COLUMN curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'.away_team IS 'Away team abbreviation for easier identification (denormalized from games table)';
 
-COMMENT ON COLUMN core_betting.betting_lines_spreads.game_datetime IS 'Game datetime for easier identification (denormalized from games table)';
-COMMENT ON COLUMN core_betting.betting_lines_spreads.home_team IS 'Home team abbreviation for easier identification (denormalized from games table)';
-COMMENT ON COLUMN core_betting.betting_lines_spreads.away_team IS 'Away team abbreviation for easier identification (denormalized from games table)';
+COMMENT ON COLUMN curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's.game_datetime IS 'Game datetime for easier identification (denormalized from games table)';
+COMMENT ON COLUMN curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's.home_team IS 'Home team abbreviation for easier identification (denormalized from games table)';
+COMMENT ON COLUMN curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's.away_team IS 'Away team abbreviation for easier identification (denormalized from games table)';
 
-COMMENT ON COLUMN core_betting.betting_lines_totals.game_datetime IS 'Game datetime for easier identification (denormalized from games table)';
-COMMENT ON COLUMN core_betting.betting_lines_totals.home_team IS 'Home team abbreviation for easier identification (denormalized from games table)';
-COMMENT ON COLUMN core_betting.betting_lines_totals.away_team IS 'Away team abbreviation for easier identification (denormalized from games table)';
+COMMENT ON COLUMN curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'.game_datetime IS 'Game datetime for easier identification (denormalized from games table)';
+COMMENT ON COLUMN curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'.home_team IS 'Home team abbreviation for easier identification (denormalized from games table)';
+COMMENT ON COLUMN curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'.away_team IS 'Away team abbreviation for easier identification (denormalized from games table)';
 
-COMMENT ON COLUMN core_betting.betting_splits.game_datetime IS 'Game datetime for easier identification (denormalized from games table)';
-COMMENT ON COLUMN core_betting.betting_splits.home_team IS 'Home team abbreviation for easier identification (denormalized from games table)';
-COMMENT ON COLUMN core_betting.betting_splits.away_team IS 'Away team abbreviation for easier identification (denormalized from games table)';
+COMMENT ON COLUMN curated.betting_splits.game_datetime IS 'Game datetime for easier identification (denormalized from games table)';
+COMMENT ON COLUMN curated.betting_splits.home_team IS 'Home team abbreviation for easier identification (denormalized from games table)';
+COMMENT ON COLUMN curated.betting_splits.away_team IS 'Away team abbreviation for easier identification (denormalized from games table)';
 
-COMMENT ON COLUMN core_betting.line_movements.game_datetime IS 'Game datetime for easier identification (denormalized from games table)';
-COMMENT ON COLUMN core_betting.line_movements.home_team IS 'Home team abbreviation for easier identification (denormalized from games table)';
-COMMENT ON COLUMN core_betting.line_movements.away_team IS 'Away team abbreviation for easier identification (denormalized from games table)';
+COMMENT ON COLUMN curated.line_movements.game_datetime IS 'Game datetime for easier identification (denormalized from games table)';
+COMMENT ON COLUMN curated.line_movements.home_team IS 'Home team abbreviation for easier identification (denormalized from games table)';
+COMMENT ON COLUMN curated.line_movements.away_team IS 'Away team abbreviation for easier identification (denormalized from games table)';
 
-COMMENT ON COLUMN core_betting.steam_moves.game_datetime IS 'Game datetime for easier identification (denormalized from games table)';
-COMMENT ON COLUMN core_betting.steam_moves.home_team IS 'Home team abbreviation for easier identification (denormalized from games table)';
-COMMENT ON COLUMN core_betting.steam_moves.away_team IS 'Away team abbreviation for easier identification (denormalized from games table)'; 
+COMMENT ON COLUMN curated.steam_moves.game_datetime IS 'Game datetime for easier identification (denormalized from games table)';
+COMMENT ON COLUMN curated.steam_moves.home_team IS 'Home team abbreviation for easier identification (denormalized from games table)';
+COMMENT ON COLUMN curated.steam_moves.away_team IS 'Away team abbreviation for easier identification (denormalized from games table)'; 

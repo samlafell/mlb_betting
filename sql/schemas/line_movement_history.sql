@@ -2,12 +2,12 @@
 -- Captures all historical odds changes from Action Network
 
 -- Main line movement history table
-CREATE TABLE IF NOT EXISTS core_betting.line_movement_history (
+CREATE TABLE IF NOT EXISTS curated.line_movement_history (
     id SERIAL PRIMARY KEY,
     
     -- Foreign Keys
-    game_id INTEGER NOT NULL REFERENCES core_betting.games(id),
-    sportsbook_id INTEGER NOT NULL REFERENCES core_betting.sportsbooks(id),
+    game_id INTEGER NOT NULL REFERENCES curated.games_complete(id),
+    sportsbook_id INTEGER NOT NULL REFERENCES curated.sportsbooks(id),
     
     -- Action Network Identifiers
     action_network_game_id INTEGER NOT NULL,
@@ -45,19 +45,19 @@ CREATE TABLE IF NOT EXISTS core_betting.line_movement_history (
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_line_movement_game_book 
-ON core_betting.line_movement_history(game_id, sportsbook_id);
+ON curated.line_movement_history(game_id, sportsbook_id);
 
 CREATE INDEX IF NOT EXISTS idx_line_movement_timestamp 
-ON core_betting.line_movement_history(line_timestamp);
+ON curated.line_movement_history(line_timestamp);
 
 CREATE INDEX IF NOT EXISTS idx_line_movement_game_date 
-ON core_betting.line_movement_history(game_datetime);
+ON curated.line_movement_history(game_datetime);
 
 CREATE INDEX IF NOT EXISTS idx_line_movement_bet_type 
-ON core_betting.line_movement_history(bet_type, side);
+ON curated.line_movement_history(bet_type, side);
 
 -- Opening lines view (first recorded line for each market)
-CREATE OR REPLACE VIEW core_betting.opening_lines AS
+CREATE OR REPLACE VIEW curated.opening_lines AS
 SELECT DISTINCT ON (game_id, sportsbook_id, bet_type, side)
     game_id,
     sportsbook_id,
@@ -68,11 +68,11 @@ SELECT DISTINCT ON (game_id, sportsbook_id, bet_type, side)
     line_timestamp as opening_timestamp,
     home_team,
     away_team
-FROM core_betting.line_movement_history
+FROM curated.line_movement_history
 ORDER BY game_id, sportsbook_id, bet_type, side, line_timestamp ASC;
 
 -- Closing lines view (last recorded line for each market)
-CREATE OR REPLACE VIEW core_betting.closing_lines AS
+CREATE OR REPLACE VIEW curated.closing_lines AS
 SELECT DISTINCT ON (game_id, sportsbook_id, bet_type, side)
     game_id,
     sportsbook_id,
@@ -83,11 +83,11 @@ SELECT DISTINCT ON (game_id, sportsbook_id, bet_type, side)
     line_timestamp as closing_timestamp,
     home_team,
     away_team
-FROM core_betting.line_movement_history
+FROM curated.line_movement_history
 ORDER BY game_id, sportsbook_id, bet_type, side, line_timestamp DESC;
 
 -- Line movement summary view
-CREATE OR REPLACE VIEW core_betting.line_movement_summary AS
+CREATE OR REPLACE VIEW curated.line_movement_summary AS
 SELECT 
     lmh.game_id,
     lmh.sportsbook_id,
@@ -105,15 +105,15 @@ SELECT
     COUNT(lmh.id) as total_movements,
     ol.opening_timestamp,
     cl.closing_timestamp
-FROM core_betting.line_movement_history lmh
-JOIN core_betting.sportsbooks s ON lmh.sportsbook_id = s.id
-JOIN core_betting.opening_lines ol ON (
+FROM curated.line_movement_history lmh
+JOIN curated.sportsbooks s ON lmh.sportsbook_id = s.id
+JOIN curated.opening_lines ol ON (
     lmh.game_id = ol.game_id AND 
     lmh.sportsbook_id = ol.sportsbook_id AND 
     lmh.bet_type = ol.bet_type AND 
     lmh.side = ol.side
 )
-JOIN core_betting.closing_lines cl ON (
+JOIN curated.closing_lines cl ON (
     lmh.game_id = cl.game_id AND 
     lmh.sportsbook_id = cl.sportsbook_id AND 
     lmh.bet_type = cl.bet_type AND 
