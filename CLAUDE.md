@@ -8,6 +8,9 @@ Build a 24/7 sports betting service that will scrape various sources and be pull
 ## Project Organization
 
 - **`docs/`**: All documentation (.md files) should be placed here for optimal organization.
+  - **`docs/examples/`**: Code examples and demonstrations (pipeline usage, backtesting, workflows)
+  - **`docs/testing/`**: Testing documentation and sample data
+  - **`docs/reports/`**: System analysis reports and daily/migration reports
 - **`utilities/`**: Standalone utility scripts for quick testing and deployment
 - **`src/`**: Main codebase with unified architecture
 - **`sql/`**: Database schemas, migrations, and improvements
@@ -26,6 +29,14 @@ Build a 24/7 sports betting service that will scrape various sources and be pull
 - **Resolved Issues**: Archived 9 issue-specific debug scripts to `scripts/archive/resolved_issues/`
 - **Analysis Scripts**: Consolidated flip analysis scripts, kept `enhanced_late_sharp_flip_strategy_backtest.py`, archived 4 redundant variations
 
+### Documentation Reorganization (July 2025)
+- **Consolidated docs/**: Moved `reports/`, `input/`, and `examples/` directories into `docs/` for better organization
+  - `examples/` → `docs/examples/` (pipeline usage, backtesting, complete workflows)
+  - `input/` → `docs/testing/sample_data/` (sample data for testing and development)  
+  - `reports/` → `docs/reports/` (merged with existing reports structure)
+- **Enhanced Structure**: Added README files for each new docs/ subdirectory
+- **Improved Navigation**: Clear categorization of examples, testing data, and reports
+
 ### Archive Structure
 ```
 scripts/archive/
@@ -33,9 +44,13 @@ scripts/archive/
 ├── resolved_issues/         # Issue-specific debug scripts for resolved problems
 analysis_scripts/archive/
 ├── flip_variations/         # Redundant flip strategy analysis implementations
+docs/
+├── examples/                # Code examples and demonstrations
+├── testing/                 # Testing documentation and sample data
+└── reports/                 # Comprehensive system reports
 ```
 
-**Benefits**: ~20 redundant files cleaned up, ~3,000+ lines of duplicate code eliminated, clearer project structure.
+**Benefits**: ~20 redundant files cleaned up, ~3,000+ lines of duplicate code eliminated, clearer project structure, centralized documentation.
 
 ## TEST EVERYTHIGN
 every time you create a new feature, test it.
