@@ -2,11 +2,11 @@
 Action Network Database Repository
 
 Specialized repository for Action Network betting data operations using
-the existing core_betting schema tables:
-- core_betting.betting_lines_moneyline
-- core_betting.betting_lines_spreads
-- core_betting.betting_lines_totals
-- core_betting.sportsbooks
+the curated schema tables:
+- curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
+- curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's
+- curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'
+- curated.sportsbooks
 - operational.extraction_log (for tracking)
 """
 
@@ -25,7 +25,7 @@ logger = structlog.get_logger(__name__)
 
 
 class ActionNetworkRepository:
-    """Repository for Action Network data using existing core_betting schema."""
+    """Repository for Action Network data using curated schema."""
 
     def __init__(self, connection: DatabaseConnection):
         self.connection = connection
@@ -141,7 +141,7 @@ class ActionNetworkRepository:
         self, conn, historical_data: ActionNetworkHistoricalData
     ) -> int:
         """
-        Ensure the game exists in core_betting.games table.
+        Ensure the game exists in curated.games_complete table.
 
         This is the FIRST thing we do when processing Action Network data.
         We save to the central games table and get official MLB game IDs.
@@ -151,7 +151,7 @@ class ActionNetworkRepository:
             historical_data: Action Network historical data
 
         Returns:
-            Game ID from core_betting.games table
+            Game ID from curated.games_complete table
         """
         # Get team abbreviations
         home_abbr = self._get_team_abbreviation(historical_data.home_team)
@@ -161,7 +161,7 @@ class ActionNetworkRepository:
         # We need to check for existing games to avoid duplicates
         existing_game = await conn.fetchval(
             """
-            SELECT id FROM core_betting.games
+            SELECT id FROM curated.games_complete
             WHERE home_team = $1 AND away_team = $2
             AND DATE(game_datetime) = DATE($3)
             ORDER BY ABS(EXTRACT(EPOCH FROM (game_datetime - $3))) ASC
@@ -184,7 +184,7 @@ class ActionNetworkRepository:
             # Update the action_network_game_id if not already set
             await conn.execute(
                 """
-                UPDATE core_betting.games
+                UPDATE curated.games_complete
                 SET action_network_game_id = $1,
                     updated_at = NOW()
                 WHERE id = $2 AND action_network_game_id IS NULL
@@ -215,10 +215,10 @@ class ActionNetworkRepository:
         game_date = historical_data.game_datetime.date()
         season = historical_data.game_datetime.year
 
-        # Insert new game record into core_betting.games
+        # Insert new game record into curated.games_complete
         game_id = await conn.fetchval(
             """
-            INSERT INTO core_betting.games (
+            INSERT INTO curated.games_complete (
                 action_network_game_id,
                 mlb_stats_api_game_id,
                 home_team,
@@ -261,7 +261,7 @@ class ActionNetworkRepository:
         self, historical_data: ActionNetworkHistoricalData
     ) -> dict[str, Any]:
         """
-        Save Action Network historical data to existing core_betting tables.
+        Save Action Network historical data to curated schema tables.
 
         Args:
             historical_data: Parsed Action Network data
@@ -305,7 +305,7 @@ class ActionNetworkRepository:
                 )
 
                 self.logger.info(
-                    "Historical data saved to core_betting",
+                    "Historical data saved to curated schema",
                     game_id=historical_data.game_id,
                     saved_count=total_saved,
                 )
@@ -321,7 +321,7 @@ class ActionNetworkRepository:
             return {"success": False, "error": str(e)}
 
     async def _ensure_sportsbooks_exist(self, conn) -> None:
-        """Ensure Action Network sportsbooks exist in core_betting.sportsbooks."""
+        """Ensure Action Network sportsbooks exist in curated.sportsbooks."""
         for book_id, book_name in self.action_network_books.items():
             abbreviation = book_name.replace(" ", "").upper()[:10]
             self.logger.info(
@@ -333,7 +333,7 @@ class ActionNetworkRepository:
 
             await conn.execute(
                 """
-                INSERT INTO core_betting.sportsbooks (name, display_name, abbreviation, is_active, supports_live_betting)
+                INSERT INTO curated.sportsbooks (name, display_name, abbreviation, is_active, supports_live_betting)
                 VALUES ($1, $2, $3, true, true)
                 ON CONFLICT (name) DO NOTHING
             """,
@@ -349,7 +349,7 @@ class ActionNetworkRepository:
         historical_data: ActionNetworkHistoricalData,
         entry: ActionNetworkHistoricalEntry,
     ) -> int:
-        """Save a single historical entry to appropriate core_betting tables."""
+        """Save a single historical entry to appropriate curated schema tables."""
         saved_count = 0
 
         # Extract market data from the raw event data
@@ -403,7 +403,7 @@ class ActionNetworkRepository:
         try:
             # Use the new sportsbook mapping system
             sportsbook_id = await conn.fetchval(
-                "SELECT core_betting.resolve_sportsbook_id($1, NULL, $2)",
+                "SELECT curated.resolve_sportsbook_id($1, NULL, $2)",
                 external_id,
                 source,
             )
@@ -431,7 +431,7 @@ class ActionNetworkRepository:
         entry: ActionNetworkHistoricalEntry,
         market_data: list[dict],
     ) -> int:
-        """Save moneyline data to core_betting.betting_lines_moneyline."""
+        """Save moneyline data to curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'."""
         saved_count = 0
 
         self.logger.info(
@@ -522,7 +522,7 @@ class ActionNetworkRepository:
             try:
                 await conn.execute(
                     """
-                    INSERT INTO core_betting.betting_lines_moneyline (
+                    INSERT INTO curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' (
                         game_id, sportsbook_id, sportsbook, home_ml, away_ml, odds_timestamp,
                         home_bets_percentage, away_bets_percentage, home_money_percentage, away_money_percentage,
                         source, data_quality, game_datetime, home_team, away_team
@@ -574,7 +574,7 @@ class ActionNetworkRepository:
         entry: ActionNetworkHistoricalEntry,
         market_data: list[dict],
     ) -> int:
-        """Save spread data to core_betting.betting_lines_spreads."""
+        """Save spread data to curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's."""
         saved_count = 0
 
         for market_item in market_data:
@@ -663,7 +663,7 @@ class ActionNetworkRepository:
             # Insert into spreads table
             await conn.execute(
                 """
-                INSERT INTO core_betting.betting_lines_spreads (
+                INSERT INTO curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's (
                     game_id, sportsbook_id, sportsbook, home_spread, away_spread,
                     home_spread_price, away_spread_price, odds_timestamp,
                     home_bets_percentage, away_bets_percentage, home_money_percentage, away_money_percentage,
@@ -713,7 +713,7 @@ class ActionNetworkRepository:
         entry: ActionNetworkHistoricalEntry,
         market_data: list[dict],
     ) -> int:
-        """Save total data to core_betting.betting_lines_totals."""
+        """Save total data to curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'."""
         saved_count = 0
 
         for market_item in market_data:
@@ -791,7 +791,7 @@ class ActionNetworkRepository:
             # Insert into totals table
             await conn.execute(
                 """
-                INSERT INTO core_betting.betting_lines_totals (
+                INSERT INTO curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' (
                     game_id, sportsbook_id, sportsbook, total_line, over_price, under_price, odds_timestamp,
                     over_bets_percentage, under_bets_percentage, over_money_percentage, under_money_percentage,
                     source, data_quality, game_datetime, home_team, away_team
@@ -910,7 +910,7 @@ class ActionNetworkRepository:
                 if not market_type or market_type == "moneyline":
                     query = """
                         SELECT 'moneyline' as market_type, *
-                        FROM core_betting.betting_lines_moneyline
+                        FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
                         WHERE game_id = $1 AND created_at > $2 AND source = 'ACTION_NETWORK'
                     """
                     if book_id:
@@ -926,7 +926,7 @@ class ActionNetworkRepository:
                 if not market_type or market_type == "spread":
                     query = """
                         SELECT 'spread' as market_type, *
-                        FROM core_betting.betting_lines_spreads
+                        FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's
                         WHERE game_id = $1 AND created_at > $2 AND source = 'ACTION_NETWORK'
                     """
                     if book_id:
@@ -942,7 +942,7 @@ class ActionNetworkRepository:
                 if not market_type or market_type == "total":
                     query = """
                         SELECT 'total' as market_type, *
-                        FROM core_betting.betting_lines_totals
+                        FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'
                         WHERE game_id = $1 AND created_at > $2 AND source = 'ACTION_NETWORK'
                     """
                     if book_id:
@@ -966,16 +966,16 @@ class ActionNetworkRepository:
             async with self.connection.get_async_connection() as conn:
                 # Check if we can query each table
                 moneyline_count = await conn.fetchval(
-                    "SELECT COUNT(*) FROM core_betting.betting_lines_moneyline WHERE source = 'ACTION_NETWORK'"
+                    "SELECT COUNT(*) FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' WHERE source = 'ACTION_NETWORK'"
                 )
                 spread_count = await conn.fetchval(
-                    "SELECT COUNT(*) FROM core_betting.betting_lines_spreads WHERE source = 'ACTION_NETWORK'"
+                    "SELECT COUNT(*) FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's WHERE source = 'ACTION_NETWORK'"
                 )
                 total_count = await conn.fetchval(
-                    "SELECT COUNT(*) FROM core_betting.betting_lines_totals WHERE source = 'ACTION_NETWORK'"
+                    "SELECT COUNT(*) FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' WHERE source = 'ACTION_NETWORK'"
                 )
                 sportsbook_count = await conn.fetchval(
-                    "SELECT COUNT(*) FROM core_betting.sportsbooks WHERE name IN ('DraftKings', 'FanDuel', 'BetMGM', 'Caesars', 'BetRivers', 'ESPN BET')"
+                    "SELECT COUNT(*) FROM curated.sportsbooks WHERE name IN ('DraftKings', 'FanDuel', 'BetMGM', 'Caesars', 'BetRivers', 'ESPN BET')"
                 )
 
                 return {

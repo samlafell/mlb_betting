@@ -8,7 +8,7 @@ to populate missing MLB Stats API game IDs and enable comprehensive outcome cove
 This service:
 1. Identifies games missing MLB Stats API IDs
 2. Uses the MLB Stats API Game Resolution Service to resolve them
-3. Updates the core_betting.games table with resolved IDs
+3. Updates the curated.games_complete table with resolved IDs
 4. Enables outcome checking for previously unresolvable games
 """
 
@@ -34,7 +34,7 @@ class GameIDResolutionService:
     Service for resolving missing MLB Stats API game IDs.
 
     Integrates with the MLB Stats API Game Resolution Service to populate
-    missing game IDs in the core_betting.games table, enabling comprehensive
+    missing game IDs in the curated.games_complete table, enabling comprehensive
     game outcome coverage.
     """
 
@@ -217,7 +217,7 @@ class GameIDResolutionService:
             g.id, g.home_team, g.away_team, g.game_date, g.game_datetime,
             g.action_network_game_id, g.sportsbookreview_game_id, 
             g.vsin_game_id
-        FROM core_betting.games g
+        FROM curated.games_complete g
         WHERE {" AND ".join(where_conditions)}
         ORDER BY g.game_date DESC
         """
@@ -294,11 +294,11 @@ class GameIDResolutionService:
         Update a game with its resolved MLB Stats API game ID.
 
         Args:
-            game_id: Game ID from core_betting.games
+            game_id: Game ID from curated.games_complete
             mlb_game_id: Resolved MLB Stats API game ID
         """
         query = """
-        UPDATE core_betting.games 
+        UPDATE curated.games_complete 
         SET 
             mlb_stats_api_game_id = $1,
             has_mlb_enrichment = TRUE,
@@ -349,7 +349,7 @@ class GameIDResolutionService:
                             OR g.sportsbookreview_game_id IS NOT NULL 
                             OR g.vsin_game_id IS NOT NULL) 
                   THEN 1 END) as resolvable_missing
-        FROM core_betting.games g
+        FROM curated.games_complete g
         WHERE g.game_date BETWEEN $1 AND $2
         """
 

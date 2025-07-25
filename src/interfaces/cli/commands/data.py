@@ -1195,7 +1195,7 @@ class DataCommands:
                     summary = (
                         f"Records stored: {stored_count}\n"
                         f"Source: {source_name.upper()}\n"
-                        f"Target tables: core_betting.betting_lines_*"
+                        f"Target tables: curated.betting_lines_*"
                     )
                     return {
                         "status": "success",

@@ -99,7 +99,7 @@ class DataQualityMonitor:
                             COUNT(CASE WHEN data_quality = 'HIGH' THEN 1 END) as high_quality_count,
                             COUNT(CASE WHEN data_quality = 'POOR' THEN 1 END) as poor_quality_count,
                             MAX(created_at) as last_collection
-                        FROM core_betting.betting_lines_moneyline
+                        FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
                         WHERE created_at >= NOW() - INTERVAL '24 hours'
                         GROUP BY source
                     """)
@@ -128,7 +128,7 @@ class DataQualityMonitor:
                             DATE(created_at) as date,
                             AVG(data_completeness_score) as avg_completeness,
                             COUNT(*) as record_count
-                        FROM core_betting.betting_lines_moneyline
+                        FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
                         WHERE created_at >= NOW() - INTERVAL '7 days'
                         GROUP BY DATE(created_at)
                         ORDER BY date
@@ -237,7 +237,7 @@ class PerformanceMonitor:
                     # Check database performance
                     db_start = time.time()
                     cur.execute(
-                        "SELECT COUNT(*) FROM core_betting.betting_lines_moneyline"
+                        "SELECT COUNT(*) FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'"
                     )
                     db_response_time = time.time() - db_start
 
@@ -247,7 +247,7 @@ class PerformanceMonitor:
                             source,
                             COUNT(*) as records_per_hour,
                             AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) as avg_processing_time
-                        FROM core_betting.betting_lines_moneyline
+                        FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
                         WHERE created_at >= NOW() - INTERVAL '1 hour'
                         GROUP BY source
                     """)
@@ -421,7 +421,7 @@ class SystemHealthMonitor:
                         SELECT 
                             COUNT(*) as recent_records,
                             MAX(created_at) as last_record
-                        FROM core_betting.betting_lines_moneyline
+                        FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
                         WHERE source = %s AND created_at >= NOW() - INTERVAL '24 hours'
                     """,
                         (source.value,),

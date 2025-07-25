@@ -3,7 +3,7 @@
 Game Outcomes CLI Commands
 
 Commands for checking and updating game outcomes from MLB-StatsAPI.
-Integrates with the core_betting.game_outcomes table.
+Integrates with the curated.game_outcomes table.
 
 General Balls
 """
@@ -217,7 +217,7 @@ def recent(days: int, format: str):
 
 @outcomes.command()
 @click.option(
-    "--game-id", "-g", type=int, required=True, help="Game ID from core_betting.games"
+    "--game-id", "-g", type=int, required=True, help="Game ID from curated.games_complete"
 )
 @click.option("--force", "-f", is_flag=True, help="Force update even if outcome exists")
 def single(game_id: int, force: bool):
@@ -235,7 +235,7 @@ def single(game_id: int, force: bool):
                         """
                         SELECT id, mlb_stats_api_game_id, home_team, away_team, 
                                game_datetime, game_status
-                        FROM core_betting.games 
+                        FROM curated.games_complete 
                         WHERE id = %s
                     """,
                         [game_id],
@@ -267,7 +267,7 @@ def single(game_id: int, force: bool):
                         await cursor.execute(
                             """
                             SELECT home_score, away_score, home_win, over
-                            FROM core_betting.game_outcomes 
+                            FROM curated.game_outcomes 
                             WHERE game_id = %s
                         """,
                             [game_id],
@@ -608,8 +608,8 @@ async def _get_action_network_coverage(start_date, end_date):
         COUNT(*) as total_games,
         COUNT(go.game_id) as games_with_outcomes,
         COUNT(g.mlb_stats_api_game_id) as games_with_mlb_id
-    FROM core_betting.games g
-    LEFT JOIN core_betting.game_outcomes go ON g.id = go.game_id
+    FROM curated.games_complete g
+    LEFT JOIN curated.game_outcomes go ON g.id = go.game_id
     WHERE g.game_date >= %s AND g.game_date <= %s
       AND g.action_network_game_id IS NOT NULL
     """
@@ -641,8 +641,8 @@ async def _get_sbr_coverage(start_date, end_date):
         COUNT(*) as total_games,
         COUNT(go.game_id) as games_with_outcomes,
         COUNT(g.mlb_stats_api_game_id) as games_with_mlb_id
-    FROM core_betting.games g
-    LEFT JOIN core_betting.game_outcomes go ON g.id = go.game_id
+    FROM curated.games_complete g
+    LEFT JOIN curated.game_outcomes go ON g.id = go.game_id
     WHERE g.game_date >= %s AND g.game_date <= %s
       AND g.sportsbookreview_game_id IS NOT NULL
     """
@@ -676,8 +676,8 @@ async def _get_all_sources_coverage(start_date, end_date):
         COUNT(g.mlb_stats_api_game_id) as games_with_mlb_id,
         COUNT(CASE WHEN g.action_network_game_id IS NOT NULL THEN 1 END) as action_network_games,
         COUNT(CASE WHEN g.sportsbookreview_game_id IS NOT NULL THEN 1 END) as sbr_games
-    FROM core_betting.games g
-    LEFT JOIN core_betting.game_outcomes go ON g.id = go.game_id
+    FROM curated.games_complete g
+    LEFT JOIN curated.game_outcomes go ON g.id = go.game_id
     WHERE g.game_date >= %s AND g.game_date <= %s
     """
 
@@ -720,8 +720,8 @@ async def _find_missing_outcomes(start_date, end_date):
             WHEN g.vsin_game_id IS NOT NULL THEN 'VSIN'
             ELSE 'Unknown'
         END as source
-    FROM core_betting.games g
-    LEFT JOIN core_betting.game_outcomes go ON g.id = go.game_id
+    FROM curated.games_complete g
+    LEFT JOIN curated.game_outcomes go ON g.id = go.game_id
     WHERE g.game_date >= %s AND g.game_date <= %s
       AND go.game_id IS NULL
     ORDER BY g.game_date DESC
@@ -751,7 +751,7 @@ async def _find_missing_outcomes(start_date, end_date):
 
             # Get total games for coverage calculation
             total_query = """
-            SELECT COUNT(*) FROM core_betting.games 
+            SELECT COUNT(*) FROM curated.games_complete 
             WHERE game_date >= %s AND game_date <= %s
             """
             await cursor.execute(total_query, [start_date.date(), end_date.date()])

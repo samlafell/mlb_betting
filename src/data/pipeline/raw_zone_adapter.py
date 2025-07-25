@@ -1,7 +1,7 @@
 """
 RAW Zone Adapter
 
-Adapts existing collectors to write to the RAW zone instead of directly to core_betting.
+Adapts existing collectors to write to the RAW zone instead of directly to curated.
 Provides backward compatibility while implementing the new pipeline architecture.
 
 Reference: docs/SYSTEM_DESIGN_ANALYSIS.md

@@ -151,7 +151,7 @@ class MLBStatsAPIGameResolver:
 
     def resolve_game_id(self, external_id: str, source: DataSource) -> int | None:
         """
-        Resolve external game ID to core_betting.games.id with caching.
+        Resolve external game ID to curated.games_complete.id with caching.
 
         Args:
             external_id: Source-specific game identifier
@@ -181,13 +181,13 @@ class MLBStatsAPIGameResolver:
                     column = source_column_map.get(source)
                     if column:
                         cur.execute(
-                            f"SELECT id FROM core_betting.games WHERE {column} = %s",
+                            f"SELECT id FROM curated.games_complete WHERE {column} = %s",
                             (external_id,),
                         )
                     else:
                         # Try generic lookup
                         cur.execute(
-                            "SELECT id FROM core_betting.games WHERE external_source_id = %s",
+                            "SELECT id FROM curated.games_complete WHERE external_source_id = %s",
                             (external_id,),
                         )
 
@@ -258,7 +258,7 @@ class MLBStatsAPIGameResolver:
                         if column:
                             placeholders = ",".join(["%s"] * len(external_ids))
                             cur.execute(
-                                f"SELECT id, {column} FROM core_betting.games WHERE {column} IN ({placeholders})",
+                                f"SELECT id, {column} FROM curated.games_complete WHERE {column} IN ({placeholders})",
                                 external_ids,
                             )
 
@@ -350,7 +350,7 @@ class SportsbookMapper:
                 with conn.cursor() as cur:
                     # Try exact match first
                     cur.execute(
-                        "SELECT id FROM core_betting.sportsbooks WHERE LOWER(name) = %s",
+                        "SELECT id FROM curated.sportsbooks WHERE LOWER(name) = %s",
                         (clean_name,),
                     )
                     result = cur.fetchone()
@@ -358,7 +358,7 @@ class SportsbookMapper:
                     if not result and normalized_name != sportsbook_name:
                         # Try normalized name
                         cur.execute(
-                            "SELECT id FROM core_betting.sportsbooks WHERE LOWER(name) = %s",
+                            "SELECT id FROM curated.sportsbooks WHERE LOWER(name) = %s",
                             (normalized_name.lower(),),
                         )
                         result = cur.fetchone()
@@ -366,7 +366,7 @@ class SportsbookMapper:
                     if not result:
                         # Try partial match
                         cur.execute(
-                            "SELECT id, name FROM core_betting.sportsbooks WHERE LOWER(name) LIKE %s",
+                            "SELECT id, name FROM curated.sportsbooks WHERE LOWER(name) LIKE %s",
                             (f"%{clean_name}%",),
                         )
                         result = cur.fetchone()
@@ -1037,7 +1037,7 @@ class UnifiedBettingLinesCollector(ABC):
             )
 
             return self._execute_insert(
-                "core_betting.betting_lines_moneyline", unified_record
+                "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'", unified_record
             )
 
         except Exception as e:
@@ -1072,7 +1072,7 @@ class UnifiedBettingLinesCollector(ABC):
             )
 
             return self._execute_insert(
-                "core_betting.betting_lines_totals", unified_record
+                "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'", unified_record
             )
 
         except Exception as e:
@@ -1107,7 +1107,7 @@ class UnifiedBettingLinesCollector(ABC):
             )
 
             return self._execute_insert(
-                "core_betting.betting_lines_spread", unified_record
+                "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread'", unified_record
             )
 
         except Exception as e:

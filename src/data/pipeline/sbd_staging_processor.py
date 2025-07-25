@@ -17,6 +17,10 @@ from pydantic import BaseModel, Field
 
 from ...core.logging import LogComponent, get_logger
 from ...core.team_utils import normalize_team_name
+from ...services.mlb_stats_api_game_resolution_service import (
+    DataSource,
+    MLBStatsAPIGameResolutionService,
+)
 from .base_processor import BaseZoneProcessor
 from .zone_interface import (
     DataRecord,
@@ -33,6 +37,7 @@ class SBDGameRecord(BaseModel):
     """Normalized SBD game record for staging."""
 
     external_id: str
+    mlb_stats_api_game_id: str | None = None
     home_team_normalized: str
     away_team_normalized: str
     game_datetime: datetime
@@ -85,6 +90,21 @@ class SBDStagingProcessor(BaseZoneProcessor):
         super().__init__(config)
         self.sportsbook_mapping = self._load_sportsbook_mapping()
         self.processed_games_cache = {}  # Cache to avoid duplicate game processing
+        self.mlb_resolver = MLBStatsAPIGameResolutionService()
+        self._initialized = False
+
+    async def initialize(self):
+        """Initialize the MLB resolver service."""
+        if not self._initialized:
+            await self.mlb_resolver.initialize()
+            self._initialized = True
+            logger.info("SBD staging processor initialized with MLB Stats API integration")
+
+    async def cleanup(self):
+        """Cleanup resources."""
+        if self._initialized:
+            await self.mlb_resolver.cleanup()
+            self._initialized = False
 
     def _load_sportsbook_mapping(self) -> dict[str, str]:
         """Load SBD sportsbook ID to name mapping."""
@@ -115,6 +135,10 @@ class SBDStagingProcessor(BaseZoneProcessor):
         """
         try:
             logger.info("Starting SBD raw-to-staging processing")
+            
+            # Initialize MLB resolver if not already done
+            if not self._initialized:
+                await self.initialize()
 
             # Get database connection
             from ...data.database.connection import get_connection
@@ -222,6 +246,11 @@ class SBDStagingProcessor(BaseZoneProcessor):
                                 processed += 1
                                 continue
 
+                            # Resolve MLB Stats API game ID
+                            mlb_game_id = await self._resolve_mlb_game_id(game_record)
+                            if mlb_game_id:
+                                game_record.mlb_stats_api_game_id = mlb_game_id
+
                             # Get or create game ID
                             game_id = await self._get_or_create_game(
                                 connection, game_record
@@ -318,6 +347,55 @@ class SBDStagingProcessor(BaseZoneProcessor):
 
         except Exception as e:
             logger.error(f"Error extracting game data: {e}")
+            return None
+
+    async def _resolve_mlb_game_id(self, game_record: SBDGameRecord) -> str | None:
+        """Enhanced SBD game to MLB Stats API game ID resolution with multiple strategies."""
+        try:
+            if not self._initialized:
+                await self.initialize()
+
+            # Strategy 1: Use enhanced SBD-specific resolver
+            resolution_result = await self.mlb_resolver.resolve_sbd_game_id(
+                external_matchup_id=game_record.external_id,
+                home_team=game_record.home_team_normalized,
+                away_team=game_record.away_team_normalized,
+                game_date=game_record.game_datetime.date() if game_record.game_datetime else None,
+            )
+
+            if resolution_result.mlb_game_id:
+                logger.info(
+                    f"Resolved MLB game ID for SBD game {game_record.external_id}: {resolution_result.mlb_game_id} (confidence: {resolution_result.confidence})"
+                )
+                return resolution_result.mlb_game_id
+
+            # Strategy 2: Fallback to generic resolver with team names
+            if game_record.home_team_normalized and game_record.away_team_normalized:
+                logger.debug(f"Trying generic resolver for SBD game {game_record.external_id}")
+                fallback_result = await self.mlb_resolver.resolve_game_id(
+                    external_id=game_record.external_id,
+                    source=DataSource.SBD,
+                    home_team=game_record.home_team_normalized,
+                    away_team=game_record.away_team_normalized,
+                    game_date=game_record.game_datetime.date() if game_record.game_datetime else None,
+                )
+
+                if fallback_result.mlb_game_id:
+                    logger.info(
+                        f"Resolved MLB game ID via fallback for SBD game {game_record.external_id}: {fallback_result.mlb_game_id} "
+                        f"({game_record.away_team_normalized} @ {game_record.home_team_normalized}) - confidence: {fallback_result.confidence}"
+                    )
+                    return fallback_result.mlb_game_id
+
+            logger.warning(
+                f"Failed to resolve MLB game ID for SBD game {game_record.external_id} using all strategies"
+            )
+            return None
+
+        except Exception as e:
+            logger.error(
+                f"Error resolving MLB game ID for SBD record {game_record.external_id}: {e}"
+            )
             return None
 
     def _extract_betting_split_data(
@@ -521,7 +599,7 @@ class SBDStagingProcessor(BaseZoneProcessor):
             # Check if game already exists
             existing_game = await connection.fetchrow(
                 """
-                SELECT id FROM staging.games 
+                SELECT id, mlb_stats_api_game_id FROM staging.games 
                 WHERE external_id = $1
                 """,
                 game_record.external_id,
@@ -529,6 +607,22 @@ class SBDStagingProcessor(BaseZoneProcessor):
 
             if existing_game:
                 game_id = existing_game["id"]
+                
+                # Update MLB Stats API game ID if we have one and it's not set
+                if (game_record.mlb_stats_api_game_id and 
+                    not existing_game["mlb_stats_api_game_id"]):
+                    await connection.execute(
+                        """
+                        UPDATE staging.games 
+                        SET mlb_stats_api_game_id = $1, updated_at = $2
+                        WHERE id = $3
+                        """,
+                        game_record.mlb_stats_api_game_id,
+                        datetime.now(timezone.utc),
+                        game_id,
+                    )
+                    logger.debug(f"Updated MLB Stats API game ID for existing game: {game_record.external_id}")
+                
                 self.processed_games_cache[cache_key] = game_id
                 return game_id
 
@@ -536,13 +630,14 @@ class SBDStagingProcessor(BaseZoneProcessor):
             game_id = await connection.fetchval(
                 """
                 INSERT INTO staging.games 
-                (external_id, home_team_normalized, away_team_normalized, 
+                (external_id, mlb_stats_api_game_id, home_team_normalized, away_team_normalized, 
                  game_date, game_datetime, season, venue, data_quality_score,
                  validation_status, created_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                 RETURNING id
                 """,
                 game_record.external_id,
+                game_record.mlb_stats_api_game_id,
                 game_record.home_team_normalized,
                 game_record.away_team_normalized,
                 game_record.game_datetime.date(),

@@ -219,14 +219,17 @@ class ActionNetworkHistoryProcessor:
                     )
 
                     for historical_record in historical_records:
-                        # Resolve MLB Stats API game ID if needed
-                        if not historical_record.mlb_stats_api_game_id:
-                            mlb_game_id = await self._resolve_mlb_game_id(
-                                historical_record, conn
+                        # Enhanced MLB ID resolution using multiple strategies
+                        mlb_game_id = await self._resolve_mlb_game_id_enhanced(
+                            historical_record, conn
+                        )
+                        if mlb_game_id:
+                            historical_record.mlb_stats_api_game_id = mlb_game_id
+                            mlb_resolved_count += 1
+                        else:
+                            logger.warning(
+                                f"Could not resolve MLB game ID for Action Network game {historical_record.external_game_id}"
                             )
-                            if mlb_game_id:
-                                historical_record.mlb_stats_api_game_id = mlb_game_id
-                                mlb_resolved_count += 1
 
                         # Insert historical record
                         await self._insert_historical_odds_record(
@@ -438,12 +441,26 @@ class ActionNetworkHistoryProcessor:
             logger.error(f"Error extracting historical records from history: {e}")
             return []
 
-    async def _resolve_mlb_game_id(
+    async def _resolve_mlb_game_id_enhanced(
         self, record: HistoricalOddsRecord, conn: asyncpg.Connection
     ) -> str | None:
-        """Resolve Action Network game ID to MLB Stats API game ID."""
+        """Enhanced MLB ID resolution using multiple strategies including raw data view."""
         try:
-            # Get game information for resolution
+            # First check if we already resolved this game's MLB ID
+            existing_mlb_id = await conn.fetchval(
+                """
+                SELECT mlb_stats_api_game_id 
+                FROM staging.action_network_games 
+                WHERE external_game_id = $1 AND mlb_stats_api_game_id IS NOT NULL
+                """,
+                record.external_game_id,
+            )
+            
+            if existing_mlb_id:
+                logger.debug(f"Using cached MLB game ID for {record.external_game_id}: {existing_mlb_id}")
+                return existing_mlb_id
+
+            # Strategy 1: Try staging data join
             game_info = await conn.fetchrow(
                 """
                 SELECT home_team_normalized, away_team_normalized, game_date
@@ -453,35 +470,86 @@ class ActionNetworkHistoryProcessor:
                 record.external_game_id,
             )
 
-            if not game_info:
-                return None
+            if game_info:
+                # Use enhanced Action Network-specific resolver
+                resolution_result = await self.mlb_resolver.resolve_action_network_game_id(
+                    external_game_id=record.external_game_id,
+                    game_date=game_info["game_date"],
+                )
 
-            # Use MLB resolver to get official game ID
-            resolution_result = await self.mlb_resolver.resolve_game_id(
-                external_id=record.external_game_id,
-                source=DataSource.ACTION_NETWORK,
-                home_team=game_info["home_team_normalized"],
-                away_team=game_info["away_team_normalized"],
-                game_date=game_info["game_date"],
+                if resolution_result.mlb_game_id:
+                    # Update games table with resolved MLB game ID
+                    await conn.execute(
+                        """
+                        UPDATE staging.action_network_games 
+                        SET mlb_stats_api_game_id = $1, updated_at = NOW()
+                        WHERE external_game_id = $2
+                    """,
+                        resolution_result.mlb_game_id,
+                        record.external_game_id,
+                    )
+
+                    logger.info(
+                        f"Resolved MLB game ID via staging for {record.external_game_id}: {resolution_result.mlb_game_id} (confidence: {resolution_result.confidence})"
+                    )
+                    return resolution_result.mlb_game_id
+
+            # Strategy 2: Try raw data view (enhanced approach from backfill)
+            logger.debug(f"Trying raw data view resolution for {record.external_game_id}")
+            raw_game_info = await conn.fetchrow(
+                """
+                SELECT away_team, home_team, 
+                       COALESCE(start_time::date, DATE(start_time)) as game_date
+                FROM raw_data.v_action_network_games_readable 
+                WHERE external_game_id = $1
+                AND away_team IS NOT NULL 
+                AND home_team IS NOT NULL
+                """,
+                record.external_game_id,
             )
 
-            if resolution_result.mlb_game_id:
-                # Update games table with resolved MLB game ID
-                await conn.execute(
-                    """
-                    UPDATE staging.action_network_games 
-                    SET mlb_stats_api_game_id = $1, updated_at = NOW()
-                    WHERE external_game_id = $2 AND mlb_stats_api_game_id IS NULL
-                """,
-                    resolution_result.mlb_game_id,
-                    record.external_game_id,
+            if raw_game_info:
+                from ...core.team_utils import normalize_team_name
+                
+                home_team_normalized = normalize_team_name(raw_game_info["home_team"])
+                away_team_normalized = normalize_team_name(raw_game_info["away_team"])
+                
+                # Use Action Network specific resolver with normalized team names
+                resolution_result = await self.mlb_resolver.resolve_action_network_game_id(
+                    external_game_id=record.external_game_id,
+                    game_date=raw_game_info["game_date"]
                 )
+                
+                # Fallback to generic resolver if Action Network specific fails
+                if not resolution_result.mlb_game_id:
+                    resolution_result = await self.mlb_resolver.resolve_game_id(
+                        external_id=record.external_game_id,
+                        source=DataSource.ACTION_NETWORK,
+                        home_team=home_team_normalized,
+                        away_team=away_team_normalized,
+                        game_date=raw_game_info["game_date"]
+                    )
 
-                logger.debug(
-                    f"Resolved MLB game ID for {record.external_game_id}: {resolution_result.mlb_game_id}"
-                )
-                return resolution_result.mlb_game_id
+                if resolution_result.mlb_game_id:
+                    # Update games table if it exists, otherwise we'll rely on odds table
+                    if game_info:
+                        await conn.execute(
+                            """
+                            UPDATE staging.action_network_games 
+                            SET mlb_stats_api_game_id = $1, updated_at = NOW()
+                            WHERE external_game_id = $2
+                        """,
+                            resolution_result.mlb_game_id,
+                            record.external_game_id,
+                        )
 
+                    logger.info(
+                        f"Resolved MLB game ID via raw data for {record.external_game_id}: {resolution_result.mlb_game_id} "
+                        f"({away_team_normalized} @ {home_team_normalized}) - confidence: {resolution_result.confidence}"
+                    )
+                    return resolution_result.mlb_game_id
+
+            logger.warning(f"No game info found for Action Network game {record.external_game_id}")
             return None
 
         except Exception as e:
@@ -489,6 +557,12 @@ class ActionNetworkHistoryProcessor:
                 f"Error resolving MLB game ID for {record.external_game_id}: {e}"
             )
             return None
+
+    async def _resolve_mlb_game_id(
+        self, record: HistoricalOddsRecord, conn: asyncpg.Connection
+    ) -> str | None:
+        """Legacy method - delegates to enhanced resolver."""
+        return await self._resolve_mlb_game_id_enhanced(record, conn)
 
     async def _insert_historical_odds_record(
         self, record: HistoricalOddsRecord, conn: asyncpg.Connection

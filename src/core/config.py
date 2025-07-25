@@ -178,8 +178,8 @@ class SchemaSettings(BaseSettings):
     # Table name mappings
     table_mappings: dict[str, str] = Field(
         default_factory=lambda: {
-            "games": "core_betting.games",
-            "odds": "core_betting.odds",
+            "games": "curated.games_complete",
+            "odds": "curated.odds",
             "betting_analysis": "analytics.betting_analysis",
             "sharp_signals": "analytics.sharp_signals",
             "raw_html": "raw_data.raw_html",

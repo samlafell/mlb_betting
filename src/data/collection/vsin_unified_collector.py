@@ -2242,7 +2242,7 @@ class VSINUnifiedCollector(BaseCollector):
 
                     cur.execute(
                         """
-                        INSERT INTO core_betting.betting_lines_spreads (
+                        INSERT INTO curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's (
                             game_id, sportsbook, away_spread, home_spread,
                             away_spread_price, home_spread_price,
                             home_money_percentage, away_money_percentage,
@@ -2290,13 +2290,13 @@ class VSINUnifiedCollector(BaseCollector):
             return False
 
     def _store_totals_legacy(self, *args, **kwargs) -> bool:
-        """Store totals data in core_betting.betting_lines_totals."""
+        """Store totals data in curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'."""
         try:
             with self.connection_pool.get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        INSERT INTO core_betting.betting_lines_totals (
+                        INSERT INTO curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' (
                             game_id, sportsbook, total_line,
                             over_price, under_price,
                             over_money_percentage, under_money_percentage,

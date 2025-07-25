@@ -246,7 +246,7 @@ async def _analyze_line_movements(
                 lms.total_movements,
                 lms.opening_timestamp,
                 lms.closing_timestamp
-            FROM core_betting.line_movement_summary lms
+            FROM curated.line_movement_summary lms
             {where_clause}
             ORDER BY ABS(lms.odds_movement) DESC
             LIMIT 20
@@ -298,7 +298,7 @@ async def _show_movement_status(date: datetime):
         games_count = await conn.fetchval(
             """
             SELECT COUNT(DISTINCT game_id) 
-            FROM core_betting.line_movement_history 
+            FROM curated.line_movement_history 
             WHERE DATE(game_datetime) = $1
         """,
             date.date(),
@@ -308,7 +308,7 @@ async def _show_movement_status(date: datetime):
         total_movements = await conn.fetchval(
             """
             SELECT COUNT(*) 
-            FROM core_betting.line_movement_history 
+            FROM curated.line_movement_history 
             WHERE DATE(game_datetime) = $1
         """,
             date.date(),
@@ -321,8 +321,8 @@ async def _show_movement_status(date: datetime):
                 s.display_name,
                 COUNT(DISTINCT lmh.game_id) as games_covered,
                 COUNT(*) as total_movements
-            FROM core_betting.line_movement_history lmh
-            JOIN core_betting.sportsbooks s ON lmh.sportsbook_id = s.id
+            FROM curated.line_movement_history lmh
+            JOIN curated.sportsbooks s ON lmh.sportsbook_id = s.id
             WHERE DATE(lmh.game_datetime) = $1
             GROUP BY s.display_name
             ORDER BY total_movements DESC

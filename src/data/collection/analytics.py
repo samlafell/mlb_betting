@@ -143,7 +143,7 @@ class SharpActionDetector:
                             home_ml,
                             away_ml,
                             odds_timestamp
-                        FROM core_betting.betting_lines_moneyline
+                        FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
                         WHERE created_at >= NOW() - INTERVAL '%s hours'
                         AND home_money_percentage IS NOT NULL
                         AND away_money_percentage IS NOT NULL
@@ -266,7 +266,7 @@ class LineMovementAnalyzer:
                                 opening_home_ml,
                                 opening_away_ml,
                                 odds_timestamp
-                            FROM core_betting.betting_lines_moneyline
+                            FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
                             WHERE game_id = %s
                             AND home_ml IS NOT NULL
                             AND away_ml IS NOT NULL
@@ -357,8 +357,8 @@ class LineMovementAnalyzer:
                             ml.away_money_percentage,
                             g.home_team,
                             g.away_team
-                        FROM core_betting.betting_lines_moneyline ml
-                        JOIN core_betting.games g ON ml.game_id = g.id
+                        FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' ml
+                        JOIN curated.games_complete g ON ml.game_id = g.id
                         WHERE ml.created_at >= NOW() - INTERVAL '%s hours'
                         AND ml.opening_home_ml IS NOT NULL
                         AND ml.opening_away_ml IS NOT NULL
@@ -471,7 +471,7 @@ class ArbitrageDetector:
                             away_ml,
                             odds_timestamp,
                             ROW_NUMBER() OVER (PARTITION BY game_id, sportsbook ORDER BY odds_timestamp DESC) as rn
-                        FROM core_betting.betting_lines_moneyline
+                        FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
                         WHERE created_at >= NOW() - INTERVAL '2 hours'
                         AND home_ml IS NOT NULL
                         AND away_ml IS NOT NULL
@@ -601,7 +601,7 @@ class MarketAnalyzer:
                                 away_money_percentage,
                                 sharp_action,
                                 data_quality
-                            FROM core_betting.betting_lines_moneyline
+                            FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
                             WHERE game_id = %s
                             AND home_ml IS NOT NULL
                             AND away_ml IS NOT NULL
@@ -867,7 +867,7 @@ class UnifiedAnalyticsSystem:
                             COUNT(CASE WHEN sharp_action IS NOT NULL THEN 1 END) as sharp_action_games,
                             COUNT(CASE WHEN reverse_line_movement = true THEN 1 END) as rlm_games,
                             AVG(data_completeness_score) as avg_data_quality
-                        FROM core_betting.betting_lines_moneyline
+                        FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
                         WHERE created_at >= NOW() - INTERVAL '24 hours'
                     """)
 

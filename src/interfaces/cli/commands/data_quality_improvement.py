@@ -236,7 +236,7 @@ async def _show_status(connection, detailed: bool, days: int):
     async with connection.get_async_connection() as conn:
         # Overall quality dashboard
         dashboard_query = """
-            SELECT * FROM core_betting.data_quality_dashboard 
+            SELECT * FROM curated.data_quality_dashboard 
             ORDER BY table_name
         """
 
@@ -273,7 +273,7 @@ async def _show_status(connection, detailed: bool, days: int):
         # Recent trends
         if days > 0:
             trend_query = """
-                SELECT * FROM core_betting.data_quality_trend 
+                SELECT * FROM curated.data_quality_trend 
                 WHERE quality_date >= CURRENT_DATE - INTERVAL %s
                 ORDER BY quality_date DESC, table_name
                 LIMIT 20
@@ -301,7 +301,7 @@ async def _show_status(connection, detailed: bool, days: int):
         # Data source analysis if detailed
         if detailed:
             source_query = """
-                SELECT * FROM core_betting.data_source_quality_analysis
+                SELECT * FROM curated.data_source_quality_analysis
                 ORDER BY avg_completeness DESC
             """
 
@@ -375,7 +375,7 @@ async def _health_check(connection):
     try:
         async with connection.get_async_connection() as conn:
             await conn.fetchval(
-                "SELECT COUNT(*) FROM core_betting.data_quality_dashboard"
+                "SELECT COUNT(*) FROM curated.data_quality_dashboard"
             )
         click.echo("✅ Data Quality Views: OK")
     except Exception as e:
@@ -385,7 +385,7 @@ async def _health_check(connection):
     try:
         async with connection.get_async_connection() as conn:
             mapping_count = await conn.fetchval(
-                "SELECT COUNT(*) FROM core_betting.sportsbook_external_mappings"
+                "SELECT COUNT(*) FROM curated.sportsbook_mappings"
             )
         click.echo(f"✅ Sportsbook Mappings: {mapping_count} configured")
     except Exception as e:

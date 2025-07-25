@@ -532,7 +532,7 @@ class PipelineOrchestrationService:
                             MAX(created_at) as latest_update,
                             COUNT(*) as total_records,
                             COUNT(DISTINCT game_id) as unique_games
-                        FROM core_betting.games
+                        FROM curated.games_complete
                         WHERE created_at >= NOW() - INTERVAL '7 days'
                     """)
 

@@ -113,7 +113,7 @@ class SharpActionDetectionService:
         """Get all games for the specified date."""
         query = """
             SELECT id, home_team, away_team, game_date, game_datetime
-            FROM core_betting.games 
+            FROM curated.games_complete 
             WHERE game_date = $1
             ORDER BY game_datetime
         """
@@ -164,7 +164,7 @@ class SharpActionDetectionService:
                 SELECT COUNT(*) as line_count,
                        COUNT(DISTINCT sportsbook_id) as book_count,
                        AVG(data_completeness_score) as avg_completeness
-                FROM core_betting.{table_name}
+                FROM curated.{table_name}
                 WHERE game_id = $1
                 AND sportsbook_id IS NOT NULL
             """
@@ -358,7 +358,7 @@ class SharpActionDetectionService:
             where_clause += " AND (sharp_action IS NULL OR sharp_action = '')"
 
         query = f"""
-            UPDATE core_betting.{table_name}
+            UPDATE curated.{table_name}
             SET sharp_action = $2, updated_at = NOW()
             WHERE {where_clause}
         """
@@ -414,8 +414,8 @@ class SharpActionDetectionService:
                         COUNT(*) as total_records,
                         COUNT(CASE WHEN sharp_action IS NOT NULL AND sharp_action != '' THEN 1 END) as sharp_action_records,
                         ROUND(COUNT(CASE WHEN sharp_action IS NOT NULL AND sharp_action != '' THEN 1 END) * 100.0 / COUNT(*), 2) as sharp_action_pct
-                    FROM core_betting.betting_lines_moneyline m
-                    JOIN core_betting.games g ON m.game_id = g.id
+                    FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' m
+                    JOIN curated.games_complete g ON m.game_id = g.id
                     WHERE g.game_date BETWEEN $1 AND $2
                     
                     UNION ALL
@@ -425,8 +425,8 @@ class SharpActionDetectionService:
                         COUNT(*) as total_records,
                         COUNT(CASE WHEN sharp_action IS NOT NULL AND sharp_action != '' THEN 1 END) as sharp_action_records,
                         ROUND(COUNT(CASE WHEN sharp_action IS NOT NULL AND sharp_action != '' THEN 1 END) * 100.0 / COUNT(*), 2) as sharp_action_pct
-                    FROM core_betting.betting_lines_spreads s
-                    JOIN core_betting.games g ON s.game_id = g.id
+                    FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's s
+                    JOIN curated.games_complete g ON s.game_id = g.id
                     WHERE g.game_date BETWEEN $1 AND $2
                     
                     UNION ALL
@@ -436,8 +436,8 @@ class SharpActionDetectionService:
                         COUNT(*) as total_records,
                         COUNT(CASE WHEN sharp_action IS NOT NULL AND sharp_action != '' THEN 1 END) as sharp_action_records,
                         ROUND(COUNT(CASE WHEN sharp_action IS NOT NULL AND sharp_action != '' THEN 1 END) * 100.0 / COUNT(*), 2) as sharp_action_pct
-                    FROM core_betting.betting_lines_totals t
-                    JOIN core_betting.games g ON t.game_id = g.id
+                    FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' t
+                    JOIN curated.games_complete g ON t.game_id = g.id
                     WHERE g.game_date BETWEEN $1 AND $2
                 """
 
@@ -471,7 +471,7 @@ class SharpActionDetectionService:
 
                 # Check recent sharp action detection activity
                 recent_activity = await conn.fetchval("""
-                    SELECT COUNT(*) FROM core_betting.betting_lines_moneyline 
+                    SELECT COUNT(*) FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' 
                     WHERE sharp_action IS NOT NULL 
                     AND sharp_action != ''
                     AND updated_at >= NOW() - INTERVAL '7 days'

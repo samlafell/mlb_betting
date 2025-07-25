@@ -118,7 +118,7 @@ class CrossSourceGameMatchingService:
                             game_date,
                             game_datetime,
                             created_at
-                        FROM core_betting.games
+                        FROM curated.games_complete
                         WHERE mlb_stats_api_game_id IS NOT NULL
                         AND game_date >= %s
                         ORDER BY game_date DESC
@@ -241,22 +241,22 @@ class CrossSourceGameMatchingService:
                     sources_queries = [
                         (
                             DataSource.SPORTS_BOOK_REVIEW_DEPRECATED,
-                            "core_betting.betting_lines_moneyline",
+                            "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'",
                             "sportsbookreview_game_id",
                         ),
                         (
                             DataSource.ACTION_NETWORK,
-                            "core_betting.betting_lines_moneyline",
+                            "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'",
                             "action_network_game_id",
                         ),
                         (
                             DataSource.VSIN,
-                            "core_betting.betting_lines_moneyline",
+                            "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'",
                             "vsin_game_id",
                         ),
                         (
                             DataSource.SPORTS_BETTING_DIME,
-                            "core_betting.betting_lines_moneyline",
+                            "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'",
                             "sbd_game_id",
                         ),
                     ]
@@ -503,7 +503,7 @@ class CrossSourceGameMatchingService:
 
                     cur.execute(
                         """
-                        INSERT INTO core_betting.games 
+                        INSERT INTO curated.games_complete 
                         (mlb_stats_api_game_id, home_team, away_team, game_date, game_datetime, 
                          data_quality, has_mlb_enrichment, created_at, updated_at)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
@@ -558,7 +558,7 @@ class CrossSourceGameMatchingService:
 
                     cur.execute(
                         """
-                        INSERT INTO core_betting.games 
+                        INSERT INTO curated.games_complete 
                         (home_team, away_team, game_date, game_datetime, data_quality, has_mlb_enrichment, created_at, updated_at)
                         VALUES (%s, %s, %s, %s, %s, %s, NOW(), NOW())
                         RETURNING id
@@ -618,7 +618,7 @@ class CrossSourceGameMatchingService:
                         update_fields.append("updated_at = NOW()")
                         values.append(game_id)
 
-                        query = f"UPDATE core_betting.games SET {', '.join(update_fields)} WHERE id = %s"
+                        query = f"UPDATE curated.games_complete SET {', '.join(update_fields)} WHERE id = %s"
                         cur.execute(query, values)
                         conn.commit()
 
@@ -664,7 +664,7 @@ class CrossSourceGameMatchingService:
                             sbd_game_id,
                             mlb_stats_api_game_id,
                             created_at
-                        FROM core_betting.games
+                        FROM curated.games_complete
                         WHERE game_date >= %s
                         AND (
                             (sportsbookreview_game_id IS NOT NULL)::int +
@@ -744,7 +744,7 @@ class CrossSourceGameMatchingService:
                             COUNT(DISTINCT vsin_game_id) as vsin_games,
                             COUNT(DISTINCT sbd_game_id) as sbd_games,
                             AVG(data_quality) as avg_quality
-                        FROM core_betting.games
+                        FROM curated.games_complete
                         WHERE game_date >= %s
                     """,
                         (date.today() - timedelta(days=days_back),),

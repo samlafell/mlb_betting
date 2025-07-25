@@ -3,14 +3,14 @@
 Game Outcome Service
 
 This service automatically checks for completed games and updates the
-core_betting.game_outcomes table with final scores and betting outcomes.
+curated.game_outcomes table with final scores and betting outcomes.
 Integrates with the Action Network flow to ensure game outcomes are
 updated whenever the Action Network pipeline runs.
 
 Features:
 - Fetches completed games from MLB-StatsAPI
 - Calculates betting outcomes (home_win, over/under, spread cover)
-- Updates core_betting.game_outcomes table
+- Updates curated.game_outcomes table
 - Handles time zone conversions (UTC -> EST)
 - Provides comprehensive logging and error handling
 - Integrates seamlessly with existing Action Network workflow
@@ -38,7 +38,7 @@ logger = structlog.get_logger(__name__)
 class GameOutcome:
     """Represents a completed game's outcome and betting results."""
 
-    game_id: int  # core_betting.games.id
+    game_id: int  # curated.games_complete.id
     mlb_stats_api_game_id: str  # MLB API game PK
     home_team: str
     away_team: str
@@ -250,7 +250,7 @@ class GameOutcomeService:
     Service for checking and updating game outcomes.
 
     This service integrates with the Action Network flow to automatically
-    check for completed games and update the core_betting.game_outcomes table.
+    check for completed games and update the curated.game_outcomes table.
     """
 
     def __init__(self):
@@ -545,7 +545,7 @@ class GameOutcomeService:
             force_update: Whether to include games that already have outcomes
 
         Returns:
-            List of game dictionaries from core_betting.games
+            List of game dictionaries from curated.games_complete
         """
         start_date_str, end_date_str = date_range
 
@@ -571,7 +571,7 @@ class GameOutcomeService:
             query = f"""
             SELECT g.id, g.mlb_stats_api_game_id, g.home_team, g.away_team,
                    g.game_datetime, g.game_status
-            FROM core_betting.games g
+            FROM curated.games_complete g
             {base_conditions}
             ORDER BY g.game_datetime DESC
             """
@@ -581,8 +581,8 @@ class GameOutcomeService:
             query = f"""
             SELECT g.id, g.mlb_stats_api_game_id, g.home_team, g.away_team,
                    g.game_datetime, g.game_status
-            FROM core_betting.games g
-            LEFT JOIN core_betting.game_outcomes go ON g.id = go.game_id
+            FROM curated.games_complete g
+            LEFT JOIN curated.game_outcomes go ON g.id = go.game_id
             {base_conditions}
               AND go.game_id IS NULL
             ORDER BY g.game_datetime DESC
@@ -878,7 +878,7 @@ class GameOutcomeService:
         Get the latest betting lines for a game.
 
         Args:
-            game_id: Game ID from core_betting.games
+            game_id: Game ID from curated.games_complete
 
         Returns:
             Dictionary with betting line information
@@ -887,17 +887,17 @@ class GameOutcomeService:
         SELECT 
             t.total_line,
             s.home_spread
-        FROM core_betting.games g
+        FROM curated.games_complete g
         LEFT JOIN (
             SELECT game_id, total_line
-            FROM core_betting.betting_lines_totals
+            FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'
             WHERE game_id = $1
             ORDER BY odds_timestamp DESC
             LIMIT 1
         ) t ON g.id = t.game_id
         LEFT JOIN (
             SELECT game_id, home_spread
-            FROM core_betting.betting_lines_spreads
+            FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's
             WHERE game_id = $1
             ORDER BY odds_timestamp DESC
             LIMIT 1
@@ -931,7 +931,7 @@ class GameOutcomeService:
             outcome: GameOutcome object to insert/update
         """
         query = """
-        INSERT INTO core_betting.game_outcomes (
+        INSERT INTO curated.game_outcomes (
             game_id, home_team, away_team, home_score, away_score,
             home_win, over, home_cover_spread, total_line, home_spread_line,
             game_date, created_at, updated_at
@@ -1000,8 +1000,8 @@ class GameOutcomeService:
             go.home_spread_line,
             go.game_date,
             g.game_status
-        FROM core_betting.game_outcomes go
-        JOIN core_betting.games g ON go.game_id = g.id
+        FROM curated.game_outcomes go
+        JOIN curated.games_complete g ON go.game_id = g.id
         WHERE go.game_date >= NOW() - INTERVAL '1 day' * $1
         ORDER BY go.game_date DESC
         """
@@ -1047,8 +1047,8 @@ class GameOutcomeService:
         """
         query = """
         SELECT go.*, g.id as game_id
-        FROM core_betting.game_outcomes go
-        JOIN core_betting.games g ON go.game_id = g.id
+        FROM curated.game_outcomes go
+        JOIN curated.games_complete g ON go.game_id = g.id
         WHERE g.mlb_stats_api_game_id = $1
         LIMIT 1
         """
@@ -1156,7 +1156,7 @@ class GameOutcomeService:
         Store an outcome that was fetched independently from MLB Stats API.
         
         This method handles cases where the game might not exist in our
-        core_betting.games table, creating a minimal game record if needed.
+        curated.games_complete table, creating a minimal game record if needed.
         
         Args:
             outcome: GameOutcome object to store
@@ -1165,7 +1165,7 @@ class GameOutcomeService:
             async with get_connection() as conn:
                 # First, try to find existing game record
                 game_query = """
-                SELECT id FROM core_betting.games 
+                SELECT id FROM curated.games_complete 
                 WHERE mlb_stats_api_game_id = $1
                 LIMIT 1
                 """
@@ -1182,7 +1182,7 @@ class GameOutcomeService:
                 else:
                     # Create minimal game record
                     insert_game_query = """
-                    INSERT INTO core_betting.games (
+                    INSERT INTO curated.games_complete (
                         mlb_stats_api_game_id, home_team, away_team, 
                         game_datetime, game_date, game_status,
                         created_at, updated_at
@@ -1208,7 +1208,7 @@ class GameOutcomeService:
                 
                 # Now store the outcome
                 outcome_query = """
-                INSERT INTO core_betting.game_outcomes (
+                INSERT INTO curated.game_outcomes (
                     game_id, home_team, away_team, home_score, away_score,
                     home_win, over, home_cover_spread, total_line, home_spread_line,
                     game_date, created_at, updated_at

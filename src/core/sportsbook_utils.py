@@ -28,8 +28,8 @@ class SportsbookResolver:
                         m.sportsbook_id,
                         s.display_name,
                         s.abbreviation
-                    FROM core_betting.sportsbook_external_mappings m
-                    JOIN core_betting.sportsbooks s ON m.sportsbook_id = s.id
+                    FROM curated.sportsbook_mappings m
+                    JOIN curated.sportsbooks s ON m.sportsbook_id = s.id
                     WHERE m.external_source = 'ACTION_NETWORK'
                 """)
 

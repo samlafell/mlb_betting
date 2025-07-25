@@ -162,17 +162,17 @@ class GameManagerService:
             async with get_connection() as conn:
                 async with conn.cursor() as cursor:
                     if id_type == "primary":
-                        query = "SELECT * FROM core_betting.games WHERE id = %s"
+                        query = "SELECT * FROM curated.games_complete WHERE id = %s"
                         params = [game_id]
                     elif id_type == "sbr":
-                        query = "SELECT * FROM core_betting.games WHERE sportsbookreview_game_id = %s"
+                        query = "SELECT * FROM curated.games_complete WHERE sportsbookreview_game_id = %s"
                         params = [str(game_id)]
                     elif id_type == "mlb":
-                        query = "SELECT * FROM core_betting.games WHERE mlb_stats_api_game_id = %s"
+                        query = "SELECT * FROM curated.games_complete WHERE mlb_stats_api_game_id = %s"
                         params = [str(game_id)]
                     else:  # 'any'
                         query = """
-                        SELECT * FROM core_betting.games 
+                        SELECT * FROM curated.games_complete 
                         WHERE id = %s 
                         OR sportsbookreview_game_id = %s 
                         OR mlb_stats_api_game_id = %s
@@ -207,7 +207,7 @@ class GameManagerService:
             async with get_connection() as conn:
                 async with conn.cursor() as cursor:
                     query = """
-                    SELECT * FROM core_betting.games 
+                    SELECT * FROM curated.games_complete 
                     WHERE game_date >= CURRENT_DATE - INTERVAL '%s days'
                     ORDER BY game_datetime DESC
                     """
@@ -247,7 +247,7 @@ class GameManagerService:
             async with get_connection() as conn:
                 async with conn.cursor() as cursor:
                     query = """
-                    SELECT * FROM core_betting.games 
+                    SELECT * FROM curated.games_complete 
                     WHERE game_date BETWEEN %s AND %s
                     ORDER BY game_datetime ASC
                     """
@@ -289,40 +289,40 @@ class GameManagerService:
             async with get_connection() as conn:
                 async with conn.cursor() as cursor:
                     # Get total games
-                    await cursor.execute("SELECT COUNT(*) FROM core_betting.games")
+                    await cursor.execute("SELECT COUNT(*) FROM curated.games_complete")
                     total_games = (await cursor.fetchone())[0]
 
                     # Get games from last 7 days
                     await cursor.execute("""
-                        SELECT COUNT(*) FROM core_betting.games 
+                        SELECT COUNT(*) FROM curated.games_complete 
                         WHERE game_date >= CURRENT_DATE - INTERVAL '7 days'
                     """)
                     games_last_7_days = (await cursor.fetchone())[0]
 
                     # Get games today
                     await cursor.execute("""
-                        SELECT COUNT(*) FROM core_betting.games 
+                        SELECT COUNT(*) FROM curated.games_complete 
                         WHERE game_date = CURRENT_DATE
                     """)
                     games_today = (await cursor.fetchone())[0]
 
                     # Get completed games
                     await cursor.execute("""
-                        SELECT COUNT(*) FROM core_betting.games 
+                        SELECT COUNT(*) FROM curated.games_complete 
                         WHERE game_status = 'completed'
                     """)
                     completed_games = (await cursor.fetchone())[0]
 
                     # Get scheduled games
                     await cursor.execute("""
-                        SELECT COUNT(*) FROM core_betting.games 
+                        SELECT COUNT(*) FROM curated.games_complete 
                         WHERE game_status = 'scheduled'
                     """)
                     scheduled_games = (await cursor.fetchone())[0]
 
                     # Calculate average games per day (last 30 days)
                     await cursor.execute("""
-                        SELECT COUNT(*) FROM core_betting.games 
+                        SELECT COUNT(*) FROM curated.games_complete 
                         WHERE game_date >= CURRENT_DATE - INTERVAL '30 days'
                     """)
                     games_last_30_days = (await cursor.fetchone())[0]
@@ -430,7 +430,7 @@ class GameManagerService:
         for field, value in identifiers:
             if value:
                 await cursor.execute(
-                    f"SELECT * FROM core_betting.games WHERE {field} = %s", [value]
+                    f"SELECT * FROM curated.games_complete WHERE {field} = %s", [value]
                 )
                 row = await cursor.fetchone()
                 if row:
@@ -441,7 +441,7 @@ class GameManagerService:
         if all(field in game_data for field in ["home_team", "away_team", "game_date"]):
             await cursor.execute(
                 """
-                SELECT * FROM core_betting.games 
+                SELECT * FROM curated.games_complete 
                 WHERE home_team = %s AND away_team = %s AND game_date = %s
             """,
                 [
@@ -474,7 +474,7 @@ class GameManagerService:
 
         if update_fields:
             query = f"""
-            UPDATE core_betting.games
+            UPDATE curated.games_complete
             SET {", ".join(update_fields)}
             WHERE id = %s
             """
@@ -499,7 +499,7 @@ class GameManagerService:
         values = list(game_data.values())
 
         query = f"""
-        INSERT INTO core_betting.games ({", ".join(fields)})
+        INSERT INTO curated.games_complete ({", ".join(fields)})
         VALUES ({", ".join(placeholders)})
         RETURNING id
         """
