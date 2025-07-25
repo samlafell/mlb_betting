@@ -467,7 +467,7 @@ async def _migrate_outcome_metrics_async(dry_run: bool):
             task = progress.add_task("Running migration...", total=None)
 
             # Read and execute migration file
-            migration_file = "/Users/samlafell/Documents/programming_projects/mlb_betting_program/sql/migrations/006_create_outcome_metrics_tables.sql"
+            migration_file = "/Users/samlafell/Documents/programming_projects/mlb_betting_program/sql/migrations/008_create_outcome_metrics_tables.sql"
 
             with open(migration_file) as f:
                 migration_sql = f.read()

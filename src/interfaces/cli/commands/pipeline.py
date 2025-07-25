@@ -262,7 +262,7 @@ async def _migrate_pipeline_async(
         uv run -m src.interfaces.cli pipeline migrate --create-schemas
 
         # Migrate existing data to RAW zone
-        uv run -m src.interfaces.cli pipeline migrate --migrate-data --source-table core_betting.spreads
+        uv run -m src.interfaces.cli pipeline migrate --migrate-data --source-table curated.spreads
 
         # Dry run migration
         uv run -m src.interfaces.cli pipeline migrate --migrate-data --dry-run
@@ -274,7 +274,7 @@ async def _migrate_pipeline_async(
             console.print(
                 "[yellow]Schema creation should be done via SQL migrations[/yellow]"
             )
-            console.print("Run: `psql -f sql/migrations/004_create_pipeline_zones.sql`")
+            console.print("Run: `psql -f sql/migrations/004_create_source_specific_zones.sql`")
 
         if migrate_data:
             console.print("[blue]Migrating data from existing tables...[/blue]")
@@ -285,9 +285,9 @@ async def _migrate_pipeline_async(
 
             # Show migration plan
             console.print("\n[green]Migration Plan:[/green]")
-            console.print("1. core_betting.spreads → raw_data.spreads_raw")
-            console.print("2. core_betting.totals → raw_data.totals_raw")
-            console.print("3. core_betting.moneylines → raw_data.moneylines_raw")
+            console.print("1. curated.spreads → raw_data.spreads_raw")
+            console.print("2. curated.totals → raw_data.totals_raw")
+            console.print("3. curated.moneylines → raw_data.moneylines_raw")
             console.print(
                 "\nThis will preserve existing data while enabling the new pipeline."
             )
