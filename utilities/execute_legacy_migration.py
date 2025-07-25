@@ -119,7 +119,7 @@ class LegacyMigrationExecutor:
 
                 try:
                     actual_count = await conn.fetchval(
-                        f"SELECT COUNT(*) FROM core_betting.{table}"
+                        f"SELECT COUNT(*) FROM curated.{table}"
                     )
                     table_counts[table] = {
                         "expected": expected_count,
@@ -355,12 +355,12 @@ class LegacyMigrationExecutor:
             for table in tables_to_analyze:
                 try:
                     count = await conn.fetchval(
-                        f"SELECT COUNT(*) FROM core_betting.{table}"
+                        f"SELECT COUNT(*) FROM curated.{table}"
                     )
 
                     # Get sample record structure
                     sample = await conn.fetchrow(
-                        f"SELECT * FROM core_betting.{table} LIMIT 1"
+                        f"SELECT * FROM curated.{table} LIMIT 1"
                     )
                     columns = list(sample.keys()) if sample else []
 
@@ -459,9 +459,9 @@ class LegacyMigrationExecutor:
 
             # Check 2: Verify backup tables created
             backup_tables = [
-                "backup_core_betting.games",
-                "backup_core_betting.teams",
-                "backup_core_betting.sportsbooks",
+                "backup_curated.games_complete",
+                "backup_curated.teams_master",
+                "backup_curated.sportsbooks",
             ]
 
             for table in backup_tables:

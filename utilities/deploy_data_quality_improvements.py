@@ -148,7 +148,7 @@ async def show_data_quality_status():
 
         # Get quality dashboard data
         dashboard_data = await connection.fetch_async("""
-            SELECT * FROM core_betting.data_quality_dashboard 
+            SELECT * FROM curated.data_quality_dashboard 
             ORDER BY table_name
         """)
 

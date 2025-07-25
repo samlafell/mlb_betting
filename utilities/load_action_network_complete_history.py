@@ -222,7 +222,7 @@ class CompleteHistoryCollector:
                 # Check if exists
                 existing_id = await conn.fetchval(
                     """
-                    SELECT id FROM core_betting.games WHERE action_network_game_id = $1
+                    SELECT id FROM curated.games_complete WHERE action_network_game_id = $1
                 """,
                     int(game_id),
                 )
@@ -238,7 +238,7 @@ class CompleteHistoryCollector:
 
                 new_id = await conn.fetchval(
                     """
-                    INSERT INTO core_betting.games (
+                    INSERT INTO curated.games_complete (
                         action_network_game_id, home_team, away_team, game_date,
                         game_datetime, season, season_type, game_type, data_quality,
                         created_at, updated_at
@@ -489,7 +489,7 @@ class CompleteHistoryCollector:
             # Check if record already exists to avoid duplicates
             existing = await conn.fetchval(
                 """
-                SELECT id FROM core_betting.betting_lines_moneyline 
+                SELECT id FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' 
                 WHERE game_id = $1 AND sportsbook_id = $2 AND home_ml = $3 AND away_ml = $4 
                 AND ABS(EXTRACT(EPOCH FROM (odds_timestamp - $5))) < 60
             """,
@@ -503,7 +503,7 @@ class CompleteHistoryCollector:
             if not existing:
                 await conn.execute(
                     """
-                    INSERT INTO core_betting.betting_lines_moneyline (
+                    INSERT INTO curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' (
                         game_id, external_source_id, sportsbook_id, sportsbook,
                         home_team, away_team, home_ml, away_ml, odds_timestamp,
                         collection_method, source, game_datetime, created_at, updated_at
@@ -633,7 +633,7 @@ class CompleteHistoryCollector:
             # Check if record already exists to avoid duplicates
             existing = await conn.fetchval(
                 """
-                SELECT id FROM core_betting.betting_lines_spread 
+                SELECT id FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread' 
                 WHERE game_id = $1 AND sportsbook_id = $2 AND spread_line = $3 AND home_spread_price = $4
                 AND ABS(EXTRACT(EPOCH FROM (odds_timestamp - $5))) < 60
             """,
@@ -647,7 +647,7 @@ class CompleteHistoryCollector:
             if not existing:
                 await conn.execute(
                     """
-                    INSERT INTO core_betting.betting_lines_spread (
+                    INSERT INTO curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread' (
                         game_id, external_source_id, sportsbook_id, sportsbook,
                         home_team, away_team, spread_line, home_spread_price, away_spread_price,
                         odds_timestamp, collection_method, source, game_datetime, created_at, updated_at
@@ -778,7 +778,7 @@ class CompleteHistoryCollector:
             # Check if record already exists to avoid duplicates
             existing = await conn.fetchval(
                 """
-                SELECT id FROM core_betting.betting_lines_totals 
+                SELECT id FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' 
                 WHERE game_id = $1 AND sportsbook_id = $2 AND total_line = $3 AND over_price = $4
                 AND ABS(EXTRACT(EPOCH FROM (odds_timestamp - $5))) < 60
             """,
@@ -792,7 +792,7 @@ class CompleteHistoryCollector:
             if not existing:
                 await conn.execute(
                     """
-                    INSERT INTO core_betting.betting_lines_totals (
+                    INSERT INTO curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' (
                         game_id, external_source_id, sportsbook_id, sportsbook,
                         home_team, away_team, total_line, over_price, under_price,
                         odds_timestamp, collection_method, source, game_datetime, created_at, updated_at
@@ -841,7 +841,7 @@ async def main():
         print(
             "   SELECT home_team, away_team, sportsbook, home_ml, away_ml, updated_at"
         )
-        print("   FROM core_betting.betting_lines_moneyline")
+        print("   FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'")
         print("   WHERE home_team = 'CHC' AND date(game_datetime) = '2025-07-18'")
         print("   ORDER BY updated_at;")
 

@@ -12,7 +12,7 @@ The migration implements a comprehensive data transformation from a single-tier 
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │   LEGACY        │    │  NEW PIPELINE    │    │   ENHANCED      │
 │                 │    │                  │    │                 │
-│ core_betting.*  │───▶│ raw_data.*       │───▶│ staging.*       │───▶│ curated.*
+│ curated.*  │───▶│ raw_data.*       │───▶│ staging.*       │───▶│ curated.*
 │                 │    │                  │    │                 │    │
 │ • Mixed data    │    │ • Source data    │    │ • Cleaned data  │    │ • ML features
 │ • No lineage    │    │ • Full lineage   │    │ • Quality score │    │ • Analytics
@@ -47,9 +47,9 @@ python phase1_data_analysis.py
 - Implements batch processing with error handling
 
 **Tables Migrated**:
-- `core_betting.betting_lines_moneyline` → `raw_data.moneylines_raw`
-- `core_betting.betting_lines_spread` → `raw_data.spreads_raw`
-- `core_betting.betting_lines_totals` → `raw_data.totals_raw`
+- `curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'` → `raw_data.moneylines_raw`
+- `curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread'` → `raw_data.spreads_raw`
+- `curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'` → `raw_data.totals_raw`
 - All above → `raw_data.betting_lines_raw` (unified)
 
 **Usage**:

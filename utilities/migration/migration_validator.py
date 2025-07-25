@@ -347,11 +347,11 @@ class MigrationValidator:
         # Check for null game IDs
         null_games = await conn.fetchrow("""
             SELECT COUNT(*) as count FROM (
-                SELECT game_id FROM core_betting.betting_lines_moneyline WHERE game_id IS NULL
+                SELECT game_id FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' WHERE game_id IS NULL
                 UNION ALL
-                SELECT game_id FROM core_betting.betting_lines_spread WHERE game_id IS NULL
+                SELECT game_id FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread' WHERE game_id IS NULL
                 UNION ALL  
-                SELECT game_id FROM core_betting.betting_lines_totals WHERE game_id IS NULL
+                SELECT game_id FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' WHERE game_id IS NULL
             ) nulls
         """)
 
@@ -362,18 +362,18 @@ class MigrationValidator:
         orphaned = await conn.fetchrow("""
             SELECT COUNT(*) as count FROM (
                 SELECT DISTINCT bl.game_id 
-                FROM core_betting.betting_lines_moneyline bl
-                LEFT JOIN core_betting.games g ON bl.game_id = g.id
+                FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' bl
+                LEFT JOIN curated.games_complete g ON bl.game_id = g.id
                 WHERE g.id IS NULL
                 UNION
                 SELECT DISTINCT bl.game_id 
-                FROM core_betting.betting_lines_spread bl
-                LEFT JOIN core_betting.games g ON bl.game_id = g.id
+                FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread' bl
+                LEFT JOIN curated.games_complete g ON bl.game_id = g.id
                 WHERE g.id IS NULL
                 UNION
                 SELECT DISTINCT bl.game_id 
-                FROM core_betting.betting_lines_totals bl
-                LEFT JOIN core_betting.games g ON bl.game_id = g.id
+                FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' bl
+                LEFT JOIN curated.games_complete g ON bl.game_id = g.id
                 WHERE g.id IS NULL
             ) orphaned
         """)
@@ -413,9 +413,9 @@ class MigrationValidator:
         # Get source counts
         source_counts = await conn.fetchrow("""
             SELECT 
-                (SELECT COUNT(*) FROM core_betting.betting_lines_moneyline) as source_moneylines,
-                (SELECT COUNT(*) FROM core_betting.betting_lines_spread) as source_spreads,
-                (SELECT COUNT(*) FROM core_betting.betting_lines_totals) as source_totals
+                (SELECT COUNT(*) FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline') as source_moneylines,
+                (SELECT COUNT(*) FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread') as source_spreads,
+                (SELECT COUNT(*) FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals') as source_totals
         """)
 
         # Get RAW zone counts

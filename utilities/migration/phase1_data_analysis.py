@@ -100,7 +100,7 @@ class DataAnalyzer:
         return analysis_results
 
     async def _analyze_games_table(self, conn) -> dict[str, Any]:
-        """Analyze the core_betting.games table."""
+        """Analyze the curated.games_complete table."""
         logger.info("Analyzing games table...")
 
         # Basic counts and date ranges
@@ -114,7 +114,7 @@ class DataAnalyzer:
                 COUNT(DISTINCT EXTRACT(YEAR FROM game_date)) as seasons_covered,
                 COUNT(*) FILTER (WHERE game_status = 'completed') as completed_games,
                 COUNT(*) FILTER (WHERE game_status = 'scheduled') as scheduled_games
-            FROM core_betting.games
+            FROM curated.games_complete
         """)
 
         # Data quality assessment
@@ -125,7 +125,7 @@ class DataAnalyzer:
                 COUNT(*) FILTER (WHERE data_quality = 'LOW') as low_quality,
                 AVG(mlb_correlation_confidence) as avg_confidence,
                 COUNT(*) FILTER (WHERE has_mlb_enrichment = true) as enriched_games
-            FROM core_betting.games
+            FROM curated.games_complete
         """)
 
         # Source attribution
@@ -135,11 +135,11 @@ class DataAnalyzer:
                 COUNT(*) FILTER (WHERE mlb_stats_api_game_id IS NOT NULL) as has_mlb_api,
                 COUNT(*) FILTER (WHERE sportsbookreview_game_id IS NOT NULL) as has_sbr,
                 COUNT(*) FILTER (WHERE vsin_game_id IS NOT NULL) as has_vsin
-            FROM core_betting.games
+            FROM curated.games_complete
         """)
 
         return {
-            "table_name": "core_betting.games",
+            "table_name": "curated.games_complete",
             "basic_stats": dict(basic_stats) if basic_stats else {},
             "quality_stats": dict(quality_stats) if quality_stats else {},
             "source_stats": dict(source_stats) if source_stats else {},
@@ -164,7 +164,7 @@ class DataAnalyzer:
                 MIN(odds_timestamp) as earliest_timestamp,
                 MAX(odds_timestamp) as latest_timestamp,
                 COUNT(*) FILTER (WHERE data_quality = 'HIGH') as high_quality_records
-            FROM core_betting.{table_name}
+            FROM curated.{table_name}
         """)
 
         # Source distribution
@@ -174,7 +174,7 @@ class DataAnalyzer:
                 COUNT(*) as record_count,
                 COUNT(DISTINCT game_id) as game_count,
                 ROUND(AVG(CASE WHEN data_quality = 'HIGH' THEN 1.0 ELSE 0.0 END) * 100, 2) as quality_percentage
-            FROM core_betting.{table_name}
+            FROM curated.{table_name}
             GROUP BY source
             ORDER BY record_count DESC
         """)
@@ -185,7 +185,7 @@ class DataAnalyzer:
                 sportsbook,
                 COUNT(*) as record_count,
                 COUNT(DISTINCT game_id) as game_count
-            FROM core_betting.{table_name}
+            FROM curated.{table_name}
             GROUP BY sportsbook
             ORDER BY record_count DESC
             LIMIT 10
@@ -200,7 +200,7 @@ class DataAnalyzer:
                     COUNT(*) FILTER (WHERE over_bets_percentage IS NOT NULL) as has_betting_splits,
                     COUNT(*) FILTER (WHERE external_source_id IS NOT NULL) as has_external_id,
                     ROUND(AVG(source_reliability_score) * 100, 2) as avg_reliability_score
-                FROM core_betting.{table_name}
+                FROM curated.{table_name}
             """)
         else:
             completeness_stats = await conn.fetchrow(f"""
@@ -209,11 +209,11 @@ class DataAnalyzer:
                     COUNT(*) FILTER (WHERE home_bets_percentage IS NOT NULL) as has_betting_splits,
                     COUNT(*) FILTER (WHERE external_source_id IS NOT NULL) as has_external_id,
                     ROUND(AVG(source_reliability_score) * 100, 2) as avg_reliability_score
-                FROM core_betting.{table_name}
+                FROM curated.{table_name}
             """)
 
         return {
-            "table_name": f"core_betting.{table_name}",
+            "table_name": f"curated.{table_name}",
             "bet_type": bet_type,
             "basic_stats": dict(basic_stats) if basic_stats else {},
             "source_distribution": [dict(row) for row in source_distribution],
@@ -242,7 +242,7 @@ class DataAnalyzer:
                     COUNT(DISTINCT bet_type) as bet_types_covered,
                     AVG(confidence_score) as avg_confidence_score,
                     COUNT(*) FILTER (WHERE confidence_score >= 0.7) as high_confidence_indicators
-                FROM core_betting.sharp_action_indicators
+                FROM curated.sharp_action_indicators
             """)
 
             # Indicator type distribution
@@ -251,13 +251,13 @@ class DataAnalyzer:
                     indicator_type,
                     COUNT(*) as count,
                     AVG(confidence_score) as avg_confidence
-                FROM core_betting.sharp_action_indicators
+                FROM curated.sharp_action_indicators
                 GROUP BY indicator_type
                 ORDER BY count DESC
             """)
 
             return {
-                "table_name": "core_betting.sharp_action_indicators",
+                "table_name": "curated.sharp_action_indicators",
                 "basic_stats": dict(basic_stats) if basic_stats else {},
                 "type_distribution": [dict(row) for row in type_distribution],
                 "migration_target": "curated.betting_analysis",
@@ -268,7 +268,7 @@ class DataAnalyzer:
         except Exception as e:
             logger.warning(f"Sharp action analysis failed: {e}")
             return {
-                "table_name": "core_betting.sharp_action_indicators",
+                "table_name": "curated.sharp_action_indicators",
                 "basic_stats": {},
                 "error": str(e),
                 "migration_complexity": "unknown",

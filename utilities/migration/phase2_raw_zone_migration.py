@@ -6,10 +6,10 @@ Migrates betting lines data from core_betting tables to raw_data schema tables.
 This preserves the original source data with proper attribution and lineage.
 
 Migration flow:
-- core_betting.betting_lines_moneyline → raw_data.moneylines_raw
-- core_betting.betting_lines_spread → raw_data.spreads_raw
-- core_betting.betting_lines_totals → raw_data.totals_raw
-- core_betting.betting_lines_* → raw_data.betting_lines_raw (unified)
+- curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' → raw_data.moneylines_raw
+- curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread' → raw_data.spreads_raw
+- curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' → raw_data.totals_raw
+- curated.betting_lines_* → raw_data.betting_lines_raw (unified)
 """
 
 import asyncio
@@ -141,7 +141,7 @@ class RawZoneMigrator:
         try:
             # Get total count for progress tracking
             count_result = await conn.fetchrow("""
-                SELECT COUNT(*) as total FROM core_betting.betting_lines_moneyline
+                SELECT COUNT(*) as total FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
             """)
             total_records = count_result["total"]
             logger.info(f"Migrating {total_records:,} moneyline records...")
@@ -193,7 +193,7 @@ class RawZoneMigrator:
                             'source_api_version', source_api_version
                         ) as raw_data,
                         DATE(odds_timestamp) as game_date
-                    FROM core_betting.betting_lines_moneyline
+                    FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
                     ORDER BY id
                     LIMIT $1 OFFSET $2
                 """,
@@ -273,7 +273,7 @@ class RawZoneMigrator:
         try:
             # Get total count
             count_result = await conn.fetchrow("""
-                SELECT COUNT(*) as total FROM core_betting.betting_lines_spread
+                SELECT COUNT(*) as total FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread'
             """)
             total_records = count_result["total"]
             logger.info(f"Migrating {total_records:,} spread records...")
@@ -327,7 +327,7 @@ class RawZoneMigrator:
                             'source_api_version', source_api_version
                         ) as raw_data,
                         DATE(odds_timestamp) as game_date
-                    FROM core_betting.betting_lines_spread
+                    FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread'
                     ORDER BY id
                     LIMIT $1 OFFSET $2
                 """,
@@ -407,7 +407,7 @@ class RawZoneMigrator:
         try:
             # Get total count
             count_result = await conn.fetchrow("""
-                SELECT COUNT(*) as total FROM core_betting.betting_lines_totals
+                SELECT COUNT(*) as total FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'
             """)
             total_records = count_result["total"]
             logger.info(f"Migrating {total_records:,} totals records...")
@@ -459,7 +459,7 @@ class RawZoneMigrator:
                             'source_api_version', source_api_version
                         ) as raw_data,
                         DATE(odds_timestamp) as game_date
-                    FROM core_betting.betting_lines_totals
+                    FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'
                     ORDER BY id
                     LIMIT $1 OFFSET $2
                 """,

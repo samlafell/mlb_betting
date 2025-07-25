@@ -36,7 +36,7 @@ async def test_connection():
 
             # Test basic data access
             count_result = await conn.fetchrow("""
-                SELECT COUNT(*) as count FROM core_betting.games
+                SELECT COUNT(*) as count FROM curated.games_complete
             """)
             print(f"📊 Games in database: {count_result['count']:,}")
 
