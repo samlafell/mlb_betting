@@ -77,6 +77,13 @@ class HistoricalOddsRecord(BaseModel):
     # Lineage
     raw_data_id: int
 
+    # NEW: Betting percentage data
+    bet_percent_tickets: int | None = None      # Ticket percentage (0-100)
+    bet_percent_money: int | None = None        # Money percentage (0-100)
+    bet_value_tickets: int | None = None        # Actual ticket count
+    bet_value_money: int | None = None          # Actual money amount
+    bet_info_available: bool = False            # Flag indicating betting data exists
+
     @field_validator("market_type")
     @classmethod
     def validate_market_type(cls, v):
@@ -128,6 +135,85 @@ class ActionNetworkHistoryProcessor:
         """Cleanup processor resources."""
         await self.mlb_resolver.cleanup()
 
+    def _extract_bet_info(self, side_data: dict) -> dict:
+        """Extract betting percentage information from side data.
+        
+        Args:
+            side_data: Individual side data from Action Network history response
+            
+        Returns:
+            Dict containing extracted betting information
+        """
+        bet_info = side_data.get("bet_info", {})
+        
+        # Initialize with default values
+        extracted_data = {
+            "bet_percent_tickets": None,
+            "bet_percent_money": None,
+            "bet_value_tickets": None,
+            "bet_value_money": None,
+            "bet_info_available": False
+        }
+        
+        if not bet_info or not isinstance(bet_info, dict):
+            logger.debug("No bet_info available in side data")
+            return extracted_data
+        
+        try:
+            # Extract ticket data
+            tickets_data = bet_info.get("tickets", {})
+            if isinstance(tickets_data, dict):
+                tickets_percent = tickets_data.get("percent")
+                tickets_value = tickets_data.get("value")
+                
+                # Validate and store ticket percentage
+                if tickets_percent is not None and isinstance(tickets_percent, (int, float)):
+                    if 0 <= tickets_percent <= 100:
+                        extracted_data["bet_percent_tickets"] = int(tickets_percent)
+                    else:
+                        logger.warning(f"Invalid ticket percentage: {tickets_percent}")
+                
+                # Store ticket value if meaningful
+                if tickets_value is not None and isinstance(tickets_value, (int, float)) and tickets_value > 0:
+                    extracted_data["bet_value_tickets"] = int(tickets_value)
+            
+            # Extract money data
+            money_data = bet_info.get("money", {})
+            if isinstance(money_data, dict):
+                money_percent = money_data.get("percent")
+                money_value = money_data.get("value")
+                
+                # Validate and store money percentage
+                if money_percent is not None and isinstance(money_percent, (int, float)):
+                    if 0 <= money_percent <= 100:
+                        extracted_data["bet_percent_money"] = int(money_percent)
+                    else:
+                        logger.warning(f"Invalid money percentage: {money_percent}")
+                
+                # Store money value if meaningful
+                if money_value is not None and isinstance(money_value, (int, float)) and money_value > 0:
+                    extracted_data["bet_value_money"] = int(money_value)
+            
+            # Determine if betting info is available
+            betting_data_exists = (
+                extracted_data["bet_percent_tickets"] is not None or 
+                extracted_data["bet_percent_money"] is not None
+            )
+            extracted_data["bet_info_available"] = betting_data_exists
+            
+            if betting_data_exists:
+                logger.debug(
+                    f"Extracted betting data - Tickets: {extracted_data['bet_percent_tickets']}%, "
+                    f"Money: {extracted_data['bet_percent_money']}%"
+                )
+                
+        except Exception as e:
+            logger.error(f"Error extracting bet_info: {e}", exc_info=True)
+            # Return default values on error
+            pass
+        
+        return extracted_data
+
     async def process_history_data(self, limit: int = 10) -> dict[str, Any]:
         """
         Process raw history data to extract complete historical records with timestamps.
@@ -148,25 +234,37 @@ class ActionNetworkHistoryProcessor:
         try:
             conn = await asyncpg.connect(**self._get_db_config())
 
-            # Get unprocessed OR updated raw history data
+            # Get unprocessed OR updated raw history data, excluding test/placeholder games
             raw_history_data = await conn.fetch(
                 """
-                SELECT id, external_game_id, raw_history, collected_at
-                FROM raw_data.action_network_history 
-                WHERE id NOT IN (
-                    SELECT DISTINCT raw_data_id 
-                    FROM staging.action_network_odds_historical
-                    WHERE raw_data_id IS NOT NULL
+                SELECT h.id, h.external_game_id, h.raw_history, h.collected_at
+                FROM raw_data.action_network_history h
+                LEFT JOIN raw_data.action_network_games g ON h.external_game_id = g.external_game_id
+                WHERE (
+                    h.id NOT IN (
+                        SELECT DISTINCT raw_data_id 
+                        FROM staging.action_network_odds_historical
+                        WHERE raw_data_id IS NOT NULL
+                    )
+                    OR h.id IN (
+                        -- Also include records where raw data is newer than staging processing
+                        SELECT rh.id
+                        FROM raw_data.action_network_history rh
+                        JOIN staging.action_network_odds_historical oh ON oh.raw_data_id = rh.id
+                        WHERE rh.collected_at > oh.data_collection_time
+                        GROUP BY rh.id
+                    )
                 )
-                OR id IN (
-                    -- Also include records where raw data is newer than staging processing
-                    SELECT rh.id
-                    FROM raw_data.action_network_history rh
-                    JOIN staging.action_network_odds_historical oh ON oh.raw_data_id = rh.id
-                    WHERE rh.collected_at > oh.data_collection_time
-                    GROUP BY rh.id
+                -- Filter out test/placeholder games
+                AND (
+                    g.external_game_id IS NULL  -- Allow processing if game record doesn't exist
+                    OR (
+                        g.away_team IS NOT NULL 
+                        AND g.home_team IS NOT NULL 
+                        AND COALESCE(g.raw_response->>'table', '') <> 'action_network_history'
+                    )
                 )
-                ORDER BY collected_at DESC
+                ORDER BY h.collected_at DESC
                 LIMIT $1
             """,
                 limit,
@@ -329,6 +427,9 @@ class ActionNetworkHistoryProcessor:
                         market_id = side_data.get("market_id")
                         outcome_id = side_data.get("outcome_id")
 
+                        # Extract betting percentage data
+                        betting_data = self._extract_bet_info(side_data)
+
                         # Process historical data from history array - THIS IS THE KEY PART
                         history = side_data.get("history", [])
                         current_odds_in_history = False
@@ -403,6 +504,12 @@ class ActionNetworkHistoryProcessor:
                                 market_id=market_id,
                                 outcome_id=outcome_id,
                                 raw_data_id=raw_history["id"],
+                                # Include betting percentage data
+                                bet_percent_tickets=betting_data["bet_percent_tickets"],
+                                bet_percent_money=betting_data["bet_percent_money"],
+                                bet_value_tickets=betting_data["bet_value_tickets"],
+                                bet_value_money=betting_data["bet_value_money"],
+                                bet_info_available=betting_data["bet_info_available"],
                             )
 
                             records.append(historical_record)
@@ -431,6 +538,12 @@ class ActionNetworkHistoryProcessor:
                                 market_id=market_id,
                                 outcome_id=outcome_id,
                                 raw_data_id=raw_history["id"],
+                                # Include betting percentage data
+                                bet_percent_tickets=betting_data["bet_percent_tickets"],
+                                bet_percent_money=betting_data["bet_percent_money"],
+                                bet_value_tickets=betting_data["bet_value_tickets"],
+                                bet_value_money=betting_data["bet_value_money"],
+                                bet_info_available=betting_data["bet_info_available"],
                             )
 
                             records.append(current_record)
@@ -446,6 +559,30 @@ class ActionNetworkHistoryProcessor:
     ) -> str | None:
         """Enhanced MLB ID resolution using multiple strategies including raw data view."""
         try:
+            # First check if this is a test/placeholder game by validating game data
+            game_validation = await conn.fetchrow(
+                """
+                SELECT away_team, home_team, start_time,
+                       raw_response->'table' as table_marker,
+                       raw_response->'real_data' as real_data_marker
+                FROM raw_data.action_network_games 
+                WHERE external_game_id = $1
+                """,
+                record.external_game_id,
+            )
+            
+            if game_validation:
+                # Skip test/placeholder records that lack proper game data
+                if (not game_validation['away_team'] or not game_validation['home_team'] or 
+                    game_validation['table_marker'] == 'action_network_history'):
+                    logger.warning(
+                        f"Skipping test/placeholder game {record.external_game_id}: "
+                        f"away_team={game_validation['away_team']}, "
+                        f"home_team={game_validation['home_team']}, "
+                        f"table_marker={game_validation['table_marker']}"
+                    )
+                    return None
+            
             # First check if we already resolved this game's MLB ID
             existing_mlb_id = await conn.fetchval(
                 """
@@ -575,15 +712,23 @@ class ActionNetworkHistoryProcessor:
                 sportsbook_id, sportsbook_name, market_type, side,
                 odds, line_value, updated_at, data_collection_time, data_processing_time,
                 line_status, is_current_odds, market_id, outcome_id, period,
-                data_quality_score, validation_status, raw_data_id, processed_at
+                data_quality_score, validation_status, raw_data_id, processed_at,
+                bet_percent_tickets, bet_percent_money, bet_value_tickets, 
+                bet_value_money, bet_info_available
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21,
+                $22, $23, $24, $25, $26
             )
             ON CONFLICT (external_game_id, sportsbook_external_id, market_type, side, updated_at) 
             DO UPDATE SET
                 mlb_stats_api_game_id = EXCLUDED.mlb_stats_api_game_id,
                 is_current_odds = EXCLUDED.is_current_odds,
                 data_processing_time = EXCLUDED.data_processing_time,
+                bet_percent_tickets = EXCLUDED.bet_percent_tickets,
+                bet_percent_money = EXCLUDED.bet_percent_money,
+                bet_value_tickets = EXCLUDED.bet_value_tickets,
+                bet_value_money = EXCLUDED.bet_value_money,
+                bet_info_available = EXCLUDED.bet_info_available,
                 updated_at_record = NOW()
         """,
             record.external_game_id,
@@ -607,6 +752,11 @@ class ActionNetworkHistoryProcessor:
             record.validation_status,
             record.raw_data_id,
             now_est(),
+            record.bet_percent_tickets,
+            record.bet_percent_money,
+            record.bet_value_tickets,
+            record.bet_value_money,
+            record.bet_info_available,
         )
 
     def _safe_decimal(self, value: Any) -> Decimal | None:
@@ -626,7 +776,7 @@ async def main():
     await processor.initialize()
 
     try:
-        result = await processor.process_history_data(limit=10)  # Process more records
+        result = await processor.process_history_data(limit=25)  # Process more records
         print(f"History processing completed: {result}")
     finally:
         await processor.cleanup()

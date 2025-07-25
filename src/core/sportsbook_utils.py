@@ -24,7 +24,7 @@ class SportsbookResolver:
             try:
                 mappings = await conn.fetch("""
                     SELECT 
-                        m.external_id::integer as action_network_id,
+                        m.external_sportsbook_id::integer as action_network_id,
                         m.sportsbook_id,
                         s.display_name,
                         s.abbreviation
