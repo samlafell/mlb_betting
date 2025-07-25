@@ -3,7 +3,7 @@
 Three-Tier Pipeline Validation Tests
 
 Comprehensive testing framework for validating the RAW → STAGING → CURATED
-data pipeline architecture. This replaces any legacy core_betting schema testing.
+data pipeline architecture. This validates the new curated schema post-migration.
 
 Test Phases:
 - Phase 1: Database Schema Validation
@@ -287,34 +287,35 @@ class ThreeTierPipelineValidator:
             existing_table_names = [row["full_table_name"] for row in existing_tables]
             missing_tables = set(expected_staging_tables) - set(existing_table_names)
 
-            # Check for any legacy core_betting references (should be none)
-            legacy_check = await conn.fetch(
+            # Check for curated schema tables (should exist after migration)
+            curated_check = await conn.fetch(
                 """
                 SELECT schemaname || '.' || tablename as full_table_name
                 FROM pg_tables 
-                WHERE schemaname = 'core_betting'
+                WHERE schemaname = 'curated'
+                AND tablename IN ('games_complete', 'betting_lines_unified', 'game_outcomes')
                 """
             )
 
-            legacy_tables = [row["full_table_name"] for row in legacy_check]
+            curated_tables = [row["full_table_name"] for row in curated_check]
 
             result = {
                 "status": "passed"
-                if not missing_tables and not legacy_tables
+                if not missing_tables and len(curated_tables) >= 3
                 else "failed",
                 "expected_tables": expected_staging_tables,
                 "existing_tables": existing_table_names,
                 "missing_tables": list(missing_tables),
-                "legacy_tables_found": legacy_tables,
+                "curated_tables_found": curated_tables,
                 "test_name": "Staging Tables Validation",
             }
 
             if missing_tables:
                 result["error"] = f"Missing staging tables: {missing_tables}"
 
-            if legacy_tables:
+            if len(curated_tables) < 3:
                 result["error"] = (
-                    f"Legacy core_betting tables found (should be migrated): {legacy_tables}"
+                    f"Curated schema tables not found (post-migration): expected at least 3, found {len(curated_tables)}"
                 )
 
             return result
@@ -2066,7 +2067,7 @@ def _generate_recommendations(results: dict[str, Any]) -> list[str]:
         phase_1_tests = results["phases"]["phase_1"].get("tests", {})
         if phase_1_tests.get("staging_tables", {}).get("status") == "failed":
             recommendations.append(
-                "Migrate legacy core_betting schema tables to three-tier architecture"
+                "Complete curated schema setup - missing core tables post-migration"
             )
 
     # Check Phase 4 issues

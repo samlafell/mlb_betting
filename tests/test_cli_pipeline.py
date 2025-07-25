@@ -357,7 +357,7 @@ def test_pipeline_migrate_dry_run():
     assert result.exit_code == 0
     assert "DRY RUN MODE" in result.output
     assert "Migration Plan" in result.output
-    assert "core_betting.spreads" in result.output
+    assert "curated.spreads" in result.output
     print("  ✅ Pipeline migrate dry-run works correctly")
 
 
