@@ -43,9 +43,9 @@
 - **Database**: PostgreSQL with proper schema
 
 **Where Data Goes**:
-- Database: `core_betting.betting_lines_moneyline`
-- Database: `core_betting.betting_lines_spreads`
-- Database: `core_betting.betting_lines_totals`
+- Database: `curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'`
+- Database: `curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's`
+- Database: `curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'`
 - Test Reports: `current_season_test_output/`
 
 **Data Information**:

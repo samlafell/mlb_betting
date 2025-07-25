@@ -238,19 +238,19 @@ erDiagram
 ### Dashboard Views
 ```sql
 -- Overall quality dashboard
-core_betting.data_quality_dashboard
+curated.data_quality_dashboard
 
 -- Historical quality trends  
-core_betting.data_quality_trend
+curated.data_quality_trend
 
 -- Source-specific analysis
-core_betting.data_source_quality_analysis
+curated.data_source_quality_analysis
 
 -- Sportsbook mapping effectiveness
-core_betting.sportsbook_mapping_status
+curated.sportsbook_mapping_status
 
 -- Unmapped sportsbook analysis
-core_betting.unmapped_sportsbook_analysis
+curated.unmapped_sportsbook_analysis
 ```
 
 ### Current Data Quality Metrics (as of 2025-07-15)
@@ -323,9 +323,9 @@ GROUP BY strategy_name;
 ### Indexing Strategy
 ```sql
 -- Core betting tables
-CREATE INDEX idx_betting_lines_game_timestamp ON core_betting.betting_lines_moneyline(game_id, line_timestamp);
-CREATE INDEX idx_betting_lines_sportsbook ON core_betting.betting_lines_moneyline(sportsbook_id);
-CREATE INDEX idx_betting_lines_quality ON core_betting.betting_lines_moneyline(data_completeness_score);
+CREATE INDEX idx_betting_lines_game_timestamp ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'(game_id, line_timestamp);
+CREATE INDEX idx_betting_lines_sportsbook ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'(sportsbook_id);
+CREATE INDEX idx_betting_lines_quality ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'(data_completeness_score);
 
 -- Strategy analysis
 CREATE INDEX idx_strategy_results_game ON strategy_analysis.strategy_results(game_id, strategy_name);

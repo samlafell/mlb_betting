@@ -36,7 +36,7 @@ public.sbr_parsed_games (19,436 records) → raw_data.sbr_parsed_games
 #### **Migration to `core_betting`** (Core Business Data)
 ```sql
 -- Game outcomes for backtesting
-public.game_outcomes (1,281 records) → core_betting.game_outcomes
+public.game_outcomes (1,281 records) → curated.game_outcomes
 ```
 
 #### **Migration to `operational`** (System Operations)
@@ -60,22 +60,22 @@ public.test_table (1 record) → DELETE
 ### 🎯 **ACTION Schema → `core_betting`** (Team/Game Data)
 
 ```sql
--- Team reference data (enhance existing core_betting.teams)
-action.dim_teams (30 records) → MERGE with core_betting.teams
-action.teams_formatted (30 records) → MERGE with core_betting.teams
+-- Team reference data (enhance existing curated.teams_master)
+action.dim_teams (30 records) → MERGE with curated.teams_master
+action.teams_formatted (30 records) → MERGE with curated.teams_master
 
 -- Game data with Action Network IDs
-action.fact_games (15 records) → core_betting.action_network_games
-action.games_with_teams (15 records) → core_betting.action_network_games_enhanced
+action.fact_games (15 records) → curated.action_network_games
+action.games_with_teams (15 records) → curated.action_network_games_enhanced
 ```
 
-**Consolidation Strategy**: Enhance `core_betting.teams` with Action Network data and create dedicated Action Network game mapping tables.
+**Consolidation Strategy**: Enhance `curated.teams_master` with Action Network data and create dedicated Action Network game mapping tables.
 
 ### 🔄 **SPLITS Schema → `core_betting` + `analytics`**
 
 ```sql
 -- Supplementary game data
-splits.games (252 records) → core_betting.supplementary_games
+splits.games (252 records) → curated.games_complete
 
 -- Sharp action detection results  
 splits.sharp_actions (0 records) → analytics.sharp_action_indicators

@@ -29,23 +29,23 @@ The data collection system is **NOT** working as previously reported. Here's wha
 ### **Current Database State:**
 ```sql
 -- Games table: 1,628 games (mostly historical + recent mock data)
-SELECT COUNT(*) FROM core_betting.games;
+SELECT COUNT(*) FROM curated.games_complete;
 -- Result: 1,628
 
 -- Moneyline records: 8,857 (historical data)
-SELECT COUNT(*) FROM core_betting.betting_lines_moneyline;
+SELECT COUNT(*) FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline';
 -- Result: 8,857
 
 -- Spreads records: 9,611 (historical data)
-SELECT COUNT(*) FROM core_betting.betting_lines_spreads;
+SELECT COUNT(*) FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's;
 -- Result: 9,611
 
 -- Totals records: 7,895 (historical data)
-SELECT COUNT(*) FROM core_betting.betting_lines_totals;
+SELECT COUNT(*) FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals';
 -- Result: 7,895
 
 -- Betting splits: 0 (NO CURRENT DATA)
-SELECT COUNT(*) FROM core_betting.betting_splits;
+SELECT COUNT(*) FROM curated.betting_splits;
 -- Result: 0
 
 -- Raw betting splits: 0 (NO CURRENT DATA)
@@ -57,7 +57,7 @@ SELECT COUNT(*) FROM raw_data.raw_mlb_betting_splits;
 ```sql
 -- Recent games are MOCK DATA
 SELECT sportsbookreview_game_id, home_team, away_team, game_date 
-FROM core_betting.games 
+FROM curated.games_complete 
 WHERE game_date = '2025-07-11' 
 LIMIT 5;
 

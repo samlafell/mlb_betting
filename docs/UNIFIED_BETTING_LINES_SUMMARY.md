@@ -9,9 +9,9 @@ The unified betting lines system consolidates all data sources (SportsBetting Re
 ### ✅ Completed Components
 
 1. **Schema Design**
-   - ✅ `core_betting.betting_lines_moneyline` - 8,870 records active
-   - ✅ `core_betting.betting_lines_totals` - 7,895 records active  
-   - ✅ `core_betting.betting_lines_spread` - Newly created with unified schema
+   - ✅ `curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'` - 8,870 records active
+   - ✅ `curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'` - 7,895 records active  
+   - ✅ `curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread'` - Newly created with unified schema
 
 2. **Core Infrastructure**
    - ✅ `UnifiedBettingLinesCollector` - Abstract base class for all collectors
@@ -180,7 +180,7 @@ SELECT
     away_ml,
     data_completeness_score,
     odds_timestamp
-FROM core_betting.betting_lines_moneyline
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
 WHERE game_id = 12345
 ORDER BY odds_timestamp DESC;
 ```
@@ -192,7 +192,7 @@ SELECT
     COUNT(*) as total_records,
     AVG(data_completeness_score) as avg_completeness,
     COUNT(CASE WHEN data_quality = 'HIGH' THEN 1 END) as high_quality_records
-FROM core_betting.betting_lines_moneyline
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
 GROUP BY source;
 ```
 
@@ -204,8 +204,8 @@ SELECT DISTINCT
     g.away_team,
     COUNT(DISTINCT ml.source) as source_count,
     COUNT(CASE WHEN ml.sharp_action IS NOT NULL THEN 1 END) as sharp_indicators
-FROM core_betting.games g
-JOIN core_betting.betting_lines_moneyline ml ON g.id = ml.game_id
+FROM curated.games_complete g
+JOIN curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' ml ON g.id = ml.game_id
 WHERE ml.sharp_action IN ('HEAVY', 'MODERATE')
 GROUP BY g.mlb_game_id, g.home_team, g.away_team
 HAVING COUNT(DISTINCT ml.source) >= 2;

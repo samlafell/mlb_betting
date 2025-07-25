@@ -27,7 +27,7 @@ Your current system already has a strong foundation for data collection separati
 ### ⚠️ **Areas Needing Pipeline Enhancement**
 
 1. **Direct-to-Production Data Writes** ⚠️
-   - Current: Programs write directly to `core_betting.spreads`, `core_betting.totals`, `core_betting.moneylines`
+   - Current: Programs write directly to `curated.spreads`, `curated.totals`, `curated.moneylines`
    - Issue: No raw data preservation, no processing lineage
    - Risk: Data loss, difficult debugging, no rollback capability
 
@@ -174,19 +174,19 @@ CREATE SCHEMA staging;
 CREATE SCHEMA curated;
 
 -- Create raw betting line tables (NEW - captures source data)
-CREATE TABLE raw_data.spreads_raw AS SELECT * FROM core_betting.spreads WHERE 1=0;
-CREATE TABLE raw_data.totals_raw AS SELECT * FROM core_betting.totals WHERE 1=0;
-CREATE TABLE raw_data.moneylines_raw AS SELECT * FROM core_betting.moneylines WHERE 1=0;
+CREATE TABLE raw_data.spreads_raw AS SELECT * FROM curated.spreads WHERE 1=0;
+CREATE TABLE raw_data.totals_raw AS SELECT * FROM curated.totals WHERE 1=0;
+CREATE TABLE raw_data.moneylines_raw AS SELECT * FROM curated.moneylines WHERE 1=0;
 
 -- Create staging betting line tables (cleaned data)
-CREATE TABLE staging.spreads AS SELECT * FROM core_betting.spreads WHERE 1=0;
-CREATE TABLE staging.totals AS SELECT * FROM core_betting.totals WHERE 1=0;  
-CREATE TABLE staging.moneylines AS SELECT * FROM core_betting.moneylines WHERE 1=0;
+CREATE TABLE staging.spreads AS SELECT * FROM curated.spreads WHERE 1=0;
+CREATE TABLE staging.totals AS SELECT * FROM curated.totals WHERE 1=0;  
+CREATE TABLE staging.moneylines AS SELECT * FROM curated.moneylines WHERE 1=0;
 
 -- Migrate existing data to staging (current data becomes cleaned data)
-INSERT INTO staging.spreads SELECT * FROM core_betting.spreads;
-INSERT INTO staging.totals SELECT * FROM core_betting.totals;
-INSERT INTO staging.moneylines SELECT * FROM core_betting.moneylines;
+INSERT INTO staging.spreads SELECT * FROM curated.spreads;
+INSERT INTO staging.totals SELECT * FROM curated.totals;
+INSERT INTO staging.moneylines SELECT * FROM curated.moneylines;
 
 -- Keep core_betting as curated zone initially, rename later
 -- RENAME core_betting TO curated; (after testing)
@@ -270,7 +270,7 @@ class FeatureEngineer:
 
 **Current Flow** (Direct to core_betting):
 ```
-Action Network/VSIN/SBD → Collection → core_betting.spreads/totals/moneylines → Analysis
+Action Network/VSIN/SBD → Collection → curated.spreads/totals/moneylines → Analysis
 ```
 
 **Enhanced Pipeline Flow** (Proper Data Lineage):

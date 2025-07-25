@@ -18,7 +18,7 @@ The MLB Sharp Betting System schema consolidation has been **successfully implem
 ### ✅ Phase 2A: Data Migration (COMPLETED)
 - **Status**: COMPLETED SUCCESSFULLY
 - **Successfully Migrated**:
-  - `action.dim_teams` → `core_betting.teams` (30 records)
+  - `action.dim_teams` → `curated.teams_master` (30 records)
   - `timing_analysis.timing_bucket_performance` → `analytics.timing_analysis_results` (3 records)
   - `clean.betting_recommendations` → `analytics.betting_recommendations` (0 records)
   - Raw data tables structure validated
@@ -54,10 +54,10 @@ The MLB Sharp Betting System schema consolidation has been **successfully implem
 
 ### ✅ Phase 4: Functional Validation (COMPLETED)
 - **Test Migration**: Successfully migrated sample data to new schema
-  - Created 3 test games in `core_betting.games`
-  - Migrated 20 moneyline records to `core_betting.betting_lines_moneyline`
-  - Migrated 20 spreads records to `core_betting.betting_lines_spreads`
-  - Migrated 20 totals records to `core_betting.betting_lines_totals`
+  - Created 3 test games in `curated.games_complete`
+  - Migrated 20 moneyline records to `curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'`
+  - Migrated 20 spreads records to `curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's`
+  - Migrated 20 totals records to `curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'`
 - **Unified Queries**: ✅ Working across all bet types with proper joins
 - **Foreign Key Relationships**: ✅ Enforced correctly
 

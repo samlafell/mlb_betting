@@ -93,7 +93,7 @@
 ```bash
 uv run python -m sportsbookreview.tests.current_season_integration_test
 ```
-- **Output**: PostgreSQL tables (`core_betting.*`)
+- **Output**: PostgreSQL tables (`curated.*`)
 - **Data**: Moneyline, spreads, totals for all MLB games
 - **Performance**: 0.000s average response time
 - **Reliability**: 100% success rate

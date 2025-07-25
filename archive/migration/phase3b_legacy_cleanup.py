@@ -206,10 +206,10 @@ class Phase3BLegacyCleanup:
 
             # Check that new schema tables have data
             new_schema_tables = [
-                ("core_betting.betting_lines_moneyline", "moneyline"),
-                ("core_betting.betting_lines_spreads", "spreads"),
-                ("core_betting.betting_lines_totals", "totals"),
-                ("core_betting.games", "games"),
+                ("curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'", "moneyline"),
+                ("curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's", "spreads"),
+                ("curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'", "totals"),
+                ("curated.games_complete", "games"),
             ]
 
             with self.db_manager.get_cursor() as cursor:
@@ -386,15 +386,15 @@ class Phase3BLegacyCleanup:
             comparisons = [
                 (
                     "moneyline",
-                    "core_betting.betting_lines_moneyline",
+                    "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'",
                     "mlb_betting.moneyline",
                 ),
                 (
                     "spreads",
-                    "core_betting.betting_lines_spreads",
+                    "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's",
                     "mlb_betting.spreads",
                 ),
-                ("totals", "core_betting.betting_lines_totals", "mlb_betting.totals"),
+                ("totals", "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'", "mlb_betting.totals"),
             ]
 
             with self.db_manager.get_cursor() as cursor:
@@ -538,7 +538,7 @@ class Phase3BLegacyCleanup:
 
                     if cursor.fetchone()[0]:
                         # Check if this conflicts with new schema
-                        cursor.execute("SELECT COUNT(*) FROM core_betting.games")
+                        cursor.execute("SELECT COUNT(*) FROM curated.games_complete")
                         new_games_count = cursor.fetchone()[0]
 
                         if new_games_count > 0:
@@ -634,10 +634,10 @@ class Phase3BLegacyCleanup:
 
                 # Check that new schema tables are still functional
                 new_tables = [
-                    "core_betting.betting_lines_moneyline",
-                    "core_betting.betting_lines_spreads",
-                    "core_betting.betting_lines_totals",
-                    "core_betting.games",
+                    "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'",
+                    "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's",
+                    "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'",
+                    "curated.games_complete",
                 ]
 
                 for table in new_tables:

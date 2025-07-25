@@ -292,7 +292,7 @@ The unified architecture now has complete strategy processing capabilities. The 
 3. **MLB Stats API** → Official game data, schedules, venues
 
 **Data Storage:**
-- **PostgreSQL**: `core_betting.*` tables (operational)
+- **PostgreSQL**: `curated.*` tables (operational)
 - **JSON Files**: Action Network output files
 - **Test Reports**: Comprehensive integration test results
 

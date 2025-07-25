@@ -9,7 +9,7 @@ Analysis of three core betting lines tables reveals significant data quality iss
 ### Table Schemas Overview
 
 **Common Pattern Across All Tables:**
-- Foreign key relationships to `core_betting.games` and `core_betting.sportsbooks`
+- Foreign key relationships to `curated.games_complete` and `curated.sportsbooks`
 - Timestamp tracking (`odds_timestamp`, `created_at`, `updated_at`)
 - Game information (populated via triggers)
 - Source tracking (`ACTION_NETWORK`, `SPORTSBOOKREVIEW`)
@@ -17,7 +17,7 @@ Analysis of three core betting lines tables reveals significant data quality iss
 
 ### Critical Data Quality Issues
 
-#### 1. **Moneyline Table (`core_betting.betting_lines_moneyline`)**
+#### 1. **Moneyline Table (`curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'`)**
 - **Total Rows**: 8,869
 - **Major Issues**:
   - `sportsbook_id`: Only 12/8,869 rows populated (99.9% null)
@@ -25,7 +25,7 @@ Analysis of three core betting lines tables reveals significant data quality iss
   - `home_bets_percentage`: Only 10/8,869 rows populated (99.9% null)
   - Core odds data (`home_ml`): 8,821/8,869 populated (99.5% filled)
 
-#### 2. **Spreads Table (`core_betting.betting_lines_spreads`)**
+#### 2. **Spreads Table (`curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's`)**
 - **Total Rows**: 9,611
 - **Major Issues**:
   - `sportsbook_id`: 0/9,611 rows populated (100% null)
@@ -33,7 +33,7 @@ Analysis of three core betting lines tables reveals significant data quality iss
   - `home_bets_percentage`: 0/9,611 rows populated (100% null)
   - Core spread data (`home_spread`): 9,611/9,611 populated (100% filled)
 
-#### 3. **Totals Table (`core_betting.betting_lines_totals`)**
+#### 3. **Totals Table (`curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'`)**
 - **Total Rows**: 7,895
 - **Major Issues**:
   - `sportsbook_id`: 0/7,895 rows populated (100% null)
@@ -56,7 +56,7 @@ Analysis of three core betting lines tables reveals significant data quality iss
 ## Root Cause Analysis
 
 ### 1. **Sportsbook ID Mapping Failure**
-- Tables have foreign key constraints to `core_betting.sportsbooks`
+- Tables have foreign key constraints to `curated.sportsbooks`
 - Action Network uses different sportsbook identifiers
 - Mapping logic fails to resolve sportsbook names to database IDs
 - Results in 99-100% null values for `sportsbook_id`
@@ -83,9 +83,9 @@ Analysis of three core betting lines tables reveals significant data quality iss
 #### 1.1 Sportsbook ID Resolution System
 ```sql
 -- Create mapping table for external sportsbook identifiers
-CREATE TABLE core_betting.sportsbook_external_mappings (
+CREATE TABLE curated.sportsbook_mappings (
     id SERIAL PRIMARY KEY,
-    sportsbook_id INTEGER REFERENCES core_betting.sportsbooks(id),
+    sportsbook_id INTEGER REFERENCES curated.sportsbooks(id),
     external_source VARCHAR(50) NOT NULL,
     external_id VARCHAR(100) NOT NULL,
     external_name VARCHAR(100),
@@ -94,11 +94,11 @@ CREATE TABLE core_betting.sportsbook_external_mappings (
 );
 
 -- Populate Action Network mappings
-INSERT INTO core_betting.sportsbook_external_mappings 
+INSERT INTO curated.sportsbook_mappings 
 (sportsbook_id, external_source, external_id, external_name) VALUES
-((SELECT id FROM core_betting.sportsbooks WHERE name = 'DraftKings'), 'ACTION_NETWORK', '15', 'DraftKings'),
-((SELECT id FROM core_betting.sportsbooks WHERE name = 'FanDuel'), 'ACTION_NETWORK', '30', 'FanDuel'),
-((SELECT id FROM core_betting.sportsbooks WHERE name = 'BetMGM'), 'ACTION_NETWORK', '68', 'BetMGM');
+((SELECT id FROM curated.sportsbooks WHERE name = 'DraftKings'), 'ACTION_NETWORK', '15', 'DraftKings'),
+((SELECT id FROM curated.sportsbooks WHERE name = 'FanDuel'), 'ACTION_NETWORK', '30', 'FanDuel'),
+((SELECT id FROM curated.sportsbooks WHERE name = 'BetMGM'), 'ACTION_NETWORK', '68', 'BetMGM');
 ```
 
 #### 1.2 Enhanced Data Validation Triggers
@@ -110,8 +110,8 @@ BEGIN
     -- Resolve sportsbook_id if null but sportsbook name provided
     IF NEW.sportsbook_id IS NULL AND NEW.sportsbook IS NOT NULL THEN
         SELECT s.id INTO NEW.sportsbook_id 
-        FROM core_betting.sportsbooks s
-        JOIN core_betting.sportsbook_external_mappings m ON s.id = m.sportsbook_id
+        FROM curated.sportsbooks s
+        JOIN curated.sportsbook_mappings m ON s.id = m.sportsbook_id
         WHERE m.external_name = NEW.sportsbook 
         AND m.external_source = NEW.source;
     END IF;
@@ -132,7 +132,7 @@ $$ LANGUAGE plpgsql;
 
 -- Apply to all betting lines tables
 CREATE TRIGGER validate_moneyline_data 
-    BEFORE INSERT OR UPDATE ON core_betting.betting_lines_moneyline 
+    BEFORE INSERT OR UPDATE ON curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' 
     FOR EACH ROW EXECUTE FUNCTION validate_betting_lines_data();
 ```
 
@@ -141,13 +141,13 @@ CREATE TRIGGER validate_moneyline_data
 #### 2.1 Add Data Completeness Tracking
 ```sql
 -- Add completeness score to each table
-ALTER TABLE core_betting.betting_lines_moneyline 
+ALTER TABLE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' 
 ADD COLUMN data_completeness_score DECIMAL(3,2) DEFAULT 0.0;
 
-ALTER TABLE core_betting.betting_lines_spreads 
+ALTER TABLE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's 
 ADD COLUMN data_completeness_score DECIMAL(3,2) DEFAULT 0.0;
 
-ALTER TABLE core_betting.betting_lines_totals 
+ALTER TABLE curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' 
 ADD COLUMN data_completeness_score DECIMAL(3,2) DEFAULT 0.0;
 ```
 
@@ -161,7 +161,7 @@ SELECT
     AVG(CASE WHEN sharp_action IS NOT NULL THEN 1.0 ELSE 0.0 END) * 100 as sharp_action_pct,
     AVG(CASE WHEN home_bets_percentage IS NOT NULL THEN 1.0 ELSE 0.0 END) * 100 as betting_pct_pct,
     AVG(data_completeness_score) as avg_completeness
-FROM core_betting.betting_lines_moneyline
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
 UNION ALL
 SELECT 
     'spreads' as table_name,
@@ -170,7 +170,7 @@ SELECT
     AVG(CASE WHEN sharp_action IS NOT NULL THEN 1.0 ELSE 0.0 END) * 100 as sharp_action_pct,
     AVG(CASE WHEN home_bets_percentage IS NOT NULL THEN 1.0 ELSE 0.0 END) * 100 as betting_pct_pct,
     AVG(data_completeness_score) as avg_completeness
-FROM core_betting.betting_lines_spreads;
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's;
 ```
 
 ### Phase 3: Program-Specific Improvements
@@ -186,8 +186,8 @@ async def resolve_sportsbook_id(self, external_id: str, source: str = "ACTION_NE
     async with self.connection.get() as conn:
         result = await conn.fetchrow("""
             SELECT s.id 
-            FROM core_betting.sportsbooks s
-            JOIN core_betting.sportsbook_external_mappings m ON s.id = m.sportsbook_id
+            FROM curated.sportsbooks s
+            JOIN curated.sportsbook_mappings m ON s.id = m.sportsbook_id
             WHERE m.external_id = $1 AND m.external_source = $2
         """, external_id, source)
         return result['id'] if result else None

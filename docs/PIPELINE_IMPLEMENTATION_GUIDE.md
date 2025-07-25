@@ -144,7 +144,7 @@ uv run -m src.interfaces.cli pipeline run --dry-run
 
 **Before (Direct to Production):**
 ```
-Action Network/VSIN/SBD → Collection → core_betting.spreads/totals/moneylines → Analysis
+Action Network/VSIN/SBD → Collection → curated.spreads/totals/moneylines → Analysis
 ```
 
 **After (Proper Data Lineage):**
@@ -181,7 +181,7 @@ Betting Lines     spreads_raw   spreads       spreads         ML Models
 **Modify Existing Collectors:**
 ```python
 # Old approach (direct to core_betting)
-await connection.execute("INSERT INTO core_betting.spreads ...")
+await connection.execute("INSERT INTO curated.spreads ...")
 
 # New approach (through RAW zone)
 from src.data.pipeline.raw_zone_adapter import create_raw_zone_adapter

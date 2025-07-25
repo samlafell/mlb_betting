@@ -315,21 +315,21 @@ class Phase3TestSuite:
             new_schema_queries = [
                 (
                     "moneyline_count",
-                    "SELECT COUNT(*) FROM core_betting.betting_lines_moneyline",
+                    "SELECT COUNT(*) FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'",
                 ),
                 (
                     "spreads_count",
-                    "SELECT COUNT(*) FROM core_betting.betting_lines_spreads",
+                    "SELECT COUNT(*) FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's",
                 ),
                 (
                     "totals_count",
-                    "SELECT COUNT(*) FROM core_betting.betting_lines_totals",
+                    "SELECT COUNT(*) FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'",
                 ),
-                ("games_count", "SELECT COUNT(*) FROM core_betting.games"),
+                ("games_count", "SELECT COUNT(*) FROM curated.games_complete"),
                 (
                     "recent_moneyline",
                     """
-                    SELECT COUNT(*) FROM core_betting.betting_lines_moneyline 
+                    SELECT COUNT(*) FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' 
                     WHERE created_at >= %s
                 """,
                 ),
@@ -399,15 +399,15 @@ class Phase3TestSuite:
             comparisons = [
                 (
                     "moneyline",
-                    "core_betting.betting_lines_moneyline",
+                    "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'",
                     "mlb_betting.moneyline",
                 ),
                 (
                     "spreads",
-                    "core_betting.betting_lines_spreads",
+                    "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's",
                     "mlb_betting.spreads",
                 ),
-                ("totals", "core_betting.betting_lines_totals", "mlb_betting.totals"),
+                ("totals", "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'", "mlb_betting.totals"),
             ]
 
             with self.db_manager.get_cursor() as cursor:

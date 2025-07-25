@@ -317,7 +317,7 @@ class CuratedAnalyticsBuilder:
 -- Add to analytics schema for ML features
 CREATE TABLE analytics.feature_vectors (
     id SERIAL PRIMARY KEY,
-    game_id INTEGER REFERENCES core_betting.games(id),
+    game_id INTEGER REFERENCES curated.games_complete(id),
     feature_set_version VARCHAR(10) NOT NULL,
     
     -- Sharp action features

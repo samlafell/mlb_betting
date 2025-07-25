@@ -113,7 +113,7 @@ class Phase2AMigrationTester:
 
             for table in primary_tables:
                 table_name = self.table_registry.get_table(table)
-                if not table_name.startswith(("core_betting.", "analytics.")):
+                if not table_name.startswith(("curated.", "analytics.")):
                     return {
                         "success": False,
                         "error": f"Table {table} not mapped to new schema: {table_name}",

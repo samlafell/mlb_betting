@@ -75,16 +75,16 @@ The migration is designed to be **NON-DESTRUCTIVE** and performed in phases to m
 
 | New Table | Source Schema.Table | Description |
 |-----------|---------------------|-------------|
-| `core_betting.games` | `public.games` + `splits.games` | Unified games table |
-| `core_betting.game_outcomes` | `public.game_outcomes` | Game results for backtesting |
-| `core_betting.teams` | `action.dim_teams` | Team reference data |
-| `core_betting.betting_lines_moneyline` | `mlb_betting.moneyline` | Moneyline betting data |
-| `core_betting.betting_lines_spreads` | `mlb_betting.spreads` | Spread betting data |
-| `core_betting.betting_lines_totals` | `mlb_betting.totals` | Totals betting data |
-| `core_betting.betting_splits` | *Derived* | Aggregated betting splits |
-| `core_betting.sharp_action_indicators` | *New* | Sharp action detection |
-| `core_betting.line_movements` | *New* | Line movement tracking |
-| `core_betting.steam_moves` | *New* | Steam move detection |
+| `curated.games_complete` | `public.games` + `splits.games` | Unified games table |
+| `curated.game_outcomes` | `public.game_outcomes` | Game results for backtesting |
+| `curated.teams_master` | `action.dim_teams` | Team reference data |
+| `curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'` | `mlb_betting.moneyline` | Moneyline betting data |
+| `curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's` | `mlb_betting.spreads` | Spread betting data |
+| `curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'` | `mlb_betting.totals` | Totals betting data |
+| `curated.betting_splits` | *Derived* | Aggregated betting splits |
+| `curated.sharp_action_indicators` | *New* | Sharp action detection |
+| `curated.line_movements` | *New* | Line movement tracking |
+| `curated.steam_moves` | *New* | Steam move detection |
 
 ### 3. ANALYTICS Schema
 **Purpose**: Derived analytics, signals, and strategy outputs
@@ -251,7 +251,7 @@ SELECT 'new' as source, COUNT(*) FROM raw_data.raw_mlb_betting_splits;
 -- Check game outcomes migration
 SELECT 'old' as source, COUNT(*) FROM public.game_outcomes
 UNION ALL  
-SELECT 'new' as source, COUNT(*) FROM core_betting.game_outcomes;
+SELECT 'new' as source, COUNT(*) FROM curated.game_outcomes;
 
 -- Verify strategy performance migration
 SELECT 'old' as source, COUNT(*) FROM backtesting.strategy_performance

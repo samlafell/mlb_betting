@@ -2,13 +2,13 @@
 
 ## Overview
 
-The Game Outcome Service automatically checks for completed MLB games and updates the `core_betting.game_outcomes` table with final scores and betting outcomes. This service is now integrated with the Action Network flow to ensure game outcomes are updated whenever the Action Network pipeline runs.
+The Game Outcome Service automatically checks for completed MLB games and updates the `curated.game_outcomes` table with final scores and betting outcomes. This service is now integrated with the Action Network flow to ensure game outcomes are updated whenever the Action Network pipeline runs.
 
 ## Features
 
 - **Automatic Game Outcome Checking**: Fetches completed games from MLB-StatsAPI
 - **Betting Outcome Calculations**: Calculates home_win, over/under, and spread cover results
-- **Database Integration**: Updates the `core_betting.game_outcomes` table
+- **Database Integration**: Updates the `curated.game_outcomes` table
 - **Time Zone Handling**: Converts UTC times to EST as required
 - **Action Network Integration**: Seamlessly integrates with existing Action Network workflow
 - **CLI Commands**: Provides comprehensive CLI interface for manual operations
@@ -58,12 +58,12 @@ The service is implemented in `src/services/game_outcome_service.py` with the fo
 
 ## Database Schema
 
-The service updates the `core_betting.game_outcomes` table with the following structure:
+The service updates the `curated.game_outcomes` table with the following structure:
 
 ```sql
-CREATE TABLE core_betting.game_outcomes (
+CREATE TABLE curated.game_outcomes (
     id SERIAL PRIMARY KEY,
-    game_id INTEGER NOT NULL REFERENCES core_betting.games(id),
+    game_id INTEGER NOT NULL REFERENCES curated.games_complete(id),
     home_team VARCHAR(5) NOT NULL,
     away_team VARCHAR(5) NOT NULL,
     home_score INTEGER NOT NULL,
@@ -251,7 +251,7 @@ Potential future improvements:
    - Verify MLB API is accessible
 
 3. **Missing Game Data**
-   - Ensure games exist in `core_betting.games` table
+   - Ensure games exist in `curated.games_complete` table
    - Check `mlb_stats_api_game_id` is populated
 
 4. **Import Errors**

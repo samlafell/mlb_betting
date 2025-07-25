@@ -34,13 +34,13 @@ After running both SQL scripts, you can verify the deployment with these queries
 
 ### Check if mapping table was created:
 ```sql
-SELECT COUNT(*) FROM core_betting.sportsbook_external_mappings;
+SELECT COUNT(*) FROM curated.sportsbook_mappings;
 -- Should return > 0 (some pre-populated mappings)
 ```
 
 ### Check if data quality views were created:
 ```sql
-SELECT * FROM core_betting.data_quality_dashboard;
+SELECT * FROM curated.data_quality_dashboard;
 -- Should show quality metrics for all 3 betting lines tables
 ```
 
@@ -65,14 +65,14 @@ WHERE table_schema = 'core_betting'
 Check progress with:
 ```sql
 -- Overall quality status
-SELECT * FROM core_betting.data_quality_dashboard;
+SELECT * FROM curated.data_quality_dashboard;
 
 -- Recent quality trends
-SELECT * FROM core_betting.data_quality_trend 
+SELECT * FROM curated.data_quality_trend 
 WHERE quality_date >= CURRENT_DATE - INTERVAL '7 days';
 
 -- Sportsbook mapping effectiveness
-SELECT * FROM core_betting.sportsbook_mapping_status;
+SELECT * FROM curated.sportsbook_mapping_status;
 ```
 
 ## Next Steps

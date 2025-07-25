@@ -49,12 +49,12 @@ Phase 4 of the schema consolidation project has been **successfully planned and 
 ### ⚠️ **Data Structure Incompatibilities Discovered**
 1. **Game Outcomes**: 
    - `public.game_outcomes` uses text game_ids ("test_sharp_action_001")
-   - `core_betting.game_outcomes` expects integer game_ids
+   - `curated.game_outcomes` expects integer game_ids
    - **Resolution**: Requires data transformation or separate table structure
 
 2. **Action Network Data**:
    - Complex relational structure with team mappings
-   - **Resolution**: Enhance existing `core_betting.teams` with Action Network data
+   - **Resolution**: Enhance existing `curated.teams_master` with Action Network data
 
 3. **Test/Temporary Data**:
    - Multiple test tables in `public` schema (850+ records)
@@ -64,8 +64,8 @@ Phase 4 of the schema consolidation project has been **successfully planned and 
 
 #### **Immediate Actions (High Priority)**
 1. **Clean Up Test Data**: Remove test/benchmark tables from `public` schema
-2. **Action Network Enhancement**: Merge Action Network team data into `core_betting.teams`
-3. **Splits Data Migration**: Move `splits.games` to `core_betting.supplementary_games`
+2. **Action Network Enhancement**: Merge Action Network team data into `curated.teams_master`
+3. **Splits Data Migration**: Move `splits.games` to `curated.games_complete`
 
 #### **Strategic Actions (Medium Priority)**
 1. **Strategy Management Consolidation**: Consolidate `tracking` and `backtesting` strategy data

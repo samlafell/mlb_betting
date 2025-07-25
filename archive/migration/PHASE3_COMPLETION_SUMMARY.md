@@ -61,10 +61,10 @@ The MLB Sharp Betting System schema consolidation has passed all Phase 3 validat
 - `public.games`: 1,619 records
 
 **New Consolidated Tables (Migrated + Active):**
-- `core_betting.betting_lines_moneyline`: 8,857 records (+22 vs legacy)
-- `core_betting.betting_lines_spreads`: 9,611 records (+16 vs legacy)
-- `core_betting.betting_lines_totals`: 7,895 records (+20 vs legacy)
-- `core_betting.games`: 1,624 records (+5 vs legacy)
+- `curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'`: 8,857 records (+22 vs legacy)
+- `curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's`: 9,611 records (+16 vs legacy)
+- `curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'`: 7,895 records (+20 vs legacy)
+- `curated.games_complete`: 1,624 records (+5 vs legacy)
 
 ### Service Migration Status
 
@@ -144,7 +144,7 @@ The MLB Sharp Betting System schema consolidation has passed all Phase 3 validat
 - `clean` (1 table: betting_recommendations)
 
 **Tables for Deletion:**
-- `public.games` (replaced by `core_betting.games`)
+- `public.games` (replaced by `curated.games_complete`)
 
 **Total Removal:** 5 schemas + 14 tables
 

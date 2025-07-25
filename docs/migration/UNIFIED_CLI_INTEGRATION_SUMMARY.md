@@ -24,7 +24,7 @@
 ### **1. Fixed VSIN/SBD Database Issues**
 - **✅ Added missing `process_games_from_betting_splits` method** to GameManager
 - **✅ Fixed database column mapping** (game_id → sportsbookreview_game_id)
-- **✅ Updated schema compatibility** for core_betting.games table
+- **✅ Updated schema compatibility** for curated.games_complete table
 - **✅ Resolved import path issues** in Action Network system
 
 ### **2. Connected Real Data Collectors to Unified CLI**

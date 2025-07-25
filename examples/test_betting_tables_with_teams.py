@@ -37,7 +37,7 @@ async def test_betting_tables_with_teams():
                 total_line,
                 over_price,
                 under_price
-            FROM core_betting.betting_lines_totals 
+            FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' 
             WHERE home_team IS NOT NULL 
             ORDER BY game_datetime DESC 
             LIMIT 5;
@@ -64,7 +64,7 @@ async def test_betting_tables_with_teams():
                 sportsbook,
                 home_ml,
                 away_ml
-            FROM core_betting.betting_lines_moneyline 
+            FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' 
             WHERE home_team IS NOT NULL 
             ORDER BY game_datetime DESC 
             LIMIT 5;
@@ -92,7 +92,7 @@ async def test_betting_tables_with_teams():
                 away_spread,
                 home_spread_price,
                 away_spread_price
-            FROM core_betting.betting_lines_spreads 
+            FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's 
             WHERE home_team IS NOT NULL 
             ORDER BY game_datetime DESC 
             LIMIT 5;
@@ -120,7 +120,7 @@ async def test_betting_tables_with_teams():
                 total_line,
                 over_price,
                 under_price
-            FROM core_betting.betting_lines_totals 
+            FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' 
             WHERE (home_team = 'ATL' OR away_team = 'ATL')
             AND home_team IS NOT NULL
             ORDER BY game_datetime DESC 
@@ -146,7 +146,7 @@ async def test_betting_tables_with_teams():
                 COUNT(game_datetime) as with_datetime,
                 COUNT(home_team) as with_home_team,
                 COUNT(away_team) as with_away_team
-            FROM core_betting.betting_lines_totals
+            FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'
             
             UNION ALL
             
@@ -156,7 +156,7 @@ async def test_betting_tables_with_teams():
                 COUNT(game_datetime) as with_datetime,
                 COUNT(home_team) as with_home_team,
                 COUNT(away_team) as with_away_team
-            FROM core_betting.betting_lines_moneyline
+            FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'
             
             UNION ALL
             
@@ -166,7 +166,7 @@ async def test_betting_tables_with_teams():
                 COUNT(game_datetime) as with_datetime,
                 COUNT(home_team) as with_home_team,
                 COUNT(away_team) as with_away_team
-            FROM core_betting.betting_lines_spreads;
+            FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's;
         """
 
         count_results = await conn.fetch(count_query)
@@ -188,7 +188,7 @@ async def test_betting_tables_with_teams():
                 COUNT(DISTINCT CONCAT(home_team, '-', away_team)) as unique_games,
                 COUNT(*) as total_betting_records,
                 STRING_AGG(DISTINCT sportsbook, ', ') as sportsbooks
-            FROM core_betting.betting_lines_totals 
+            FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals' 
             WHERE home_team IS NOT NULL 
             AND game_datetime >= NOW() - INTERVAL '7 days'
             GROUP BY DATE(game_datetime)

@@ -11,12 +11,12 @@ Successfully implemented a comprehensive data quality improvement system for bet
 #### 1. Sportsbook External Mapping System
 **File**: `sql/improvements/01_sportsbook_mapping_system.sql`
 
-- **New Table**: `core_betting.sportsbook_external_mappings`
+- **New Table**: `curated.sportsbook_mappings`
   - Maps external sportsbook IDs to internal database IDs
   - Supports multiple data sources (ACTION_NETWORK, SPORTSBOOKREVIEW)
   - Pre-populated with common Action Network sportsbook mappings
 
-- **Resolution Function**: `core_betting.resolve_sportsbook_id()`
+- **Resolution Function**: `curated.resolve_sportsbook_id()`
   - Intelligent sportsbook ID resolution from external identifiers
   - Supports fallback mechanisms for name-based matching
   - Handles multiple data source formats
@@ -43,7 +43,7 @@ Successfully implemented a comprehensive data quality improvement system for bet
 **File**: `sql/improvements/02_data_validation_and_completeness.sql`
 
 - **New Columns**: Added `data_completeness_score` to all betting lines tables
-- **Validation Function**: `core_betting.validate_and_score_betting_lines_data()`
+- **Validation Function**: `curated.validate_and_score_betting_lines_data()`
   - Automatic sportsbook ID resolution
   - Real-time data completeness scoring
   - Dynamic data quality classification (HIGH/MEDIUM/LOW)
@@ -51,10 +51,10 @@ Successfully implemented a comprehensive data quality improvement system for bet
 
 #### 2. Data Quality Monitoring Views
 
-- **`core_betting.data_quality_dashboard`**: Overall quality metrics
-- **`core_betting.data_quality_trend`**: Historical quality tracking
-- **`core_betting.data_source_quality_analysis`**: Source-specific analysis
-- **`core_betting.sportsbook_mapping_status`**: Mapping effectiveness metrics
+- **`curated.data_quality_dashboard`**: Overall quality metrics
+- **`curated.data_quality_trend`**: Historical quality tracking
+- **`curated.data_source_quality_analysis`**: Source-specific analysis
+- **`curated.sportsbook_mapping_status`**: Mapping effectiveness metrics
 
 ### Phase 3: Sharp Action Integration ✅
 
@@ -136,17 +136,17 @@ uv run -m mlb_sharp_betting.cli.commands.data_quality_improvement health
 
 ```sql
 -- Overall quality dashboard
-SELECT * FROM core_betting.data_quality_dashboard;
+SELECT * FROM curated.data_quality_dashboard;
 
 -- Recent quality trends
-SELECT * FROM core_betting.data_quality_trend 
+SELECT * FROM curated.data_quality_trend 
 WHERE quality_date >= CURRENT_DATE - INTERVAL '7 days';
 
 -- Source analysis
-SELECT * FROM core_betting.data_source_quality_analysis;
+SELECT * FROM curated.data_source_quality_analysis;
 
 -- Sportsbook mapping effectiveness
-SELECT * FROM core_betting.sportsbook_mapping_status;
+SELECT * FROM curated.sportsbook_mapping_status;
 ```
 
 ## 🎯 Key Features
@@ -176,14 +176,14 @@ SELECT * FROM core_betting.sportsbook_mapping_status;
 ### Database Schema Enhancements
 
 1. **New Tables**:
-   - `core_betting.sportsbook_external_mappings`
+   - `curated.sportsbook_mappings`
 
 2. **New Columns**:
    - `data_completeness_score DECIMAL(3,2)` (all betting lines tables)
 
 3. **New Functions**:
-   - `core_betting.resolve_sportsbook_id()`
-   - `core_betting.validate_and_score_betting_lines_data()`
+   - `curated.resolve_sportsbook_id()`
+   - `curated.validate_and_score_betting_lines_data()`
 
 4. **New Triggers**:
    - Auto-resolution triggers on all betting lines tables
@@ -242,9 +242,9 @@ SELECT * FROM core_betting.sportsbook_mapping_status;
 ### Common Issues
 
 1. **Sportsbook ID Not Resolving**:
-   - Check `core_betting.sportsbook_external_mappings` for missing entries
+   - Check `curated.sportsbook_mappings` for missing entries
    - Verify external ID format matches data source patterns
-   - Use `core_betting.unmapped_sportsbook_analysis` view to identify issues
+   - Use `curated.unmapped_sportsbook_analysis` view to identify issues
 
 2. **Low Data Completeness Scores**:
    - Review data source quality with `data_source_quality_analysis` view
@@ -260,15 +260,15 @@ SELECT * FROM core_betting.sportsbook_mapping_status;
 
 ```sql
 -- Find unmapped sportsbooks
-SELECT * FROM core_betting.unmapped_sportsbook_analysis;
+SELECT * FROM curated.unmapped_sportsbook_analysis;
 
 -- Check recent data quality
-SELECT * FROM core_betting.data_quality_trend 
+SELECT * FROM curated.data_quality_trend 
 WHERE quality_date >= CURRENT_DATE - INTERVAL '3 days';
 
 -- Identify low-quality records
 SELECT source, sportsbook, COUNT(*) 
-FROM core_betting.betting_lines_moneyline 
+FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' 
 WHERE data_completeness_score < 0.5 
 GROUP BY source, sportsbook 
 ORDER BY COUNT(*) DESC;
