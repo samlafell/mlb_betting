@@ -509,7 +509,7 @@ class MLBStatsAPIGameResolutionService:
                 with conn.cursor() as cur:
                     # Map source to database column
                     source_column_map = {
-                        DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: "sportsbookreview_game_id",
+                        DataSource.SPORTS_BOOK_REVIEW: "sportsbookreview_game_id",
                         DataSource.ACTION_NETWORK: "action_network_game_id",
                         DataSource.VSIN: "vsin_game_id",
                         DataSource.SPORTS_BETTING_DIME: "sbd_game_id",
@@ -769,7 +769,7 @@ class MLBStatsAPIGameResolutionService:
                 with conn.cursor() as cur:
                     # Map source to database column
                     source_column_map = {
-                        DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: "sportsbookreview_game_id",
+                        DataSource.SPORTS_BOOK_REVIEW: "sportsbookreview_game_id",
                         DataSource.ACTION_NETWORK: "action_network_game_id",
                         DataSource.VSIN: "vsin_game_id",
                         DataSource.SPORTS_BETTING_DIME: "sbd_game_id",
@@ -796,12 +796,38 @@ class MLBStatsAPIGameResolutionService:
                         )
                         match_result.game_id = existing_game["id"]
                     else:
-                        # Insert new game
+                        # Insert new game - explicitly exclude 'id' from INSERT to let SERIAL auto-generate
+                        insert_columns = f"mlb_stats_api_game_id, {column}, home_team, away_team, game_date, game_datetime, data_quality, has_mlb_enrichment"
+                        insert_values = "(%s, %s, %s, %s, %s, %s, %s, %s)"
+                        
+                        # Prepare game datetime - convert date to datetime if needed
+                        game_date = details.get("game_date")
+                        if isinstance(game_date, str):
+                            from datetime import datetime
+                            game_datetime = datetime.fromisoformat(game_date).replace(tzinfo=None)
+                        elif isinstance(game_date, date):
+                            from datetime import datetime, timezone
+                            # Default to midnight EST for game date
+                            game_datetime = datetime.combine(game_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+                        else:
+                            game_datetime = game_date
+                        
+                        self.logger.debug(
+                            "Inserting new game record",
+                            mlb_game_id=match_result.mlb_game_id,
+                            external_id=external_id,
+                            home_team=details.get("home_team"),
+                            away_team=details.get("away_team"),
+                            game_date=game_date,
+                            game_datetime=game_datetime,
+                            column=column
+                        )
+                        
                         cur.execute(
                             f"""
                             INSERT INTO curated.games_complete 
-                            (mlb_stats_api_game_id, {column}, home_team, away_team, game_date, game_datetime, data_quality, has_mlb_enrichment)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            ({insert_columns})
+                            VALUES {insert_values}
                             RETURNING id
                             """,
                             (
@@ -809,13 +835,9 @@ class MLBStatsAPIGameResolutionService:
                                 external_id,
                                 details.get("home_team"),
                                 details.get("away_team"),
-                                details.get("game_date"),
-                                details.get(
-                                    "game_date"
-                                ),  # Use game_date as datetime for now
-                                "HIGH"
-                                if match_result.confidence == MatchConfidence.HIGH
-                                else "MEDIUM",
+                                game_date,
+                                game_datetime,
+                                "HIGH" if match_result.confidence == MatchConfidence.HIGH else "MEDIUM",
                                 True,
                             ),
                         )

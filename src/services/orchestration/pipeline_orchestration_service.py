@@ -26,11 +26,18 @@ from typing import Any
 
 from ...core.config import get_settings
 from ...core.exceptions import OrchestrationError, PipelineError
-from ...core.logging import get_logger
+from ...core.logging import get_logger, LogComponent
+from ...core.enhanced_logging import (
+    get_enhanced_logging_service, 
+    async_operation_context, 
+    set_pipeline_context,
+    log_pipeline_event
+)
 from ...data.database.connection import get_connection
 from ...services.data.enhanced_data_service import EnhancedDataService
+from ..monitoring.prometheus_metrics_service import get_metrics_service
 
-logger = get_logger(__name__)
+logger = get_logger(__name__, LogComponent.CORE)
 
 
 class PipelineStage(str, Enum):
@@ -243,7 +250,7 @@ class PipelineOrchestrationService:
         """Initialize the pipeline orchestration service."""
         self.config = config or OrchestrationConfig()
         self.settings = get_settings()
-        self.logger = logger.bind(service="PipelineOrchestrationService")
+        self.logger = logger
 
         # State management
         self.metrics = OrchestrationMetrics()
@@ -253,6 +260,8 @@ class PipelineOrchestrationService:
 
         # Services
         self.data_service = EnhancedDataService()
+        self.metrics_service = get_metrics_service()
+        self.enhanced_logging = get_enhanced_logging_service()
 
         # Concurrency control
         self.execution_semaphore = asyncio.Semaphore(self.config.max_concurrent_stages)
@@ -336,108 +345,178 @@ class PipelineOrchestrationService:
 
         self.active_pipelines[pipeline_id] = result
 
-        try:
-            self.logger.info(
-                "Starting smart pipeline execution",
-                pipeline_id=pipeline_id,
-                pipeline_type=pipeline_type,
-                force_execution=force_execution,
-            )
+        # Set pipeline context for enhanced logging
+        set_pipeline_context(pipeline_id, pipeline_type)
+        
+        # Record pipeline start metrics
+        self.metrics_service.record_pipeline_start(pipeline_id, pipeline_type)
+        
+        # Log pipeline start event
+        log_pipeline_event(
+            "pipeline_start", 
+            pipeline_id, 
+            pipeline_type,
+            metadata={
+                "force_execution": force_execution,
+                "detection_minutes": detection_minutes
+            }
+        )
 
-            # Analyze system state first
-            if not force_execution:
-                system_analysis = await self.analyze_system_state()
-                result.system_state = {
-                    "data_age_hours": system_analysis.data_age_hours,
-                    "needs_data_collection": system_analysis.needs_data_collection,
-                    "needs_backtesting": system_analysis.needs_backtesting,
-                    "system_health": system_analysis.system_health.value,
-                    "data_quality_score": system_analysis.data_quality_score,
-                }
-            else:
-                # Force execution - assume all stages needed
-                result.system_state = {
-                    "force_execution": True,
-                    "needs_data_collection": True,
-                    "needs_backtesting": True,
-                    "needs_analysis": True,
-                }
-
-            # Determine stages to execute
-            stages_to_execute = self._determine_stages_to_execute(
-                pipeline_type, result.system_state, force_execution
-            )
-
-            if not stages_to_execute:
-                result.mark_completed(PipelineStatus.SUCCESS)
-                result.recommendations.append("No stages needed - system is up to date")
+        async with async_operation_context(
+            f"pipeline_execution_{pipeline_type}",
+            operation_id=pipeline_id,
+            tags={
+                "pipeline.type": pipeline_type,
+                "pipeline.forced": str(force_execution)
+            }
+        ):
+            try:
                 self.logger.info(
-                    "Pipeline completed - no stages needed", pipeline_id=pipeline_id
+                    "Starting smart pipeline execution",
+                    pipeline_id=pipeline_id,
+                    pipeline_type=pipeline_type,
+                    force_execution=force_execution,
                 )
+
+                # Analyze system state first
+                if not force_execution:
+                    system_analysis = await self.analyze_system_state()
+                    result.system_state = {
+                        "data_age_hours": system_analysis.data_age_hours,
+                        "needs_data_collection": system_analysis.needs_data_collection,
+                        "needs_backtesting": system_analysis.needs_backtesting,
+                        "system_health": system_analysis.system_health.value,
+                        "data_quality_score": system_analysis.data_quality_score,
+                    }
+                else:
+                    # Force execution - assume all stages needed
+                    result.system_state = {
+                        "force_execution": True,
+                        "needs_data_collection": True,
+                        "needs_backtesting": True,
+                        "needs_analysis": True,
+                    }
+
+                # Determine stages to execute
+                stages_to_execute = self._determine_stages_to_execute(
+                    pipeline_type, result.system_state, force_execution
+                )
+
+                if not stages_to_execute:
+                    result.mark_completed(PipelineStatus.SUCCESS)
+                    result.recommendations.append("No stages needed - system is up to date")
+                    self.logger.info(
+                        "Pipeline completed - no stages needed", pipeline_id=pipeline_id
+                    )
+                    log_pipeline_event("pipeline_complete", pipeline_id, pipeline_type, status="no_stages_needed")
+                    return result
+
+                # Execute stages
+                if self.config.enable_parallel_execution and len(stages_to_execute) > 1:
+                    await self._execute_stages_parallel(result, stages_to_execute)
+                else:
+                    await self._execute_stages_sequential(result, stages_to_execute)
+
+                # Determine overall status
+                successful_stages = sum(
+                    1
+                    for stage_result in result.stages.values()
+                    if stage_result.status == PipelineStatus.SUCCESS
+                )
+                total_stages = len(result.stages)
+
+                if successful_stages == total_stages:
+                    result.mark_completed(PipelineStatus.SUCCESS)
+                    self.metrics.increment("successful_pipelines")
+                elif successful_stages > 0:
+                    result.mark_completed(PipelineStatus.PARTIAL_SUCCESS)
+                    self.metrics.increment("partial_success_pipelines")
+                else:
+                    result.mark_completed(PipelineStatus.FAILED)
+                    self.metrics.increment("failed_pipelines")
+
+                # Record Prometheus metrics
+                errors = []
+                for stage_result in result.stages.values():
+                    errors.extend(stage_result.errors)
+                
+                self.metrics_service.record_pipeline_completion(
+                    pipeline_id=pipeline_id,
+                    pipeline_type=pipeline_type,
+                    status=result.overall_status.value,
+                    stages_executed=len(result.stages),
+                    errors=errors if errors else None
+                )
+                
+                # Log pipeline completion event
+                log_pipeline_event(
+                    "pipeline_complete", 
+                    pipeline_id, 
+                    pipeline_type,
+                    status=result.overall_status.value,
+                    metadata={
+                        "stages_executed": len(result.stages),
+                        "successful_stages": successful_stages,
+                        "execution_time": result.total_execution_time
+                    }
+                )
+
+                self.metrics.increment("total_pipelines")
+                self.metrics.total_execution_time += result.total_execution_time
+                if self.metrics.total_pipelines > 0:
+                    self.metrics.average_execution_time = (
+                        self.metrics.total_execution_time / self.metrics.total_pipelines
+                    )
+
+                self.logger.info(
+                    "Smart pipeline execution completed",
+                    pipeline_id=pipeline_id,
+                    status=result.overall_status.value,
+                    execution_time=result.total_execution_time,
+                    stages_executed=len(result.stages),
+                )
+
                 return result
 
-            # Execute stages
-            if self.config.enable_parallel_execution and len(stages_to_execute) > 1:
-                await self._execute_stages_parallel(result, stages_to_execute)
-            else:
-                await self._execute_stages_sequential(result, stages_to_execute)
-
-            # Determine overall status
-            successful_stages = sum(
-                1
-                for stage_result in result.stages.values()
-                if stage_result.status == PipelineStatus.SUCCESS
-            )
-            total_stages = len(result.stages)
-
-            if successful_stages == total_stages:
-                result.mark_completed(PipelineStatus.SUCCESS)
-                self.metrics.increment("successful_pipelines")
-            elif successful_stages > 0:
-                result.mark_completed(PipelineStatus.PARTIAL_SUCCESS)
-                self.metrics.increment("partial_success_pipelines")
-            else:
+            except Exception as e:
                 result.mark_completed(PipelineStatus.FAILED)
                 self.metrics.increment("failed_pipelines")
-
-            self.metrics.increment("total_pipelines")
-            self.metrics.total_execution_time += result.total_execution_time
-            if self.metrics.total_pipelines > 0:
-                self.metrics.average_execution_time = (
-                    self.metrics.total_execution_time / self.metrics.total_pipelines
+                
+                # Record Prometheus metrics for failed pipeline
+                self.metrics_service.record_pipeline_completion(
+                    pipeline_id=pipeline_id,
+                    pipeline_type=pipeline_type,
+                    status="failed",
+                    stages_executed=len(result.stages),
+                    errors=[str(e)]
+                )
+                
+                # Log pipeline failure event
+                log_pipeline_event(
+                    "pipeline_failed", 
+                    pipeline_id, 
+                    pipeline_type,
+                    status="failed",
+                    metadata={"error": str(e)}
                 )
 
-            self.logger.info(
-                "Smart pipeline execution completed",
-                pipeline_id=pipeline_id,
-                status=result.overall_status.value,
-                execution_time=result.total_execution_time,
-                stages_executed=len(result.stages),
-            )
+                self.logger.error(
+                    "Smart pipeline execution failed", pipeline_id=pipeline_id, error=str(e)
+                )
 
-            return result
+                raise OrchestrationError(f"Pipeline {pipeline_id} failed: {str(e)}") from e
 
-        except Exception as e:
-            result.mark_completed(PipelineStatus.FAILED)
-            self.metrics.increment("failed_pipelines")
+            finally:
+                # Move to completed pipelines
+                if pipeline_id in self.active_pipelines:
+                    completed_pipeline = self.active_pipelines.pop(pipeline_id)
+                    self.completed_pipelines.append(completed_pipeline)
 
-            self.logger.error(
-                "Smart pipeline execution failed", pipeline_id=pipeline_id, error=str(e)
-            )
-
-            raise OrchestrationError(f"Pipeline {pipeline_id} failed: {str(e)}") from e
-
-        finally:
-            # Move to completed pipelines
-            if pipeline_id in self.active_pipelines:
-                completed_pipeline = self.active_pipelines.pop(pipeline_id)
-                self.completed_pipelines.append(completed_pipeline)
-
-                # Maintain history limit
-                if len(self.completed_pipelines) > self.pipeline_history_limit:
-                    self.completed_pipelines = self.completed_pipelines[
-                        -self.pipeline_history_limit :
-                    ]
+                    # Maintain history limit
+                    if len(self.completed_pipelines) > self.pipeline_history_limit:
+                        self.completed_pipelines = self.completed_pipelines[
+                            -self.pipeline_history_limit :
+                        ]
 
     async def get_pipeline_recommendations(self) -> dict[str, Any]:
         """
@@ -604,11 +683,22 @@ class PipelineOrchestrationService:
     def _calculate_system_health(self, analysis: SystemStateAnalysis) -> SystemHealth:
         """Calculate overall system health."""
         if analysis.data_quality_score >= 0.8 and not analysis.data_quality_issues:
-            return SystemHealth.HEALTHY
+            health = SystemHealth.HEALTHY
         elif analysis.data_quality_score >= 0.5:
-            return SystemHealth.WARNING
+            health = SystemHealth.WARNING
         else:
-            return SystemHealth.CRITICAL
+            health = SystemHealth.CRITICAL
+        
+        # Update Prometheus metrics
+        self.metrics_service.update_system_health_status(health.value)
+        
+        # Update data quality and freshness metrics
+        if analysis.data_age_hours is not None:
+            self.metrics_service.update_data_freshness("system", analysis.data_age_hours * 3600)
+        
+        self.metrics_service.update_data_quality_score("system", "overall", analysis.data_quality_score)
+        
+        return health
 
     def _generate_recommendations(self, analysis: SystemStateAnalysis) -> list[str]:
         """Generate recommendations based on analysis."""
@@ -705,11 +795,27 @@ class PipelineOrchestrationService:
 
             stage_result.mark_completed(PipelineStatus.SUCCESS)
             self.metrics.increment("successful_stages")
+            
+            # Record Prometheus metrics for successful stage
+            self.metrics_service.record_stage_execution(
+                stage=stage.value,
+                duration=stage_result.execution_time_seconds,
+                status="success",
+                records_processed=stage_result.records_processed
+            )
 
         except Exception as e:
             stage_result.errors.append(str(e))
             stage_result.mark_completed(PipelineStatus.FAILED)
             self.metrics.increment("failed_stages")
+            
+            # Record Prometheus metrics for failed stage
+            self.metrics_service.record_stage_execution(
+                stage=stage.value,
+                duration=stage_result.execution_time_seconds,
+                status="failed",
+                records_processed=stage_result.records_processed
+            )
 
             self.logger.error(
                 "Stage execution failed",
@@ -806,7 +912,19 @@ class PipelineOrchestrationService:
 
     def get_metrics(self) -> dict[str, Any]:
         """Get comprehensive orchestration metrics."""
-        return self.metrics.to_dict()
+        orchestration_metrics = self.metrics.to_dict()
+        prometheus_overview = self.metrics_service.get_system_overview()
+        
+        return {
+            "orchestration": orchestration_metrics,
+            "prometheus": prometheus_overview,
+            "combined_insights": {
+                "total_active_pipelines": len(self.active_pipelines),
+                "recent_success_rate": orchestration_metrics.get("success_rate_percentage", 0),
+                "system_uptime_seconds": prometheus_overview.get("uptime_seconds", 0),
+                "slo_compliance": prometheus_overview.get("slo_compliance", {}),
+            }
+        }
 
     async def cleanup(self):
         """Cleanup service resources."""
