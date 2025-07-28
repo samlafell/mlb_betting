@@ -2,7 +2,7 @@
 """
 Game ID Mapping Service
 
-Manages the centralized game ID mapping dimension table to eliminate thousands of 
+Manages the centralized game ID mapping dimension table to eliminate thousands of
 API calls per pipeline run. This service:
 
 1. Maintains the staging.game_id_mappings dimension table
@@ -35,7 +35,7 @@ logger = structlog.get_logger(__name__)
 
 class GameIDMapping(BaseModel):
     """Model for game ID mapping records."""
-    
+
     id: Optional[int] = None
     mlb_stats_api_game_id: str
     action_network_game_id: Optional[str] = None
@@ -56,7 +56,7 @@ class GameIDMapping(BaseModel):
 
 class UnmappedExternalID(BaseModel):
     """Model for unmapped external IDs found in raw data."""
-    
+
     external_id: str
     source_type: str
     home_team: str
@@ -67,7 +67,7 @@ class UnmappedExternalID(BaseModel):
 
 class MappingStats(BaseModel):
     """Statistics about game ID mapping coverage."""
-    
+
     total_mappings: int
     action_network_count: int
     vsin_count: int
@@ -80,7 +80,7 @@ class MappingStats(BaseModel):
 class GameIDMappingService:
     """
     Service for maintaining the centralized game ID mapping table.
-    
+
     This service provides high-performance game ID lookups and automated
     resolution of new external IDs, eliminating the need for thousands of
     API calls during pipeline execution.
@@ -102,151 +102,184 @@ class GameIDMappingService:
         await self.mlb_resolution_service.cleanup()
 
     async def get_mlb_game_id(
-        self, 
-        external_id: str, 
-        source: str,
-        create_if_missing: bool = False
+        self, external_id: str, source: str, create_if_missing: bool = False
     ) -> Optional[str]:
         """
         Get MLB Stats API game ID for an external ID.
-        
+
         This is the primary lookup method used by pipeline processors
         to replace individual API calls with O(1) dimension table lookups.
-        
+
         Args:
             external_id: External game ID from data source
             source: Source type (action_network, vsin, sbd, sbr)
             create_if_missing: If True, attempt to resolve unmapped IDs
-            
+
         Returns:
             MLB Stats API game ID or None if not found
         """
+        # Input validation
+        if not external_id or not external_id.strip():
+            self.logger.warning("Empty external_id provided")
+            return None
+
+        if not source or not source.strip():
+            self.logger.warning("Empty source provided")
+            return None
+
         try:
             # Map source to column name
             source_column_map = {
                 "action_network": "action_network_game_id",
-                "vsin": "vsin_game_id", 
+                "vsin": "vsin_game_id",
                 "sbd": "sbd_game_id",
-                "sbr": "sbr_game_id"
+                "sbr": "sbr_game_id",
             }
-            
+
             column_name = source_column_map.get(source)
             if not column_name:
                 self.logger.warning(f"Unknown source type: {source}")
                 return None
-            
-            # Perform O(1) indexed lookup
-            async with get_connection() as conn:
-                query = f"""
-                SELECT mlb_stats_api_game_id 
-                FROM staging.game_id_mappings 
-                WHERE {column_name} = $1
-                """
-                mlb_id = await conn.fetchval(query, external_id)
-                
-                if mlb_id:
-                    self.logger.debug(
-                        f"Found cached MLB game ID for {source} {external_id}: {mlb_id}"
-                    )
-                    return mlb_id
-                
-                # If not found and create_if_missing is True, attempt resolution
-                if create_if_missing:
-                    self.logger.info(
-                        f"MLB game ID not found for {source} {external_id}, attempting resolution"
-                    )
-                    resolved_id = await self._resolve_and_cache_external_id(
-                        external_id, source
-                    )
-                    return resolved_id
-                
+
+            # Perform O(1) indexed lookup using parameterized queries
+            try:
+                async with get_connection() as conn:
+                    # Use parameterized query to prevent SQL injection
+                    if column_name == "action_network_game_id":
+                        query = "SELECT mlb_stats_api_game_id FROM staging.game_id_mappings WHERE action_network_game_id = $1"
+                    elif column_name == "vsin_game_id":
+                        query = "SELECT mlb_stats_api_game_id FROM staging.game_id_mappings WHERE vsin_game_id = $1"
+                    elif column_name == "sbd_game_id":
+                        query = "SELECT mlb_stats_api_game_id FROM staging.game_id_mappings WHERE sbd_game_id = $1"
+                    elif column_name == "sbr_game_id":
+                        query = "SELECT mlb_stats_api_game_id FROM staging.game_id_mappings WHERE sbr_game_id = $1"
+                    else:
+                        return None
+
+                    mlb_id = await conn.fetchval(query, external_id)
+
+                    if mlb_id:
+                        self.logger.debug(
+                            f"Found cached MLB game ID for {source} {external_id}: {mlb_id}"
+                        )
+                        return mlb_id
+
+                    # If not found and create_if_missing is True, attempt resolution
+                    if create_if_missing:
+                        self.logger.info(
+                            f"MLB game ID not found for {source} {external_id}, attempting resolution"
+                        )
+                        resolved_id = await self._resolve_and_cache_external_id(
+                            external_id, source
+                        )
+                        return resolved_id
+
+                    return None
+
+            except ConnectionError as e:
+                self.logger.error(
+                    f"Database connection error for {source} {external_id}: {e}"
+                )
                 return None
-                
+            except TimeoutError as e:
+                self.logger.error(
+                    f"Database timeout error for {source} {external_id}: {e}"
+                )
+                return None
+
+        except ValueError as e:
+            self.logger.error(f"Invalid input for {source} {external_id}: {e}")
+            return None
         except Exception as e:
             self.logger.error(
-                f"Error looking up MLB game ID for {source} {external_id}: {e}"
+                f"Unexpected error looking up MLB game ID for {source} {external_id}: {e}"
             )
             return None
 
     async def bulk_get_mlb_game_ids(
-        self, 
-        external_ids: list[tuple[str, str]]
+        self, external_ids: list[tuple[str, str]]
     ) -> dict[str, Optional[str]]:
         """
         Get MLB game IDs for multiple external IDs in a single query.
-        
+
         Args:
             external_ids: List of (external_id, source) tuples
-            
+
         Returns:
             Dictionary mapping external_id to MLB game ID (or None)
         """
         try:
             if not external_ids:
                 return {}
-            
+
             # Group by source for efficient querying
             source_groups = {}
             for external_id, source in external_ids:
                 if source not in source_groups:
                     source_groups[source] = []
                 source_groups[source].append(external_id)
-            
+
             results = {}
-            
+
             async with get_connection() as conn:
                 for source, ids in source_groups.items():
                     source_column_map = {
                         "action_network": "action_network_game_id",
                         "vsin": "vsin_game_id",
-                        "sbd": "sbd_game_id", 
-                        "sbr": "sbr_game_id"
+                        "sbd": "sbd_game_id",
+                        "sbr": "sbr_game_id",
                     }
-                    
+
                     column_name = source_column_map.get(source)
                     if not column_name:
                         continue
-                    
-                    query = f"""
-                    SELECT {column_name}, mlb_stats_api_game_id
-                    FROM staging.game_id_mappings 
-                    WHERE {column_name} = ANY($1::TEXT[])
-                    """
-                    
+
+                    # Use parameterized queries to prevent SQL injection
+                    if column_name == "action_network_game_id":
+                        query = "SELECT action_network_game_id, mlb_stats_api_game_id FROM staging.game_id_mappings WHERE action_network_game_id = ANY($1::TEXT[])"
+                    elif column_name == "vsin_game_id":
+                        query = "SELECT vsin_game_id, mlb_stats_api_game_id FROM staging.game_id_mappings WHERE vsin_game_id = ANY($1::TEXT[])"
+                    elif column_name == "sbd_game_id":
+                        query = "SELECT sbd_game_id, mlb_stats_api_game_id FROM staging.game_id_mappings WHERE sbd_game_id = ANY($1::TEXT[])"
+                    elif column_name == "sbr_game_id":
+                        query = "SELECT sbr_game_id, mlb_stats_api_game_id FROM staging.game_id_mappings WHERE sbr_game_id = ANY($1::TEXT[])"
+                    else:
+                        continue
+
                     rows = await conn.fetch(query, ids)
                     for row in rows:
                         external_id = row[column_name]
-                        mlb_id = row['mlb_stats_api_game_id']
+                        mlb_id = row["mlb_stats_api_game_id"]
                         results[external_id] = mlb_id
-                    
+
                     # Mark missing ones as None
                     for external_id in ids:
                         if external_id not in results:
                             results[external_id] = None
-            
+
             return results
-            
+
         except Exception as e:
             self.logger.error(f"Error in bulk MLB game ID lookup: {e}")
             return {external_id: None for external_id, _ in external_ids}
 
     async def resolve_unmapped_external_ids(
-        self, 
+        self,
         source_filter: Optional[str] = None,
         limit: int = 100,
-        dry_run: bool = False
+        dry_run: bool = False,
     ) -> dict[str, Any]:
         """
         Find and resolve external IDs not yet in the mapping table.
-        
+
         This method discovers new external IDs from raw data tables and
         uses the existing GameIDResolutionService to resolve them.
-        
+
         Args:
             source_filter: Limit to specific source (action_network, vsin, sbd, sbr)
             limit: Maximum number of IDs to resolve in this run
             dry_run: If True, don't update database
-            
+
         Returns:
             Dictionary with resolution results and statistics
         """
@@ -256,7 +289,7 @@ class GameIDMappingService:
             limit=limit,
             dry_run=dry_run,
         )
-        
+
         results = {
             "unmapped_found": 0,
             "resolved_count": 0,
@@ -264,18 +297,18 @@ class GameIDMappingService:
             "errors": [],
             "resolutions": [],
         }
-        
+
         try:
             # Find unmapped external IDs
             unmapped_ids = await self._find_unmapped_external_ids(source_filter, limit)
             results["unmapped_found"] = len(unmapped_ids)
-            
+
             if not unmapped_ids:
                 self.logger.info("No unmapped external IDs found")
                 return results
-            
+
             self.logger.info(f"Found {len(unmapped_ids)} unmapped external IDs")
-            
+
             # Resolve each unmapped ID
             for unmapped in unmapped_ids:
                 try:
@@ -284,18 +317,20 @@ class GameIDMappingService:
                     if not source_enum:
                         results["failed_count"] += 1
                         continue
-                    
+
                     # Resolve using existing service
-                    resolution_result = await self.mlb_resolution_service.resolve_game_id(
-                        external_id=unmapped.external_id,
-                        source=source_enum,
-                        home_team=unmapped.home_team,
-                        away_team=unmapped.away_team,
-                        game_date=unmapped.game_date,
+                    resolution_result = (
+                        await self.mlb_resolution_service.resolve_game_id(
+                            external_id=unmapped.external_id,
+                            source=source_enum,
+                            home_team=unmapped.home_team,
+                            away_team=unmapped.away_team,
+                            game_date=unmapped.game_date,
+                        )
                     )
-                    
+
                     if (
-                        resolution_result.mlb_game_id 
+                        resolution_result.mlb_game_id
                         and resolution_result.confidence != MatchConfidence.NONE
                     ):
                         # Create mapping record
@@ -309,23 +344,29 @@ class GameIDMappingService:
                                 resolution_result.confidence
                             ),
                         )
-                        
+
                         # Set the appropriate external ID field
-                        setattr(mapping, f"{unmapped.source_type}_game_id", unmapped.external_id)
-                        
+                        setattr(
+                            mapping,
+                            f"{unmapped.source_type}_game_id",
+                            unmapped.external_id,
+                        )
+
                         # Save to database
                         if not dry_run:
                             await self._upsert_mapping(mapping)
-                        
+
                         results["resolved_count"] += 1
-                        results["resolutions"].append({
-                            "external_id": unmapped.external_id,
-                            "source": unmapped.source_type,
-                            "mlb_game_id": resolution_result.mlb_game_id,
-                            "confidence": resolution_result.confidence.value,
-                            "method": resolution_result.match_method,
-                        })
-                        
+                        results["resolutions"].append(
+                            {
+                                "external_id": unmapped.external_id,
+                                "source": unmapped.source_type,
+                                "mlb_game_id": resolution_result.mlb_game_id,
+                                "confidence": resolution_result.confidence.value,
+                                "method": resolution_result.match_method,
+                            }
+                        )
+
                         self.logger.info(
                             f"Resolved {unmapped.source_type} ID {unmapped.external_id} → {resolution_result.mlb_game_id}"
                         )
@@ -334,16 +375,18 @@ class GameIDMappingService:
                         self.logger.warning(
                             f"Failed to resolve {unmapped.source_type} ID {unmapped.external_id}"
                         )
-                        
+
                 except Exception as e:
                     error_msg = f"Error resolving {unmapped.external_id}: {str(e)}"
                     results["errors"].append(error_msg)
                     results["failed_count"] += 1
                     self.logger.error(error_msg)
-            
-            self.logger.info("Unmapped external ID resolution completed", results=results)
+
+            self.logger.info(
+                "Unmapped external ID resolution completed", results=results
+            )
             return results
-            
+
         except Exception as e:
             self.logger.error(f"Error in unmapped ID resolution: {e}")
             results["errors"].append(f"Service error: {str(e)}")
@@ -356,7 +399,7 @@ class GameIDMappingService:
                 row = await conn.fetchrow("""
                     SELECT * FROM staging.get_game_id_mapping_stats()
                 """)
-                
+
                 if row:
                     return MappingStats(
                         total_mappings=row["total_mappings"] or 0,
@@ -377,7 +420,7 @@ class GameIDMappingService:
                         avg_confidence=0.0,
                         last_updated=None,
                     )
-                    
+
         except Exception as e:
             self.logger.error(f"Error getting mapping stats: {e}")
             return MappingStats(
@@ -397,53 +440,55 @@ class GameIDMappingService:
                 rows = await conn.fetch("""
                     SELECT * FROM staging.validate_game_id_mappings()
                 """)
-                
+
                 validation_results = {}
                 for row in rows:
                     validation_results[row["validation_type"]] = {
                         "issue_count": row["issue_count"],
                         "sample_mlb_id": row["sample_mlb_id"],
                     }
-                
+
                 return validation_results
-                
+
         except Exception as e:
             self.logger.error(f"Error validating mappings: {e}")
             return {"error": str(e)}
 
     async def _find_unmapped_external_ids(
-        self, 
-        source_filter: Optional[str] = None,
-        limit: int = 100
+        self, source_filter: Optional[str] = None, limit: int = 100
     ) -> list[UnmappedExternalID]:
         """Find unmapped external IDs from raw data tables."""
         try:
             async with get_connection() as conn:
-                rows = await conn.fetch("""
+                rows = await conn.fetch(
+                    """
                     SELECT * FROM staging.find_unmapped_external_ids($1, $2)
-                """, source_filter, limit)
-                
+                """,
+                    source_filter,
+                    limit,
+                )
+
                 unmapped_ids = []
                 for row in rows:
-                    unmapped_ids.append(UnmappedExternalID(
-                        external_id=row["external_id"],
-                        source_type=row["source_type"],
-                        home_team=row["home_team"],
-                        away_team=row["away_team"],
-                        game_date=row["game_date"],
-                        raw_table=row["raw_table"],
-                    ))
-                
+                    unmapped_ids.append(
+                        UnmappedExternalID(
+                            external_id=row["external_id"],
+                            source_type=row["source_type"],
+                            home_team=row["home_team"],
+                            away_team=row["away_team"],
+                            game_date=row["game_date"],
+                            raw_table=row["raw_table"],
+                        )
+                    )
+
                 return unmapped_ids
-                
+
         except Exception as e:
             self.logger.error(f"Error finding unmapped external IDs: {e}")
             return []
 
     async def _resolve_and_cache_external_id(
-        self, 
-        external_id: str, 
-        source: str
+        self, external_id: str, source: str
     ) -> Optional[str]:
         """Resolve a single external ID and cache the result."""
         try:
@@ -451,12 +496,12 @@ class GameIDMappingService:
             game_info = await self._get_game_info_from_raw(external_id, source)
             if not game_info:
                 return None
-            
+
             # Convert source to DataSource enum
             source_enum = self._get_data_source_enum(source)
             if not source_enum:
                 return None
-            
+
             # Resolve using existing service
             resolution_result = await self.mlb_resolution_service.resolve_game_id(
                 external_id=external_id,
@@ -465,9 +510,9 @@ class GameIDMappingService:
                 away_team=game_info["away_team"],
                 game_date=game_info["game_date"],
             )
-            
+
             if (
-                resolution_result.mlb_game_id 
+                resolution_result.mlb_game_id
                 and resolution_result.confidence != MatchConfidence.NONE
             ):
                 # Create and save mapping
@@ -481,60 +526,66 @@ class GameIDMappingService:
                         resolution_result.confidence
                     ),
                 )
-                
+
                 # Set the appropriate external ID field
                 setattr(mapping, f"{source}_game_id", external_id)
-                
+
                 await self._upsert_mapping(mapping)
-                
+
                 self.logger.info(
                     f"Resolved and cached {source} ID {external_id} → {resolution_result.mlb_game_id}"
                 )
                 return resolution_result.mlb_game_id
-            
+
             return None
-            
+
         except Exception as e:
-            self.logger.error(f"Error resolving and caching {source} ID {external_id}: {e}")
+            self.logger.error(
+                f"Error resolving and caching {source} ID {external_id}: {e}"
+            )
             return None
 
     async def _get_game_info_from_raw(
-        self, 
-        external_id: str, 
-        source: str
+        self, external_id: str, source: str
     ) -> Optional[dict[str, Any]]:
         """Get game information from raw data tables."""
         try:
             async with get_connection() as conn:
                 if source == "action_network":
-                    row = await conn.fetchrow("""
+                    row = await conn.fetchrow(
+                        """
                         SELECT away_team, home_team, DATE(start_time) as game_date
                         FROM raw_data.action_network_games
                         WHERE external_game_id = $1
                         AND away_team IS NOT NULL 
                         AND home_team IS NOT NULL
-                    """, external_id)
-                    
+                    """,
+                        external_id,
+                    )
+
                     if row:
                         return {
                             "home_team": row["home_team"],
                             "away_team": row["away_team"],
                             "game_date": row["game_date"],
                         }
-                
+
                 # Add other sources as needed (VSIN, SBD, SBR)
-                
+
             return None
-            
+
         except Exception as e:
-            self.logger.error(f"Error getting game info for {source} ID {external_id}: {e}")
+            self.logger.error(
+                f"Error getting game info for {source} ID {external_id}: {e}"
+            )
             return None
 
     async def _upsert_mapping(self, mapping: GameIDMapping) -> None:
         """Insert or update a game ID mapping."""
         try:
             async with get_connection() as conn:
-                await conn.execute("""
+                await conn.execute(
+                    """
                     INSERT INTO staging.game_id_mappings (
                         mlb_stats_api_game_id, action_network_game_id, vsin_game_id,
                         sbd_game_id, sbr_game_id, home_team, away_team, game_date,
@@ -565,7 +616,7 @@ class GameIDMappingService:
                     mapping.resolution_confidence,
                     mapping.primary_source,
                 )
-                
+
         except Exception as e:
             self.logger.error(f"Error upserting mapping: {e}")
             raise
@@ -599,7 +650,7 @@ game_id_mapping_service = GameIDMappingService()
 async def get_mlb_game_id(external_id: str, source: str) -> Optional[str]:
     """
     Convenience function to get MLB game ID for an external ID.
-    
+
     This is the primary function used by pipeline processors to replace
     individual API calls with O(1) dimension table lookups.
     """
@@ -611,9 +662,7 @@ async def get_mlb_game_id(external_id: str, source: str) -> Optional[str]:
 
 
 async def resolve_unmapped_ids(
-    source_filter: Optional[str] = None,
-    limit: int = 100,
-    dry_run: bool = False
+    source_filter: Optional[str] = None, limit: int = 100, dry_run: bool = False
 ) -> dict[str, Any]:
     """
     Convenience function to resolve unmapped external IDs.
@@ -633,20 +682,20 @@ if __name__ == "__main__":
         # Test the service
         service = GameIDMappingService()
         await service.initialize()
-        
+
         try:
             # Get mapping stats
             stats = await service.get_mapping_stats()
             print(f"Mapping stats: {stats}")
-            
+
             # Test lookup
             mlb_id = await service.get_mlb_game_id("258267", "action_network")
             print(f"MLB ID for Action Network 258267: {mlb_id}")
-            
+
             # Resolve unmapped IDs (dry run)
             results = await service.resolve_unmapped_external_ids(limit=5, dry_run=True)
             print(f"Unmapped resolution results: {results}")
-            
+
         finally:
             await service.cleanup()
 
