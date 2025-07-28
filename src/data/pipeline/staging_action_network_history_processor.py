@@ -30,10 +30,12 @@ from ...core.config import get_settings
 from ...core.datetime_utils import now_est
 from ...core.logging import LogComponent, get_logger
 from ...core.sportsbook_utils import SportsbookResolver
-from ...services.mlb_stats_api_game_resolution_service import (
-    DataSource,
-    MLBStatsAPIGameResolutionService,
-)
+# NOTE: MLB resolution service removed - game IDs now resolved via dimension table JOINs
+# This eliminates thousands of API calls per pipeline run
+# from ...services.mlb_stats_api_game_resolution_service import (
+#     DataSource,
+#     MLBStatsAPIGameResolutionService,
+# )
 
 logger = get_logger(__name__, LogComponent.CORE)
 
@@ -43,7 +45,7 @@ class HistoricalOddsRecord(BaseModel):
 
     # Game and sportsbook identifiers
     external_game_id: str
-    mlb_stats_api_game_id: str | None = None
+    # NOTE: mlb_stats_api_game_id removed - now resolved via dimension table JOIN
     sportsbook_external_id: str
     sportsbook_id: int | None = None
     sportsbook_name: str | None = None
@@ -110,7 +112,8 @@ class ActionNetworkHistoryProcessor:
     def __init__(self):
         self.settings = get_settings()
         self.sportsbook_resolver = SportsbookResolver(self._get_db_config())
-        self.mlb_resolver = MLBStatsAPIGameResolutionService()
+        # NOTE: MLB resolver removed - game IDs now resolved via dimension table JOINs
+        # self.mlb_resolver = MLBStatsAPIGameResolutionService()
         self.processing_batch_id = str(uuid4())
 
     def _get_db_config(self) -> dict[str, Any]:
@@ -126,14 +129,17 @@ class ActionNetworkHistoryProcessor:
 
     async def initialize(self):
         """Initialize processor services."""
-        await self.mlb_resolver.initialize()
+        # NOTE: MLB resolver initialization removed - using dimension table instead
+        # await self.mlb_resolver.initialize()
         logger.info(
-            "ActionNetworkHistoryProcessor initialized with MLB Stats API integration"
+            "ActionNetworkHistoryProcessor initialized with dimension table optimization"
         )
 
     async def cleanup(self):
         """Cleanup processor resources."""
-        await self.mlb_resolver.cleanup()
+        # NOTE: MLB resolver cleanup removed - using dimension table instead
+        # await self.mlb_resolver.cleanup()
+        pass
 
     def _extract_bet_info(self, side_data: dict) -> dict:
         """Extract betting percentage information from side data.
@@ -317,18 +323,9 @@ class ActionNetworkHistoryProcessor:
                     )
 
                     for historical_record in historical_records:
-                        # Enhanced MLB ID resolution using multiple strategies
-                        mlb_game_id = await self._resolve_mlb_game_id_enhanced(
-                            historical_record, conn
-                        )
-                        if mlb_game_id:
-                            historical_record.mlb_stats_api_game_id = mlb_game_id
-                            mlb_resolved_count += 1
-                        else:
-                            logger.warning(
-                                f"Could not resolve MLB game ID for Action Network game {historical_record.external_game_id}"
-                            )
-
+                        # NOTE: MLB ID resolution removed - now handled via dimension table JOINs
+                        # This eliminates thousands of API calls per pipeline run
+                        
                         # Insert historical record
                         await self._insert_historical_odds_record(
                             historical_record, conn
@@ -554,152 +551,9 @@ class ActionNetworkHistoryProcessor:
             logger.error(f"Error extracting historical records from history: {e}")
             return []
 
-    async def _resolve_mlb_game_id_enhanced(
-        self, record: HistoricalOddsRecord, conn: asyncpg.Connection
-    ) -> str | None:
-        """Enhanced MLB ID resolution using multiple strategies including raw data view."""
-        try:
-            # First check if this is a test/placeholder game by validating game data
-            game_validation = await conn.fetchrow(
-                """
-                SELECT away_team, home_team, start_time,
-                       raw_response->'table' as table_marker,
-                       raw_response->'real_data' as real_data_marker
-                FROM raw_data.action_network_games 
-                WHERE external_game_id = $1
-                """,
-                record.external_game_id,
-            )
-            
-            if game_validation:
-                # Skip test/placeholder records that lack proper game data
-                if (not game_validation['away_team'] or not game_validation['home_team'] or 
-                    game_validation['table_marker'] == 'action_network_history'):
-                    logger.warning(
-                        f"Skipping test/placeholder game {record.external_game_id}: "
-                        f"away_team={game_validation['away_team']}, "
-                        f"home_team={game_validation['home_team']}, "
-                        f"table_marker={game_validation['table_marker']}"
-                    )
-                    return None
-            
-            # First check if we already resolved this game's MLB ID
-            existing_mlb_id = await conn.fetchval(
-                """
-                SELECT mlb_stats_api_game_id 
-                FROM staging.action_network_games 
-                WHERE external_game_id = $1 AND mlb_stats_api_game_id IS NOT NULL
-                """,
-                record.external_game_id,
-            )
-            
-            if existing_mlb_id:
-                logger.debug(f"Using cached MLB game ID for {record.external_game_id}: {existing_mlb_id}")
-                return existing_mlb_id
-
-            # Strategy 1: Try staging data join
-            game_info = await conn.fetchrow(
-                """
-                SELECT home_team_normalized, away_team_normalized, game_date
-                FROM staging.action_network_games 
-                WHERE external_game_id = $1
-            """,
-                record.external_game_id,
-            )
-
-            if game_info:
-                # Use enhanced Action Network-specific resolver
-                resolution_result = await self.mlb_resolver.resolve_action_network_game_id(
-                    external_game_id=record.external_game_id,
-                    game_date=game_info["game_date"],
-                )
-
-                if resolution_result.mlb_game_id:
-                    # Update games table with resolved MLB game ID
-                    await conn.execute(
-                        """
-                        UPDATE staging.action_network_games 
-                        SET mlb_stats_api_game_id = $1, updated_at = NOW()
-                        WHERE external_game_id = $2
-                    """,
-                        resolution_result.mlb_game_id,
-                        record.external_game_id,
-                    )
-
-                    logger.info(
-                        f"Resolved MLB game ID via staging for {record.external_game_id}: {resolution_result.mlb_game_id} (confidence: {resolution_result.confidence})"
-                    )
-                    return resolution_result.mlb_game_id
-
-            # Strategy 2: Try raw data view (enhanced approach from backfill)
-            logger.debug(f"Trying raw data view resolution for {record.external_game_id}")
-            raw_game_info = await conn.fetchrow(
-                """
-                SELECT away_team, home_team, 
-                       COALESCE(start_time::date, DATE(start_time)) as game_date
-                FROM raw_data.v_action_network_games_readable 
-                WHERE external_game_id = $1
-                AND away_team IS NOT NULL 
-                AND home_team IS NOT NULL
-                """,
-                record.external_game_id,
-            )
-
-            if raw_game_info:
-                from ...core.team_utils import normalize_team_name
-                
-                home_team_normalized = normalize_team_name(raw_game_info["home_team"])
-                away_team_normalized = normalize_team_name(raw_game_info["away_team"])
-                
-                # Use Action Network specific resolver with normalized team names
-                resolution_result = await self.mlb_resolver.resolve_action_network_game_id(
-                    external_game_id=record.external_game_id,
-                    game_date=raw_game_info["game_date"]
-                )
-                
-                # Fallback to generic resolver if Action Network specific fails
-                if not resolution_result.mlb_game_id:
-                    resolution_result = await self.mlb_resolver.resolve_game_id(
-                        external_id=record.external_game_id,
-                        source=DataSource.ACTION_NETWORK,
-                        home_team=home_team_normalized,
-                        away_team=away_team_normalized,
-                        game_date=raw_game_info["game_date"]
-                    )
-
-                if resolution_result.mlb_game_id:
-                    # Update games table if it exists, otherwise we'll rely on odds table
-                    if game_info:
-                        await conn.execute(
-                            """
-                            UPDATE staging.action_network_games 
-                            SET mlb_stats_api_game_id = $1, updated_at = NOW()
-                            WHERE external_game_id = $2
-                        """,
-                            resolution_result.mlb_game_id,
-                            record.external_game_id,
-                        )
-
-                    logger.info(
-                        f"Resolved MLB game ID via raw data for {record.external_game_id}: {resolution_result.mlb_game_id} "
-                        f"({away_team_normalized} @ {home_team_normalized}) - confidence: {resolution_result.confidence}"
-                    )
-                    return resolution_result.mlb_game_id
-
-            logger.warning(f"No game info found for Action Network game {record.external_game_id}")
-            return None
-
-        except Exception as e:
-            logger.error(
-                f"Error resolving MLB game ID for {record.external_game_id}: {e}"
-            )
-            return None
-
-    async def _resolve_mlb_game_id(
-        self, record: HistoricalOddsRecord, conn: asyncpg.Connection
-    ) -> str | None:
-        """Legacy method - delegates to enhanced resolver."""
-        return await self._resolve_mlb_game_id_enhanced(record, conn)
+    # NOTE: MLB resolution methods removed - game IDs now resolved via dimension table JOINs
+    # This eliminates thousands of API calls per pipeline run and provides sub-millisecond performance
+    # The GameIDMappingService now handles all game ID resolution via staging.game_id_mappings
 
     async def _insert_historical_odds_record(
         self, record: HistoricalOddsRecord, conn: asyncpg.Connection
@@ -708,7 +562,7 @@ class ActionNetworkHistoryProcessor:
         await conn.execute(
             """
             INSERT INTO staging.action_network_odds_historical (
-                external_game_id, mlb_stats_api_game_id, sportsbook_external_id,
+                external_game_id, sportsbook_external_id,
                 sportsbook_id, sportsbook_name, market_type, side,
                 odds, line_value, updated_at, data_collection_time, data_processing_time,
                 line_status, is_current_odds, market_id, outcome_id, period,
@@ -716,12 +570,11 @@ class ActionNetworkHistoryProcessor:
                 bet_percent_tickets, bet_percent_money, bet_value_tickets, 
                 bet_value_money, bet_info_available
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21,
-                $22, $23, $24, $25, $26
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+                $21, $22, $23, $24, $25
             )
             ON CONFLICT (external_game_id, sportsbook_external_id, market_type, side, updated_at) 
             DO UPDATE SET
-                mlb_stats_api_game_id = EXCLUDED.mlb_stats_api_game_id,
                 is_current_odds = EXCLUDED.is_current_odds,
                 data_processing_time = EXCLUDED.data_processing_time,
                 bet_percent_tickets = EXCLUDED.bet_percent_tickets,
@@ -732,7 +585,6 @@ class ActionNetworkHistoryProcessor:
                 updated_at_record = NOW()
         """,
             record.external_game_id,
-            record.mlb_stats_api_game_id,
             record.sportsbook_external_id,
             record.sportsbook_id,
             record.sportsbook_name,

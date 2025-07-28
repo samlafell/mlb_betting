@@ -662,6 +662,45 @@ async def _collect_historical_data(
         }
 
 
+def _transform_historical_data_for_analysis(historical_data: dict) -> dict:
+    """
+    Transform historical data from Action Network format to MovementAnalyzer expected format.
+    
+    Input format: {historical_entries: [{"event": {"total": [{"book_id": 15, ...}], ...}}]}
+    Output format: {"15": {"event": {"total": [...], "moneyline": [...], "spread": [...]}}}
+    """
+    transformed_data = {}
+    
+    # Get historical entries
+    historical_entries = historical_data.get("historical_entries", [])
+    
+    for entry in historical_entries:
+        event_data = entry.get("event", {})
+        
+        # Process each market type (total, moneyline, spread)
+        for market_type in ["total", "moneyline", "spread"]:
+            market_data = event_data.get(market_type, [])
+            
+            if isinstance(market_data, list):
+                for market_item in market_data:
+                    book_id = str(market_item.get("book_id", "unknown"))
+                    
+                    # Initialize sportsbook data structure if not exists
+                    if book_id not in transformed_data:
+                        transformed_data[book_id] = {
+                            "event": {
+                                "total": [],
+                                "moneyline": [],
+                                "spread": []
+                            }
+                        }
+                    
+                    # Add market item to the appropriate market type for this sportsbook
+                    transformed_data[book_id]["event"][market_type].append(market_item)
+    
+    return transformed_data
+
+
 async def _analyze_opportunities(
     history_file: Path, analysis_file: Path, opportunities_file: Path, verbose: bool
 ) -> dict:
@@ -691,7 +730,20 @@ async def _analyze_opportunities(
                 # Extract historical data from the new structure
                 historical_entries = game_data.get("historical_data", {})
                 if not historical_entries:
+                    if verbose:
+                        console.print(f"[yellow]⚠️  No historical data for game {game_data.get('game_id', 'unknown')}[/yellow]")
                     continue
+
+                # Transform data format for MovementAnalyzer compatibility
+                transformed_data = _transform_historical_data_for_analysis(historical_entries)
+                
+                if not transformed_data:
+                    if verbose:
+                        console.print(f"[yellow]⚠️  No transformed data for game {game_data.get('game_id', 'unknown')}[/yellow]")
+                    continue
+
+                if verbose:
+                    console.print(f"[cyan]📊 Analyzing game {game_data.get('game_id')}: {len(transformed_data)} sportsbooks[/cyan]")
 
                 analysis = await analyzer.analyze_game_movements(
                     {
@@ -699,7 +751,7 @@ async def _analyze_opportunities(
                         "home_team": game_data.get("home_team"),
                         "away_team": game_data.get("away_team"),
                         "game_datetime": game_data.get("game_datetime"),
-                        "raw_data": historical_entries,  # Pass the historical data
+                        "raw_data": transformed_data,  # Pass the transformed data
                     }
                 )
                 game_analyses.append(analysis)
@@ -723,9 +775,11 @@ async def _analyze_opportunities(
 
             except Exception as e:
                 if verbose:
+                    import traceback
                     console.print(
                         f"[yellow]⚠️  Error analyzing game {game_data.get('game_id', 'unknown')}: {e}[/yellow]"
                     )
+                    console.print(f"[red]Stack trace: {traceback.format_exc()}[/red]")
 
         # Create comprehensive report
         report = MovementAnalysisReport(
@@ -1041,7 +1095,7 @@ def opportunities(hours: int, limit: int, fallback_json: bool):
                 for i, arb in enumerate(arb_opps[: limit // 3], 1):
                     profit = (
                         f"{arb.get('profit_potential', 0):.2f}%"
-                        if arb.get("profit_potential")
+                        if arb.get("profit_potential") is not None
                         else "TBD"
                     )
                     console.print(

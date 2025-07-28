@@ -6,6 +6,7 @@ Handles persistence of pipeline analysis results to PostgreSQL instead of JSON f
 from datetime import datetime
 
 from src.core.config import get_settings
+from src.core.team_utils import normalize_team_name
 from src.data.database.connection import get_connection
 from src.data.models.unified.movement_analysis import (
     CrossBookMovement,
@@ -77,8 +78,8 @@ class AnalysisReportsRepository:
                     analysis_report_id,
                     game_data.get("game_id"),
                     game_data.get("action_network_game_id"),
-                    game_data.get("home_team"),
-                    game_data.get("away_team"),
+                    normalize_team_name(game_data.get("home_team", "")),
+                    normalize_team_name(game_data.get("away_team", "")),
                     game_data.get("game_datetime"),
                     None,  # sportsbook_id - need to resolve from action_network_book_id
                     rlm.sportsbook_id,
@@ -134,8 +135,8 @@ class AnalysisReportsRepository:
                         analysis_report_id,
                         game_data.get("game_id"),
                         game_data.get("action_network_game_id"),
-                        game_data.get("home_team"),
-                        game_data.get("away_team"),
+                        normalize_team_name(game_data.get("home_team", "")),
+                        normalize_team_name(game_data.get("away_team", "")),
                         game_data.get("game_datetime"),
                         movement.market_type.value,
                         movement.consensus_direction.value,
@@ -188,8 +189,8 @@ class AnalysisReportsRepository:
                     analysis_report_id,
                     game_data.get("game_id"),
                     game_data.get("action_network_game_id"),
-                    game_data.get("home_team"),
-                    game_data.get("away_team"),
+                    normalize_team_name(game_data.get("home_team", "")),
+                    normalize_team_name(game_data.get("away_team", "")),
                     game_data.get("game_datetime"),
                     arb["market_type"],
                     None,  # book_a_id - need to resolve
@@ -197,7 +198,7 @@ class AnalysisReportsRepository:
                     arb.get("max_odds", 0),
                     arb.get("min_odds", 0),
                     arb["discrepancy"],
-                    arb.get("potential_profit", 0.0),
+                    float(arb["potential_profit"]) if arb.get("potential_profit") is not None else None,
                     datetime.now(),
                 )
             )
