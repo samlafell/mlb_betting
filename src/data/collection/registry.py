@@ -12,6 +12,9 @@ This module implements:
 - Registration tracking and validation
 """
 
+import threading
+import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -32,20 +35,39 @@ class RegistrationInfo:
     aliases: set[str] = field(default_factory=set)
 
 
+@dataclass
+class CacheEntry:
+    """Cache entry with TTL support."""
+    instance: BaseCollector
+    created_at: float
+    ttl: float | None = None
+
+    def is_expired(self) -> bool:
+        """Check if cache entry has expired."""
+        if self.ttl is None:
+            return False
+        return time.time() - self.created_at > self.ttl
+
+
 class CollectorRegistry:
     """
     Centralized collector registration system.
 
-    Implements singleton pattern to ensure collectors are only registered once
+    Implements thread-safe singleton pattern to ensure collectors are only registered once
     and provides alias mapping for backward compatibility.
     """
 
     _instance: Optional['CollectorRegistry'] = None
     _initialized: bool = False
+    _lock: threading.Lock = threading.Lock()
 
     def __new__(cls) -> 'CollectorRegistry':
+        # First check without lock for performance
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
+            with cls._lock:
+                # Double-checked locking pattern
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
         return cls._instance
 
     def __init__(self):
@@ -53,10 +75,28 @@ class CollectorRegistry:
             self._registered_collectors: dict[DataSource, RegistrationInfo] = {}
             self._source_aliases: dict[str, DataSource] = {}
             self._registration_history: set[str] = set()
-            self._instance_cache: dict[str, BaseCollector] = {}
+            self._instance_cache: OrderedDict[str, CacheEntry] = OrderedDict()
+            self._max_cache_size = 100  # Default cache size
+            self._default_ttl = None    # Default TTL (no expiration)
+            self._cache_hits = 0
+            self._cache_misses = 0
             self._setup_source_aliases()
             CollectorRegistry._initialized = True
-            logger.info("Centralized collector registry initialized")
+            logger.info(
+                "Centralized collector registry initialized",
+                max_cache_size=self._max_cache_size,
+                default_ttl=self._default_ttl
+            )
+
+    def configure_cache(self, max_cache_size: int = 100, default_ttl: float | None = None) -> None:
+        """Configure cache settings after initialization."""
+        self._max_cache_size = max_cache_size
+        self._default_ttl = default_ttl
+        logger.info(
+            "Cache configuration updated",
+            max_cache_size=max_cache_size,
+            default_ttl=default_ttl
+        )
 
     def _setup_source_aliases(self) -> None:
         """Setup source aliases for backward compatibility."""
@@ -74,6 +114,23 @@ class CollectorRegistry:
         for alias, primary_source in alias_mappings.items():
             self._source_aliases[alias] = primary_source
             logger.debug("Source alias registered", alias=alias, primary_source=primary_source.value)
+
+    def _evict_expired_entries(self) -> None:
+        """Remove expired cache entries."""
+        expired_keys = [
+            key for key, entry in self._instance_cache.items()
+            if entry.is_expired()
+        ]
+        for key in expired_keys:
+            del self._instance_cache[key]
+            logger.debug("Evicted expired cache entry", cache_key=key)
+
+    def _ensure_cache_size(self) -> None:
+        """Ensure cache doesn't exceed maximum size using LRU eviction."""
+        while len(self._instance_cache) >= self._max_cache_size:
+            # Remove oldest entry (LRU)
+            oldest_key, _ = self._instance_cache.popitem(last=False)
+            logger.debug("Evicted LRU cache entry", cache_key=oldest_key)
 
     def register_collector(
         self,
@@ -142,8 +199,16 @@ class CollectorRegistry:
 
         # Also register with the existing CollectorFactory for compatibility
         # But only if not already registered to prevent duplicate logs
-        if hasattr(CollectorFactory, '_collectors') and source not in CollectorFactory._collectors:
-            CollectorFactory.register_collector(source, collector_class)
+        try:
+            if hasattr(CollectorFactory, '_collectors') and source not in CollectorFactory._collectors:
+                CollectorFactory.register_collector(source, collector_class)
+        except Exception as e:
+            logger.warning(
+                "Failed to register with legacy factory - continuing with centralized registry",
+                source=source.value,
+                collector=collector_class.__name__,
+                error=str(e)
+            )
 
         logger.info(
             "Collector registered",
@@ -218,22 +283,28 @@ class CollectorRegistry:
         self,
         source: str | DataSource,
         config: object | None = None,
-        force_new: bool = False
+        force_new: bool = False,
+        ttl: float | None = None
     ) -> BaseCollector | None:
         """
-        Get or create collector instance with caching.
+        Get or create collector instance with LRU caching and TTL support.
 
         Args:
             source: Source name or DataSource enum
             config: Collector configuration
             force_new: Force creation of new instance
+            ttl: Time-to-live for cache entry (uses default_ttl if None)
 
         Returns:
             Collector instance if available
         """
+        # Clean up expired entries first
+        self._evict_expired_entries()
+
         # Resolve source and get collector class
         collector_class = self.get_collector_class(source)
         if not collector_class:
+            self._cache_misses += 1
             return None
 
         # Create cache key
@@ -242,8 +313,17 @@ class CollectorRegistry:
 
         # Return cached instance if available and not forcing new
         if not force_new and cache_key in self._instance_cache:
-            logger.debug("Returning cached collector instance", source=source_key)
-            return self._instance_cache[cache_key]
+            cache_entry = self._instance_cache[cache_key]
+            if not cache_entry.is_expired():
+                # Move to end (mark as recently used)
+                self._instance_cache.move_to_end(cache_key)
+                self._cache_hits += 1
+                logger.debug("Returning cached collector instance", source=source_key)
+                return cache_entry.instance
+            else:
+                # Remove expired entry
+                del self._instance_cache[cache_key]
+                logger.debug("Removed expired cache entry", cache_key=cache_key)
 
         # Create new instance
         try:
@@ -255,19 +335,31 @@ class CollectorRegistry:
                 default_config = CollectorConfig(source=source)
                 instance = collector_class(default_config)
 
-            # Cache the instance
-            self._instance_cache[cache_key] = instance
+            # Ensure cache size before adding new entry
+            self._ensure_cache_size()
+
+            # Cache the instance with TTL
+            effective_ttl = ttl if ttl is not None else self._default_ttl
+            cache_entry = CacheEntry(
+                instance=instance,
+                created_at=time.time(),
+                ttl=effective_ttl
+            )
+            self._instance_cache[cache_key] = cache_entry
+            self._cache_misses += 1
 
             logger.debug(
                 "Created new collector instance",
                 source=source_key,
                 collector=collector_class.__name__,
-                cached=True
+                cached=True,
+                ttl=effective_ttl
             )
 
             return instance
 
         except Exception as e:
+            self._cache_misses += 1
             logger.error(
                 "Failed to create collector instance",
                 source=source_key,
@@ -301,16 +393,44 @@ class CollectorRegistry:
         }
 
     def clear_cache(self) -> None:
-        """Clear the instance cache."""
+        """Clear the instance cache and reset statistics."""
         cleared_count = len(self._instance_cache)
         self._instance_cache.clear()
+        self._cache_hits = 0
+        self._cache_misses = 0
         logger.info("Collector instance cache cleared", cleared_instances=cleared_count)
+
+    def get_cache_stats(self) -> dict[str, any]:
+        """Get cache performance statistics."""
+        total_requests = self._cache_hits + self._cache_misses
+        hit_rate = (self._cache_hits / total_requests * 100) if total_requests > 0 else 0
+
+        return {
+            "cache_size": len(self._instance_cache),
+            "max_cache_size": self._max_cache_size,
+            "cache_hits": self._cache_hits,
+            "cache_misses": self._cache_misses,
+            "hit_rate_percent": round(hit_rate, 2),
+            "default_ttl": self._default_ttl,
+            "entries": [
+                {
+                    "key": key,
+                    "created_at": entry.created_at,
+                    "ttl": entry.ttl,
+                    "expires_at": entry.created_at + entry.ttl if entry.ttl else None,
+                    "is_expired": entry.is_expired()
+                }
+                for key, entry in self._instance_cache.items()
+            ]
+        }
 
     def reset_registry(self) -> None:
         """Reset the entire registry (primarily for testing)."""
         self._registered_collectors.clear()
         self._registration_history.clear()
         self._instance_cache.clear()
+        self._cache_hits = 0
+        self._cache_misses = 0
         self._setup_source_aliases()
         logger.warning("Collector registry reset")
 
@@ -351,4 +471,9 @@ def get_registry_status() -> dict[str, any]:
 def clear_collector_cache() -> None:
     """Clear collector instance cache."""
     _registry.clear_cache()
+
+
+def get_cache_statistics() -> dict[str, any]:
+    """Get collector cache performance statistics."""
+    return _registry.get_cache_stats()
 
