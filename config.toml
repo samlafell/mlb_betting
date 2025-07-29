@@ -47,7 +47,7 @@ metrics_sample_rate = 0.1  # 10% sampling for high-volume operations
 max_unmapped_resolution_limit = 100  # Maximum unmapped IDs to resolve per batch
 
 # Metric bucket configurations (in seconds)
-pipeline_duration_buckets = [1, 5, 10, 30, 60, 120, 300, 600]
-pipeline_stage_duration_buckets = [0.1, 0.5, 1, 2, 5, 10, 30, 60]
-database_query_duration_buckets = [0.001, 0.01, 0.1, 0.5, 1, 2, 5, 10]
-api_call_duration_buckets = [0.1, 0.5, 1, 2, 5, 10, 30, 60] 
+pipeline_duration_buckets = [1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
+pipeline_stage_duration_buckets = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0]
+database_query_duration_buckets = [0.001, 0.01, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0]
+api_call_duration_buckets = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0] 

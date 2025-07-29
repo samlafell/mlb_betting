@@ -579,6 +579,60 @@ class WebSocketError(UnifiedBettingError):
         )
 
 
+class OrchestrationError(UnifiedBettingError):
+    """Raised when orchestration operations fail."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        orchestrator_id: str | None = None,
+        orchestration_type: str | None = None,
+        **kwargs,
+    ):
+        details = kwargs.get("details", {})
+
+        if orchestrator_id:
+            details["orchestrator_id"] = orchestrator_id
+        if orchestration_type:
+            details["orchestration_type"] = orchestration_type
+
+        super().__init__(
+            message,
+            component="orchestration",
+            error_code="ORCHESTRATION_ERROR",
+            details=details,
+            **kwargs,
+        )
+
+
+class PipelineError(UnifiedBettingError):
+    """Raised when pipeline operations fail."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        pipeline_name: str | None = None,
+        stage_name: str | None = None,
+        **kwargs,
+    ):
+        details = kwargs.get("details", {})
+
+        if pipeline_name:
+            details["pipeline_name"] = pipeline_name
+        if stage_name:
+            details["stage_name"] = stage_name
+
+        super().__init__(
+            message,
+            component="pipeline",
+            error_code="PIPELINE_ERROR",
+            details=details,
+            **kwargs,
+        )
+
+
 # Legacy exception aliases for backward compatibility
 # MLBSharpBettingError removed - mlb_sharp_betting directory cleanup
 SportsbookReviewError = UnifiedBettingError  # For sportsbookreview module compatibility
