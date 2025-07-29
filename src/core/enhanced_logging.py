@@ -10,14 +10,14 @@ Extends the existing unified logging system with:
 - Pipeline-specific context tracking
 """
 
-import asyncio
 import contextvars
 import re
 import time
+from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, Dict, Generator, Optional
+from typing import Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -36,7 +36,7 @@ correlation_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
 pipeline_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
     "pipeline_id", default=None
 )
-operation_context_var: contextvars.ContextVar[Dict[str, Any]] = contextvars.ContextVar(
+operation_context_var: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar(
     "operation_context", default={}
 )
 
@@ -48,13 +48,13 @@ class OperationContext:
     operation_id: str
     operation_name: str
     correlation_id: str
-    pipeline_id: Optional[str] = None
-    parent_operation: Optional[str] = None
+    pipeline_id: str | None = None
+    parent_operation: str | None = None
     start_time: float = field(default_factory=time.time)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    tags: Dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    tags: dict[str, str] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for logging."""
         return {
             "operation_id": self.operation_id,
@@ -73,14 +73,14 @@ class PerformanceMetrics:
     """Performance metrics for operations."""
 
     duration: float
-    cpu_time: Optional[float] = None
-    memory_delta: Optional[int] = None
+    cpu_time: float | None = None
+    memory_delta: int | None = None
     database_queries: int = 0
     api_calls: int = 0
     cache_hits: int = 0
     cache_misses: int = 0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for logging."""
         return {
             "duration": self.duration,
@@ -122,7 +122,7 @@ class EnhancedLoggingService:
     def __init__(
         self,
         service_name: str = "mlb-betting-system",
-        otlp_endpoint: Optional[str] = None,
+        otlp_endpoint: str | None = None,
         enable_tracing: bool = True,
     ):
         """Initialize the enhanced logging service."""
@@ -137,7 +137,7 @@ class EnhancedLoggingService:
         self.tracer = trace.get_tracer(__name__)
 
         # Operation tracking
-        self.active_operations: Dict[str, OperationContext] = {}
+        self.active_operations: dict[str, OperationContext] = {}
 
         # Base logger
         self.logger = get_logger(__name__, LogComponent.MONITORING)
@@ -280,7 +280,7 @@ class EnhancedLoggingService:
             correlation_id_var.set(correlation_id)
         return correlation_id
 
-    def get_pipeline_id(self) -> Optional[str]:
+    def get_pipeline_id(self) -> str | None:
         """Get current pipeline ID."""
         return pipeline_id_var.get()
 
@@ -293,7 +293,7 @@ class EnhancedLoggingService:
         operation_context_var.set(context)
 
     def get_enhanced_logger(
-        self, name: str, component: LogComponent, correlation_id: Optional[str] = None
+        self, name: str, component: LogComponent, correlation_id: str | None = None
     ) -> UnifiedLogger:
         """Get enhanced logger with current context."""
         if not correlation_id:
@@ -316,10 +316,10 @@ class EnhancedLoggingService:
         self,
         operation_name: str,
         *,
-        operation_id: Optional[str] = None,
-        correlation_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        tags: Optional[Dict[str, str]] = None,
+        operation_id: str | None = None,
+        correlation_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        tags: dict[str, str] | None = None,
     ) -> Generator[OperationContext, None, None]:
         """Context manager for tracking operations with tracing and proper cleanup."""
 
@@ -467,10 +467,10 @@ class EnhancedLoggingService:
         self,
         operation_name: str,
         *,
-        operation_id: Optional[str] = None,
-        correlation_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        tags: Optional[Dict[str, str]] = None,
+        operation_id: str | None = None,
+        correlation_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        tags: dict[str, str] | None = None,
     ) -> AsyncGenerator[OperationContext, None]:
         """Async context manager for tracking operations with tracing."""
 
@@ -624,9 +624,9 @@ class EnhancedLoggingService:
         pipeline_id: str,
         pipeline_type: str,
         *,
-        stage: Optional[str] = None,
-        status: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        stage: str | None = None,
+        status: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         """Log pipeline-specific events with full context."""
         logger = self.get_enhanced_logger(__name__, LogComponent.MONITORING)
@@ -658,7 +658,7 @@ class EnhancedLoggingService:
         operation_name: str,
         metrics: PerformanceMetrics,
         *,
-        correlation_id: Optional[str] = None,
+        correlation_id: str | None = None,
     ):
         """Log detailed performance metrics."""
         logger = self.get_enhanced_logger(__name__, LogComponent.MONITORING)
@@ -670,11 +670,11 @@ class EnhancedLoggingService:
             extra={"performance_metrics": metrics.to_dict(), "metrics_event": True},
         )
 
-    def get_active_operations(self) -> Dict[str, OperationContext]:
+    def get_active_operations(self) -> dict[str, OperationContext]:
         """Get currently active operations."""
         return self.active_operations.copy()
 
-    def get_operation_summary(self) -> Dict[str, Any]:
+    def get_operation_summary(self) -> dict[str, Any]:
         """Get summary of operation activity."""
         active_ops = self.get_active_operations()
 
@@ -696,12 +696,12 @@ class EnhancedLoggingService:
 
 
 # Global enhanced logging service instance
-_enhanced_logging_service: Optional[EnhancedLoggingService] = None
+_enhanced_logging_service: EnhancedLoggingService | None = None
 
 
 def get_enhanced_logging_service(
     service_name: str = "mlb-betting-system",
-    otlp_endpoint: Optional[str] = None,
+    otlp_endpoint: str | None = None,
     enable_tracing: bool = True,
 ) -> EnhancedLoggingService:
     """Get or create the global enhanced logging service instance."""

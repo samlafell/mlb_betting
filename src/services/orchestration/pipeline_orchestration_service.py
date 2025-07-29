@@ -25,14 +25,14 @@ from enum import Enum
 from typing import Any
 
 from ...core.config import get_settings
-from ...core.exceptions import OrchestrationError, PipelineError
-from ...core.logging import get_logger, LogComponent
 from ...core.enhanced_logging import (
-    get_enhanced_logging_service, 
-    async_operation_context, 
+    async_operation_context,
+    get_enhanced_logging_service,
+    log_pipeline_event,
     set_pipeline_context,
-    log_pipeline_event
 )
+from ...core.exceptions import OrchestrationError, PipelineError
+from ...core.logging import LogComponent, get_logger
 from ...data.database.connection import get_connection
 from ...services.data.enhanced_data_service import EnhancedDataService
 from ..monitoring.prometheus_metrics_service import get_metrics_service
@@ -347,14 +347,14 @@ class PipelineOrchestrationService:
 
         # Set pipeline context for enhanced logging
         set_pipeline_context(pipeline_id, pipeline_type)
-        
+
         # Record pipeline start metrics
         self.metrics_service.record_pipeline_start(pipeline_id, pipeline_type)
-        
+
         # Log pipeline start event
         log_pipeline_event(
-            "pipeline_start", 
-            pipeline_id, 
+            "pipeline_start",
+            pipeline_id,
             pipeline_type,
             metadata={
                 "force_execution": force_execution,
@@ -439,7 +439,7 @@ class PipelineOrchestrationService:
                 errors = []
                 for stage_result in result.stages.values():
                     errors.extend(stage_result.errors)
-                
+
                 self.metrics_service.record_pipeline_completion(
                     pipeline_id=pipeline_id,
                     pipeline_type=pipeline_type,
@@ -447,11 +447,11 @@ class PipelineOrchestrationService:
                     stages_executed=len(result.stages),
                     errors=errors if errors else None
                 )
-                
+
                 # Log pipeline completion event
                 log_pipeline_event(
-                    "pipeline_complete", 
-                    pipeline_id, 
+                    "pipeline_complete",
+                    pipeline_id,
                     pipeline_type,
                     status=result.overall_status.value,
                     metadata={
@@ -481,7 +481,7 @@ class PipelineOrchestrationService:
             except Exception as e:
                 result.mark_completed(PipelineStatus.FAILED)
                 self.metrics.increment("failed_pipelines")
-                
+
                 # Record Prometheus metrics for failed pipeline
                 self.metrics_service.record_pipeline_completion(
                     pipeline_id=pipeline_id,
@@ -490,11 +490,11 @@ class PipelineOrchestrationService:
                     stages_executed=len(result.stages),
                     errors=[str(e)]
                 )
-                
+
                 # Log pipeline failure event
                 log_pipeline_event(
-                    "pipeline_failed", 
-                    pipeline_id, 
+                    "pipeline_failed",
+                    pipeline_id,
                     pipeline_type,
                     status="failed",
                     metadata={"error": str(e)}
@@ -688,16 +688,16 @@ class PipelineOrchestrationService:
             health = SystemHealth.WARNING
         else:
             health = SystemHealth.CRITICAL
-        
+
         # Update Prometheus metrics
         self.metrics_service.update_system_health_status(health.value)
-        
+
         # Update data quality and freshness metrics
         if analysis.data_age_hours is not None:
             self.metrics_service.update_data_freshness("system", analysis.data_age_hours * 3600)
-        
+
         self.metrics_service.update_data_quality_score("system", "overall", analysis.data_quality_score)
-        
+
         return health
 
     def _generate_recommendations(self, analysis: SystemStateAnalysis) -> list[str]:
@@ -795,7 +795,7 @@ class PipelineOrchestrationService:
 
             stage_result.mark_completed(PipelineStatus.SUCCESS)
             self.metrics.increment("successful_stages")
-            
+
             # Record Prometheus metrics for successful stage
             self.metrics_service.record_stage_execution(
                 stage=stage.value,
@@ -808,7 +808,7 @@ class PipelineOrchestrationService:
             stage_result.errors.append(str(e))
             stage_result.mark_completed(PipelineStatus.FAILED)
             self.metrics.increment("failed_stages")
-            
+
             # Record Prometheus metrics for failed stage
             self.metrics_service.record_stage_execution(
                 stage=stage.value,
@@ -914,7 +914,7 @@ class PipelineOrchestrationService:
         """Get comprehensive orchestration metrics."""
         orchestration_metrics = self.metrics.to_dict()
         prometheus_overview = self.metrics_service.get_system_overview()
-        
+
         return {
             "orchestration": orchestration_metrics,
             "prometheus": prometheus_overview,

@@ -16,8 +16,8 @@ with O(1) dimension table lookups, achieving 85-90% pipeline performance improve
 """
 
 import asyncio
-from datetime import datetime, timedelta
-from typing import Any, Optional
+from datetime import datetime
+from typing import Any
 
 import structlog
 from pydantic import BaseModel, Field
@@ -26,8 +26,8 @@ from ..core.config import get_settings
 from ..data.collection.base import DataSource
 from ..data.database.connection import get_connection
 from ..services.mlb_stats_api_game_resolution_service import (
-    MLBStatsAPIGameResolutionService,
     MatchConfidence,
+    MLBStatsAPIGameResolutionService,
 )
 
 logger = structlog.get_logger(__name__)
@@ -36,22 +36,22 @@ logger = structlog.get_logger(__name__)
 class GameIDMapping(BaseModel):
     """Model for game ID mapping records."""
 
-    id: Optional[int] = None
+    id: int | None = None
     mlb_stats_api_game_id: str
-    action_network_game_id: Optional[str] = None
-    vsin_game_id: Optional[str] = None
-    sbd_game_id: Optional[str] = None
-    sbr_game_id: Optional[str] = None
+    action_network_game_id: str | None = None
+    vsin_game_id: str | None = None
+    sbd_game_id: str | None = None
+    sbr_game_id: str | None = None
     home_team: str
     away_team: str
     game_date: datetime
-    game_datetime: Optional[datetime] = None
+    game_datetime: datetime | None = None
     resolution_confidence: float = Field(ge=0.0, le=1.0, default=1.0)
     primary_source: str
-    last_verified_at: Optional[datetime] = None
+    last_verified_at: datetime | None = None
     verification_attempts: int = 0
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class UnmappedExternalID(BaseModel):
@@ -74,7 +74,7 @@ class MappingStats(BaseModel):
     sbd_count: int
     sbr_count: int
     avg_confidence: float
-    last_updated: Optional[datetime]
+    last_updated: datetime | None
 
 
 class GameIDMappingService:
@@ -103,7 +103,7 @@ class GameIDMappingService:
 
     async def get_mlb_game_id(
         self, external_id: str, source: str, create_if_missing: bool = False
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Get MLB Stats API game ID for an external ID.
 
@@ -141,21 +141,11 @@ class GameIDMappingService:
                 self.logger.warning(f"Unknown source type: {source}")
                 return None
 
-            # Perform O(1) indexed lookup using parameterized queries
+            # Perform O(1) indexed lookup using parameterized query
             try:
                 async with get_connection() as conn:
                     # Use parameterized query to prevent SQL injection
-                    if column_name == "action_network_game_id":
-                        query = "SELECT mlb_stats_api_game_id FROM staging.game_id_mappings WHERE action_network_game_id = $1"
-                    elif column_name == "vsin_game_id":
-                        query = "SELECT mlb_stats_api_game_id FROM staging.game_id_mappings WHERE vsin_game_id = $1"
-                    elif column_name == "sbd_game_id":
-                        query = "SELECT mlb_stats_api_game_id FROM staging.game_id_mappings WHERE sbd_game_id = $1"
-                    elif column_name == "sbr_game_id":
-                        query = "SELECT mlb_stats_api_game_id FROM staging.game_id_mappings WHERE sbr_game_id = $1"
-                    else:
-                        return None
-
+                    query = f"SELECT mlb_stats_api_game_id FROM staging.game_id_mappings WHERE {column_name} = $1"
                     mlb_id = await conn.fetchval(query, external_id)
 
                     if mlb_id:
@@ -198,7 +188,7 @@ class GameIDMappingService:
 
     async def bulk_get_mlb_game_ids(
         self, external_ids: list[tuple[str, str]]
-    ) -> dict[str, Optional[str]]:
+    ) -> dict[str, str | None]:
         """
         Get MLB game IDs for multiple external IDs in a single query.
 
@@ -234,18 +224,8 @@ class GameIDMappingService:
                     if not column_name:
                         continue
 
-                    # Use parameterized queries to prevent SQL injection
-                    if column_name == "action_network_game_id":
-                        query = "SELECT action_network_game_id, mlb_stats_api_game_id FROM staging.game_id_mappings WHERE action_network_game_id = ANY($1::TEXT[])"
-                    elif column_name == "vsin_game_id":
-                        query = "SELECT vsin_game_id, mlb_stats_api_game_id FROM staging.game_id_mappings WHERE vsin_game_id = ANY($1::TEXT[])"
-                    elif column_name == "sbd_game_id":
-                        query = "SELECT sbd_game_id, mlb_stats_api_game_id FROM staging.game_id_mappings WHERE sbd_game_id = ANY($1::TEXT[])"
-                    elif column_name == "sbr_game_id":
-                        query = "SELECT sbr_game_id, mlb_stats_api_game_id FROM staging.game_id_mappings WHERE sbr_game_id = ANY($1::TEXT[])"
-                    else:
-                        continue
-
+                    # Use parameterized query to prevent SQL injection
+                    query = f"SELECT {column_name}, mlb_stats_api_game_id FROM staging.game_id_mappings WHERE {column_name} = ANY($1::TEXT[])"
                     rows = await conn.fetch(query, ids)
                     for row in rows:
                         external_id = row[column_name]
@@ -265,8 +245,8 @@ class GameIDMappingService:
 
     async def resolve_unmapped_external_ids(
         self,
-        source_filter: Optional[str] = None,
-        limit: int = 100,
+        source_filter: str | None = None,
+        limit: int | None = None,
         dry_run: bool = False,
     ) -> dict[str, Any]:
         """
@@ -277,12 +257,20 @@ class GameIDMappingService:
 
         Args:
             source_filter: Limit to specific source (action_network, vsin, sbd, sbr)
-            limit: Maximum number of IDs to resolve in this run
+            limit: Maximum number of IDs to resolve in this run (defaults to config or 100)
             dry_run: If True, don't update database
 
         Returns:
             Dictionary with resolution results and statistics
         """
+        # Use configurable limit or default
+        if limit is None:
+            limit = getattr(self.settings, 'max_unmapped_resolution_limit', 100)
+        elif limit <= 0:
+            raise ValueError("Limit must be a positive integer")
+        elif limit > 1000:
+            self.logger.warning(f"Large limit specified ({limit}), consider smaller batches")
+
         self.logger.info(
             "Starting unmapped external ID resolution",
             source_filter=source_filter,
@@ -455,7 +443,7 @@ class GameIDMappingService:
             return {"error": str(e)}
 
     async def _find_unmapped_external_ids(
-        self, source_filter: Optional[str] = None, limit: int = 100
+        self, source_filter: str | None = None, limit: int = 100
     ) -> list[UnmappedExternalID]:
         """Find unmapped external IDs from raw data tables."""
         try:
@@ -489,7 +477,7 @@ class GameIDMappingService:
 
     async def _resolve_and_cache_external_id(
         self, external_id: str, source: str
-    ) -> Optional[str]:
+    ) -> str | None:
         """Resolve a single external ID and cache the result."""
         try:
             # Get game info from raw data to help with resolution
@@ -547,7 +535,7 @@ class GameIDMappingService:
 
     async def _get_game_info_from_raw(
         self, external_id: str, source: str
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Get game information from raw data tables."""
         try:
             async with get_connection() as conn:
@@ -621,7 +609,7 @@ class GameIDMappingService:
             self.logger.error(f"Error upserting mapping: {e}")
             raise
 
-    def _get_data_source_enum(self, source: str) -> Optional[DataSource]:
+    def _get_data_source_enum(self, source: str) -> DataSource | None:
         """Convert source string to DataSource enum."""
         source_map = {
             "action_network": DataSource.ACTION_NETWORK,
@@ -647,7 +635,7 @@ game_id_mapping_service = GameIDMappingService()
 
 
 # Convenience functions
-async def get_mlb_game_id(external_id: str, source: str) -> Optional[str]:
+async def get_mlb_game_id(external_id: str, source: str) -> str | None:
     """
     Convenience function to get MLB game ID for an external ID.
 
@@ -662,7 +650,7 @@ async def get_mlb_game_id(external_id: str, source: str) -> Optional[str]:
 
 
 async def resolve_unmapped_ids(
-    source_filter: Optional[str] = None, limit: int = 100, dry_run: bool = False
+    source_filter: str | None = None, limit: int = 100, dry_run: bool = False
 ) -> dict[str, Any]:
     """
     Convenience function to resolve unmapped external IDs.

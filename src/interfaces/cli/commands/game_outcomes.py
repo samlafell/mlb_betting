@@ -20,9 +20,9 @@ from rich.table import Table
 
 from src.data.database.connection import get_connection
 from src.services.game_outcome_service import (
-    check_game_outcomes, 
+    check_game_outcomes,
     fetch_outcomes_from_mlb_api,
-    game_outcome_service
+    game_outcome_service,
 )
 
 console = Console()
@@ -48,7 +48,7 @@ def update(
     verbose: bool,
 ):
     """Update game outcomes for specified date(s)."""
-    
+
     # Handle date parameter - convert to start_date/end_date
     if date:
         if date.lower() == "today":
@@ -60,10 +60,10 @@ def update(
             # Assume it's a specific date
             start_date = date
             end_date = date
-    
+
     # Set default days if no dates provided
     days = 1 if (start_date or end_date) else 7
-    
+
     # Determine date range
     if start_date and end_date:
         date_range = (start_date, end_date)
@@ -948,7 +948,7 @@ def _display_results(results: dict, verbose: bool):
     api_games_info = ""
     if "api_games_found" in results:
         api_games_info = f"🏟️ MLB API Games Found: {results['api_games_found']}\n"
-    
+
     summary_text = f"""
 {api_games_info}📊 Processed: {results["processed_games"]} games
 ✅ Updated: {results["updated_outcomes"]} outcomes  

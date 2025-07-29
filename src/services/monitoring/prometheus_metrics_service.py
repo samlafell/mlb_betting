@@ -19,22 +19,21 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 from prometheus_client import (
+    CONTENT_TYPE_LATEST,
     CollectorRegistry,
     Counter,
     Gauge,
     Histogram,
-    Info,
     Summary,
     generate_latest,
-    CONTENT_TYPE_LATEST,
     start_http_server,
 )
 
 from ...core.config import get_settings
-from ...core.logging import get_logger, LogComponent
+from ...core.logging import LogComponent, get_logger
 
 logger = get_logger(__name__, LogComponent.MONITORING)
 
@@ -80,7 +79,7 @@ class PrometheusMetricsService:
     - Break-glass emergency metrics
     """
 
-    def __init__(self, registry: Optional[CollectorRegistry] = None):
+    def __init__(self, registry: CollectorRegistry | None = None):
         """Initialize the Prometheus metrics service."""
         self.settings = get_settings()
         self.registry = registry or CollectorRegistry()
@@ -98,7 +97,7 @@ class PrometheusMetricsService:
 
         # State tracking
         self.start_time = time.time()
-        self.pipeline_start_times: Dict[str, float] = {}
+        self.pipeline_start_times: dict[str, float] = {}
 
         self.logger.info("Prometheus metrics service initialized")
 
@@ -355,7 +354,7 @@ class PrometheusMetricsService:
             registry=self.registry,
         )
 
-    def _define_slos(self) -> Dict[str, SLODefinition]:
+    def _define_slos(self) -> dict[str, SLODefinition]:
         """Define Service Level Objectives for the system."""
         return {
             "pipeline_latency": SLODefinition(
@@ -411,7 +410,7 @@ class PrometheusMetricsService:
         pipeline_type: str,
         status: str,
         stages_executed: int = 0,
-        errors: Optional[list] = None,
+        errors: list | None = None,
     ):
         """Record the completion of a pipeline execution."""
 
@@ -657,7 +656,7 @@ class PrometheusMetricsService:
         api_name: str,
         endpoint: str,
         duration: float,
-        error_code: Optional[str] = None,
+        error_code: str | None = None,
     ):
         """Record external API call."""
         self.external_api_duration_seconds.labels(
@@ -710,7 +709,7 @@ class PrometheusMetricsService:
 
     # SLO Management
 
-    def check_slo_compliance(self) -> Dict[str, Dict[str, Any]]:
+    def check_slo_compliance(self) -> dict[str, dict[str, Any]]:
         """Check SLO compliance and trigger alerts if needed."""
         compliance_results = {}
 
@@ -749,7 +748,7 @@ class PrometheusMetricsService:
         start_http_server(port, registry=self.registry)
         self.logger.info(f"Prometheus metrics server started on port {port}")
 
-    def get_system_overview(self) -> Dict[str, Any]:
+    def get_system_overview(self) -> dict[str, Any]:
         """Get high-level system overview metrics."""
         uptime = time.time() - self.start_time
 
@@ -763,7 +762,7 @@ class PrometheusMetricsService:
 
 
 # Global metrics service instance
-_metrics_service: Optional[PrometheusMetricsService] = None
+_metrics_service: PrometheusMetricsService | None = None
 
 
 def get_metrics_service() -> PrometheusMetricsService:

@@ -145,7 +145,7 @@ class ActionNetworkHistoryProcessor:
             Dict containing extracted betting information
         """
         bet_info = side_data.get("bet_info", {})
-        
+
         # Initialize with default values
         extracted_data = {
             "bet_percent_tickets": None,
@@ -154,64 +154,64 @@ class ActionNetworkHistoryProcessor:
             "bet_value_money": None,
             "bet_info_available": False
         }
-        
+
         if not bet_info or not isinstance(bet_info, dict):
             logger.debug("No bet_info available in side data")
             return extracted_data
-        
+
         try:
             # Extract ticket data
             tickets_data = bet_info.get("tickets", {})
             if isinstance(tickets_data, dict):
                 tickets_percent = tickets_data.get("percent")
                 tickets_value = tickets_data.get("value")
-                
+
                 # Validate and store ticket percentage
                 if tickets_percent is not None and isinstance(tickets_percent, (int, float)):
                     if 0 <= tickets_percent <= 100:
                         extracted_data["bet_percent_tickets"] = int(tickets_percent)
                     else:
                         logger.warning(f"Invalid ticket percentage: {tickets_percent}")
-                
+
                 # Store ticket value if meaningful
                 if tickets_value is not None and isinstance(tickets_value, (int, float)) and tickets_value > 0:
                     extracted_data["bet_value_tickets"] = int(tickets_value)
-            
+
             # Extract money data
             money_data = bet_info.get("money", {})
             if isinstance(money_data, dict):
                 money_percent = money_data.get("percent")
                 money_value = money_data.get("value")
-                
+
                 # Validate and store money percentage
                 if money_percent is not None and isinstance(money_percent, (int, float)):
                     if 0 <= money_percent <= 100:
                         extracted_data["bet_percent_money"] = int(money_percent)
                     else:
                         logger.warning(f"Invalid money percentage: {money_percent}")
-                
+
                 # Store money value if meaningful
                 if money_value is not None and isinstance(money_value, (int, float)) and money_value > 0:
                     extracted_data["bet_value_money"] = int(money_value)
-            
+
             # Determine if betting info is available
             betting_data_exists = (
-                extracted_data["bet_percent_tickets"] is not None or 
+                extracted_data["bet_percent_tickets"] is not None or
                 extracted_data["bet_percent_money"] is not None
             )
             extracted_data["bet_info_available"] = betting_data_exists
-            
+
             if betting_data_exists:
                 logger.debug(
                     f"Extracted betting data - Tickets: {extracted_data['bet_percent_tickets']}%, "
                     f"Money: {extracted_data['bet_percent_money']}%"
                 )
-                
+
         except Exception as e:
             logger.error(f"Error extracting bet_info: {e}", exc_info=True)
             # Return default values on error
             pass
-        
+
         return extracted_data
 
     async def process_history_data(self, limit: int = 10) -> dict[str, Any]:
@@ -570,10 +570,10 @@ class ActionNetworkHistoryProcessor:
                 """,
                 record.external_game_id,
             )
-            
+
             if game_validation:
                 # Skip test/placeholder records that lack proper game data
-                if (not game_validation['away_team'] or not game_validation['home_team'] or 
+                if (not game_validation['away_team'] or not game_validation['home_team'] or
                     game_validation['table_marker'] == 'action_network_history'):
                     logger.warning(
                         f"Skipping test/placeholder game {record.external_game_id}: "
@@ -582,7 +582,7 @@ class ActionNetworkHistoryProcessor:
                         f"table_marker={game_validation['table_marker']}"
                     )
                     return None
-            
+
             # First check if we already resolved this game's MLB ID
             existing_mlb_id = await conn.fetchval(
                 """
@@ -592,7 +592,7 @@ class ActionNetworkHistoryProcessor:
                 """,
                 record.external_game_id,
             )
-            
+
             if existing_mlb_id:
                 logger.debug(f"Using cached MLB game ID for {record.external_game_id}: {existing_mlb_id}")
                 return existing_mlb_id
@@ -647,16 +647,16 @@ class ActionNetworkHistoryProcessor:
 
             if raw_game_info:
                 from ...core.team_utils import normalize_team_name
-                
+
                 home_team_normalized = normalize_team_name(raw_game_info["home_team"])
                 away_team_normalized = normalize_team_name(raw_game_info["away_team"])
-                
+
                 # Use Action Network specific resolver with normalized team names
                 resolution_result = await self.mlb_resolver.resolve_action_network_game_id(
                     external_game_id=record.external_game_id,
                     game_date=raw_game_info["game_date"]
                 )
-                
+
                 # Fallback to generic resolver if Action Network specific fails
                 if not resolution_result.mlb_game_id:
                     resolution_result = await self.mlb_resolver.resolve_game_id(
