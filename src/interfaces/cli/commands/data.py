@@ -779,11 +779,11 @@ class DataCommands:
             console.print(f"🔄 [blue]Running unified {source_name} collector...[/blue]")
 
             # Import unified collectors
+            from ....data.collection.collectors import OddsAPICollector
             from ....data.collection.consolidated_action_network_collector import (
                 ActionNetworkCollector,
                 CollectionMode,
             )
-            from ....data.collection.collectors import OddsAPICollector
             from ....data.collection.mlb_stats_api_collector import MLBStatsAPICollector
             from ....data.collection.sbd_unified_collector_api import (
                 SBDUnifiedCollectorAPI as SBDUnifiedCollector,

@@ -3,7 +3,7 @@ Advanced movement analysis processors for betting intelligence.
 """
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from src.data.models.unified.movement_analysis import (
@@ -31,6 +31,73 @@ class MovementAnalyzer:
             "71": "PointsBet",
             "75": "Barstool",
         }
+
+    def _parse_timestamp_robust(self, timestamp_str: str) -> datetime:
+        """Robustly parse timestamp strings with various microsecond precisions."""
+        if not timestamp_str:
+            return datetime.now()
+        
+        try:
+            # First try direct parsing
+            dt = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+            # Ensure timezone-aware
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except ValueError:
+            pass
+        
+        try:
+            # Handle microsecond precision issues
+            import re
+            
+            # Match ISO format with optional microseconds
+            pattern = r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})?'
+            match = re.match(pattern, timestamp_str)
+            
+            if match:
+                date_time = match.group(1)
+                microseconds = match.group(2) or "0"
+                timezone = match.group(3) or "+00:00"
+                
+                # Normalize microseconds to 6 digits (pad or truncate)
+                if len(microseconds) > 6:
+                    microseconds = microseconds[:6]
+                else:
+                    microseconds = microseconds.ljust(6, '0')
+                
+                # Normalize timezone
+                if timezone == "Z":
+                    timezone = "+00:00"
+                
+                # Reconstruct timestamp
+                normalized_timestamp = f"{date_time}.{microseconds}{timezone}"
+                dt = datetime.fromisoformat(normalized_timestamp)
+                # Ensure timezone-aware
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
+            else:
+                # Fallback: try without microseconds
+                pattern_simple = r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(Z|[+-]\d{2}:\d{2})?'
+                match_simple = re.match(pattern_simple, timestamp_str)
+                if match_simple:
+                    date_time = match_simple.group(1)
+                    timezone = match_simple.group(2) or "+00:00"
+                    if timezone == "Z":
+                        timezone = "+00:00"
+                    dt = datetime.fromisoformat(f"{date_time}{timezone}")
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt
+                
+        except Exception as e:
+            print(f"Warning: Could not parse timestamp '{timestamp_str}': {e}")
+            return datetime.now(timezone.utc)
+        
+        # Final fallback
+        print(f"Warning: Using current time for unparseable timestamp: {timestamp_str}")
+        return datetime.now(timezone.utc)
 
     async def analyze_game_movements(self, game_data: dict) -> GameMovementAnalysis:
         """Analyze all movements for a single game."""
@@ -76,7 +143,7 @@ class MovementAnalyzer:
             home_team=home_team,
             away_team=away_team,
             game_datetime=game_datetime,
-            analysis_timestamp=datetime.now(),
+            analysis_timestamp=datetime.now(timezone.utc),
             moneyline_summary=moneyline_summary,
             spread_summary=spread_summary,
             total_summary=total_summary,
@@ -101,7 +168,11 @@ class MovementAnalyzer:
 
             # Process each market type
             for market_type_str in ["moneyline", "spread", "total"]:
-                market_type = MarketType(market_type_str)
+                try:
+                    market_type = MarketType(market_type_str)
+                except ValueError:
+                    # Handle case where market_type_str is not a valid MarketType enum value
+                    continue
                 market_data = event_data.get(market_type_str, [])
 
                 if isinstance(market_data, list):
@@ -132,9 +203,12 @@ class MovementAnalyzer:
     ) -> LineMovementDetail | None:
         """Create a detailed movement record from two history entries."""
         try:
-            timestamp = datetime.fromisoformat(
-                curr_entry.get("updated_at", "").replace("Z", "+00:00")
-            )
+            # Handle timestamp parsing with microsecond precision issues
+            timestamp_str = curr_entry.get("updated_at", "")
+            if not timestamp_str:
+                timestamp = datetime.now(timezone.utc)
+            else:
+                timestamp = self._parse_timestamp_robust(timestamp_str)
 
             prev_odds = prev_entry.get("odds")
             curr_odds = curr_entry.get("odds")
@@ -193,7 +267,11 @@ class MovementAnalyzer:
             event_data = sportsbook_data.get("event", {})
 
             for market_type_str in ["moneyline", "spread", "total"]:
-                market_type = MarketType(market_type_str)
+                try:
+                    market_type = MarketType(market_type_str)
+                except ValueError:
+                    # Handle case where market_type_str is not a valid MarketType enum value
+                    continue
                 market_data = event_data.get(market_type_str, [])
 
                 if isinstance(market_data, list):
@@ -204,7 +282,7 @@ class MovementAnalyzer:
                             money = bet_info.get("money", {})
 
                             snapshot = BettingPercentageSnapshot(
-                                timestamp=datetime.now(),
+                                timestamp=datetime.now(timezone.utc),
                                 sportsbook_id=sportsbook_id,
                                 market_type=market_type,
                                 tickets_percent=tickets.get("percent"),
@@ -475,8 +553,10 @@ class MovementAnalyzer:
                 ).total_seconds()
 
                 if time_span <= 600:  # 10 minutes
+                    # Handle both string and enum market types
+                    market_type_str = market_type.value if hasattr(market_type, 'value') else str(market_type)
                     rapid_patterns.append(
-                        f"{self.sportsbook_names.get(sportsbook_id, sportsbook_id)} {market_type.value}"
+                        f"{self.sportsbook_names.get(sportsbook_id, sportsbook_id)} {market_type_str}"
                     )
 
         return rapid_patterns
@@ -491,10 +571,11 @@ class MovementAnalyzer:
 
         # Group by market type and timestamp
         recent_movements = defaultdict(list)
+        current_time = datetime.now(timezone.utc)
+        one_hour_ago = current_time.replace(hour=current_time.hour - 1)
+        
         for movement in movements:
-            if movement.timestamp > datetime.now().replace(
-                hour=datetime.now().hour - 1
-            ):  # Last hour
+            if movement.timestamp > one_hour_ago:  # Last hour
                 recent_movements[movement.market_type].append(movement)
 
         # Look for significant discrepancies
@@ -511,12 +592,13 @@ class MovementAnalyzer:
                     min_odds = min(odds_values)
 
                     if max_odds - min_odds > 20:  # Significant discrepancy
+                        market_type_str = market_type.value if hasattr(market_type, 'value') else str(market_type)
                         opportunities.append(
                             {
-                                "market_type": market_type.value,
+                                "market_type": market_type_str,
                                 "discrepancy": max_odds - min_odds,
                                 "books": list(odds_by_book.keys()),
-                                "potential_profit": "TBD",  # Would calculate based on stake
+                                "potential_profit": None,  # Would calculate based on stake - using None for database compatibility
                             }
                         )
 

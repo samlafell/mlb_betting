@@ -322,7 +322,7 @@ class SportsBettingReportCollector(BaseCollector):
     def normalize_record(self, record: dict[str, Any]) -> dict[str, Any]:
         """Normalize SBR record to standard format."""
         normalized = record.copy()
-        normalized["source"] = DataSource.SPORTS_BOOK_REVIEW_DEPRECATED.value
+        normalized["source"] = DataSource.SPORTS_BOOK_REVIEW.value
         normalized["collected_at"] = datetime.now().isoformat()
         return normalized
 
@@ -1262,7 +1262,7 @@ class OddsAPICollector(BaseCollector):
                 "bookmakers": [],
                 "timestamp": datetime.now().isoformat(),
             }
-            
+
             # Process bookmaker odds
             for bookmaker in game_data.get("bookmakers", []):
                 bookmaker_data = {
@@ -1271,7 +1271,7 @@ class OddsAPICollector(BaseCollector):
                     "last_update": bookmaker.get("last_update"),
                     "markets": {}
                 }
-                
+
                 # Process each market (h2h, spreads, totals)
                 for market in bookmaker.get("markets", []):
                     market_key = market.get("key")
@@ -1280,29 +1280,29 @@ class OddsAPICollector(BaseCollector):
                         "last_update": market.get("last_update"),
                         "outcomes": []
                     }
-                    
+
                     # Process outcomes for each market
                     for outcome in market.get("outcomes", []):
                         outcome_data = {
                             "name": outcome.get("name"),
                             "price": outcome.get("price"),
                         }
-                        
+
                         # Add spread/total specific fields
                         if "point" in outcome:
                             outcome_data["point"] = outcome.get("point")
-                        
+
                         market_data["outcomes"].append(outcome_data)
-                    
+
                     bookmaker_data["markets"][market_key] = market_data
-                
+
                 game_info["bookmakers"].append(bookmaker_data)
-            
+
             # Add derived analysis
             game_info["analysis"] = self._analyze_odds_data(game_info)
-            
+
             return game_info
-        
+
         except Exception as e:
             self.logger.error("Failed to process Odds API game", game_id=game_data.get("id"), error=str(e))
             return None
@@ -1315,18 +1315,18 @@ class OddsAPICollector(BaseCollector):
             "price_ranges": {},
             "consensus": {}
         }
-        
+
         try:
             bookmakers = game_data.get("bookmakers", [])
-            
+
             # Collect all available markets
             for bookmaker in bookmakers:
                 markets = bookmaker.get("markets", {})
                 analysis["markets_available"].update(markets.keys())
-            
+
             # Convert set to list for JSON serialization
             analysis["markets_available"] = list(analysis["markets_available"])
-            
+
             # Analyze price ranges for each market
             for market_key in analysis["markets_available"]:
                 prices = []
@@ -1337,7 +1337,7 @@ class OddsAPICollector(BaseCollector):
                             price = outcome.get("price")
                             if price:
                                 prices.append(price)
-                
+
                 if prices:
                     analysis["price_ranges"][market_key] = {
                         "min": min(prices),
@@ -1345,7 +1345,7 @@ class OddsAPICollector(BaseCollector):
                         "avg": sum(prices) / len(prices),
                         "count": len(prices)
                     }
-            
+
             # Simple consensus calculation (could be enhanced)
             if "h2h" in analysis["markets_available"]:
                 analysis["consensus"]["moneyline"] = self._calculate_consensus(bookmakers, "h2h")
@@ -1353,26 +1353,26 @@ class OddsAPICollector(BaseCollector):
                 analysis["consensus"]["spread"] = self._calculate_consensus(bookmakers, "spreads")
             if "totals" in analysis["markets_available"]:
                 analysis["consensus"]["total"] = self._calculate_consensus(bookmakers, "totals")
-                
+
         except Exception as e:
             self.logger.warning("Failed to analyze odds data", error=str(e))
-        
+
         return analysis
 
     def _calculate_consensus(self, bookmakers: list[dict], market_key: str) -> dict[str, Any]:
         """Calculate consensus odds for a specific market."""
         consensus = {"home": [], "away": [], "total_books": 0}
-        
+
         try:
             for bookmaker in bookmakers:
                 market = bookmaker.get("markets", {}).get(market_key)
                 if not market:
                     continue
-                
+
                 outcomes = market.get("outcomes", [])
                 if len(outcomes) >= 2:
                     consensus["total_books"] += 1
-                    
+
                     # For h2h and spreads
                     if market_key in ["h2h", "spreads"]:
                         for outcome in outcomes:
@@ -1383,7 +1383,7 @@ class OddsAPICollector(BaseCollector):
                                     consensus["home"].append(price)
                                 else:
                                     consensus["away"].append(price)
-                    
+
                     # For totals
                     elif market_key == "totals":
                         for outcome in outcomes:
@@ -1394,16 +1394,16 @@ class OddsAPICollector(BaseCollector):
                                     consensus["home"].append(price)  # Use home for over
                                 elif "under" in name:
                                     consensus["away"].append(price)  # Use away for under
-            
+
             # Calculate averages
             if consensus["home"]:
                 consensus["home_avg"] = sum(consensus["home"]) / len(consensus["home"])
             if consensus["away"]:
                 consensus["away_avg"] = sum(consensus["away"]) / len(consensus["away"])
-                
+
         except Exception as e:
             self.logger.warning("Failed to calculate consensus", market=market_key, error=str(e))
-        
+
         return consensus
 
     def _get_sample_odds_data(self) -> list[dict[str, Any]]:
@@ -1531,48 +1531,17 @@ class OddsAPICollector(BaseCollector):
             return 0
 
 
-# Register collectors with the factory
-from .base import CollectorFactory
+# DEPRECATED: Collector registration moved to centralized registry
+# See src.data.collection.registry for the new registration system
+#
+# This registration code has been removed to prevent duplicate registrations.
+# All collectors are now registered through the centralized CollectorRegistry
+# which provides better management, instance caching, and alias handling.
+#
+# To use collectors, import from the registry:
+# from .registry import get_collector_instance, get_collector_class
 
-# Import the refactored source-specific collectors
-try:
-    from .consolidated_action_network_collector import (
-        ActionNetworkCollector as ConsolidatedActionNetworkCollector,
-    )
-    from .sbd_unified_collector_api import SBDUnifiedCollectorAPI
-    from .sbr_unified_collector import SBRUnifiedCollector
-    from .vsin_unified_collector import VSINUnifiedCollector
-
-    # Register the refactored collectors (primary registrations)
-    CollectorFactory.register_collector(DataSource.VSIN, VSINUnifiedCollector)
-    CollectorFactory.register_collector(DataSource.SBD, SBDUnifiedCollectorAPI)
-    CollectorFactory.register_collector(
-        DataSource.SPORTS_BETTING_DIME, SBDUnifiedCollectorAPI
-    )  # Alternative name
-    CollectorFactory.register_collector(
-        DataSource.ACTION_NETWORK, ConsolidatedActionNetworkCollector
-    )
-    CollectorFactory.register_collector(
-        DataSource.SPORTS_BOOK_REVIEW, SBRUnifiedCollector
-    )  # New SBR unified collector
-    CollectorFactory.register_collector(
-        DataSource.SBR, SBRUnifiedCollector
-    )  # Alias for SBR
-
-except ImportError as e:
-    # Fallback to legacy collectors if refactored ones aren't available
-    logger.warning(
-        "Could not import refactored collectors, using legacy ones", error=str(e)
-    )
-    CollectorFactory.register_collector(DataSource.VSIN, VSINCollector)
-    CollectorFactory.register_collector(DataSource.SBD, SBDCollector)
-    CollectorFactory.register_collector(
-        DataSource.ACTION_NETWORK, ActionNetworkCollector
-    )
-
-# Register remaining collectors (legacy and others)
-CollectorFactory.register_collector(
-    DataSource.SPORTS_BOOK_REVIEW_DEPRECATED, SportsBettingReportCollector
+logger.info(
+    "Collector registration moved to centralized registry system",
+    location="src.data.collection.registry"
 )
-CollectorFactory.register_collector(DataSource.MLB_STATS_API, MLBStatsAPICollector)
-CollectorFactory.register_collector(DataSource.ODDS_API, OddsAPICollector)

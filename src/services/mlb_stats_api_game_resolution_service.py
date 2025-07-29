@@ -19,7 +19,6 @@ from psycopg2.extras import RealDictCursor
 
 from ..core.config import UnifiedSettings
 from ..data.collection.base import DataSource
-from ..core.team_utils import normalize_team_name
 
 logger = structlog.get_logger(__name__)
 
@@ -509,7 +508,7 @@ class MLBStatsAPIGameResolutionService:
                 with conn.cursor() as cur:
                     # Map source to database column
                     source_column_map = {
-                        DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: "sportsbookreview_game_id",
+                        DataSource.SPORTS_BOOK_REVIEW: "sportsbookreview_game_id",
                         DataSource.ACTION_NETWORK: "action_network_game_id",
                         DataSource.VSIN: "vsin_game_id",
                         DataSource.SPORTS_BETTING_DIME: "sbd_game_id",
@@ -769,7 +768,7 @@ class MLBStatsAPIGameResolutionService:
                 with conn.cursor() as cur:
                     # Map source to database column
                     source_column_map = {
-                        DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: "sportsbookreview_game_id",
+                        DataSource.SPORTS_BOOK_REVIEW: "sportsbookreview_game_id",
                         DataSource.ACTION_NETWORK: "action_network_game_id",
                         DataSource.VSIN: "vsin_game_id",
                         DataSource.SPORTS_BETTING_DIME: "sbd_game_id",
@@ -796,12 +795,38 @@ class MLBStatsAPIGameResolutionService:
                         )
                         match_result.game_id = existing_game["id"]
                     else:
-                        # Insert new game
+                        # Insert new game - explicitly exclude 'id' from INSERT to let SERIAL auto-generate
+                        insert_columns = f"mlb_stats_api_game_id, {column}, home_team, away_team, game_date, game_datetime, data_quality, has_mlb_enrichment"
+                        insert_values = "(%s, %s, %s, %s, %s, %s, %s, %s)"
+
+                        # Prepare game datetime - convert date to datetime if needed
+                        game_date = details.get("game_date")
+                        if isinstance(game_date, str):
+                            from datetime import datetime
+                            game_datetime = datetime.fromisoformat(game_date).replace(tzinfo=None)
+                        elif isinstance(game_date, date):
+                            from datetime import datetime, timezone
+                            # Default to midnight EST for game date
+                            game_datetime = datetime.combine(game_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+                        else:
+                            game_datetime = game_date
+
+                        self.logger.debug(
+                            "Inserting new game record",
+                            mlb_game_id=match_result.mlb_game_id,
+                            external_id=external_id,
+                            home_team=details.get("home_team"),
+                            away_team=details.get("away_team"),
+                            game_date=game_date,
+                            game_datetime=game_datetime,
+                            column=column
+                        )
+
                         cur.execute(
                             f"""
                             INSERT INTO curated.games_complete 
-                            (mlb_stats_api_game_id, {column}, home_team, away_team, game_date, game_datetime, data_quality, has_mlb_enrichment)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            ({insert_columns})
+                            VALUES {insert_values}
                             RETURNING id
                             """,
                             (
@@ -809,13 +834,9 @@ class MLBStatsAPIGameResolutionService:
                                 external_id,
                                 details.get("home_team"),
                                 details.get("away_team"),
-                                details.get("game_date"),
-                                details.get(
-                                    "game_date"
-                                ),  # Use game_date as datetime for now
-                                "HIGH"
-                                if match_result.confidence == MatchConfidence.HIGH
-                                else "MEDIUM",
+                                game_date,
+                                game_datetime,
+                                "HIGH" if match_result.confidence == MatchConfidence.HIGH else "MEDIUM",
                                 True,
                             ),
                         )
@@ -1097,7 +1118,7 @@ class MLBStatsAPIGameResolutionService:
         Action Network IDs are typically numeric (e.g., "258050").
         """
         self.logger.info("Resolving Action Network game ID", external_id=external_game_id)
-        
+
         return await self.resolve_game_id(
             external_id=external_game_id,
             source=DataSource.ACTION_NETWORK,
@@ -1105,10 +1126,10 @@ class MLBStatsAPIGameResolutionService:
         )
 
     async def resolve_vsin_game_id(
-        self, 
+        self,
         external_game_id: str,
         home_team: str = None,
-        away_team: str = None, 
+        away_team: str = None,
         game_date: date = None
     ) -> GameMatchResult:
         """
@@ -1116,11 +1137,11 @@ class MLBStatsAPIGameResolutionService:
         
         VSIN uses various ID formats and team-based matching is often more reliable.
         """
-        self.logger.info("Resolving VSIN game ID", 
+        self.logger.info("Resolving VSIN game ID",
                         external_id=external_game_id,
                         home_team=home_team,
                         away_team=away_team)
-        
+
         # For VSIN, prioritize team + date matching over external ID
         return await self.resolve_game_id(
             external_id=external_game_id,
@@ -1146,7 +1167,7 @@ class MLBStatsAPIGameResolutionService:
                         external_matchup_id=external_matchup_id,
                         home_team=home_team,
                         away_team=away_team)
-        
+
         return await self.resolve_game_id(
             external_id=external_matchup_id,
             source=DataSource.SBD,
@@ -1172,7 +1193,7 @@ class MLBStatsAPIGameResolutionService:
                         sport_key=sport_key,
                         home_team=home_team,
                         away_team=away_team)
-        
+
         # Use sport_key as external ID for tracking purposes
         return await self.resolve_game_id(
             external_id=f"{sport_key}_{home_team}_{away_team}",
@@ -1183,7 +1204,7 @@ class MLBStatsAPIGameResolutionService:
         )
 
     async def bulk_resolve_staging_games(
-        self, 
+        self,
         table_name: str,
         batch_size: int = 100
     ) -> dict[str, Any]:
@@ -1197,10 +1218,10 @@ class MLBStatsAPIGameResolutionService:
         Returns:
             Dictionary with resolution statistics
         """
-        self.logger.info("Starting bulk resolution for staging table", 
+        self.logger.info("Starting bulk resolution for staging table",
                         table_name=table_name,
                         batch_size=batch_size)
-        
+
         stats = {
             "total_processed": 0,
             "successful_matches": 0,
@@ -1210,13 +1231,13 @@ class MLBStatsAPIGameResolutionService:
             "low_confidence": 0,
             "errors": []
         }
-        
+
         try:
             # Get connection to the database
             connection_string = self.settings.database.connection_url
             conn = psycopg2.connect(connection_string, cursor_factory=RealDictCursor)
             cursor = conn.cursor()
-            
+
             # Fetch games missing MLB API game IDs
             if table_name == "staging.action_network_odds_historical":
                 query = """
@@ -1237,23 +1258,23 @@ class MLBStatsAPIGameResolutionService:
                 """
             else:
                 raise ValueError(f"Unsupported table: {table_name}")
-            
+
             cursor.execute(query, (batch_size,))
             games_to_resolve = cursor.fetchall()
-            
+
             self.logger.info("Found games to resolve", count=len(games_to_resolve))
-            
+
             # Process each game
             for game_record in games_to_resolve:
                 stats["total_processed"] += 1
-                
+
                 try:
                     # Resolve the game
                     result = await self.resolve_action_network_game_id(
                         external_game_id=game_record["external_game_id"],
                         game_date=game_record["game_date"]
                     )
-                    
+
                     if result.mlb_game_id:
                         # Update the staging table with the resolved MLB API game ID
                         update_query = f"""
@@ -1263,9 +1284,9 @@ class MLBStatsAPIGameResolutionService:
                             AND mlb_stats_api_game_id IS NULL
                         """
                         cursor.execute(update_query, (result.mlb_game_id, game_record["external_game_id"]))
-                        
+
                         stats["successful_matches"] += 1
-                        
+
                         # Track confidence levels
                         if result.confidence == MatchConfidence.HIGH:
                             stats["high_confidence"] += 1
@@ -1273,7 +1294,7 @@ class MLBStatsAPIGameResolutionService:
                             stats["medium_confidence"] += 1
                         elif result.confidence == MatchConfidence.LOW:
                             stats["low_confidence"] += 1
-                            
+
                         self.logger.info("Successfully resolved game",
                                        external_id=game_record["external_game_id"],
                                        mlb_game_id=result.mlb_game_id,
@@ -1282,18 +1303,18 @@ class MLBStatsAPIGameResolutionService:
                         stats["failed_matches"] += 1
                         self.logger.warning("Failed to resolve game",
                                           external_id=game_record["external_game_id"])
-                        
+
                 except Exception as e:
                     stats["failed_matches"] += 1
                     error_msg = f"Error resolving game {game_record['external_game_id']}: {str(e)}"
                     stats["errors"].append(error_msg)
-                    self.logger.error("Game resolution error", 
+                    self.logger.error("Game resolution error",
                                     external_id=game_record["external_game_id"],
                                     error=str(e))
-            
+
             # Commit the changes
             conn.commit()
-            
+
         except Exception as e:
             self.logger.error("Bulk resolution failed", error=str(e))
             stats["errors"].append(f"Bulk resolution error: {str(e)}")
@@ -1304,7 +1325,7 @@ class MLBStatsAPIGameResolutionService:
                 cursor.close()
             if 'conn' in locals():
                 conn.close()
-        
+
         self.logger.info("Bulk resolution completed", stats=stats)
         return stats
 
