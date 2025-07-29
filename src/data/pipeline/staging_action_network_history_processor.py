@@ -30,10 +30,12 @@ from ...core.config import get_settings
 from ...core.datetime_utils import now_est
 from ...core.logging import LogComponent, get_logger
 from ...core.sportsbook_utils import SportsbookResolver
-from ...services.mlb_stats_api_game_resolution_service import (
-    DataSource,
-    MLBStatsAPIGameResolutionService,
-)
+# NOTE: MLB resolution service removed - game IDs now resolved via dimension table JOINs
+# This eliminates thousands of API calls per pipeline run
+# from ...services.mlb_stats_api_game_resolution_service import (
+#     DataSource,
+#     MLBStatsAPIGameResolutionService,
+# )
 
 logger = get_logger(__name__, LogComponent.CORE)
 
@@ -43,7 +45,7 @@ class HistoricalOddsRecord(BaseModel):
 
     # Game and sportsbook identifiers
     external_game_id: str
-    mlb_stats_api_game_id: str | None = None
+    # NOTE: mlb_stats_api_game_id removed - now resolved via dimension table JOIN
     sportsbook_external_id: str
     sportsbook_id: int | None = None
     sportsbook_name: str | None = None
@@ -110,7 +112,8 @@ class ActionNetworkHistoryProcessor:
     def __init__(self):
         self.settings = get_settings()
         self.sportsbook_resolver = SportsbookResolver(self._get_db_config())
-        self.mlb_resolver = MLBStatsAPIGameResolutionService()
+        # NOTE: MLB resolver removed - game IDs now resolved via dimension table JOINs
+        # self.mlb_resolver = MLBStatsAPIGameResolutionService()
         self.processing_batch_id = str(uuid4())
 
     def _get_db_config(self) -> dict[str, Any]:
@@ -126,14 +129,17 @@ class ActionNetworkHistoryProcessor:
 
     async def initialize(self):
         """Initialize processor services."""
-        await self.mlb_resolver.initialize()
+        # NOTE: MLB resolver initialization removed - using dimension table instead
+        # await self.mlb_resolver.initialize()
         logger.info(
-            "ActionNetworkHistoryProcessor initialized with MLB Stats API integration"
+            "ActionNetworkHistoryProcessor initialized with dimension table optimization"
         )
 
     async def cleanup(self):
         """Cleanup processor resources."""
-        await self.mlb_resolver.cleanup()
+        # NOTE: MLB resolver cleanup removed - using dimension table instead
+        # await self.mlb_resolver.cleanup()
+        pass
 
     def _extract_bet_info(self, side_data: dict) -> dict:
         """Extract betting percentage information from side data.
@@ -317,18 +323,9 @@ class ActionNetworkHistoryProcessor:
                     )
 
                     for historical_record in historical_records:
-                        # Enhanced MLB ID resolution using multiple strategies
-                        mlb_game_id = await self._resolve_mlb_game_id_enhanced(
-                            historical_record, conn
-                        )
-                        if mlb_game_id:
-                            historical_record.mlb_stats_api_game_id = mlb_game_id
-                            mlb_resolved_count += 1
-                        else:
-                            logger.warning(
-                                f"Could not resolve MLB game ID for Action Network game {historical_record.external_game_id}"
-                            )
-
+                        # NOTE: MLB ID resolution removed - now handled via dimension table JOINs
+                        # This eliminates thousands of API calls per pipeline run
+                        
                         # Insert historical record
                         await self._insert_historical_odds_record(
                             historical_record, conn
@@ -700,6 +697,7 @@ class ActionNetworkHistoryProcessor:
     ) -> str | None:
         """Legacy method - delegates to enhanced resolver."""
         return await self._resolve_mlb_game_id_enhanced(record, conn)
+=======
 
     async def _insert_historical_odds_record(
         self, record: HistoricalOddsRecord, conn: asyncpg.Connection
@@ -708,7 +706,7 @@ class ActionNetworkHistoryProcessor:
         await conn.execute(
             """
             INSERT INTO staging.action_network_odds_historical (
-                external_game_id, mlb_stats_api_game_id, sportsbook_external_id,
+                external_game_id, sportsbook_external_id,
                 sportsbook_id, sportsbook_name, market_type, side,
                 odds, line_value, updated_at, data_collection_time, data_processing_time,
                 line_status, is_current_odds, market_id, outcome_id, period,
@@ -716,12 +714,11 @@ class ActionNetworkHistoryProcessor:
                 bet_percent_tickets, bet_percent_money, bet_value_tickets, 
                 bet_value_money, bet_info_available
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21,
-                $22, $23, $24, $25, $26
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+                $21, $22, $23, $24, $25
             )
             ON CONFLICT (external_game_id, sportsbook_external_id, market_type, side, updated_at) 
             DO UPDATE SET
-                mlb_stats_api_game_id = EXCLUDED.mlb_stats_api_game_id,
                 is_current_odds = EXCLUDED.is_current_odds,
                 data_processing_time = EXCLUDED.data_processing_time,
                 bet_percent_tickets = EXCLUDED.bet_percent_tickets,
@@ -732,7 +729,6 @@ class ActionNetworkHistoryProcessor:
                 updated_at_record = NOW()
         """,
             record.external_game_id,
-            record.mlb_stats_api_game_id,
             record.sportsbook_external_id,
             record.sportsbook_id,
             record.sportsbook_name,

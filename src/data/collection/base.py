@@ -35,11 +35,7 @@ class DataSource(Enum):
     SBD = "sbd"  # Sports Betting Dime
     SPORTS_BETTING_DIME = "sports_betting_dime"  # Alternative name for SBD
     ACTION_NETWORK = "action_network"
-    SPORTS_BOOK_REVIEW_DEPRECATED = (
-        "SPORTS_BOOK_REVIEW"  # DEPRECATED: Use SBR instead - matches DB enum
-    )
-    SPORTS_BOOK_REVIEW = "sports_book_review"  # SportsbookReview.com
-    SBR = "sbr"  # Alias for SPORTS_BOOK_REVIEW
+    SPORTS_BOOK_REVIEW = "sports_book_review"  # SportsbookReview.com (primary)
     MLB_STATS_API = "mlb_stats_api"
     ODDS_API = "odds_api"
 
@@ -363,7 +359,7 @@ class MockCollector(BaseCollector):
             DataSource.VSIN: self._get_vsin_mock_data,
             DataSource.SBD: self._get_sbd_mock_data,
             DataSource.ACTION_NETWORK: self._get_action_network_mock_data,
-            DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: self._get_sbr_mock_data,
+            DataSource.SPORTS_BOOK_REVIEW: self._get_sbr_mock_data,
             DataSource.MLB_STATS_API: self._get_mlb_api_mock_data,
             DataSource.ODDS_API: self._get_odds_api_mock_data,
         }
@@ -543,9 +539,7 @@ class CollectorFactory:
         DataSource.VSIN: None,  # Will be implemented
         DataSource.SBD: None,  # Will be implemented
         DataSource.ACTION_NETWORK: None,  # Will be implemented
-        DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: None,  # DEPRECATED: Use SBR instead
         DataSource.SPORTS_BOOK_REVIEW: None,  # Will be implemented - SBRUnifiedCollector
-        DataSource.SBR: None,  # Alias for SPORTS_BOOK_REVIEW
         DataSource.MLB_STATS_API: None,  # Will be implemented
         DataSource.ODDS_API: None,  # Will be implemented
     }

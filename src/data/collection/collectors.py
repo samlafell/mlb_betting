@@ -322,7 +322,7 @@ class SportsBettingReportCollector(BaseCollector):
     def normalize_record(self, record: dict[str, Any]) -> dict[str, Any]:
         """Normalize SBR record to standard format."""
         normalized = record.copy()
-        normalized["source"] = DataSource.SPORTS_BOOK_REVIEW_DEPRECATED.value
+        normalized["source"] = DataSource.SPORTS_BOOK_REVIEW.value
         normalized["collected_at"] = datetime.now().isoformat()
         return normalized
 
@@ -1531,48 +1531,17 @@ class OddsAPICollector(BaseCollector):
             return 0
 
 
-# Register collectors with the factory
-from .base import CollectorFactory
+# DEPRECATED: Collector registration moved to centralized registry
+# See src.data.collection.registry for the new registration system
+#
+# This registration code has been removed to prevent duplicate registrations.
+# All collectors are now registered through the centralized CollectorRegistry
+# which provides better management, instance caching, and alias handling.
+#
+# To use collectors, import from the registry:
+# from .registry import get_collector_instance, get_collector_class
 
-# Import the refactored source-specific collectors
-try:
-    from .consolidated_action_network_collector import (
-        ActionNetworkCollector as ConsolidatedActionNetworkCollector,
-    )
-    from .sbd_unified_collector_api import SBDUnifiedCollectorAPI
-    from .sbr_unified_collector import SBRUnifiedCollector
-    from .vsin_unified_collector import VSINUnifiedCollector
-
-    # Register the refactored collectors (primary registrations)
-    CollectorFactory.register_collector(DataSource.VSIN, VSINUnifiedCollector)
-    CollectorFactory.register_collector(DataSource.SBD, SBDUnifiedCollectorAPI)
-    CollectorFactory.register_collector(
-        DataSource.SPORTS_BETTING_DIME, SBDUnifiedCollectorAPI
-    )  # Alternative name
-    CollectorFactory.register_collector(
-        DataSource.ACTION_NETWORK, ConsolidatedActionNetworkCollector
-    )
-    CollectorFactory.register_collector(
-        DataSource.SPORTS_BOOK_REVIEW, SBRUnifiedCollector
-    )  # New SBR unified collector
-    CollectorFactory.register_collector(
-        DataSource.SBR, SBRUnifiedCollector
-    )  # Alias for SBR
-
-except ImportError as e:
-    # Fallback to legacy collectors if refactored ones aren't available
-    logger.warning(
-        "Could not import refactored collectors, using legacy ones", error=str(e)
-    )
-    CollectorFactory.register_collector(DataSource.VSIN, VSINCollector)
-    CollectorFactory.register_collector(DataSource.SBD, SBDCollector)
-    CollectorFactory.register_collector(
-        DataSource.ACTION_NETWORK, ActionNetworkCollector
-    )
-
-# Register remaining collectors (legacy and others)
-CollectorFactory.register_collector(
-    DataSource.SPORTS_BOOK_REVIEW_DEPRECATED, SportsBettingReportCollector
+logger.info(
+    "Collector registration moved to centralized registry system",
+    location="src.data.collection.registry"
 )
-CollectorFactory.register_collector(DataSource.MLB_STATS_API, MLBStatsAPICollector)
-CollectorFactory.register_collector(DataSource.ODDS_API, OddsAPICollector)

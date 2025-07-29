@@ -6,6 +6,8 @@ Handles persistence of pipeline analysis results to PostgreSQL instead of JSON f
 from datetime import datetime
 
 from src.core.config import get_settings
+from src.core.logging import LogComponent, get_logger
+from src.core.team_utils import normalize_team_name
 from src.data.database.connection import get_connection
 from src.data.models.unified.movement_analysis import (
     CrossBookMovement,
@@ -13,12 +15,79 @@ from src.data.models.unified.movement_analysis import (
     RLMIndicator,
 )
 
+logger = get_logger(__name__, LogComponent.CORE)
+
 
 class AnalysisReportsRepository:
     """Repository for managing analysis reports and opportunities in PostgreSQL."""
 
     def __init__(self):
         self.settings = get_settings()
+
+    def _safe_normalize_team_name(self, team_name, game_id: str = "unknown") -> str:
+        """
+        Safely normalize team name with comprehensive validation and error handling.
+        
+        Args:
+            team_name: Team name to normalize (can be None, empty, or string)
+            game_id: Game ID for logging context
+            
+        Returns:
+            str: Normalized team name, "UNK" if normalization fails
+        """
+        try:
+            # Handle None or non-string values explicitly
+            if team_name is None:
+                logger.warning(f"None team name for game {game_id}")
+                return "UNK"
+            
+            # Convert to string if not already
+            if not isinstance(team_name, str):
+                team_name = str(team_name)
+            
+            # Use the enhanced normalize_team_name function
+            normalized = normalize_team_name(team_name)
+            
+            # Final validation - ensure result fits database constraints
+            if not normalized or len(normalized) > 10:
+                logger.warning(f"Team normalization produced invalid result '{normalized}' for game {game_id}")
+                return "UNK"
+                
+            return normalized
+            
+        except Exception as e:
+            logger.error(f"Team normalization failed for '{team_name}' in game {game_id}: {e}")
+            return "UNK"
+
+    def _validate_game_data(self, game_data: dict) -> tuple[str, str] | None:
+        """
+        Validate game data and extract normalized team names.
+        
+        Args:
+            game_data: Game data dictionary
+            
+        Returns:
+            tuple[str, str] | None: (home_team, away_team) if valid, None if invalid
+        """
+        game_id = game_data.get("game_id", "unknown")
+        home_team = game_data.get("home_team")
+        away_team = game_data.get("away_team")
+        
+        # Check for missing team data
+        if not home_team or not away_team:
+            logger.warning(f"Missing team data for game {game_id}: home='{home_team}', away='{away_team}'")
+            return None
+            
+        # Normalize team names safely
+        normalized_home = self._safe_normalize_team_name(home_team, game_id)
+        normalized_away = self._safe_normalize_team_name(away_team, game_id)
+        
+        # Validate normalization results
+        if normalized_home == "UNK" or normalized_away == "UNK":
+            logger.warning(f"Team normalization failed for game {game_id}")
+            return None
+            
+        return normalized_home, normalized_away
 
     async def create_analysis_report(
         self,
@@ -70,6 +139,14 @@ class AnalysisReportsRepository:
     ) -> list[int]:
         """Save RLM opportunities to the database."""
 
+        # Validate game data and normalize team names
+        team_names = self._validate_game_data(game_data)
+        if team_names is None:
+            logger.warning(f"Skipping RLM opportunities for invalid game data: {game_data.get('game_id')}")
+            return []
+        
+        normalized_home, normalized_away = team_names
+
         opportunities = []
         for rlm in rlm_indicators:
             opportunities.append(
@@ -77,8 +154,8 @@ class AnalysisReportsRepository:
                     analysis_report_id,
                     game_data.get("game_id"),
                     game_data.get("action_network_game_id"),
-                    game_data.get("home_team"),
-                    game_data.get("away_team"),
+                    normalized_home,
+                    normalized_away,
                     game_data.get("game_datetime"),
                     None,  # sportsbook_id - need to resolve from action_network_book_id
                     rlm.sportsbook_id,
@@ -126,6 +203,15 @@ class AnalysisReportsRepository:
         game_data: dict,
     ) -> list[int]:
         """Save steam moves to the database."""
+        
+        # Validate game data and normalize team names
+        team_names = self._validate_game_data(game_data)
+        if team_names is None:
+            logger.warning(f"Skipping steam moves for invalid game data: {game_data.get('game_id')}")
+            return []
+        
+        normalized_home, normalized_away = team_names
+        
         steam_moves = []
         for movement in cross_book_movements:
             if movement.steam_move_detected:
@@ -134,8 +220,8 @@ class AnalysisReportsRepository:
                         analysis_report_id,
                         game_data.get("game_id"),
                         game_data.get("action_network_game_id"),
-                        game_data.get("home_team"),
-                        game_data.get("away_team"),
+                        normalized_home,
+                        normalized_away,
                         game_data.get("game_datetime"),
                         movement.market_type.value,
                         movement.consensus_direction.value,
@@ -181,15 +267,35 @@ class AnalysisReportsRepository:
         if not arbitrage_opportunities:
             return []
 
+        # Validate game data and normalize team names
+        team_names = self._validate_game_data(game_data)
+        if team_names is None:
+            logger.warning(f"Skipping arbitrage opportunities for invalid game data: {game_data.get('game_id')}")
+            return []
+        
+        normalized_home, normalized_away = team_names
+
         opportunities = []
         for arb in arbitrage_opportunities:
+            # Enhanced validation for arbitrage profit handling
+            potential_profit = arb.get("potential_profit")
+            validated_profit = None
+            
+            if potential_profit is not None:
+                try:
+                    # Ensure we have a valid number
+                    validated_profit = float(potential_profit) if potential_profit not in ("TBD", "", "N/A") else None
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid profit value '{potential_profit}' for game {game_data.get('game_id')}")
+                    validated_profit = None
+            
             opportunities.append(
                 (
                     analysis_report_id,
                     game_data.get("game_id"),
                     game_data.get("action_network_game_id"),
-                    game_data.get("home_team"),
-                    game_data.get("away_team"),
+                    normalized_home,
+                    normalized_away,
                     game_data.get("game_datetime"),
                     arb["market_type"],
                     None,  # book_a_id - need to resolve
@@ -197,7 +303,7 @@ class AnalysisReportsRepository:
                     arb.get("max_odds", 0),
                     arb.get("min_odds", 0),
                     arb["discrepancy"],
-                    arb.get("potential_profit", 0.0),
+                    validated_profit,
                     datetime.now(),
                 )
             )

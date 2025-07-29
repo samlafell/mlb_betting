@@ -15,24 +15,20 @@ logger = structlog.get_logger(__name__)
 
 
 def register_sbr_collector():
-    """Register SBR collector with the factory."""
-    try:
-        # Register for both SPORTS_BOOK_REVIEW and SBR aliases
-        CollectorFactory.register_collector(
-            DataSource.SPORTS_BOOK_REVIEW, SBRUnifiedCollector
-        )
-        CollectorFactory.register_collector(DataSource.SBR, SBRUnifiedCollector)
-
-        logger.info(
-            "SBR collector registered successfully",
-            collector="SBRUnifiedCollector",
-            sources=["SPORTS_BOOK_REVIEW", "SBR"],
-        )
-
-    except Exception as e:
-        logger.error("Failed to register SBR collector", error=str(e))
-        raise
+    """
+    Register SBR collector with the factory.
+    
+    Note: This function is deprecated. Use the centralized registry system
+    from src.data.collection.registry instead.
+    """
+    logger.warning(
+        "SBR collector auto-registration is deprecated",
+        message="Use centralized registry system instead"
+    )
+    
+    # Registration is now handled by the centralized registry
+    # This function is kept for backward compatibility only
 
 
-# Auto-register when module is imported
-register_sbr_collector()
+# DEPRECATED: Auto-registration removed to prevent duplicates
+# Use centralized registry system from src.data.collection.registry instead
