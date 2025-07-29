@@ -45,6 +45,12 @@ uv run -m src.interfaces.cli data-quality status
 # Game Outcomes
 uv run -m src.interfaces.cli outcomes update --date today
 uv run -m src.interfaces.cli outcomes verify --games recent
+
+# Monitoring & Observability (NEW - Production Ready)
+uv run -m src.interfaces.cli monitoring dashboard  # Start real-time web dashboard
+uv run -m src.interfaces.cli monitoring status     # Check system health via API
+uv run -m src.interfaces.cli monitoring live       # Real-time terminal monitoring
+uv run -m src.interfaces.cli monitoring execute    # Manual break-glass pipeline execution
 ```
 
 ### 📊 Complete Data Collection Process
@@ -431,6 +437,14 @@ uv run -m src.interfaces.cli data test --source action_network --real
 ```
 
 ## Recent Improvements ✨
+
+### Production-Grade Monitoring & Observability (January 2025) 🚀
+- **Real-Time Monitoring Dashboard**: FastAPI web dashboard with WebSocket updates for live pipeline status
+- **Comprehensive Metrics**: 40+ Prometheus production metrics covering pipeline performance, business KPIs, and system health
+- **Enterprise Security**: Production-ready API authentication, rate limiting with Redis support, IP whitelisting, and comprehensive audit logging
+- **Break-Glass Controls**: Manual pipeline execution capabilities with full security controls for emergency operations
+- **Enhanced Observability**: OpenTelemetry distributed tracing, correlation tracking, structured JSON logging, and performance profiling
+- **CLI Integration**: Complete monitoring commands for dashboard management, health checks, performance analysis, and alert management
 
 ### VSIN Unified Collector Enhancement (July 2025)
 - **Live HTML Parsing**: Direct extraction from VSIN betting splits pages with 100% data quality

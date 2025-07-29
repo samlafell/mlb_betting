@@ -170,6 +170,15 @@ uv run -m src.interfaces.cli data-quality status
 # Game outcomes
 uv run -m src.interfaces.cli outcomes update --date today
 uv run -m src.interfaces.cli outcomes verify --games recent
+
+# Monitoring & Observability (NEW - Phase 1 Complete)
+uv run -m src.interfaces.cli monitoring dashboard  # Start real-time web dashboard
+uv run -m src.interfaces.cli monitoring status     # Check system health via API
+uv run -m src.interfaces.cli monitoring live       # Real-time terminal monitoring
+uv run -m src.interfaces.cli monitoring execute    # Manual break-glass pipeline execution
+uv run -m src.interfaces.cli monitoring health-check --collector vsin  # Health check specific collector
+uv run -m src.interfaces.cli monitoring performance --hours 24  # Performance analysis
+uv run -m src.interfaces.cli monitoring alerts --severity critical  # Alert management
 ```
 
 ### Utility Scripts
@@ -360,6 +369,46 @@ uv run ruff format && uv run ruff check && uv run mypy src/
 - **Feature Flags**: Control system behavior via config
 - **Rate Limiting**: Configured per data source to respect API limits
 
+## Production-Grade Monitoring & Observability (Phase 1 Complete - January 2025)
+
+The system now includes comprehensive enterprise-grade monitoring infrastructure:
+
+### 🚀 Real-Time Monitoring Dashboard
+- **FastAPI Web Dashboard**: Real-time monitoring interface with WebSocket updates
+- **Live Pipeline Status**: Real-time pipeline execution tracking with detailed progress updates
+- **System Health Monitoring**: Comprehensive system health checks and dependency status
+- **Break-Glass Controls**: Manual pipeline execution and system override capabilities
+- **Interactive UI**: Modern web interface with live JavaScript updates and responsive design
+
+### 📊 Prometheus Metrics Integration
+- **40+ Production Metrics**: Pipeline performance, business metrics, system health indicators
+- **SLI/SLO Tracking**: Service Level Indicators with automatic alerting thresholds
+- **Performance Monitoring**: P99 latency tracking, success rates, error rates
+- **Business Metrics**: Opportunities detected, strategy performance, betting value identification
+- **Resource Monitoring**: System resource usage, database performance, API call metrics
+
+### 🔍 Enhanced Observability
+- **Distributed Tracing**: OpenTelemetry integration with OTLP export capability
+- **Correlation Tracking**: Request correlation IDs across all async operations
+- **Structured Logging**: JSON-formatted logs with comprehensive metadata and context
+- **Performance Profiling**: Detailed timing analysis for all major operations
+- **Error Tracking**: Comprehensive error handling with detailed context preservation
+
+### 🔒 Security & Access Control
+- **API Key Authentication**: Secure access to break-glass endpoints with Bearer token support
+- **Rate Limiting**: Production-ready rate limiting with Redis support for distributed deployments
+- **IP Whitelisting**: CIDR range support for authorized network access
+- **Audit Logging**: Comprehensive security event logging with correlation IDs
+- **Security Headers**: Automatic security headers for all API responses
+
+### 📡 Real-Time API Endpoints
+- **Health Check**: `/health` - System health and dependency status
+- **Pipeline Status**: `/api/pipelines/status` - Current and recent pipeline executions
+- **System Metrics**: `/api/system/status` - Comprehensive system status with metrics
+- **Break-Glass Control**: `/api/control/*` - Emergency manual pipeline execution
+- **WebSocket Updates**: `/ws` - Real-time status updates for dashboard
+- **Prometheus Metrics**: `/metrics` - Prometheus-compatible metrics endpoint
+
 ## Key Files to Understand
 
 ### Core Configuration & Utilities
@@ -404,6 +453,14 @@ uv run ruff format && uv run ruff check && uv run mypy src/
 - `src/services/sharp_action_detection_service.py`: Sharp action detection integration
 - `src/services/game_outcome_service.py`: Game outcome tracking
 - `src/services/monitoring/`: System monitoring and health checks
+
+### Monitoring & Observability (NEW - Phase 1)
+- `src/interfaces/api/monitoring_dashboard.py`: **Real-time monitoring dashboard** with WebSocket updates
+- `src/services/monitoring/prometheus_metrics_service.py`: **Prometheus metrics service** with 40+ production metrics
+- `src/core/enhanced_logging.py`: **Enhanced logging service** with OpenTelemetry integration
+- `src/interfaces/cli/commands/monitoring.py`: **Monitoring CLI commands** for dashboard, health checks, and performance analysis
+- `src/core/security.py`: **Production security module** with API authentication, rate limiting, and IP whitelisting
+- `docs/PRODUCTION_SECURITY_GUIDE.md`: **Security configuration guide** for production deployments
 
 ## Testing Strategy
 
@@ -497,8 +554,12 @@ collector = get_collector_instance("action_network", config)  # Registry-based
 
 ### Documentation Resources
 
-**Comprehensive guides available in `docs/`:**
+**User Documentation:**
+- [`USER_GUIDE.md`](USER_GUIDE.md): **Complete user guide** with setup instructions, monitoring dashboard usage, and production deployment guidance
+
+**Technical Documentation in `docs/`:**
 - [`COLLECTOR_CLEANUP_IMPROVEMENTS.md`](docs/COLLECTOR_CLEANUP_IMPROVEMENTS.md): Complete cleanup overview
 - [`CENTRALIZED_REGISTRY_SYSTEM.md`](docs/CENTRALIZED_REGISTRY_SYSTEM.md): Technical implementation details
 - [`SBR_CONSOLIDATION_GUIDE.md`](docs/SBR_CONSOLIDATION_GUIDE.md): SBR-specific improvements
 - [`DEVELOPER_MIGRATION_GUIDE.md`](docs/DEVELOPER_MIGRATION_GUIDE.md): Step-by-step migration instructions
+- [`PRODUCTION_SECURITY_GUIDE.md`](docs/PRODUCTION_SECURITY_GUIDE.md): **Production security configuration** and deployment guide
