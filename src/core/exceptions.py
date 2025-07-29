@@ -494,6 +494,66 @@ class CircuitBreakerError(UnifiedBettingError):
         )
 
 
+class OrchestrationError(UnifiedBettingError):
+    """Raised when pipeline orchestration fails."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        pipeline_id: str | None = None,
+        pipeline_type: str | None = None,
+        stage: str | None = None,
+        **kwargs,
+    ):
+        details = kwargs.get("details", {})
+
+        if pipeline_id:
+            details["pipeline_id"] = pipeline_id
+        if pipeline_type:
+            details["pipeline_type"] = pipeline_type
+        if stage:
+            details["stage"] = stage
+
+        super().__init__(
+            message,
+            component="orchestration",
+            error_code="ORCHESTRATION_ERROR",
+            details=details,
+            **kwargs,
+        )
+
+
+class PipelineError(UnifiedBettingError):
+    """Raised when pipeline execution fails."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        pipeline_id: str | None = None,
+        stage: str | None = None,
+        execution_time: float | None = None,
+        **kwargs,
+    ):
+        details = kwargs.get("details", {})
+
+        if pipeline_id:
+            details["pipeline_id"] = pipeline_id
+        if stage:
+            details["stage"] = stage
+        if execution_time:
+            details["execution_time"] = execution_time
+
+        super().__init__(
+            message,
+            component="pipeline",
+            error_code="PIPELINE_ERROR",
+            details=details,
+            **kwargs,
+        )
+
+
 # Legacy exception aliases for backward compatibility
 # MLBSharpBettingError removed - mlb_sharp_betting directory cleanup
 SportsbookReviewError = UnifiedBettingError  # For sportsbookreview module compatibility
