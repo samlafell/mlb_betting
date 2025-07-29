@@ -260,7 +260,7 @@ class GameIDResolutionService:
         if game_info.get("action_network_game_id"):
             return DataSource.ACTION_NETWORK
         elif game_info.get("sportsbookreview_game_id"):
-            return DataSource.SPORTS_BOOK_REVIEW_DEPRECATED
+            return DataSource.SPORTS_BOOK_REVIEW
         elif game_info.get("vsin_game_id"):
             return DataSource.VSIN
 
@@ -279,7 +279,7 @@ class GameIDResolutionService:
         """
         source_mapping = {
             DataSource.ACTION_NETWORK: "action_network_game_id",
-            DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: "sportsbookreview_game_id",
+            DataSource.SPORTS_BOOK_REVIEW: "sportsbookreview_game_id",
             DataSource.VSIN: "vsin_game_id",
         }
 

@@ -38,4 +38,16 @@ vsin = "VSIN"  # VSIN
 [api]
 # SportsBettingDime API configuration
 sbd_url = "https://srfeeds.sportsbettingdime.com/v2/matchups/mlb/betting-splits"
-sbd_books = ["betmgm", "bet365", "fanatics", "draftkings", "caesars", "fanduel"] 
+sbd_books = ["betmgm", "bet365", "fanatics", "draftkings", "caesars", "fanduel"]
+
+[monitoring]
+# Prometheus metrics configuration
+enable_metrics_sampling = true
+metrics_sample_rate = 0.1  # 10% sampling for high-volume operations
+max_unmapped_resolution_limit = 100  # Maximum unmapped IDs to resolve per batch
+
+# Metric bucket configurations (in seconds)
+pipeline_duration_buckets = [1, 5, 10, 30, 60, 120, 300, 600]
+pipeline_stage_duration_buckets = [0.1, 0.5, 1, 2, 5, 10, 30, 60]
+database_query_duration_buckets = [0.001, 0.01, 0.1, 0.5, 1, 2, 5, 10]
+api_call_duration_buckets = [0.1, 0.5, 1, 2, 5, 10, 30, 60] 

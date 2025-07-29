@@ -23,6 +23,16 @@ from .collectors import (
     VSINCollector,
 )
 
+# Import centralized registry system
+from .registry import (
+    CollectorRegistry,
+    get_collector_class,
+    get_collector_instance,
+    initialize_all_collectors,
+    get_registry_status,
+    clear_collector_cache,
+)
+
 # Define __all__ first
 __all__ = [
     # Base classes
@@ -53,6 +63,13 @@ __all__ = [
     "CollectionPlan",
     "CollectionStatus",
     "SourceConfig",
+    # Centralized Registry
+    "CollectorRegistry",
+    "get_collector_class",
+    "get_collector_instance", 
+    "initialize_all_collectors",
+    "get_registry_status",
+    "clear_collector_cache",
 ]
 
 # Import refactored collectors directly for better compatibility

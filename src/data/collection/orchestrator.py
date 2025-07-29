@@ -25,18 +25,17 @@ from ...services.monitoring.collector_health_service import (
 )
 from ..database.repositories import UnifiedRepository
 
-# Import SBR registry to ensure collector registration
 from .base import BaseCollector, CollectionResult, CollectionStatus
-from .collectors import (
-    MLBStatsAPICollector,
-    OddsAPICollector,
-    SBDCollector,
-    VSINCollector,
-)
-from .consolidated_action_network_collector import ActionNetworkCollector
 from .rate_limiter import get_rate_limiter
-from .sbr_unified_collector import SBRUnifiedCollector
 from .validators import DataQualityValidator
+
+# Import centralized registry for collector management
+from .registry import (
+    CollectorRegistry,
+    initialize_all_collectors,
+    get_collector_instance,
+    get_collector_class,
+)
 
 # Import timing utilities for synchronization
 try:
@@ -233,7 +232,7 @@ class CollectionOrchestrator:
         """
         self.settings = settings or UnifiedSettings()
         self.repository = repository
-        self.logger = get_logger(__name__)
+        self.logger = get_logger(__name__, LogComponent.CORE)
 
         # State management
         self.source_configs: dict[str, SourceConfig] = {}
@@ -256,6 +255,10 @@ class CollectionOrchestrator:
             "last_collection_time": None,
         }
 
+        # Initialize centralized collector registry
+        self.registry = CollectorRegistry()
+        initialize_all_collectors()
+
         # Initialize default source configurations
         self._initialize_default_sources()
 
@@ -267,70 +270,72 @@ class CollectionOrchestrator:
         )
 
     def _initialize_default_sources(self) -> None:
-        """Initialize default data source configurations."""
-
-        # VSIN Configuration
-        vsin_config = SourceConfig(
-            name="VSIN",
-            collector_class=VSINCollector,
-            priority=CollectionPriority.HIGH,
-            collection_interval_minutes=30,
-            collection_params={"collection_type": "sharp_data", "date_range": 7},
-        )
-        self.add_source(vsin_config)
-
-        # SBD Configuration
-        sbd_config = SourceConfig(
-            name="SBD",
-            collector_class=SBDCollector,
-            priority=CollectionPriority.NORMAL,
-            collection_interval_minutes=45,
-            collection_params={"collection_type": "current_odds", "sport": "mlb"},
-        )
-        self.add_source(sbd_config)
-
-        # SportsbookReview Configuration
-        sbr_config = SourceConfig(
-            name="SportsbookReview",
-            collector_class=SBRUnifiedCollector,
-            priority=CollectionPriority.HIGH,
-            collection_interval_minutes=60,
-            collection_params={"collection_type": "historical_lines", "sport": "mlb"},
-        )
-        self.add_source(sbr_config)
-
-        # MLB Stats API Configuration
-        mlb_api_config = SourceConfig(
-            name="MLBStatsAPI",
-            collector_class=MLBStatsAPICollector,
-            priority=CollectionPriority.HIGH,
-            collection_interval_minutes=30,
-            collection_params={"collection_type": "game_data", "sport": "mlb"},
-        )
-        self.add_source(mlb_api_config)
-
-        # Odds API Configuration
-        odds_api_config = SourceConfig(
-            name="OddsAPI",
-            collector_class=OddsAPICollector,
-            priority=CollectionPriority.NORMAL,
-            collection_interval_minutes=60,
-            collection_params={"collection_type": "odds", "sport": "baseball"},
-        )
-        self.add_source(odds_api_config)
-
-        # ActionNetwork Configuration
-        action_config = SourceConfig(
-            name="ActionNetwork",
-            collector_class=ActionNetworkCollector,
-            priority=CollectionPriority.NORMAL,
-            collection_interval_minutes=60,
-            collection_params={
-                "collection_type": "public_betting",
-                "sport": "baseball",
+        """Initialize default data source configurations using centralized registry."""
+        
+        # Define source configurations with registry lookups
+        source_definitions = [
+            {
+                "name": "VSIN",
+                "source_key": "vsin",
+                "priority": CollectionPriority.HIGH,
+                "interval": 30,
+                "params": {"collection_type": "sharp_data", "date_range": 7}
             },
-        )
-        self.add_source(action_config)
+            {
+                "name": "SBD", 
+                "source_key": "sbd",
+                "priority": CollectionPriority.NORMAL,
+                "interval": 45,
+                "params": {"collection_type": "current_odds", "sport": "mlb"}
+            },
+            {
+                "name": "SportsbookReview",
+                "source_key": "sports_book_review", 
+                "priority": CollectionPriority.HIGH,
+                "interval": 60,
+                "params": {"collection_type": "historical_lines", "sport": "mlb"}
+            },
+            {
+                "name": "MLBStatsAPI",
+                "source_key": "mlb_stats_api",
+                "priority": CollectionPriority.HIGH, 
+                "interval": 30,
+                "params": {"collection_type": "game_data", "sport": "mlb"}
+            },
+            {
+                "name": "OddsAPI",
+                "source_key": "odds_api",
+                "priority": CollectionPriority.NORMAL,
+                "interval": 60, 
+                "params": {"collection_type": "odds", "sport": "baseball"}
+            },
+            {
+                "name": "ActionNetwork",
+                "source_key": "action_network",
+                "priority": CollectionPriority.NORMAL,
+                "interval": 60,
+                "params": {"collection_type": "public_betting", "sport": "baseball"}
+            }
+        ]
+        
+        # Create and add source configurations using registry
+        for source_def in source_definitions:
+            collector_class = get_collector_class(source_def["source_key"])
+            if collector_class:
+                config = SourceConfig(
+                    name=source_def["name"],
+                    collector_class=collector_class,
+                    priority=source_def["priority"],
+                    collection_interval_minutes=source_def["interval"],
+                    collection_params=source_def["params"]
+                )
+                self.add_source(config)
+            else:
+                self.logger.warning(
+                    "Collector not found in registry",
+                    source_key=source_def["source_key"],
+                    name=source_def["name"]
+                )
 
     def add_source(self, config: SourceConfig) -> None:
         """Add a data source configuration."""
@@ -661,13 +666,56 @@ class CollectionOrchestrator:
         task.completed_at = datetime.now()
 
     async def _get_collector(self, source_name: str) -> BaseCollector:
-        """Get or create a collector for a source."""
+        """Get or create a collector for a source using centralized registry."""
         if source_name not in self.collectors:
             config = self.source_configs[source_name]
-            self.collectors[source_name] = config.collector_class()
-
-            # Register collector for health monitoring
-            self.health_monitor.register_collector(self.collectors[source_name])
+            
+            # Use registry to get collector instance with proper configuration
+            from .base import CollectorConfig, DataSource
+            
+            # Map source name to DataSource enum
+            source_mapping = {
+                "VSIN": "vsin",
+                "SBD": "sbd", 
+                "SportsbookReview": "sports_book_review",
+                "MLBStatsAPI": "mlb_stats_api",
+                "OddsAPI": "odds_api",
+                "ActionNetwork": "action_network"
+            }
+            
+            source_key = source_mapping.get(source_name, source_name.lower())
+            
+            # Create collector config
+            try:
+                source_enum = DataSource(source_key)
+                collector_config = CollectorConfig(
+                    source=source_enum,
+                    **config.collection_params
+                )
+            except ValueError:
+                # Fallback for unknown sources
+                self.logger.warning(
+                    "Unknown source for collector creation",
+                    source_name=source_name,
+                    source_key=source_key
+                )
+                collector_config = None
+            
+            # Get collector instance from registry
+            collector = get_collector_instance(source_key, collector_config)
+            
+            if collector:
+                self.collectors[source_name] = collector
+                # Register collector for health monitoring
+                self.health_monitor.register_collector(collector)
+            else:
+                # Fallback to old method if registry fails
+                self.logger.warning(
+                    "Registry failed, using fallback collector creation",
+                    source_name=source_name
+                )
+                self.collectors[source_name] = config.collector_class()
+                self.health_monitor.register_collector(self.collectors[source_name])
 
         return self.collectors[source_name]
 

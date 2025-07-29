@@ -567,6 +567,75 @@ class PipelineSettings(BaseSettings):
     )
 
 
+class MonitoringSettings(BaseSettings):
+    """Monitoring and metrics configuration."""
+
+    # Prometheus metrics configuration
+    enable_prometheus: bool = Field(
+        default=True, description="Enable Prometheus metrics", env="MONITORING_PROMETHEUS_ENABLED"
+    )
+
+    prometheus_port: int = Field(
+        default=8000, ge=1024, le=65535, description="Prometheus metrics port", env="MONITORING_PROMETHEUS_PORT"
+    )
+
+    # Pipeline metrics bucket configuration
+    pipeline_duration_buckets: list[float] = Field(
+        default=[1, 5, 10, 30, 60, 120, 300, 600],
+        description="Histogram buckets for pipeline duration metrics"
+    )
+
+    pipeline_stage_duration_buckets: list[float] = Field(
+        default=[0.5, 1, 2, 5, 10, 30, 60, 120],
+        description="Histogram buckets for pipeline stage duration metrics"
+    )
+
+    # Database query metrics buckets
+    database_query_duration_buckets: list[float] = Field(
+        default=[0.01, 0.05, 0.1, 0.5, 1, 2, 5],
+        description="Histogram buckets for database query duration metrics"
+    )
+
+    # API call metrics buckets
+    api_call_duration_buckets: list[float] = Field(
+        default=[0.1, 0.5, 1, 2, 5, 10, 30],
+        description="Histogram buckets for API call duration metrics"
+    )
+
+    # OpenTelemetry configuration
+    enable_opentelemetry: bool = Field(
+        default=False, description="Enable OpenTelemetry tracing", env="MONITORING_OTEL_ENABLED"
+    )
+
+    otlp_endpoint: str | None = Field(
+        default=None, description="OTLP endpoint URL", env="MONITORING_OTLP_ENDPOINT"
+    )
+
+    # Sampling configuration
+    enable_metrics_sampling: bool = Field(
+        default=True, description="Enable metrics sampling for high-volume operations"
+    )
+
+    metrics_sample_rate: float = Field(
+        default=0.1, ge=0.01, le=1.0, description="Sample rate for high-volume metrics (0.01-1.0)"
+    )
+
+    # Health check configuration
+    health_check_enabled: bool = Field(
+        default=True, description="Enable health check endpoint"
+    )
+
+    health_check_port: int = Field(
+        default=8080, ge=1024, le=65535, description="Health check endpoint port"
+    )
+
+    class Config:
+        env_prefix = ""
+        case_sensitive = False
+        use_enum_values = True
+        extra = "allow"
+
+
 class FeatureFlags(BaseSettings):
     """Feature flag configuration for gradual rollouts."""
 
@@ -800,6 +869,7 @@ class UnifiedSettings(BaseSettings):
     pipeline: PipelineSettings = Field(default_factory=PipelineSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     dashboard: DashboardSettings = Field(default_factory=DashboardSettings)
+    monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
     features: FeatureFlags = Field(default_factory=FeatureFlags)
 
     class Config:

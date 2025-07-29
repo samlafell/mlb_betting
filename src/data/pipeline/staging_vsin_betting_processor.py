@@ -17,11 +17,10 @@ Output: staging.vsin_betting_data with comprehensive betting analysis
 """
 
 import asyncio
-import json
 import re
-from datetime import datetime, date
+from datetime import date
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 from uuid import uuid4
 
 import asyncpg
@@ -46,7 +45,7 @@ class VSINBettingRecord(BaseModel):
     # Game and source identification
     external_matchup_id: str | None = None
     mlb_stats_api_game_id: str | None = None
-    
+
     # Game details
     home_team: str
     away_team: str
@@ -54,11 +53,11 @@ class VSINBettingRecord(BaseModel):
     away_team_normalized: str | None = None
     game_date: date | None = None
     game_time: str | None = None
-    
+
     # Sportsbook information
     sportsbook_name: str
     sportsbook_id: int | None = None
-    
+
     # Moneyline betting data
     moneyline_home_odds: int | None = None
     moneyline_away_odds: int | None = None
@@ -66,7 +65,7 @@ class VSINBettingRecord(BaseModel):
     moneyline_away_handle_percent: Decimal | None = None
     moneyline_home_bets_percent: Decimal | None = None
     moneyline_away_bets_percent: Decimal | None = None
-    
+
     # Totals (over/under) betting data
     total_line: Decimal | None = None
     total_over_odds: int | None = None
@@ -75,7 +74,7 @@ class VSINBettingRecord(BaseModel):
     total_under_handle_percent: Decimal | None = None
     total_over_bets_percent: Decimal | None = None
     total_under_bets_percent: Decimal | None = None
-    
+
     # Runline (spread) betting data
     runline_spread: Decimal | None = None
     runline_home_odds: int | None = None
@@ -84,18 +83,18 @@ class VSINBettingRecord(BaseModel):
     runline_away_handle_percent: Decimal | None = None
     runline_home_bets_percent: Decimal | None = None
     runline_away_bets_percent: Decimal | None = None
-    
+
     # Sharp action indicators
     moneyline_sharp_side: str | None = None  # home, away, or null
     total_sharp_side: str | None = None  # over, under, or null
     runline_sharp_side: str | None = None  # home, away, or null
     sharp_confidence: Decimal = Field(default=Decimal('0.0'), ge=0.0, le=1.0)
-    
+
     # Reverse Line Movement indicators
     moneyline_rlm_detected: bool = False
     total_rlm_detected: bool = False
     runline_rlm_detected: bool = False
-    
+
     # Data quality and lineage
     data_quality_score: float = Field(ge=0.0, le=1.0, default=1.0)
     validation_status: str = "valid"
@@ -139,7 +138,7 @@ class VSINBettingProcessor:
         self.settings = get_settings()
         self.mlb_resolver = MLBStatsAPIGameResolutionService()
         self.processing_batch_id = str(uuid4())
-        
+
         # Sharp action detection threshold (handle % vs bets % difference)
         self.sharp_action_threshold = 10.0  # 10% difference indicates sharp action
 
@@ -233,7 +232,7 @@ class VSINBettingProcessor:
 
                         # Detect sharp action
                         self._detect_sharp_action(betting_record)
-                        
+
                         # Calculate data quality score
                         betting_record.data_quality_score = self._calculate_quality_score(betting_record)
 
@@ -276,13 +275,13 @@ class VSINBettingProcessor:
         try:
             raw_content = raw_vsin["raw_content"]
             source_url = raw_vsin["source_url"]
-            
+
             # Extract sportsbook view from URL
             vsin_view = self._extract_vsin_view(source_url)
-            
+
             # Parse HTML content
             soup = BeautifulSoup(raw_content, 'html.parser')
-            
+
             # Find the main betting table
             main_table = soup.find("table", {"class": "freezetable"})
             if not main_table:
@@ -290,16 +289,16 @@ class VSINBettingProcessor:
                 return records
 
             rows = main_table.find_all("tr")
-            
+
             for row in rows:
                 # Skip header rows
                 if "div_dkdark" in row.get("class", []):
                     continue
-                    
+
                 cells = row.find_all("td")
                 if len(cells) < 10:  # Need at least 10 columns for full MLB data
                     continue
-                
+
                 # Parse game row
                 betting_record = self._parse_game_row(
                     cells, vsin_view, source_url, raw_vsin["id"]
@@ -317,7 +316,7 @@ class VSINBettingProcessor:
         """Extract sportsbook view from VSIN URL."""
         if not source_url:
             return "dk"  # Default to DraftKings
-            
+
         if "view=circa" in source_url:
             return "circa"
         elif "view=fanduel" in source_url:
@@ -337,19 +336,19 @@ class VSINBettingProcessor:
             # VSIN MLB column mapping (from collector)
             if len(cells) < 10:
                 return None
-                
+
             # Extract team names from first column
             teams_cell = cells[0].get_text(strip=True)
             teams_match = re.search(r'(.+?)\s+@\s+(.+)', teams_cell)
             if not teams_match:
                 return None
-                
+
             away_team = teams_match.group(1).strip()
             home_team = teams_match.group(2).strip()
-            
+
             # Create external matchup ID
             external_matchup_id = f"vsin_{away_team.replace(' ', '_')}_{home_team.replace(' ', '_')}_{vsin_view}"
-            
+
             # Parse betting data
             record = VSINBettingRecord(
                 external_matchup_id=external_matchup_id,
@@ -362,27 +361,27 @@ class VSINBettingProcessor:
                 vsin_view=vsin_view,
                 raw_data_id=raw_data_id,
             )
-            
+
             # Parse moneyline data (columns 1-3)
             if len(cells) > 3:
                 record.moneyline_home_odds = self._safe_int(cells[1].get_text(strip=True))
                 record.moneyline_home_handle_percent = self._safe_decimal(cells[2].get_text(strip=True))
                 record.moneyline_home_bets_percent = self._safe_decimal(cells[3].get_text(strip=True))
-            
+
             # Parse totals data (columns 4-6)
             if len(cells) > 6:
                 total_text = cells[4].get_text(strip=True)
                 record.total_line = self._extract_total_line(total_text)
                 record.total_over_handle_percent = self._safe_decimal(cells[5].get_text(strip=True))
                 record.total_over_bets_percent = self._safe_decimal(cells[6].get_text(strip=True))
-            
+
             # Parse runline data (columns 7-9)
             if len(cells) > 9:
                 runline_text = cells[7].get_text(strip=True)
                 record.runline_spread = self._extract_runline_spread(runline_text)
                 record.runline_home_handle_percent = self._safe_decimal(cells[8].get_text(strip=True))
                 record.runline_home_bets_percent = self._safe_decimal(cells[9].get_text(strip=True))
-            
+
             # Calculate complementary percentages
             if record.moneyline_home_handle_percent:
                 record.moneyline_away_handle_percent = Decimal('100.0') - record.moneyline_home_handle_percent
@@ -396,7 +395,7 @@ class VSINBettingProcessor:
                 record.runline_away_handle_percent = Decimal('100.0') - record.runline_home_handle_percent
             if record.runline_home_bets_percent:
                 record.runline_away_bets_percent = Decimal('100.0') - record.runline_home_bets_percent
-            
+
             return record
 
         except Exception as e:
@@ -451,12 +450,12 @@ class VSINBettingProcessor:
         """Detect sharp action based on handle vs bets discrepancy."""
         sharp_indicators = 0
         total_markets = 0
-        
+
         # Check moneyline for sharp action
-        if (record.moneyline_home_handle_percent is not None and 
+        if (record.moneyline_home_handle_percent is not None and
             record.moneyline_home_bets_percent is not None):
             total_markets += 1
-            
+
             handle_diff = abs(record.moneyline_home_handle_percent - record.moneyline_home_bets_percent)
             if handle_diff >= self.sharp_action_threshold:
                 sharp_indicators += 1
@@ -465,12 +464,12 @@ class VSINBettingProcessor:
                     record.moneyline_sharp_side = "home"
                 else:
                     record.moneyline_sharp_side = "away"
-        
+
         # Check totals for sharp action
-        if (record.total_over_handle_percent is not None and 
+        if (record.total_over_handle_percent is not None and
             record.total_over_bets_percent is not None):
             total_markets += 1
-            
+
             handle_diff = abs(record.total_over_handle_percent - record.total_over_bets_percent)
             if handle_diff >= self.sharp_action_threshold:
                 sharp_indicators += 1
@@ -479,12 +478,12 @@ class VSINBettingProcessor:
                     record.total_sharp_side = "over"
                 else:
                     record.total_sharp_side = "under"
-        
+
         # Check runline for sharp action
-        if (record.runline_home_handle_percent is not None and 
+        if (record.runline_home_handle_percent is not None and
             record.runline_home_bets_percent is not None):
             total_markets += 1
-            
+
             handle_diff = abs(record.runline_home_handle_percent - record.runline_home_bets_percent)
             if handle_diff >= self.sharp_action_threshold:
                 sharp_indicators += 1
@@ -493,7 +492,7 @@ class VSINBettingProcessor:
                     record.runline_sharp_side = "home"
                 else:
                     record.runline_sharp_side = "away"
-        
+
         # Calculate sharp confidence
         if total_markets > 0:
             record.sharp_confidence = Decimal(str(round(sharp_indicators / total_markets, 2)))
@@ -501,30 +500,30 @@ class VSINBettingProcessor:
     def _calculate_quality_score(self, record: VSINBettingRecord) -> float:
         """Calculate data quality score for VSIN record."""
         score = 1.0
-        
+
         # Check for required fields
         if not record.home_team or not record.away_team:
             score -= 0.5
-        
+
         # Check for betting data completeness
         markets_with_data = 0
         total_markets = 3  # moneyline, totals, runline
-        
+
         if record.moneyline_home_handle_percent is not None:
             markets_with_data += 1
         if record.total_over_handle_percent is not None:
             markets_with_data += 1
         if record.runline_home_handle_percent is not None:
             markets_with_data += 1
-        
+
         # Reduce score based on missing market data
         data_completeness = markets_with_data / total_markets
         score *= data_completeness
-        
+
         # Check for parsing errors
         if record.parsing_errors:
             score -= 0.1 * len(record.parsing_errors)
-        
+
         return max(0.0, min(1.0, score))
 
     async def _resolve_mlb_game_id(
