@@ -141,11 +141,24 @@ class GameIDMappingService:
                 self.logger.warning(f"Unknown source type: {source}")
                 return None
 
-            # Perform O(1) indexed lookup using parameterized query
+            # Validate column name to prevent SQL injection
+            if column_name not in ["action_network_game_id", "vsin_game_id", "sbd_game_id", "sbr_game_id"]:
+                self.logger.error(f"Invalid column name: {column_name}")
+                return None
+
+            # Perform O(1) indexed lookup using safe parameterized query
             try:
                 async with get_connection() as conn:
-                    # Use parameterized query to prevent SQL injection
-                    query = f"SELECT mlb_stats_api_game_id FROM staging.game_id_mappings WHERE {column_name} = $1"
+                    # Use fully parameterized query to prevent SQL injection
+                    if column_name == "action_network_game_id":
+                        query = "SELECT mlb_stats_api_game_id FROM staging.game_id_mappings WHERE action_network_game_id = $1"
+                    elif column_name == "vsin_game_id":
+                        query = "SELECT mlb_stats_api_game_id FROM staging.game_id_mappings WHERE vsin_game_id = $1"
+                    elif column_name == "sbd_game_id":
+                        query = "SELECT mlb_stats_api_game_id FROM staging.game_id_mappings WHERE sbd_game_id = $1"
+                    elif column_name == "sbr_game_id":
+                        query = "SELECT mlb_stats_api_game_id FROM staging.game_id_mappings WHERE sbr_game_id = $1"
+
                     mlb_id = await conn.fetchval(query, external_id)
 
                     if mlb_id:
@@ -224,8 +237,18 @@ class GameIDMappingService:
                     if not column_name:
                         continue
 
-                    # Use parameterized query to prevent SQL injection
-                    query = f"SELECT {column_name}, mlb_stats_api_game_id FROM staging.game_id_mappings WHERE {column_name} = ANY($1::TEXT[])"
+                    # Use safe parameterized query to prevent SQL injection
+                    if column_name == "action_network_game_id":
+                        query = "SELECT action_network_game_id, mlb_stats_api_game_id FROM staging.game_id_mappings WHERE action_network_game_id = ANY($1::TEXT[])"
+                    elif column_name == "vsin_game_id":
+                        query = "SELECT vsin_game_id, mlb_stats_api_game_id FROM staging.game_id_mappings WHERE vsin_game_id = ANY($1::TEXT[])"
+                    elif column_name == "sbd_game_id":
+                        query = "SELECT sbd_game_id, mlb_stats_api_game_id FROM staging.game_id_mappings WHERE sbd_game_id = ANY($1::TEXT[])"
+                    elif column_name == "sbr_game_id":
+                        query = "SELECT sbr_game_id, mlb_stats_api_game_id FROM staging.game_id_mappings WHERE sbr_game_id = ANY($1::TEXT[])"
+                    else:
+                        continue  # Skip invalid column names
+
                     rows = await conn.fetch(query, ids)
                     for row in rows:
                         external_id = row[column_name]
@@ -263,13 +286,17 @@ class GameIDMappingService:
         Returns:
             Dictionary with resolution results and statistics
         """
-        # Use configurable limit or default
+        # Use configurable limit with proper validation
         if limit is None:
             limit = getattr(self.settings, 'max_unmapped_resolution_limit', 100)
-        elif limit <= 0:
-            raise ValueError("Limit must be a positive integer")
-        elif limit > 1000:
-            self.logger.warning(f"Large limit specified ({limit}), consider smaller batches")
+
+        # Input validation for limit parameter
+        if not isinstance(limit, int):
+            raise ValueError(f"Limit must be an integer, got {type(limit)}")
+        if limit <= 0:
+            raise ValueError(f"Limit must be a positive integer, got {limit}")
+        if limit > 1000:
+            self.logger.warning(f"Large limit specified ({limit}), consider smaller batches for better performance")
 
         self.logger.info(
             "Starting unmapped external ID resolution",
@@ -545,7 +572,7 @@ class GameIDMappingService:
                         SELECT away_team, home_team, DATE(start_time) as game_date
                         FROM raw_data.action_network_games
                         WHERE external_game_id = $1
-                        AND away_team IS NOT NULL 
+                        AND away_team IS NOT NULL
                         AND home_team IS NOT NULL
                     """,
                         external_id,

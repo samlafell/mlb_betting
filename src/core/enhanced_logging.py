@@ -37,7 +37,7 @@ pipeline_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
     "pipeline_id", default=None
 )
 operation_context_var: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar(
-    "operation_context", default={}
+    "operation_context", default=None
 )
 
 
@@ -188,6 +188,7 @@ class EnhancedLoggingService:
         """Setup OpenTelemetry tracing with proper resource management and validation."""
         span_processor = None
         otlp_exporter = None
+        tracer_provider = None
 
         try:
             # Validate endpoint URL
@@ -195,13 +196,14 @@ class EnhancedLoggingService:
                 raise ValueError(f"Invalid OTLP endpoint: {otlp_endpoint}")
 
             # Configure tracer provider
-            trace.set_tracer_provider(TracerProvider())
+            tracer_provider = TracerProvider()
+            trace.set_tracer_provider(tracer_provider)
 
             # Configure OTLP exporter
             otlp_exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
             span_processor = BatchSpanProcessor(otlp_exporter)
 
-            trace.get_tracer_provider().add_span_processor(span_processor)
+            tracer_provider.add_span_processor(span_processor)
 
             self.logger.info(
                 "OpenTelemetry tracing configured", otlp_endpoint=otlp_endpoint
@@ -213,6 +215,7 @@ class EnhancedLoggingService:
                 error=str(e),
                 endpoint=otlp_endpoint,
             )
+            self._cleanup_opentelemetry_resources(span_processor, otlp_exporter, tracer_provider)
             raise
         except ConnectionError as e:
             self.logger.error(
@@ -220,12 +223,7 @@ class EnhancedLoggingService:
                 error=str(e),
                 endpoint=otlp_endpoint,
             )
-            # Clean up resources on connection failure
-            if span_processor:
-                try:
-                    span_processor.shutdown()
-                except Exception:
-                    pass
+            self._cleanup_opentelemetry_resources(span_processor, otlp_exporter, tracer_provider)
             raise
         except (ImportError, ModuleNotFoundError) as e:
             self.logger.error(
@@ -233,6 +231,7 @@ class EnhancedLoggingService:
                 error=str(e),
                 endpoint=otlp_endpoint,
             )
+            self._cleanup_opentelemetry_resources(span_processor, otlp_exporter, tracer_provider)
             raise
         except (TimeoutError, OSError) as e:
             self.logger.error(
@@ -240,17 +239,15 @@ class EnhancedLoggingService:
                 error=str(e),
                 endpoint=otlp_endpoint,
             )
-            # Clean up resources on network failure
-            if span_processor:
-                try:
-                    span_processor.shutdown()
-                except Exception:
-                    pass
-            if otlp_exporter:
-                try:
-                    otlp_exporter.shutdown()
-                except Exception:
-                    pass
+            self._cleanup_opentelemetry_resources(span_processor, otlp_exporter, tracer_provider)
+            raise
+        except RuntimeError as e:
+            self.logger.error(
+                "Runtime error during OpenTelemetry setup",
+                error=str(e),
+                endpoint=otlp_endpoint,
+            )
+            self._cleanup_opentelemetry_resources(span_processor, otlp_exporter, tracer_provider)
             raise
         except Exception as e:
             self.logger.error(
@@ -259,18 +256,31 @@ class EnhancedLoggingService:
                 error_type=type(e).__name__,
                 endpoint=otlp_endpoint,
             )
-            # Clean up resources on any other failure
-            if span_processor:
-                try:
-                    span_processor.shutdown()
-                except Exception:
-                    pass
-            if otlp_exporter:
-                try:
-                    otlp_exporter.shutdown()
-                except Exception:
-                    pass
+            self._cleanup_opentelemetry_resources(span_processor, otlp_exporter, tracer_provider)
             raise
+
+    def _cleanup_opentelemetry_resources(self, span_processor, otlp_exporter, tracer_provider):
+        """Clean up OpenTelemetry resources in proper order to prevent memory leaks."""
+        # Clean up span processor first
+        if span_processor:
+            try:
+                span_processor.shutdown(timeout=5)  # Give it 5 seconds to finish
+            except Exception as e:
+                self.logger.warning(f"Error shutting down span processor: {e}")
+
+        # Clean up exporter
+        if otlp_exporter:
+            try:
+                otlp_exporter.shutdown(timeout=5)  # Give it 5 seconds to finish
+            except Exception as e:
+                self.logger.warning(f"Error shutting down OTLP exporter: {e}")
+
+        # Clean up tracer provider
+        if tracer_provider:
+            try:
+                tracer_provider.shutdown()
+            except Exception as e:
+                self.logger.warning(f"Error shutting down tracer provider: {e}")
 
     def get_correlation_id(self) -> str:
         """Get current correlation ID or create new one."""
@@ -439,27 +449,42 @@ class EnhancedLoggingService:
 
         finally:
             # Clean up resources and context variables in proper order
-            try:
-                # End span first to avoid memory leaks
-                if span_context:
+            cleanup_errors = []
+
+            # End span first to avoid memory leaks
+            if span_context:
+                try:
                     span_context.end()
-            except Exception as cleanup_error:
-                # Log cleanup errors but don't raise them
-                self.logger.warning(f"Error ending span: {cleanup_error}")
+                except Exception as e:
+                    cleanup_errors.append(f"Error ending span: {e}")
 
+            # Remove from active operations tracking
             try:
-                # Remove from active operations tracking
                 self.active_operations.pop(operation_id, None)
-            except Exception as cleanup_error:
-                self.logger.warning(f"Error removing active operation: {cleanup_error}")
+            except Exception as e:
+                cleanup_errors.append(f"Error removing active operation: {e}")
+
+            # Reset context variables to prevent memory leaks (critical for long-running processes)
+            try:
+                correlation_id_var.reset(token_correlation)
+            except (LookupError, RuntimeError) as e:
+                cleanup_errors.append(f"Error resetting correlation_id context variable: {e}")
+            except Exception as e:
+                cleanup_errors.append(f"Unexpected error resetting correlation_id: {e}")
 
             try:
-                # Reset context variables to prevent memory leaks
-                correlation_id_var.reset(token_correlation)
                 operation_context_var.reset(token_op_context)
-            except Exception as cleanup_error:
+            except (LookupError, RuntimeError) as e:
+                cleanup_errors.append(f"Error resetting operation_context variable: {e}")
+            except Exception as e:
+                cleanup_errors.append(f"Unexpected error resetting operation_context: {e}")
+
+            # Log all cleanup errors at once if any occurred
+            if cleanup_errors:
                 self.logger.warning(
-                    f"Error resetting context variables: {cleanup_error}"
+                    f"Context cleanup completed with {len(cleanup_errors)} errors",
+                    cleanup_errors=cleanup_errors,
+                    operation_id=operation_id,
                 )
 
     @asynccontextmanager
@@ -593,29 +618,42 @@ class EnhancedLoggingService:
 
         finally:
             # Clean up resources and context variables in proper order (async version)
-            try:
-                # End span first to avoid memory leaks
-                if span_context:
+            cleanup_errors = []
+
+            # End span first to avoid memory leaks
+            if span_context:
+                try:
                     span_context.end()
-            except Exception as cleanup_error:
-                # Log cleanup errors but don't raise them
-                self.logger.warning(f"Error ending async span: {cleanup_error}")
+                except Exception as e:
+                    cleanup_errors.append(f"Error ending async span: {e}")
 
+            # Remove from active operations tracking
             try:
-                # Remove from active operations tracking
                 self.active_operations.pop(operation_id, None)
-            except Exception as cleanup_error:
-                self.logger.warning(
-                    f"Error removing active async operation: {cleanup_error}"
-                )
+            except Exception as e:
+                cleanup_errors.append(f"Error removing active async operation: {e}")
+
+            # Reset context variables to prevent memory leaks (critical for long-running async processes)
+            try:
+                correlation_id_var.reset(token_correlation)
+            except (LookupError, RuntimeError) as e:
+                cleanup_errors.append(f"Error resetting async correlation_id context variable: {e}")
+            except Exception as e:
+                cleanup_errors.append(f"Unexpected error resetting async correlation_id: {e}")
 
             try:
-                # Reset context variables to prevent memory leaks
-                correlation_id_var.reset(token_correlation)
                 operation_context_var.reset(token_op_context)
-            except Exception as cleanup_error:
+            except (LookupError, RuntimeError) as e:
+                cleanup_errors.append(f"Error resetting async operation_context variable: {e}")
+            except Exception as e:
+                cleanup_errors.append(f"Unexpected error resetting async operation_context: {e}")
+
+            # Log all cleanup errors at once if any occurred
+            if cleanup_errors:
                 self.logger.warning(
-                    f"Error resetting async context variables: {cleanup_error}"
+                    f"Async context cleanup completed with {len(cleanup_errors)} errors",
+                    cleanup_errors=cleanup_errors,
+                    operation_id=operation_id,
                 )
 
     def log_pipeline_event(

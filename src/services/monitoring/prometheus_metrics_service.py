@@ -126,9 +126,9 @@ class PrometheusMetricsService:
 
     def _init_pipeline_histograms(self):
         """Initialize pipeline latency tracking histograms."""
-        # Get configurable bucket values from monitoring settings
-        pipeline_buckets = self.settings.monitoring.pipeline_duration_buckets
-        stage_buckets = self.settings.monitoring.pipeline_stage_duration_buckets
+        # Get configurable bucket values from monitoring settings with fallback defaults
+        pipeline_buckets = getattr(self.settings.monitoring, 'pipeline_duration_buckets', [1, 5, 10, 30, 60, 120, 300, 600])
+        stage_buckets = getattr(self.settings.monitoring, 'pipeline_stage_duration_buckets', [0.1, 0.5, 1, 2, 5, 10, 30, 60])
 
         self.pipeline_duration_seconds = Histogram(
             "mlb_pipeline_duration_seconds",
@@ -261,7 +261,7 @@ class PrometheusMetricsService:
             "mlb_database_query_duration_seconds",
             "Database query execution time",
             ["query_type"],
-            buckets=self.settings.monitoring.database_query_duration_buckets,
+            buckets=getattr(self.settings.monitoring, 'database_query_duration_buckets', [0.001, 0.01, 0.1, 0.5, 1, 2, 5, 10]),
             registry=self.registry,
         )
 
@@ -270,7 +270,7 @@ class PrometheusMetricsService:
             "mlb_external_api_duration_seconds",
             "External API response time",
             ["api_name", "endpoint"],
-            buckets=self.settings.monitoring.api_call_duration_buckets,
+            buckets=getattr(self.settings.monitoring, 'api_call_duration_buckets', [0.1, 0.5, 1, 2, 5, 10, 30, 60]),
             registry=self.registry,
         )
 
@@ -394,9 +394,23 @@ class PrometheusMetricsService:
     # Pipeline Metrics Methods
 
     def record_pipeline_start(self, pipeline_id: str, pipeline_type: str):
-        """Record the start of a pipeline execution."""
-        self.pipeline_start_times[pipeline_id] = time.time()
-        self.active_pipelines.labels(pipeline_type=pipeline_type).inc()
+        """Record the start of a pipeline execution with input validation."""
+        # Input validation
+        if not pipeline_id or not pipeline_id.strip():
+            raise ValueError("Pipeline ID cannot be empty or None")
+        if not pipeline_type or not pipeline_type.strip():
+            raise ValueError("Pipeline type cannot be empty or None")
+
+        # Sanitize inputs
+        pipeline_id = pipeline_id.strip()
+        pipeline_type = pipeline_type.strip()
+
+        try:
+            self.pipeline_start_times[pipeline_id] = time.time()
+            self.active_pipelines.labels(pipeline_type=pipeline_type).inc()
+        except Exception as e:
+            self.logger.error(f"Error recording pipeline start: {e}")
+            raise
 
         self.logger.debug(
             "Pipeline execution started",
@@ -412,7 +426,21 @@ class PrometheusMetricsService:
         stages_executed: int = 0,
         errors: list | None = None,
     ):
-        """Record the completion of a pipeline execution."""
+        """Record the completion of a pipeline execution with input validation."""
+        # Input validation
+        if not pipeline_id or not pipeline_id.strip():
+            raise ValueError("Pipeline ID cannot be empty or None")
+        if not pipeline_type or not pipeline_type.strip():
+            raise ValueError("Pipeline type cannot be empty or None")
+        if not status or not status.strip():
+            raise ValueError("Status cannot be empty or None")
+        if not isinstance(stages_executed, int) or stages_executed < 0:
+            raise ValueError(f"Stages executed must be a non-negative integer, got: {stages_executed}")
+
+        # Sanitize inputs
+        pipeline_id = pipeline_id.strip()
+        pipeline_type = pipeline_type.strip()
+        status = status.strip()
 
         # Calculate duration
         start_time = self.pipeline_start_times.pop(pipeline_id, time.time())
@@ -630,26 +658,87 @@ class PrometheusMetricsService:
     # System Metrics Methods
 
     def update_data_freshness(self, source: str, age_seconds: float):
-        """Update data freshness metric."""
-        self.data_freshness_seconds.labels(source=source).set(age_seconds)
+        """Update data freshness metric with input validation."""
+        # Input validation
+        if not source or not source.strip():
+            raise ValueError("Source cannot be empty or None")
+        if not isinstance(age_seconds, (int, float)):
+            raise ValueError(f"Age seconds must be a number, got: {type(age_seconds)}")
+        if age_seconds < 0:
+            raise ValueError(f"Age seconds must be non-negative, got: {age_seconds}")
 
-        # Calculate SLI compliance (data is fresh if < 60 seconds old)
-        compliance = 1.0 if age_seconds < 60 else 0.0
-        self.sli_data_freshness_compliance.labels(source=source).set(compliance)
+        # Sanitize inputs
+        source = source.strip()
+
+        try:
+            self.data_freshness_seconds.labels(source=source).set(age_seconds)
+
+            # Calculate SLI compliance (data is fresh if < 60 seconds old)
+            compliance = 1.0 if age_seconds < 60 else 0.0
+            self.sli_data_freshness_compliance.labels(source=source).set(compliance)
+        except Exception as e:
+            self.logger.error(f"Error updating data freshness metric: {e}")
+            raise
 
     def update_data_quality_score(self, source: str, metric: str, score: float):
-        """Update data quality score."""
-        self.data_quality_score.labels(source=source, metric=metric).set(score)
+        """Update data quality score with input validation."""
+        # Input validation
+        if not source or not source.strip():
+            raise ValueError("Source cannot be empty or None")
+        if not metric or not metric.strip():
+            raise ValueError("Metric cannot be empty or None")
+        if not isinstance(score, (int, float)):
+            raise ValueError(f"Score must be a number, got: {type(score)}")
+        if not 0.0 <= score <= 1.0:
+            raise ValueError(f"Score must be between 0.0 and 1.0, got: {score}")
+
+        # Sanitize inputs
+        source = source.strip()
+        metric = metric.strip()
+
+        try:
+            self.data_quality_score.labels(source=source, metric=metric).set(score)
+        except Exception as e:
+            self.logger.error(f"Error updating data quality score metric: {e}")
+            raise
 
     def update_collection_success_rate(self, source: str, rate: float):
-        """Update data collection success rate."""
-        self.data_collection_success_rate.labels(source=source).set(rate)
+        """Update data collection success rate with input validation."""
+        # Input validation
+        if not source or not source.strip():
+            raise ValueError("Source cannot be empty or None")
+        if not isinstance(rate, (int, float)):
+            raise ValueError(f"Rate must be a number, got: {type(rate)}")
+        if not 0.0 <= rate <= 1.0:
+            raise ValueError(f"Success rate must be between 0.0 and 1.0, got: {rate}")
+
+        # Sanitize inputs
+        source = source.strip()
+
+        try:
+            self.data_collection_success_rate.labels(source=source).set(rate)
+        except Exception as e:
+            self.logger.error(f"Error updating collection success rate metric: {e}")
+            raise
 
     def record_database_query(self, query_type: str, duration: float):
-        """Record database query execution."""
-        self.database_query_duration_seconds.labels(query_type=query_type).observe(
-            duration
-        )
+        """Record database query execution with input validation."""
+        # Input validation
+        if not query_type or not query_type.strip():
+            raise ValueError("Query type cannot be empty or None")
+        if not isinstance(duration, (int, float)):
+            raise ValueError(f"Duration must be a number, got: {type(duration)}")
+        if duration < 0:
+            raise ValueError(f"Duration must be non-negative, got: {duration}")
+
+        # Sanitize inputs
+        query_type = query_type.strip()
+
+        try:
+            self.database_query_duration_seconds.labels(query_type=query_type).observe(duration)
+        except Exception as e:
+            self.logger.error(f"Error recording database query metric: {e}")
+            raise
 
     def record_api_call(
         self,
@@ -657,16 +746,49 @@ class PrometheusMetricsService:
         endpoint: str,
         duration: float,
         error_code: str | None = None,
+        sample_rate: float | None = None,
     ):
-        """Record external API call."""
-        self.external_api_duration_seconds.labels(
-            api_name=api_name, endpoint=endpoint
-        ).observe(duration)
+        """Record external API call with optional sampling for high-volume APIs."""
+        # Input validation
+        if not api_name or not api_name.strip():
+            raise ValueError("API name cannot be empty or None")
+        if not endpoint or not endpoint.strip():
+            raise ValueError("Endpoint cannot be empty or None")
+        if not isinstance(duration, (int, float)):
+            raise ValueError(f"Duration must be a number, got: {type(duration)}")
+        if duration < 0:
+            raise ValueError(f"Duration must be non-negative, got: {duration}")
 
-        if error_code:
-            self.external_api_errors_total.labels(
-                api_name=api_name, error_code=error_code
-            ).inc()
+        # Use configured sample rate if none provided and sampling is enabled
+        if sample_rate is None:
+            if getattr(self.settings.monitoring, 'enable_metrics_sampling', False):
+                sample_rate = getattr(self.settings.monitoring, 'metrics_sample_rate', 0.1)
+            else:
+                sample_rate = 1.0
+
+        if not 0.0 <= sample_rate <= 1.0:
+            raise ValueError(f"Sample rate must be between 0.0 and 1.0, got: {sample_rate}")
+
+        # Apply sampling for high-volume operations
+        if sample_rate < 1.0 and random.random() > sample_rate:
+            return
+
+        # Sanitize inputs
+        api_name = api_name.strip()
+        endpoint = endpoint.strip()
+
+        try:
+            self.external_api_duration_seconds.labels(
+                api_name=api_name, endpoint=endpoint
+            ).observe(duration)
+
+            if error_code:
+                self.external_api_errors_total.labels(
+                    api_name=api_name, error_code=error_code.strip()
+                ).inc()
+        except Exception as e:
+            self.logger.error(f"Error recording API call metric: {e}")
+            raise
 
     def update_system_health_status(self, status: str):
         """Update overall system health status."""
