@@ -606,6 +606,60 @@ class OrchestrationError(UnifiedBettingError):
         )
 
 
+class AlertException(UnifiedBettingError):
+    """Raised when alert operations fail."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        alert_type: str | None = None,
+        alert_level: str | None = None,
+        **kwargs,
+    ):
+        details = kwargs.get("details", {})
+
+        if alert_type:
+            details["alert_type"] = alert_type
+        if alert_level:
+            details["alert_level"] = alert_level
+
+        super().__init__(
+            message,
+            component="alerting",
+            error_code="ALERT_ERROR",
+            details=details,
+            **kwargs,
+        )
+
+
+class ReportGenerationException(UnifiedBettingError):
+    """Raised when report generation fails."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        report_type: str | None = None,
+        output_format: str | None = None,
+        **kwargs,
+    ):
+        details = kwargs.get("details", {})
+
+        if report_type:
+            details["report_type"] = report_type
+        if output_format:
+            details["output_format"] = output_format
+
+        super().__init__(
+            message,
+            component="reporting",
+            error_code="REPORT_GENERATION_ERROR",
+            details=details,
+            **kwargs,
+        )
+
+
 class PipelineError(UnifiedBettingError):
     """Raised when pipeline operations fail."""
 
@@ -637,6 +691,7 @@ class PipelineError(UnifiedBettingError):
 # MLBSharpBettingError removed - mlb_sharp_betting directory cleanup
 SportsbookReviewError = UnifiedBettingError  # For sportsbookreview module compatibility
 ActionNetworkError = UnifiedBettingError  # For action module compatibility
+MonitoringException = MonitoringError  # Alias for consistency
 
 
 def handle_exception(

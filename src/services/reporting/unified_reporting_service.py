@@ -28,7 +28,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from ...core.config import UnifiedConfig
+from ...core.config import UnifiedSettings
 from ...core.exceptions import ReportGenerationException
 from ...core.logging import get_logger
 
@@ -120,7 +120,7 @@ class UnifiedReportingService:
     - System health monitoring reports
     """
 
-    def __init__(self, config: UnifiedConfig):
+    def __init__(self, config: UnifiedSettings):
         self.config = config
         self.is_initialized = False
 

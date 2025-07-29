@@ -45,6 +45,8 @@ dependencies = [
     "opentelemetry-sdk>=1.27.0",
     "opentelemetry-instrumentation>=0.48b0",
     "opentelemetry-exporter-otlp>=1.27.0",
+    "psutil>=7.0.0",
+    "jinja2>=3.1.6",
 ]
 
 [project.optional-dependencies]

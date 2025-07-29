@@ -28,7 +28,7 @@ from typing import Any
 import aiohttp
 import psutil
 
-from ...core.config import UnifiedConfig
+from ...core.config import UnifiedSettings
 from ...core.exceptions import AlertException, MonitoringException
 from ...core.logging import LogComponent, get_logger
 
@@ -138,7 +138,7 @@ class UnifiedMonitoringService:
     - Automated diagnostics and recovery
     """
 
-    def __init__(self, config: UnifiedConfig):
+    def __init__(self, config: UnifiedSettings):
         self.config = config
         self.is_initialized = False
         self.start_time = datetime.now()
