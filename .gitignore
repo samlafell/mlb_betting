@@ -65,3 +65,6 @@ docs/july21_collection_enhancements/
 
 ## Original VSIN project ignore
 original_vsin/
+
+## Do not have .env in git
+**/.env

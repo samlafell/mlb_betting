@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MLB Betting System - Monitoring Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            line-height: 1.6;
+        }
+        .header {
+            background: #1e293b;
+            padding: 1rem 2rem;
+            border-bottom: 2px solid #334155;
+            display: flex;
+            justify-content: between;
+            align-items: center;
+        }
+        .header h1 { color: #60a5fa; }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-healthy { background: #10b981; }
+        .status-warning { background: #f59e0b; }
+        .status-critical { background: #ef4444; }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+        .card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .card h3 {
+            color: #60a5fa;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+        }
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #374151;
+        }
+        .metric:last-child { border-bottom: none; }
+        .metric-value {
+            font-weight: bold;
+            color: #10b981;
+        }
+        .pipeline-item {
+            background: #374151;
+            border-radius: 4px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        .pipeline-item:last-child { margin-bottom: 0; }
+        .pipeline-status {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            font-weight: bold;
+        }
+        .status-running { background: #3b82f6; color: white; }
+        .status-success { background: #10b981; color: white; }
+        .status-failed { background: #ef4444; color: white; }
+        .status-pending { background: #6b7280; color: white; }
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #6b7280;
+        }
+        .connection-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            font-weight: bold;
+        }
+        .connected { background: #10b981; color: white; }
+        .disconnected { background: #ef4444; color: white; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🏈 MLB Betting System Monitoring</h1>
+        <div id="systemStatus">
+            <span class="status-indicator status-healthy"></span>
+            <span>System Healthy</span>
+        </div>
+    </div>
+    
+    <div class="connection-status disconnected" id="connectionStatus">
+        Connecting...
+    </div>
+    
+    <div class="container">
+        <div class="card">
+            <h3>📊 System Health</h3>
+            <div id="systemHealth" class="loading">Loading system health...</div>
+        </div>
+        
+        <div class="card">
+            <h3>🔄 Active Pipelines</h3>
+            <div id="activePipelines" class="loading">Loading active pipelines...</div>
+        </div>
+        
+        <div class="card">
+            <h3>📈 Performance Metrics</h3>
+            <div id="performanceMetrics" class="loading">Loading metrics...</div>
+        </div>
+        
+        <div class="card">
+            <h3>📝 Recent Activity</h3>
+            <div id="recentActivity" class="loading">Loading recent activity...</div>
+        </div>
+    </div>
+
+    <script>
+        class MonitoringDashboard {
+            constructor() {
+                this.ws = null;
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 5;
+                this.reconnectInterval = 5000;
+                
+                this.initializeWebSocket();
+                this.loadInitialData();
+            }
+            
+            initializeWebSocket() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/ws`;
+                
+                this.ws = new WebSocket(wsUrl);
+                
+                this.ws.onopen = () => {
+                    console.log('WebSocket connected');
+                    this.updateConnectionStatus(true);
+                    this.reconnectAttempts = 0;
+                };
+                
+                this.ws.onmessage = (event) => {
+                    const message = JSON.parse(event.data);
+                    this.handleWebSocketMessage(message);
+                };
+                
+                this.ws.onclose = () => {
+                    console.log('WebSocket disconnected');
+                    this.updateConnectionStatus(false);
+                    this.attemptReconnect();
+                };
+                
+                this.ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    this.updateConnectionStatus(false);
+                };
+            }
+            
+            attemptReconnect() {
+                if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                    setTimeout(() => {
+                        this.reconnectAttempts++;
+                        console.log(`Reconnection attempt ${this.reconnectAttempts}`);
+                        this.initializeWebSocket();
+                    }, this.reconnectInterval);
+                }
+            }
+            
+            updateConnectionStatus(connected) {
+                const statusEl = document.getElementById('connectionStatus');
+                if (connected) {
+                    statusEl.textContent = 'Connected';
+                    statusEl.className = 'connection-status connected';
+                } else {
+                    statusEl.textContent = 'Disconnected';
+                    statusEl.className = 'connection-status disconnected';
+                }
+            }
+            
+            handleWebSocketMessage(message) {
+                switch (message.type) {
+                    case 'initial_state':
+                        this.updateSystemHealth(message.data);
+                        break;
+                    case 'system_health_update':
+                        this.updateSystemHealth(message.data);
+                        break;
+                    case 'pipeline_status_update':
+                        this.updateActivePipelines(message.data.active_pipelines);
+                        break;
+                    case 'metrics_update':
+                        this.updateMetrics(message.data);
+                        break;
+                    case 'pipeline_manual_start':
+                        this.showNotification(`Manual pipeline execution started: ${message.data.pipeline_type}`);
+                        break;
+                    case 'system_override':
+                        this.showNotification(`System override: ${message.data.component} - ${message.data.reason}`, 'warning');
+                        break;
+                }
+            }
+            
+            async loadInitialData() {
+                try {
+                    // Load recent pipelines
+                    const recentResponse = await fetch('/api/pipelines/recent?limit=5');
+                    const recentPipelines = await recentResponse.json();
+                    this.updateRecentActivity(recentPipelines);
+                    
+                    // Load metrics
+                    const metricsResponse = await fetch('/api/metrics/all');
+                    const metrics = await metricsResponse.json();
+                    this.updateMetrics(metrics);
+                    
+                } catch (error) {
+                    console.error('Failed to load initial data:', error);
+                }
+            }
+            
+            updateSystemHealth(data) {
+                const healthEl = document.getElementById('systemHealth');
+                const statusEl = document.getElementById('systemStatus');
+                
+                healthEl.innerHTML = `
+                    <div class="metric">
+                        <span>Overall Status</span>
+                        <span class="metric-value">${data.overall_status}</span>
+                    </div>
+                    <div class="metric">
+                        <span>Uptime</span>
+                        <span class="metric-value">${Math.floor(data.uptime_seconds / 3600)}h ${Math.floor((data.uptime_seconds % 3600) / 60)}m</span>
+                    </div>
+                    <div class="metric">
+                        <span>Active Pipelines</span>
+                        <span class="metric-value">${data.active_pipelines}</span>
+                    </div>
+                    <div class="metric">
+                        <span>Success Rate</span>
+                        <span class="metric-value">${data.recent_success_rate.toFixed(1)}%</span>
+                    </div>
+                `;
+                
+                // Update header status
+                const statusClass = data.overall_status === 'healthy' ? 'status-healthy' : 
+                                   data.overall_status === 'warning' ? 'status-warning' : 'status-critical';
+                statusEl.innerHTML = `
+                    <span class="status-indicator ${statusClass}"></span>
+                    <span>System ${data.overall_status}</span>
+                `;
+            }
+            
+            updateActivePipelines(pipelines) {
+                const pipelinesEl = document.getElementById('activePipelines');
+                
+                if (!pipelines || pipelines.length === 0) {
+                    pipelinesEl.innerHTML = '<div style="text-align: center; color: #6b7280;">No active pipelines</div>';
+                    return;
+                }
+                
+                pipelinesEl.innerHTML = pipelines.map(pipeline => `
+                    <div class="pipeline-item">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <strong>${pipeline.pipeline_type}</strong>
+                            <span class="pipeline-status status-${pipeline.status}">${pipeline.status}</span>
+                        </div>
+                        <div style="font-size: 0.875rem; color: #9ca3af;">
+                            Started: ${new Date(pipeline.start_time).toLocaleTimeString()}
+                        </div>
+                        <div style="font-size: 0.875rem; color: #9ca3af;">
+                            Stages: ${pipeline.successful_stages}/${pipeline.stages_executed}
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            updateMetrics(data) {
+                const metricsEl = document.getElementById('performanceMetrics');
+                
+                metricsEl.innerHTML = `
+                    <div class="metric">
+                        <span>CPU Usage</span>
+                        <span class="metric-value">${data.system_metrics.cpu_usage?.toFixed(1) || 0}%</span>
+                    </div>
+                    <div class="metric">
+                        <span>Memory Usage</span>
+                        <span class="metric-value">${data.system_metrics.memory_usage?.toFixed(1) || 0}%</span>
+                    </div>
+                    <div class="metric">
+                        <span>Opportunities Found</span>
+                        <span class="metric-value">${data.business_metrics.opportunities_detected || 0}</span>
+                    </div>
+                    <div class="metric">
+                        <span>Total Value</span>
+                        <span class="metric-value">$${data.business_metrics.total_value_identified?.toFixed(2) || 0}</span>
+                    </div>
+                `;
+            }
+            
+            updateRecentActivity(pipelines) {
+                const activityEl = document.getElementById('recentActivity');
+                
+                if (!pipelines || pipelines.length === 0) {
+                    activityEl.innerHTML = '<div style="text-align: center; color: #6b7280;">No recent activity</div>';
+                    return;
+                }
+                
+                activityEl.innerHTML = pipelines.map(pipeline => `
+                    <div class="pipeline-item">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <strong>${pipeline.pipeline_type}</strong>
+                            <span class="pipeline-status status-${pipeline.status}">${pipeline.status}</span>
+                        </div>
+                        <div style="font-size: 0.875rem; color: #9ca3af;">
+                            ${new Date(pipeline.start_time).toLocaleString()}
+                        </div>
+                        <div style="font-size: 0.875rem; color: #9ca3af;">
+                            Duration: ${pipeline.execution_time_seconds.toFixed(2)}s
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            showNotification(message, type = 'info') {
+                // Simple notification system
+                const notification = document.createElement('div');
+                notification.style.cssText = `
+                    position: fixed;
+                    top: 80px;
+                    right: 20px;
+                    background: ${type === 'warning' ? '#f59e0b' : '#3b82f6'};
+                    color: white;
+                    padding: 1rem;
+                    border-radius: 4px;
+                    z-index: 1000;
+                    max-width: 300px;
+                `;
+                notification.textContent = message;
+                document.body.appendChild(notification);
+                
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 5000);
+            }
+        }
+        
+        // Initialize dashboard when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new MonitoringDashboard();
+        });
+    </script>
+</body>
+</html>

@@ -494,8 +494,35 @@ class CircuitBreakerError(UnifiedBettingError):
         )
 
 
-class OrchestrationError(UnifiedBettingError):
-    """Raised when pipeline orchestration fails."""
+class MonitoringError(UnifiedBettingError):
+    """Raised when monitoring operations fail."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        monitor_type: str | None = None,
+        endpoint: str | None = None,
+        **kwargs,
+    ):
+        details = kwargs.get("details", {})
+
+        if monitor_type:
+            details["monitor_type"] = monitor_type
+        if endpoint:
+            details["endpoint"] = endpoint
+
+        super().__init__(
+            message,
+            component="monitoring",
+            error_code="MONITORING_ERROR",
+            details=details,
+            **kwargs,
+        )
+
+
+class PipelineExecutionError(UnifiedBettingError):
+    """Raised when pipeline execution fails."""
 
     def __init__(
         self,
@@ -517,39 +544,37 @@ class OrchestrationError(UnifiedBettingError):
 
         super().__init__(
             message,
-            component="orchestration",
-            error_code="ORCHESTRATION_ERROR",
+            component="pipeline_orchestrator",
+            error_code="PIPELINE_EXECUTION_ERROR",
             details=details,
             **kwargs,
         )
 
 
-class PipelineError(UnifiedBettingError):
-    """Raised when pipeline execution fails."""
+class WebSocketError(UnifiedBettingError):
+    """Raised when WebSocket operations fail."""
 
     def __init__(
         self,
         message: str,
         *,
-        pipeline_id: str | None = None,
-        stage: str | None = None,
-        execution_time: float | None = None,
+        connection_id: str | None = None,
+        client_info: dict | None = None,
         **kwargs,
     ):
         details = kwargs.get("details", {})
 
-        if pipeline_id:
-            details["pipeline_id"] = pipeline_id
-        if stage:
-            details["stage"] = stage
-        if execution_time:
-            details["execution_time"] = execution_time
+        if connection_id:
+            details["connection_id"] = connection_id
+        if client_info:
+            details["client_info"] = client_info
 
         super().__init__(
             message,
-            component="pipeline",
-            error_code="PIPELINE_ERROR",
+            component="websocket",
+            error_code="WEBSOCKET_ERROR",
             details=details,
+            recoverable=True,  # WebSocket errors are usually recoverable
             **kwargs,
         )
 

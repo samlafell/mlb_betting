@@ -14,6 +14,7 @@ from src.interfaces.cli.commands.cleanup import cleanup
 from src.interfaces.cli.commands.data import DataCommands
 from src.interfaces.cli.commands.data_quality_improvement import data_quality_group
 from src.interfaces.cli.commands.game_outcomes import outcomes
+from src.interfaces.cli.commands.monitoring import MonitoringCommands
 from src.interfaces.cli.commands.movement_analysis import movement
 from src.interfaces.cli.commands.pipeline import pipeline
 from src.interfaces.cli.commands.setup_database import database
@@ -41,9 +42,11 @@ def cli():
 
 # Create command instances
 data_commands = DataCommands()
+monitoring_commands = MonitoringCommands()
 
 # Add command groups
 cli.add_command(data_commands.create_group(), name="data")
+cli.add_command(monitoring_commands.create_group(), name="monitoring")  # Add monitoring commands
 cli.add_command(batch_collection)  # Add the batch collection commands
 cli.add_command(movement)  # Add the new movement analysis commands
 cli.add_command(action_network)  # Add the complete Action Network pipeline

@@ -32,11 +32,7 @@ class DataSource(Enum):
     VSIN = "vsin"
     SBD = "sbd"
     ACTION_NETWORK = "action_network"
-    SPORTS_BOOK_REVIEW_DEPRECATED = (
-        "sports_betting_report"  # DEPRECATED: Use SBR instead
-    )
     SPORTS_BOOK_REVIEW = "sports_book_review"  # SportsbookReview.com
-    SBR = "sbr"  # Alias for SPORTS_BOOK_REVIEW
     MLB_STATS_API = "mlb_stats_api"
     ODDS_API = "odds_api"
 
@@ -1290,7 +1286,7 @@ class DataCommands:
             DataSource.VSIN: "🟢 90% Complete - Unified and production ready",
             DataSource.SBD: "🟢 90% Complete - Unified and production ready",
             DataSource.ACTION_NETWORK: "🟢 90% Complete - Unified with comprehensive implementation",
-            DataSource.SPORTS_BOOK_REVIEW_DEPRECATED: "🟡 40% Complete - Unified but partial implementation",
+            # Note: Deprecated SBR enum removed - now using SPORTS_BOOK_REVIEW
             DataSource.MLB_STATS_API: "🟢 85% Complete - Unified with comprehensive services",
             DataSource.ODDS_API: "🔴 20% Complete - Unified placeholder implementation",
         }
@@ -2027,7 +2023,7 @@ class DataCommands:
                     )
 
                     request = CollectionRequest(
-                        source=DataSource.SPORTS_BOOK_REVIEW_DEPRECATED,
+                        source=DataSource.SPORTS_BOOK_REVIEW,
                         start_date=start_dt,
                         end_date=end_dt,
                     )

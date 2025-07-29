@@ -48,6 +48,7 @@ class LogComponent(str, Enum):
     ANALYSIS = "analysis"
     STRATEGY = "strategy"
     BACKTESTING = "backtesting"
+    SECURITY = "security"
     NOTIFICATION = "notification"
     CLI = "cli"
     SCHEDULER = "scheduler"
