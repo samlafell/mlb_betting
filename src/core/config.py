@@ -641,6 +641,123 @@ class FeatureFlags(BaseSettings):
         extra = "allow"  # Allow extra fields for backward compatibility
 
 
+class SecuritySettings(BaseSettings):
+    """Security configuration for API endpoints and authentication."""
+    
+    # Dashboard API Security
+    dashboard_api_key: str | None = Field(
+        default=None,
+        description="API key for dashboard break-glass endpoints",
+        env="DASHBOARD_API_KEY"
+    )
+    
+    # Security features
+    enable_authentication: bool = Field(
+        default=True,
+        description="Enable authentication for sensitive endpoints",
+        env="ENABLE_AUTH"
+    )
+    
+    enable_rate_limiting: bool = Field(
+        default=True,
+        description="Enable rate limiting for API endpoints",
+        env="ENABLE_RATE_LIMIT"
+    )
+    
+    # Rate limiting settings for break-glass endpoints
+    break_glass_rate_limit: int = Field(
+        default=5,
+        ge=1,
+        le=100,
+        description="Max break-glass requests per hour",
+        env="BREAK_GLASS_RATE_LIMIT"
+    )
+    
+    # Session security
+    session_timeout_minutes: int = Field(
+        default=60,
+        ge=5,
+        le=480,
+        description="Session timeout in minutes",
+        env="SESSION_TIMEOUT"
+    )
+    
+    class Config:
+        env_prefix = ""
+        case_sensitive = False
+        use_enum_values = True
+        extra = "allow"
+
+
+class DashboardSettings(BaseSettings):
+    """Dashboard configuration for monitoring interface."""
+    
+    # Update intervals
+    system_health_update_interval: int = Field(
+        default=10,
+        ge=5,
+        le=300,
+        description="System health update interval in seconds",
+        env="DASHBOARD_UPDATE_INTERVAL"
+    )
+    
+    error_recovery_delay: int = Field(
+        default=30,
+        ge=5,
+        le=300,
+        description="Error recovery delay in seconds",
+        env="DASHBOARD_ERROR_DELAY"
+    )
+    
+    websocket_error_delay: int = Field(
+        default=15,
+        ge=5,
+        le=120,
+        description="WebSocket error recovery delay in seconds",
+        env="DASHBOARD_WS_ERROR_DELAY"
+    )
+    
+    # WebSocket settings
+    max_reconnect_attempts: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Maximum WebSocket reconnection attempts",
+        env="DASHBOARD_MAX_RECONNECTS"
+    )
+    
+    reconnect_interval: int = Field(
+        default=5000,
+        ge=1000,
+        le=30000,
+        description="WebSocket reconnection interval in milliseconds",
+        env="DASHBOARD_RECONNECT_INTERVAL"
+    )
+    
+    # Display settings
+    recent_pipelines_limit: int = Field(
+        default=5,
+        ge=1,
+        le=50,
+        description="Number of recent pipelines to display",
+        env="DASHBOARD_RECENT_LIMIT"
+    )
+    
+    notification_timeout: int = Field(
+        default=5000,
+        ge=1000,
+        le=30000,
+        description="Notification display timeout in milliseconds",
+        env="DASHBOARD_NOTIFICATION_TIMEOUT"
+    )
+    
+    class Config:
+        env_prefix = ""
+        case_sensitive = False
+        use_enum_values = True
+        extra = "allow"
+
+
 class UnifiedSettings(BaseSettings):
     """
     Main unified settings class consolidating all configuration.
@@ -681,6 +798,8 @@ class UnifiedSettings(BaseSettings):
     betting: BettingSettings = Field(default_factory=BettingSettings)
     notifications: NotificationSettings = Field(default_factory=NotificationSettings)
     pipeline: PipelineSettings = Field(default_factory=PipelineSettings)
+    security: SecuritySettings = Field(default_factory=SecuritySettings)
+    dashboard: DashboardSettings = Field(default_factory=DashboardSettings)
     features: FeatureFlags = Field(default_factory=FeatureFlags)
 
     class Config:

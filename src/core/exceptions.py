@@ -494,6 +494,91 @@ class CircuitBreakerError(UnifiedBettingError):
         )
 
 
+class MonitoringError(UnifiedBettingError):
+    """Raised when monitoring operations fail."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        monitor_type: str | None = None,
+        endpoint: str | None = None,
+        **kwargs,
+    ):
+        details = kwargs.get("details", {})
+
+        if monitor_type:
+            details["monitor_type"] = monitor_type
+        if endpoint:
+            details["endpoint"] = endpoint
+
+        super().__init__(
+            message,
+            component="monitoring",
+            error_code="MONITORING_ERROR",
+            details=details,
+            **kwargs,
+        )
+
+
+class PipelineExecutionError(UnifiedBettingError):
+    """Raised when pipeline execution fails."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        pipeline_id: str | None = None,
+        pipeline_type: str | None = None,
+        stage: str | None = None,
+        **kwargs,
+    ):
+        details = kwargs.get("details", {})
+
+        if pipeline_id:
+            details["pipeline_id"] = pipeline_id
+        if pipeline_type:
+            details["pipeline_type"] = pipeline_type
+        if stage:
+            details["stage"] = stage
+
+        super().__init__(
+            message,
+            component="pipeline_orchestrator",
+            error_code="PIPELINE_EXECUTION_ERROR",
+            details=details,
+            **kwargs,
+        )
+
+
+class WebSocketError(UnifiedBettingError):
+    """Raised when WebSocket operations fail."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        connection_id: str | None = None,
+        client_info: dict | None = None,
+        **kwargs,
+    ):
+        details = kwargs.get("details", {})
+
+        if connection_id:
+            details["connection_id"] = connection_id
+        if client_info:
+            details["client_info"] = client_info
+
+        super().__init__(
+            message,
+            component="websocket",
+            error_code="WEBSOCKET_ERROR",
+            details=details,
+            recoverable=True,  # WebSocket errors are usually recoverable
+            **kwargs,
+        )
+
+
 # Legacy exception aliases for backward compatibility
 # MLBSharpBettingError removed - mlb_sharp_betting directory cleanup
 SportsbookReviewError = UnifiedBettingError  # For sportsbookreview module compatibility
