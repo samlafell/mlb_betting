@@ -682,6 +682,32 @@ class SecuritySettings(BaseSettings):
         env="SESSION_TIMEOUT"
     )
     
+    # IP whitelisting for break-glass endpoints
+    break_glass_ip_whitelist: list[str] = Field(
+        default_factory=lambda: ["127.0.0.1", "::1"],
+        description="IP addresses allowed to access break-glass endpoints",
+        env="BREAK_GLASS_IP_WHITELIST"
+    )
+    
+    enable_ip_whitelisting: bool = Field(
+        default=False,
+        description="Enable IP whitelisting for break-glass endpoints",
+        env="ENABLE_IP_WHITELIST"
+    )
+    
+    # Redis configuration for production rate limiting
+    redis_url: str | None = Field(
+        default=None,
+        description="Redis URL for production rate limiting",
+        env="REDIS_URL"
+    )
+    
+    enable_redis_rate_limiting: bool = Field(
+        default=False,
+        description="Enable Redis-based rate limiting",
+        env="ENABLE_REDIS_RATE_LIMITING"
+    )
+    
     class Config:
         env_prefix = ""
         case_sensitive = False
