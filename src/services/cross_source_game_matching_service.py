@@ -133,7 +133,7 @@ class CrossSourceGameMatchingService:
                         source_mappings = {}
                         if game["sportsbookreview_game_id"]:
                             source_mappings[
-                                DataSource.SPORTS_BOOK_REVIEW_DEPRECATED
+                                DataSource.SPORTS_BOOK_REVIEW
                             ] = game["sportsbookreview_game_id"]
                         if game["action_network_game_id"]:
                             source_mappings[DataSource.ACTION_NETWORK] = str(
@@ -240,7 +240,7 @@ class CrossSourceGameMatchingService:
                     # Collect from betting lines tables
                     sources_queries = [
                         (
-                            DataSource.SPORTS_BOOK_REVIEW_DEPRECATED,
+                            DataSource.SPORTS_BOOK_REVIEW,
                             "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'",
                             "sportsbookreview_game_id",
                         ),
@@ -601,7 +601,7 @@ class CrossSourceGameMatchingService:
                     values = []
 
                     for source, external_id in source_mappings.items():
-                        if source == DataSource.SPORTS_BOOK_REVIEW_DEPRECATED:
+                        if source == DataSource.SPORTS_BOOK_REVIEW:
                             update_fields.append("sportsbookreview_game_id = %s")
                         elif source == DataSource.ACTION_NETWORK:
                             update_fields.append("action_network_game_id = %s")
@@ -684,7 +684,7 @@ class CrossSourceGameMatchingService:
                         external_id = None
 
                         if row["sportsbookreview_game_id"]:
-                            source = DataSource.SPORTS_BOOK_REVIEW_DEPRECATED
+                            source = DataSource.SPORTS_BOOK_REVIEW
                             external_id = row["sportsbookreview_game_id"]
                         elif row["action_network_game_id"]:
                             source = DataSource.ACTION_NETWORK

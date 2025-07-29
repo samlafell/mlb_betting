@@ -135,7 +135,7 @@ class SBDStagingProcessor(BaseZoneProcessor):
         """
         try:
             logger.info("Starting SBD raw-to-staging processing")
-            
+
             # Initialize MLB resolver if not already done
             if not self._initialized:
                 await self.initialize()
@@ -607,9 +607,9 @@ class SBDStagingProcessor(BaseZoneProcessor):
 
             if existing_game:
                 game_id = existing_game["id"]
-                
+
                 # Update MLB Stats API game ID if we have one and it's not set
-                if (game_record.mlb_stats_api_game_id and 
+                if (game_record.mlb_stats_api_game_id and
                     not existing_game["mlb_stats_api_game_id"]):
                     await connection.execute(
                         """
@@ -622,7 +622,7 @@ class SBDStagingProcessor(BaseZoneProcessor):
                         game_id,
                     )
                     logger.debug(f"Updated MLB Stats API game ID for existing game: {game_record.external_id}")
-                
+
                 self.processed_games_cache[cache_key] = game_id
                 return game_id
 
