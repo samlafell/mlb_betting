@@ -697,7 +697,6 @@ class ActionNetworkHistoryProcessor:
     ) -> str | None:
         """Legacy method - delegates to enhanced resolver."""
         return await self._resolve_mlb_game_id_enhanced(record, conn)
-=======
 
     async def _insert_historical_odds_record(
         self, record: HistoricalOddsRecord, conn: asyncpg.Connection
