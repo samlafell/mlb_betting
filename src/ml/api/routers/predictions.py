@@ -6,10 +6,11 @@ import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from pydantic import BaseModel, Field
 
 from ..dependencies import get_ml_service
+from ..security import rate_limit_check, get_current_user
 from ...services.prediction_service import PredictionService
 
 logger = logging.getLogger(__name__)
@@ -65,13 +66,15 @@ class PredictionResponse(BaseModel):
 @router.post("/predict", response_model=PredictionResponse)
 async def predict_game(
     request: PredictionRequest,
-    ml_service: PredictionService = Depends(get_ml_service)
+    ml_service: PredictionService = Depends(get_ml_service),
+    _rate_limit: None = Depends(rate_limit_check),
+    current_user: dict = Depends(get_current_user)
 ) -> PredictionResponse:
     """
     Get ML prediction for a single game
     """
     try:
-        logger.info(f"Prediction request for game {request.game_id}")
+        logger.info(f"Prediction request for game {request.game_id} by user {current_user.get('user_id', 'unknown')}")
         
         # Get prediction from ML service
         prediction = await ml_service.get_prediction(
@@ -101,13 +104,15 @@ async def predict_game(
 @router.post("/predict/batch", response_model=List[PredictionResponse])
 async def predict_games_batch(
     request: BatchPredictionRequest,
-    ml_service: PredictionService = Depends(get_ml_service)
+    ml_service: PredictionService = Depends(get_ml_service),
+    _rate_limit: None = Depends(rate_limit_check),
+    current_user: dict = Depends(get_current_user)
 ) -> List[PredictionResponse]:
     """
     Get ML predictions for multiple games (max 50)
     """
     try:
-        logger.info(f"Batch prediction request for {len(request.game_ids)} games")
+        logger.info(f"Batch prediction request for {len(request.game_ids)} games by user {current_user.get('user_id', 'unknown')}")
         
         if len(request.game_ids) > 50:
             raise HTTPException(

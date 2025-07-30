@@ -11,10 +11,12 @@ from typing import Dict, Any
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import uvicorn
 
 from .routers import predictions, models, health
 from .dependencies import get_redis_client, get_ml_service
+from .security import get_cors_origins, add_security_headers, get_security_config
 from ..services.prediction_service import PredictionService
 
 # Configure logging
@@ -55,13 +57,27 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add CORS middleware for local network access
+# Security configuration
+security_config = get_security_config()
+
+# Add security headers middleware
+app.middleware("http")(add_security_headers)
+
+# Add trusted host middleware for production
+if security_config.environment == "production":
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=["yourdomain.com", "*.yourdomain.com"]
+    )
+
+# Add CORS middleware with environment-appropriate origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=get_cors_origins(),
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
+    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Reset", "Retry-After"]
 )
 
 
