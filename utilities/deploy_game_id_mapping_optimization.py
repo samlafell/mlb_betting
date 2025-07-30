@@ -55,7 +55,7 @@ class GameIDMappingDeployment:
             "start_time": datetime.now(),
             "phases": {},
             "success": False,
-            "error": None
+            "error": None,
         }
 
         try:
@@ -78,9 +78,13 @@ class GameIDMappingDeployment:
 
             results["success"] = True
             results["end_time"] = datetime.now()
-            results["duration"] = (results["end_time"] - results["start_time"]).total_seconds()
+            results["duration"] = (
+                results["end_time"] - results["start_time"]
+            ).total_seconds()
 
-            print(f"\n✅ Deployment completed successfully in {results['duration']:.1f}s")
+            print(
+                f"\n✅ Deployment completed successfully in {results['duration']:.1f}s"
+            )
             await self._print_next_steps()
 
         except Exception as e:
@@ -99,7 +103,12 @@ class GameIDMappingDeployment:
 
         try:
             # Read and execute the migration SQL
-            migration_file = Path(__file__).parent.parent / "sql" / "migrations" / "019_create_game_id_mappings_dimension.sql"
+            migration_file = (
+                Path(__file__).parent.parent
+                / "sql"
+                / "migrations"
+                / "019_create_game_id_mappings_dimension.sql"
+            )
 
             if not migration_file.exists():
                 raise FileNotFoundError(f"Migration file not found: {migration_file}")
@@ -147,7 +156,12 @@ class GameIDMappingDeployment:
 
         try:
             # Read and execute the population SQL
-            population_file = Path(__file__).parent.parent / "sql" / "migrations" / "020_populate_game_id_mappings.sql"
+            population_file = (
+                Path(__file__).parent.parent
+                / "sql"
+                / "migrations"
+                / "020_populate_game_id_mappings.sql"
+            )
 
             if not population_file.exists():
                 raise FileNotFoundError(f"Population file not found: {population_file}")
@@ -181,14 +195,14 @@ class GameIDMappingDeployment:
 
                     return {
                         "success": True,
-                        "total_mappings": stats['total_mappings'],
+                        "total_mappings": stats["total_mappings"],
                         "source_counts": {
-                            "action_network": stats['action_network_count'],
-                            "vsin": stats['vsin_count'],
-                            "sbd": stats['sbd_count'],
-                            "sbr": stats['sbr_count']
+                            "action_network": stats["action_network_count"],
+                            "vsin": stats["vsin_count"],
+                            "sbd": stats["sbd_count"],
+                            "sbr": stats["sbr_count"],
                         },
-                        "avg_confidence": float(stats['avg_confidence'])
+                        "avg_confidence": float(stats["avg_confidence"]),
                     }
             else:
                 print("   🔍 DRY RUN: Would populate from curated.games_complete")
@@ -225,7 +239,7 @@ class GameIDMappingDeployment:
             return {
                 "success": True,
                 "validation_results": validation_results,
-                "issues_found": issues_found
+                "issues_found": issues_found,
             }
 
         except Exception as e:
@@ -267,13 +281,17 @@ class GameIDMappingDeployment:
 
             print(f"   ✅ Single lookup: {lookup_duration * 1000:.1f}ms")
             print(f"   ✅ Bulk lookup (1000): {bulk_duration * 1000:.1f}ms")
-            print(f"   ✅ Avg per lookup: {bulk_duration / len(bulk_results) * 1000:.2f}ms")
+            print(
+                f"   ✅ Avg per lookup: {bulk_duration / len(bulk_results) * 1000:.2f}ms"
+            )
 
             return {
                 "success": True,
                 "single_lookup_ms": lookup_duration * 1000,
                 "bulk_lookup_ms": bulk_duration * 1000,
-                "avg_lookup_ms": bulk_duration / len(bulk_results) * 1000 if bulk_results else 0
+                "avg_lookup_ms": bulk_duration / len(bulk_results) * 1000
+                if bulk_results
+                else 0,
             }
 
         except Exception as e:
@@ -296,7 +314,9 @@ class GameIDMappingDeployment:
             # Assuming 1000 API calls per pipeline run (conservative estimate)
             api_calls_before = 1000
             api_calls_after = 10  # Only for new unmapped IDs
-            api_reduction_percentage = (api_calls_before - api_calls_after) / api_calls_before * 100
+            api_reduction_percentage = (
+                (api_calls_before - api_calls_after) / api_calls_before * 100
+            )
 
             # Estimate time savings (assumes 100ms per API call)
             time_saved_per_run = (api_calls_before - api_calls_after) * 0.1  # seconds
@@ -323,7 +343,7 @@ class GameIDMappingDeployment:
                     "Deploy processor changes to production",
                     "Monitor pipeline performance improvements",
                     "Set up automated unmapped ID resolution",
-                ]
+                ],
             }
 
             print("   ✅ Report generated")
@@ -360,7 +380,7 @@ class GameIDMappingDeployment:
             "",
             "6. 🤖 Set up automated unmapped ID resolution job",
             "",
-            "📚 See docs/examples/optimized_processor_example.py for implementation patterns"
+            "📚 See docs/examples/optimized_processor_example.py for implementation patterns",
         ]
 
         for step in steps:
@@ -374,26 +394,17 @@ class GameIDMappingDeployment:
 
 async def main():
     """Main deployment script."""
-    parser = argparse.ArgumentParser(
-        description="Deploy Game ID Mapping Optimization"
-    )
+    parser = argparse.ArgumentParser(description="Deploy Game ID Mapping Optimization")
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Show what would be done without making changes"
+        help="Show what would be done without making changes",
     )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Show verbose output"
-    )
+    parser.add_argument("--verbose", action="store_true", help="Show verbose output")
 
     args = parser.parse_args()
 
-    deployment = GameIDMappingDeployment(
-        dry_run=args.dry_run,
-        verbose=args.verbose
-    )
+    deployment = GameIDMappingDeployment(dry_run=args.dry_run, verbose=args.verbose)
 
     results = await deployment.deploy()
 

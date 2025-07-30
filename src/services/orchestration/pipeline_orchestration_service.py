@@ -358,8 +358,8 @@ class PipelineOrchestrationService:
             pipeline_type,
             metadata={
                 "force_execution": force_execution,
-                "detection_minutes": detection_minutes
-            }
+                "detection_minutes": detection_minutes,
+            },
         )
 
         async with async_operation_context(
@@ -367,8 +367,8 @@ class PipelineOrchestrationService:
             operation_id=pipeline_id,
             tags={
                 "pipeline.type": pipeline_type,
-                "pipeline.forced": str(force_execution)
-            }
+                "pipeline.forced": str(force_execution),
+            },
         ):
             try:
                 self.logger.info(
@@ -404,11 +404,18 @@ class PipelineOrchestrationService:
 
                 if not stages_to_execute:
                     result.mark_completed(PipelineStatus.SUCCESS)
-                    result.recommendations.append("No stages needed - system is up to date")
+                    result.recommendations.append(
+                        "No stages needed - system is up to date"
+                    )
                     self.logger.info(
                         "Pipeline completed - no stages needed", pipeline_id=pipeline_id
                     )
-                    log_pipeline_event("pipeline_complete", pipeline_id, pipeline_type, status="no_stages_needed")
+                    log_pipeline_event(
+                        "pipeline_complete",
+                        pipeline_id,
+                        pipeline_type,
+                        status="no_stages_needed",
+                    )
                     return result
 
                 # Execute stages
@@ -445,7 +452,7 @@ class PipelineOrchestrationService:
                     pipeline_type=pipeline_type,
                     status=result.overall_status.value,
                     stages_executed=len(result.stages),
-                    errors=errors if errors else None
+                    errors=errors if errors else None,
                 )
 
                 # Log pipeline completion event
@@ -457,8 +464,8 @@ class PipelineOrchestrationService:
                     metadata={
                         "stages_executed": len(result.stages),
                         "successful_stages": successful_stages,
-                        "execution_time": result.total_execution_time
-                    }
+                        "execution_time": result.total_execution_time,
+                    },
                 )
 
                 self.metrics.increment("total_pipelines")
@@ -488,7 +495,7 @@ class PipelineOrchestrationService:
                     pipeline_type=pipeline_type,
                     status="failed",
                     stages_executed=len(result.stages),
-                    errors=[str(e)]
+                    errors=[str(e)],
                 )
 
                 # Log pipeline failure event
@@ -497,14 +504,18 @@ class PipelineOrchestrationService:
                     pipeline_id,
                     pipeline_type,
                     status="failed",
-                    metadata={"error": str(e)}
+                    metadata={"error": str(e)},
                 )
 
                 self.logger.error(
-                    "Smart pipeline execution failed", pipeline_id=pipeline_id, error=str(e)
+                    "Smart pipeline execution failed",
+                    pipeline_id=pipeline_id,
+                    error=str(e),
                 )
 
-                raise OrchestrationError(f"Pipeline {pipeline_id} failed: {str(e)}") from e
+                raise OrchestrationError(
+                    f"Pipeline {pipeline_id} failed: {str(e)}"
+                ) from e
 
             finally:
                 # Move to completed pipelines
@@ -694,9 +705,13 @@ class PipelineOrchestrationService:
 
         # Update data quality and freshness metrics
         if analysis.data_age_hours is not None:
-            self.metrics_service.update_data_freshness("system", analysis.data_age_hours * 3600)
+            self.metrics_service.update_data_freshness(
+                "system", analysis.data_age_hours * 3600
+            )
 
-        self.metrics_service.update_data_quality_score("system", "overall", analysis.data_quality_score)
+        self.metrics_service.update_data_quality_score(
+            "system", "overall", analysis.data_quality_score
+        )
 
         return health
 
@@ -801,7 +816,7 @@ class PipelineOrchestrationService:
                 stage=stage.value,
                 duration=stage_result.execution_time_seconds,
                 status="success",
-                records_processed=stage_result.records_processed
+                records_processed=stage_result.records_processed,
             )
 
         except Exception as e:
@@ -814,7 +829,7 @@ class PipelineOrchestrationService:
                 stage=stage.value,
                 duration=stage_result.execution_time_seconds,
                 status="failed",
-                records_processed=stage_result.records_processed
+                records_processed=stage_result.records_processed,
             )
 
             self.logger.error(
@@ -920,10 +935,12 @@ class PipelineOrchestrationService:
             "prometheus": prometheus_overview,
             "combined_insights": {
                 "total_active_pipelines": len(self.active_pipelines),
-                "recent_success_rate": orchestration_metrics.get("success_rate_percentage", 0),
+                "recent_success_rate": orchestration_metrics.get(
+                    "success_rate_percentage", 0
+                ),
                 "system_uptime_seconds": prometheus_overview.get("uptime_seconds", 0),
                 "slo_compliance": prometheus_overview.get("slo_compliance", {}),
-            }
+            },
         }
 
     async def cleanup(self):

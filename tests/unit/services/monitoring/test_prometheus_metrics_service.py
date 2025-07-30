@@ -6,7 +6,7 @@ Tests comprehensive Prometheus metrics infrastructure including:
 - Metrics creation and initialization
 - Pipeline execution recording
 - Business metric tracking
-- System health monitoring  
+- System health monitoring
 - SLI/SLO compliance tracking
 - Break-glass procedure metrics
 """
@@ -41,7 +41,7 @@ def sample_slo():
         target_percentage=99.0,
         warning_threshold=95.0,
         critical_threshold=90.0,
-        measurement_window_minutes=60
+        measurement_window_minutes=60,
     )
 
 
@@ -52,37 +52,42 @@ class TestPrometheusMetricsServiceInitialization:
         """Test that service initializes with all required metrics."""
         assert metrics_service is not None
         assert metrics_service.registry is not None
-        assert hasattr(metrics_service, 'pipeline_executions_total')
-        assert hasattr(metrics_service, 'slos')
+        assert hasattr(metrics_service, "pipeline_executions_total")
+        assert hasattr(metrics_service, "slos")
         assert len(metrics_service.slos) == 4  # Default SLOs defined
 
     def test_metrics_creation(self, metrics_service):
         """Test that all expected metrics are created."""
         # Pipeline metrics
-        assert hasattr(metrics_service, 'pipeline_executions_total')
-        assert hasattr(metrics_service, 'pipeline_duration_seconds')
-        assert hasattr(metrics_service, 'active_pipelines')
+        assert hasattr(metrics_service, "pipeline_executions_total")
+        assert hasattr(metrics_service, "pipeline_duration_seconds")
+        assert hasattr(metrics_service, "active_pipelines")
 
         # Business metrics
-        assert hasattr(metrics_service, 'games_processed_total')
-        assert hasattr(metrics_service, 'opportunities_detected_total')
-        assert hasattr(metrics_service, 'strategy_performance_score')
+        assert hasattr(metrics_service, "games_processed_total")
+        assert hasattr(metrics_service, "opportunities_detected_total")
+        assert hasattr(metrics_service, "strategy_performance_score")
 
         # System metrics
-        assert hasattr(metrics_service, 'data_freshness_seconds')
-        assert hasattr(metrics_service, 'system_health_status')
+        assert hasattr(metrics_service, "data_freshness_seconds")
+        assert hasattr(metrics_service, "system_health_status")
 
         # SLI metrics
-        assert hasattr(metrics_service, 'sli_pipeline_latency_seconds')
-        assert hasattr(metrics_service, 'sli_system_availability')
+        assert hasattr(metrics_service, "sli_pipeline_latency_seconds")
+        assert hasattr(metrics_service, "sli_system_availability")
 
         # Break-glass metrics
-        assert hasattr(metrics_service, 'break_glass_activations_total')
-        assert hasattr(metrics_service, 'manual_overrides_total')
+        assert hasattr(metrics_service, "break_glass_activations_total")
+        assert hasattr(metrics_service, "manual_overrides_total")
 
     def test_slo_definitions(self, metrics_service):
         """Test that default SLO definitions are properly created."""
-        expected_slos = ['pipeline_latency', 'system_availability', 'data_freshness', 'error_rate']
+        expected_slos = [
+            "pipeline_latency",
+            "system_availability",
+            "data_freshness",
+            "error_rate",
+        ]
 
         for slo_name in expected_slos:
             assert slo_name in metrics_service.slos
@@ -128,7 +133,7 @@ class TestPipelineMetrics:
             pipeline_id=pipeline_id,
             pipeline_type=pipeline_type,
             status="success",
-            stages_executed=3
+            stages_executed=3,
         )
 
         # Verify pipeline is removed from active tracking
@@ -147,7 +152,7 @@ class TestPipelineMetrics:
             pipeline_id=pipeline_id,
             pipeline_type=pipeline_type,
             status="failed",
-            errors=test_errors
+            errors=test_errors,
         )
 
         # Verify completion (errors are recorded via metrics internally)
@@ -165,7 +170,7 @@ class TestPipelineMetrics:
             stage=stage,
             duration=duration,
             status=status,
-            records_processed=records_processed
+            records_processed=records_processed,
         )
 
 
@@ -278,10 +283,12 @@ class TestSystemMetrics:
 
     def test_system_health_status_update(self, metrics_service):
         """Test system health status updates."""
-        valid_statuses = ['healthy', 'warning', 'critical', 'unknown']
+        valid_statuses = ["healthy", "warning", "critical", "unknown"]
         expected_values = [1, 2, 3, 0]
 
-        for status, expected_value in zip(valid_statuses, expected_values, strict=False):
+        for status, expected_value in zip(
+            valid_statuses, expected_values, strict=False
+        ):
             metrics_service.update_system_health_status(status)
             # Status is mapped and recorded internally
 
@@ -327,11 +334,11 @@ class TestSLOManagement:
         assert len(compliance_results) == len(metrics_service.slos)
 
         for slo_name, result in compliance_results.items():
-            assert 'current_value' in result
-            assert 'target' in result
-            assert 'status' in result
-            assert 'last_violation' in result
-            assert result['status'] in ['healthy', 'warning', 'critical']
+            assert "current_value" in result
+            assert "target" in result
+            assert "status" in result
+            assert "last_violation" in result
+            assert result["status"] in ["healthy", "warning", "critical"]
 
     def test_slo_violation_recording(self, metrics_service):
         """Test SLO violation recording."""
@@ -352,45 +359,55 @@ class TestMetricsExport:
         assert isinstance(metrics_data, str)
         assert len(metrics_data) > 0
         # Should contain some metric names
-        assert 'mlb_' in metrics_data
+        assert "mlb_" in metrics_data
 
     def test_content_type(self, metrics_service):
         """Test Prometheus content type."""
         content_type = metrics_service.get_content_type()
 
         assert isinstance(content_type, str)
-        assert 'text/plain' in content_type
+        assert "text/plain" in content_type
 
     def test_system_overview(self, metrics_service):
         """Test system overview metrics."""
         overview = metrics_service.get_system_overview()
 
         assert isinstance(overview, dict)
-        required_keys = ['uptime_seconds', 'active_pipelines', 'total_slos', 'slo_compliance', 'last_updated']
+        required_keys = [
+            "uptime_seconds",
+            "active_pipelines",
+            "total_slos",
+            "slo_compliance",
+            "last_updated",
+        ]
 
         for key in required_keys:
             assert key in overview
 
-        assert isinstance(overview['uptime_seconds'], (int, float))
-        assert overview['uptime_seconds'] >= 0
-        assert isinstance(overview['active_pipelines'], int)
-        assert overview['active_pipelines'] >= 0
-        assert overview['total_slos'] == len(metrics_service.slos)
+        assert isinstance(overview["uptime_seconds"], (int, float))
+        assert overview["uptime_seconds"] >= 0
+        assert isinstance(overview["active_pipelines"], int)
+        assert overview["active_pipelines"] >= 0
+        assert overview["total_slos"] == len(metrics_service.slos)
 
-    @patch('src.services.monitoring.prometheus_metrics_service.start_http_server')
+    @patch("src.services.monitoring.prometheus_metrics_service.start_http_server")
     def test_http_server_start(self, mock_start_server, metrics_service):
         """Test HTTP server start functionality."""
         port = 8000
 
         metrics_service.start_http_server(port)
 
-        mock_start_server.assert_called_once_with(port, registry=metrics_service.registry)
+        mock_start_server.assert_called_once_with(
+            port, registry=metrics_service.registry
+        )
 
 
 class TestMetricsServiceSingleton:
     """Test global metrics service instance management."""
 
-    @patch('src.services.monitoring.prometheus_metrics_service.PrometheusMetricsService')
+    @patch(
+        "src.services.monitoring.prometheus_metrics_service.PrometheusMetricsService"
+    )
     def test_get_metrics_service_singleton(self, mock_metrics_service):
         """Test that get_metrics_service returns singleton instance."""
         # Reset global instance
@@ -398,6 +415,7 @@ class TestMetricsServiceSingleton:
         from src.services.monitoring.prometheus_metrics_service import (
             get_metrics_service,
         )
+
         src.services.monitoring.prometheus_metrics_service._metrics_service = None
 
         # First call should create instance
@@ -449,7 +467,7 @@ class TestSLODefinition:
             description="test",
             target_percentage=99.0,
             warning_threshold=95.0,
-            critical_threshold=90.0
+            critical_threshold=90.0,
         )
 
         assert slo.measurement_window_minutes == 60  # Default value
@@ -460,10 +478,10 @@ class TestIntegrationWithExistingServices:
 
     def test_settings_integration(self, metrics_service):
         """Test that metrics service integrates with settings."""
-        assert hasattr(metrics_service, 'settings')
+        assert hasattr(metrics_service, "settings")
         assert metrics_service.settings is not None
 
     def test_logger_integration(self, metrics_service):
         """Test that metrics service integrates with logging."""
-        assert hasattr(metrics_service, 'logger')
+        assert hasattr(metrics_service, "logger")
         assert metrics_service.logger is not None

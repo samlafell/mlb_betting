@@ -170,9 +170,7 @@ def pipeline_status(zone: str, detailed: bool, execution_id: str | None):
     asyncio.run(_pipeline_status_async(zone, detailed, execution_id))
 
 
-async def _pipeline_status_async(
-    zone: str, detailed: bool, execution_id: str | None
-):
+async def _pipeline_status_async(zone: str, detailed: bool, execution_id: str | None):
     """
     Check pipeline status and health.
 
@@ -274,7 +272,9 @@ async def _migrate_pipeline_async(
             console.print(
                 "[yellow]Schema creation should be done via SQL migrations[/yellow]"
             )
-            console.print("Run: `psql -f sql/migrations/004_create_source_specific_zones.sql`")
+            console.print(
+                "Run: `psql -f sql/migrations/004_create_source_specific_zones.sql`"
+            )
 
         if migrate_data:
             console.print("[blue]Migrating data from existing tables...[/blue]")

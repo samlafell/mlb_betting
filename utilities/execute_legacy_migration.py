@@ -354,9 +354,7 @@ class LegacyMigrationExecutor:
 
             for table in tables_to_analyze:
                 try:
-                    count = await conn.fetchval(
-                        f"SELECT COUNT(*) FROM curated.{table}"
-                    )
+                    count = await conn.fetchval(f"SELECT COUNT(*) FROM curated.{table}")
 
                     # Get sample record structure
                     sample = await conn.fetchrow(

@@ -98,7 +98,9 @@ class SBDStagingProcessor(BaseZoneProcessor):
         if not self._initialized:
             await self.mlb_resolver.initialize()
             self._initialized = True
-            logger.info("SBD staging processor initialized with MLB Stats API integration")
+            logger.info(
+                "SBD staging processor initialized with MLB Stats API integration"
+            )
 
     async def cleanup(self):
         """Cleanup resources."""
@@ -297,9 +299,7 @@ class SBDStagingProcessor(BaseZoneProcessor):
                 errors=errors + [str(e)],
             )
 
-    def _extract_game_data(
-        self, raw_response: dict[str, Any]
-    ) -> SBDGameRecord | None:
+    def _extract_game_data(self, raw_response: dict[str, Any]) -> SBDGameRecord | None:
         """Extract and normalize game data from SBD raw response."""
         try:
             game_data = raw_response.get("game_data", {})
@@ -360,7 +360,9 @@ class SBDStagingProcessor(BaseZoneProcessor):
                 external_matchup_id=game_record.external_id,
                 home_team=game_record.home_team_normalized,
                 away_team=game_record.away_team_normalized,
-                game_date=game_record.game_datetime.date() if game_record.game_datetime else None,
+                game_date=game_record.game_datetime.date()
+                if game_record.game_datetime
+                else None,
             )
 
             if resolution_result.mlb_game_id:
@@ -371,13 +373,17 @@ class SBDStagingProcessor(BaseZoneProcessor):
 
             # Strategy 2: Fallback to generic resolver with team names
             if game_record.home_team_normalized and game_record.away_team_normalized:
-                logger.debug(f"Trying generic resolver for SBD game {game_record.external_id}")
+                logger.debug(
+                    f"Trying generic resolver for SBD game {game_record.external_id}"
+                )
                 fallback_result = await self.mlb_resolver.resolve_game_id(
                     external_id=game_record.external_id,
                     source=DataSource.SBD,
                     home_team=game_record.home_team_normalized,
                     away_team=game_record.away_team_normalized,
-                    game_date=game_record.game_datetime.date() if game_record.game_datetime else None,
+                    game_date=game_record.game_datetime.date()
+                    if game_record.game_datetime
+                    else None,
                 )
 
                 if fallback_result.mlb_game_id:
@@ -609,8 +615,10 @@ class SBDStagingProcessor(BaseZoneProcessor):
                 game_id = existing_game["id"]
 
                 # Update MLB Stats API game ID if we have one and it's not set
-                if (game_record.mlb_stats_api_game_id and
-                    not existing_game["mlb_stats_api_game_id"]):
+                if (
+                    game_record.mlb_stats_api_game_id
+                    and not existing_game["mlb_stats_api_game_id"]
+                ):
                     await connection.execute(
                         """
                         UPDATE staging.games 
@@ -621,7 +629,9 @@ class SBDStagingProcessor(BaseZoneProcessor):
                         datetime.now(timezone.utc),
                         game_id,
                     )
-                    logger.debug(f"Updated MLB Stats API game ID for existing game: {game_record.external_id}")
+                    logger.debug(
+                        f"Updated MLB Stats API game ID for existing game: {game_record.external_id}"
+                    )
 
                 self.processed_games_cache[cache_key] = game_id
                 return game_id
@@ -793,9 +803,7 @@ class SBDStagingProcessor(BaseZoneProcessor):
             logger.error(f"Error getting processing stats: {e}")
             return {"error": str(e)}
 
-    async def process_record(
-        self, record: DataRecord, **kwargs
-    ) -> DataRecord | None:
+    async def process_record(self, record: DataRecord, **kwargs) -> DataRecord | None:
         """Process a single record - required by base class."""
         # This is handled by the specialized process_sbd_raw_records method
         # For compatibility with the base class interface

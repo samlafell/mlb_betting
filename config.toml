@@ -50,4 +50,51 @@ max_unmapped_resolution_limit = 100  # Maximum unmapped IDs to resolve per batch
 pipeline_duration_buckets = [1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
 pipeline_stage_duration_buckets = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0]
 database_query_duration_buckets = [0.001, 0.01, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0]
-api_call_duration_buckets = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0] 
+api_call_duration_buckets = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0]
+
+[ml_pipeline]
+# ML Pipeline Configuration
+
+# Feature Pipeline Settings
+feature_cache_ttl_seconds = 900  # 15 minutes for feature caching
+batch_processing_max_size = 50   # Maximum batch size for feature processing
+batch_processing_min_size = 5    # Minimum batch size for feature processing
+max_concurrent_extractions = 5   # Maximum concurrent feature extractions
+
+# Memory Management
+memory_threshold_mb = 2048       # Memory threshold in MB before triggering cleanup
+memory_cleanup_trigger_mb = 500  # Memory increase threshold to trigger cleanup
+
+# Model Loading
+model_loading_timeout_seconds = 30  # Timeout for model loading operations
+model_cache_size = 10              # Maximum number of models to keep in memory
+
+# Redis Feature Store
+redis_socket_timeout = 5.0         # Redis socket timeout in seconds
+redis_connection_pool_size = 20    # Redis connection pool size
+redis_max_retries = 3              # Maximum Redis connection retries
+redis_retry_delay_seconds = 1.0    # Initial retry delay in seconds
+
+# Prediction Service
+prediction_batch_size = 10         # Batch size for prediction processing
+prediction_cache_ttl_hours = 4     # Cache TTL for predictions in hours
+
+# Performance Targets
+api_response_target_ms = 100       # Target API response time in milliseconds  
+prediction_latency_target_ms = 500 # Target prediction latency in milliseconds
+
+# Resource Monitoring Thresholds
+cpu_warning_threshold = 70.0       # CPU usage warning threshold percentage
+cpu_critical_threshold = 85.0      # CPU usage critical threshold percentage
+cpu_emergency_threshold = 95.0     # CPU usage emergency threshold percentage
+
+memory_warning_threshold = 75.0    # Memory usage warning threshold percentage
+memory_critical_threshold = 85.0   # Memory usage critical threshold percentage
+memory_emergency_threshold = 95.0  # Memory usage emergency threshold percentage
+
+disk_warning_threshold = 80.0      # Disk usage warning threshold percentage
+disk_critical_threshold = 90.0     # Disk usage critical threshold percentage
+disk_emergency_threshold = 95.0    # Disk usage emergency threshold percentage
+
+resource_monitoring_interval = 10  # Resource monitoring interval in seconds
+resource_alert_cooldown = 300      # Resource alert cooldown period in seconds

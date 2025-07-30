@@ -132,9 +132,9 @@ class CrossSourceGameMatchingService:
                         # Build source mappings
                         source_mappings = {}
                         if game["sportsbookreview_game_id"]:
-                            source_mappings[
-                                DataSource.SPORTS_BOOK_REVIEW
-                            ] = game["sportsbookreview_game_id"]
+                            source_mappings[DataSource.SPORTS_BOOK_REVIEW] = game[
+                                "sportsbookreview_game_id"
+                            ]
                         if game["action_network_game_id"]:
                             source_mappings[DataSource.ACTION_NETWORK] = str(
                                 game["action_network_game_id"]

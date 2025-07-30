@@ -17,15 +17,15 @@ logger = structlog.get_logger(__name__)
 def register_sbr_collector():
     """
     Register SBR collector with the factory.
-    
+
     Note: This function is deprecated. Use the centralized registry system
     from src.data.collection.registry instead.
     """
     logger.warning(
         "SBR collector auto-registration is deprecated",
-        message="Use centralized registry system instead"
+        message="Use centralized registry system instead",
     )
-    
+
     # Registration is now handled by the centralized registry
     # This function is kept for backward compatibility only
 

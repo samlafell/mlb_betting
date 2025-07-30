@@ -672,7 +672,9 @@ class SBDUnifiedCollectorAPI(BaseCollector):
         normalized = record.copy()
 
         # Add standardized metadata
-        normalized["source"] = self.source.value if hasattr(self.source, 'value') else str(self.source)
+        normalized["source"] = (
+            self.source.value if hasattr(self.source, "value") else str(self.source)
+        )
         normalized["collected_at_est"] = datetime.now().isoformat()
         normalized["collector_version"] = "sbd_api_v2_unified"
 

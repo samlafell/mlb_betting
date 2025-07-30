@@ -2081,7 +2081,9 @@ class VSINUnifiedCollector(BaseCollector):
                 self.logger.info(
                     "Game ID resolution failed, using fallback storage",
                     external_source_id=record.get("external_source_id"),
-                    source=self.source.value if hasattr(self.source, 'value') else str(self.source),
+                    source=self.source.value
+                    if hasattr(self.source, "value")
+                    else str(self.source),
                 )
                 return self._store_record_without_game_id(record, batch_id)
 
@@ -2538,7 +2540,9 @@ class VSINUnifiedCollector(BaseCollector):
         normalized = record.copy()
 
         # Add standardized metadata
-        normalized["source"] = self.source.value if hasattr(self.source, 'value') else str(self.source)
+        normalized["source"] = (
+            self.source.value if hasattr(self.source, "value") else str(self.source)
+        )
         normalized["collected_at_est"] = datetime.now().isoformat()
         normalized["collector_version"] = "vsin_unified_v2"
 

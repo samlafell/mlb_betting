@@ -29,21 +29,21 @@ async def lifespan(app: FastAPI):
     """Manage application lifecycle"""
     # Startup
     logger.info("Starting MLB ML Prediction API...")
-    
+
     # Initialize services
     app.state.redis_client = await get_redis_client()
     app.state.ml_service = PredictionService()
-    
+
     logger.info("✅ MLB ML API startup complete")
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down MLB ML Prediction API...")
-    
-    if hasattr(app.state, 'redis_client'):
+
+    if hasattr(app.state, "redis_client"):
         await app.state.redis_client.close()
-    
+
     logger.info("✅ MLB ML API shutdown complete")
 
 
@@ -54,7 +54,7 @@ app = FastAPI(
     version="0.1.0",
     docs_url="/docs" if os.getenv("DEBUG", "false").lower() == "true" else None,
     redoc_url="/redoc" if os.getenv("DEBUG", "false").lower() == "true" else None,
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Security configuration
@@ -66,8 +66,7 @@ app.middleware("http")(add_security_headers)
 # Add trusted host middleware for production
 if security_config.environment == "production":
     app.add_middleware(
-        TrustedHostMiddleware,
-        allowed_hosts=["yourdomain.com", "*.yourdomain.com"]
+        TrustedHostMiddleware, allowed_hosts=["yourdomain.com", "*.yourdomain.com"]
     )
 
 # Add CORS middleware with environment-appropriate origins
@@ -77,7 +76,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
-    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Reset", "Retry-After"]
+    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Reset", "Retry-After"],
 )
 
 
@@ -95,8 +94,10 @@ async def http_exception_handler(request, exc):
         content={
             "error": exc.detail,
             "status_code": exc.status_code,
-            "timestamp": str(request.state.timestamp) if hasattr(request.state, 'timestamp') else None
-        }
+            "timestamp": str(request.state.timestamp)
+            if hasattr(request.state, "timestamp")
+            else None,
+        },
     )
 
 
@@ -109,8 +110,8 @@ async def general_exception_handler(request, exc):
         content={
             "error": "Internal server error",
             "status_code": 500,
-            "message": "An unexpected error occurred"
-        }
+            "message": "An unexpected error occurred",
+        },
     )
 
 
@@ -126,8 +127,8 @@ async def root():
             "health": "/health",
             "predictions": "/api/v1/predict",
             "batch_predictions": "/api/v1/predict/batch",
-            "model_status": "/api/v1/models/active"
-        }
+            "model_status": "/api/v1/models/active",
+        },
     }
 
 
@@ -136,5 +137,5 @@ if __name__ == "__main__":
         "main:app",
         host="0.0.0.0",
         port=8000,
-        reload=os.getenv("RELOAD", "false").lower() == "true"
+        reload=os.getenv("RELOAD", "false").lower() == "true",
     )

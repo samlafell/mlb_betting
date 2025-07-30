@@ -167,9 +167,7 @@ class BaseZoneProcessor(DataZone):
         return result
 
     @abstractmethod
-    async def process_record(
-        self, record: DataRecord, **kwargs
-    ) -> DataRecord | None:
+    async def process_record(self, record: DataRecord, **kwargs) -> DataRecord | None:
         """
         Process a single record. Must be implemented by subclasses.
 

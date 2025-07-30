@@ -28,6 +28,7 @@ logger = structlog.get_logger(__name__)
 @dataclass
 class RegistrationInfo:
     """Information about a registered collector."""
+
     collector_class: type[BaseCollector]
     source: DataSource
     registered_at: str
@@ -38,6 +39,7 @@ class RegistrationInfo:
 @dataclass
 class CacheEntry:
     """Cache entry with TTL support."""
+
     instance: BaseCollector
     created_at: float
     ttl: float | None = None
@@ -57,11 +59,11 @@ class CollectorRegistry:
     and provides alias mapping for backward compatibility.
     """
 
-    _instance: Optional['CollectorRegistry'] = None
+    _instance: Optional["CollectorRegistry"] = None
     _initialized: bool = False
     _lock: threading.Lock = threading.Lock()
 
-    def __new__(cls) -> 'CollectorRegistry':
+    def __new__(cls) -> "CollectorRegistry":
         # First check without lock for performance
         if cls._instance is None:
             with cls._lock:
@@ -77,7 +79,7 @@ class CollectorRegistry:
             self._registration_history: set[str] = set()
             self._instance_cache: OrderedDict[str, CacheEntry] = OrderedDict()
             self._max_cache_size = 100  # Default cache size
-            self._default_ttl = None    # Default TTL (no expiration)
+            self._default_ttl = None  # Default TTL (no expiration)
             self._cache_hits = 0
             self._cache_misses = 0
             self._setup_source_aliases()
@@ -85,17 +87,19 @@ class CollectorRegistry:
             logger.info(
                 "Centralized collector registry initialized",
                 max_cache_size=self._max_cache_size,
-                default_ttl=self._default_ttl
+                default_ttl=self._default_ttl,
             )
 
-    def configure_cache(self, max_cache_size: int = 100, default_ttl: float | None = None) -> None:
+    def configure_cache(
+        self, max_cache_size: int = 100, default_ttl: float | None = None
+    ) -> None:
         """Configure cache settings after initialization."""
         self._max_cache_size = max_cache_size
         self._default_ttl = default_ttl
         logger.info(
             "Cache configuration updated",
             max_cache_size=max_cache_size,
-            default_ttl=default_ttl
+            default_ttl=default_ttl,
         )
 
     def _setup_source_aliases(self) -> None:
@@ -104,22 +108,23 @@ class CollectorRegistry:
         alias_mappings = {
             # SBD aliases
             "sports_betting_dime": DataSource.SBD,
-
             # SBR aliases (only map the alias, not the primary)
             "sbr": DataSource.SPORTS_BOOK_REVIEW,
-
             # Other aliases can be added here
         }
 
         for alias, primary_source in alias_mappings.items():
             self._source_aliases[alias] = primary_source
-            logger.debug("Source alias registered", alias=alias, primary_source=primary_source.value)
+            logger.debug(
+                "Source alias registered",
+                alias=alias,
+                primary_source=primary_source.value,
+            )
 
     def _evict_expired_entries(self) -> None:
         """Remove expired cache entries."""
         expired_keys = [
-            key for key, entry in self._instance_cache.items()
-            if entry.is_expired()
+            key for key, entry in self._instance_cache.items() if entry.is_expired()
         ]
         for key in expired_keys:
             del self._instance_cache[key]
@@ -136,7 +141,7 @@ class CollectorRegistry:
         self,
         source: DataSource,
         collector_class: type[BaseCollector],
-        allow_override: bool = False
+        allow_override: bool = False,
     ) -> bool:
         """
         Register a collector for a data source.
@@ -156,7 +161,7 @@ class CollectorRegistry:
             logger.debug(
                 "Collector already registered, skipping duplicate",
                 source=source.value,
-                collector=collector_class.__name__
+                collector=collector_class.__name__,
             )
             return False
 
@@ -167,7 +172,7 @@ class CollectorRegistry:
                 logger.debug(
                     "Same collector already registered for source",
                     source=source.value,
-                    collector=collector_class.__name__
+                    collector=collector_class.__name__,
                 )
                 return False
 
@@ -179,7 +184,7 @@ class CollectorRegistry:
                     "Conflicting collector registration attempted",
                     source=source.value,
                     existing=existing.collector_class.__name__,
-                    attempted=collector_class.__name__
+                    attempted=collector_class.__name__,
                 )
                 return False
             # Same class already registered
@@ -187,11 +192,12 @@ class CollectorRegistry:
 
         # Register the collector
         from datetime import datetime
+
         registration_info = RegistrationInfo(
             collector_class=collector_class,
             source=source,
             registered_at=datetime.now().isoformat(),
-            is_primary=True
+            is_primary=True,
         )
 
         self._registered_collectors[source] = registration_info
@@ -200,20 +206,23 @@ class CollectorRegistry:
         # Also register with the existing CollectorFactory for compatibility
         # But only if not already registered to prevent duplicate logs
         try:
-            if hasattr(CollectorFactory, '_collectors') and source not in CollectorFactory._collectors:
+            if (
+                hasattr(CollectorFactory, "_collectors")
+                and source not in CollectorFactory._collectors
+            ):
                 CollectorFactory.register_collector(source, collector_class)
         except Exception as e:
             logger.warning(
                 "Failed to register with legacy factory - continuing with centralized registry",
                 source=source.value,
                 collector=collector_class.__name__,
-                error=str(e)
+                error=str(e),
             )
 
         logger.info(
             "Collector registered",
             collector=collector_class.__name__,
-            source=source.value
+            source=source.value,
         )
 
         return True
@@ -244,17 +253,21 @@ class CollectorRegistry:
             logger.info(
                 "All collectors registered successfully",
                 total_collectors=len(self._registered_collectors),
-                primary_sources=len([r for r in self._registered_collectors.values() if r.is_primary])
+                primary_sources=len(
+                    [r for r in self._registered_collectors.values() if r.is_primary]
+                ),
             )
 
         except ImportError as e:
             logger.warning(
                 "Some collectors could not be imported",
                 error=str(e),
-                registered_count=len(self._registered_collectors)
+                registered_count=len(self._registered_collectors),
             )
 
-    def get_collector_class(self, source: str | DataSource) -> type[BaseCollector] | None:
+    def get_collector_class(
+        self, source: str | DataSource
+    ) -> type[BaseCollector] | None:
         """
         Get collector class for a source, handling aliases.
 
@@ -284,7 +297,7 @@ class CollectorRegistry:
         source: str | DataSource,
         config: object | None = None,
         force_new: bool = False,
-        ttl: float | None = None
+        ttl: float | None = None,
     ) -> BaseCollector | None:
         """
         Get or create collector instance with LRU caching and TTL support.
@@ -332,6 +345,7 @@ class CollectorRegistry:
             else:
                 # Create default config if none provided
                 from .base import CollectorConfig
+
                 default_config = CollectorConfig(source=source)
                 instance = collector_class(default_config)
 
@@ -341,9 +355,7 @@ class CollectorRegistry:
             # Cache the instance with TTL
             effective_ttl = ttl if ttl is not None else self._default_ttl
             cache_entry = CacheEntry(
-                instance=instance,
-                created_at=time.time(),
-                ttl=effective_ttl
+                instance=instance, created_at=time.time(), ttl=effective_ttl
             )
             self._instance_cache[cache_key] = cache_entry
             self._cache_misses += 1
@@ -353,7 +365,7 @@ class CollectorRegistry:
                 source=source_key,
                 collector=collector_class.__name__,
                 cached=True,
-                ttl=effective_ttl
+                ttl=effective_ttl,
             )
 
             return instance
@@ -364,7 +376,7 @@ class CollectorRegistry:
                 "Failed to create collector instance",
                 source=source_key,
                 collector=collector_class.__name__,
-                error=str(e)
+                error=str(e),
             )
             return None
 
@@ -377,7 +389,7 @@ class CollectorRegistry:
                 "collector_class": info.collector_class.__name__,
                 "registered_at": info.registered_at,
                 "is_primary": info.is_primary,
-                "aliases": list(info.aliases)
+                "aliases": list(info.aliases),
             }
 
         # Add alias information
@@ -389,7 +401,7 @@ class CollectorRegistry:
             "sources": sources_info,
             "aliases": aliases_info,
             "total_registrations": len(self._registered_collectors),
-            "total_aliases": len(self._source_aliases)
+            "total_aliases": len(self._source_aliases),
         }
 
     def clear_cache(self) -> None:
@@ -403,7 +415,9 @@ class CollectorRegistry:
     def get_cache_stats(self) -> dict[str, any]:
         """Get cache performance statistics."""
         total_requests = self._cache_hits + self._cache_misses
-        hit_rate = (self._cache_hits / total_requests * 100) if total_requests > 0 else 0
+        hit_rate = (
+            (self._cache_hits / total_requests * 100) if total_requests > 0 else 0
+        )
 
         return {
             "cache_size": len(self._instance_cache),
@@ -418,10 +432,10 @@ class CollectorRegistry:
                     "created_at": entry.created_at,
                     "ttl": entry.ttl,
                     "expires_at": entry.created_at + entry.ttl if entry.ttl else None,
-                    "is_expired": entry.is_expired()
+                    "is_expired": entry.is_expired(),
                 }
                 for key, entry in self._instance_cache.items()
-            ]
+            ],
         }
 
     def reset_registry(self) -> None:
@@ -440,7 +454,9 @@ _registry = CollectorRegistry()
 
 
 # Convenience functions for external use
-def register_collector(source: DataSource, collector_class: type[BaseCollector]) -> bool:
+def register_collector(
+    source: DataSource, collector_class: type[BaseCollector]
+) -> bool:
     """Register a collector globally."""
     return _registry.register_collector(source, collector_class)
 
@@ -451,8 +467,7 @@ def get_collector_class(source: str | DataSource) -> type[BaseCollector] | None:
 
 
 def get_collector_instance(
-    source: str | DataSource,
-    config: object | None = None
+    source: str | DataSource, config: object | None = None
 ) -> BaseCollector | None:
     """Get or create collector instance."""
     return _registry.get_collector_instance(source, config)
@@ -476,4 +491,3 @@ def clear_collector_cache() -> None:
 def get_cache_statistics() -> dict[str, any]:
     """Get collector cache performance statistics."""
     return _registry.get_cache_stats()
-

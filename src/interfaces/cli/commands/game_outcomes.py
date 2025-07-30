@@ -53,6 +53,7 @@ def update(
     if date:
         if date.lower() == "today":
             from datetime import datetime
+
             today = datetime.now().strftime("%Y-%m-%d")
             start_date = today
             end_date = today
@@ -73,6 +74,7 @@ def update(
     else:
         # Default to last N days
         from datetime import datetime, timedelta
+
         end = datetime.now()
         start = end - timedelta(days=days)
         date_range = (start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
@@ -217,7 +219,11 @@ def recent(days: int, format: str):
 
 @outcomes.command()
 @click.option(
-    "--game-id", "-g", type=int, required=True, help="Game ID from curated.games_complete"
+    "--game-id",
+    "-g",
+    type=int,
+    required=True,
+    help="Game ID from curated.games_complete",
 )
 @click.option("--force", "-f", is_flag=True, help="Force update even if outcome exists")
 def single(game_id: int, force: bool):

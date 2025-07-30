@@ -142,7 +142,12 @@ class GameIDMappingService:
                 return None
 
             # Validate column name to prevent SQL injection
-            if column_name not in ["action_network_game_id", "vsin_game_id", "sbd_game_id", "sbr_game_id"]:
+            if column_name not in [
+                "action_network_game_id",
+                "vsin_game_id",
+                "sbd_game_id",
+                "sbr_game_id",
+            ]:
                 self.logger.error(f"Invalid column name: {column_name}")
                 return None
 
@@ -288,7 +293,7 @@ class GameIDMappingService:
         """
         # Use configurable limit with proper validation
         if limit is None:
-            limit = getattr(self.settings, 'max_unmapped_resolution_limit', 100)
+            limit = getattr(self.settings, "max_unmapped_resolution_limit", 100)
 
         # Input validation for limit parameter
         if not isinstance(limit, int):
@@ -296,7 +301,9 @@ class GameIDMappingService:
         if limit <= 0:
             raise ValueError(f"Limit must be a positive integer, got {limit}")
         if limit > 1000:
-            self.logger.warning(f"Large limit specified ({limit}), consider smaller batches for better performance")
+            self.logger.warning(
+                f"Large limit specified ({limit}), consider smaller batches for better performance"
+            )
 
         self.logger.info(
             "Starting unmapped external ID resolution",

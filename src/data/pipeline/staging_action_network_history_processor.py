@@ -80,11 +80,11 @@ class HistoricalOddsRecord(BaseModel):
     raw_data_id: int
 
     # NEW: Betting percentage data
-    bet_percent_tickets: int | None = None      # Ticket percentage (0-100)
-    bet_percent_money: int | None = None        # Money percentage (0-100)
-    bet_value_tickets: int | None = None        # Actual ticket count
-    bet_value_money: int | None = None          # Actual money amount
-    bet_info_available: bool = False            # Flag indicating betting data exists
+    bet_percent_tickets: int | None = None  # Ticket percentage (0-100)
+    bet_percent_money: int | None = None  # Money percentage (0-100)
+    bet_value_tickets: int | None = None  # Actual ticket count
+    bet_value_money: int | None = None  # Actual money amount
+    bet_info_available: bool = False  # Flag indicating betting data exists
 
     @field_validator("market_type")
     @classmethod
@@ -143,10 +143,10 @@ class ActionNetworkHistoryProcessor:
 
     def _extract_bet_info(self, side_data: dict) -> dict:
         """Extract betting percentage information from side data.
-        
+
         Args:
             side_data: Individual side data from Action Network history response
-            
+
         Returns:
             Dict containing extracted betting information
         """
@@ -158,7 +158,7 @@ class ActionNetworkHistoryProcessor:
             "bet_percent_money": None,
             "bet_value_tickets": None,
             "bet_value_money": None,
-            "bet_info_available": False
+            "bet_info_available": False,
         }
 
         if not bet_info or not isinstance(bet_info, dict):
@@ -173,14 +173,20 @@ class ActionNetworkHistoryProcessor:
                 tickets_value = tickets_data.get("value")
 
                 # Validate and store ticket percentage
-                if tickets_percent is not None and isinstance(tickets_percent, (int, float)):
+                if tickets_percent is not None and isinstance(
+                    tickets_percent, (int, float)
+                ):
                     if 0 <= tickets_percent <= 100:
                         extracted_data["bet_percent_tickets"] = int(tickets_percent)
                     else:
                         logger.warning(f"Invalid ticket percentage: {tickets_percent}")
 
                 # Store ticket value if meaningful
-                if tickets_value is not None and isinstance(tickets_value, (int, float)) and tickets_value > 0:
+                if (
+                    tickets_value is not None
+                    and isinstance(tickets_value, (int, float))
+                    and tickets_value > 0
+                ):
                     extracted_data["bet_value_tickets"] = int(tickets_value)
 
             # Extract money data
@@ -190,20 +196,26 @@ class ActionNetworkHistoryProcessor:
                 money_value = money_data.get("value")
 
                 # Validate and store money percentage
-                if money_percent is not None and isinstance(money_percent, (int, float)):
+                if money_percent is not None and isinstance(
+                    money_percent, (int, float)
+                ):
                     if 0 <= money_percent <= 100:
                         extracted_data["bet_percent_money"] = int(money_percent)
                     else:
                         logger.warning(f"Invalid money percentage: {money_percent}")
 
                 # Store money value if meaningful
-                if money_value is not None and isinstance(money_value, (int, float)) and money_value > 0:
+                if (
+                    money_value is not None
+                    and isinstance(money_value, (int, float))
+                    and money_value > 0
+                ):
                     extracted_data["bet_value_money"] = int(money_value)
 
             # Determine if betting info is available
             betting_data_exists = (
-                extracted_data["bet_percent_tickets"] is not None or
-                extracted_data["bet_percent_money"] is not None
+                extracted_data["bet_percent_tickets"] is not None
+                or extracted_data["bet_percent_money"] is not None
             )
             extracted_data["bet_info_available"] = betting_data_exists
 
@@ -325,7 +337,7 @@ class ActionNetworkHistoryProcessor:
                     for historical_record in historical_records:
                         # NOTE: MLB ID resolution removed - now handled via dimension table JOINs
                         # This eliminates thousands of API calls per pipeline run
-                        
+
                         # Insert historical record
                         await self._insert_historical_odds_record(
                             historical_record, conn
@@ -570,8 +582,11 @@ class ActionNetworkHistoryProcessor:
 
             if game_validation:
                 # Skip test/placeholder records that lack proper game data
-                if (not game_validation['away_team'] or not game_validation['home_team'] or
-                    game_validation['table_marker'] == 'action_network_history'):
+                if (
+                    not game_validation["away_team"]
+                    or not game_validation["home_team"]
+                    or game_validation["table_marker"] == "action_network_history"
+                ):
                     logger.warning(
                         f"Skipping test/placeholder game {record.external_game_id}: "
                         f"away_team={game_validation['away_team']}, "
@@ -591,7 +606,9 @@ class ActionNetworkHistoryProcessor:
             )
 
             if existing_mlb_id:
-                logger.debug(f"Using cached MLB game ID for {record.external_game_id}: {existing_mlb_id}")
+                logger.debug(
+                    f"Using cached MLB game ID for {record.external_game_id}: {existing_mlb_id}"
+                )
                 return existing_mlb_id
 
             # Strategy 1: Try staging data join
@@ -606,9 +623,11 @@ class ActionNetworkHistoryProcessor:
 
             if game_info:
                 # Use enhanced Action Network-specific resolver
-                resolution_result = await self.mlb_resolver.resolve_action_network_game_id(
-                    external_game_id=record.external_game_id,
-                    game_date=game_info["game_date"],
+                resolution_result = (
+                    await self.mlb_resolver.resolve_action_network_game_id(
+                        external_game_id=record.external_game_id,
+                        game_date=game_info["game_date"],
+                    )
                 )
 
                 if resolution_result.mlb_game_id:
@@ -629,7 +648,9 @@ class ActionNetworkHistoryProcessor:
                     return resolution_result.mlb_game_id
 
             # Strategy 2: Try raw data view (enhanced approach from backfill)
-            logger.debug(f"Trying raw data view resolution for {record.external_game_id}")
+            logger.debug(
+                f"Trying raw data view resolution for {record.external_game_id}"
+            )
             raw_game_info = await conn.fetchrow(
                 """
                 SELECT away_team, home_team, 
@@ -649,9 +670,11 @@ class ActionNetworkHistoryProcessor:
                 away_team_normalized = normalize_team_name(raw_game_info["away_team"])
 
                 # Use Action Network specific resolver with normalized team names
-                resolution_result = await self.mlb_resolver.resolve_action_network_game_id(
-                    external_game_id=record.external_game_id,
-                    game_date=raw_game_info["game_date"]
+                resolution_result = (
+                    await self.mlb_resolver.resolve_action_network_game_id(
+                        external_game_id=record.external_game_id,
+                        game_date=raw_game_info["game_date"],
+                    )
                 )
 
                 # Fallback to generic resolver if Action Network specific fails
@@ -661,7 +684,7 @@ class ActionNetworkHistoryProcessor:
                         source=DataSource.ACTION_NETWORK,
                         home_team=home_team_normalized,
                         away_team=away_team_normalized,
-                        game_date=raw_game_info["game_date"]
+                        game_date=raw_game_info["game_date"],
                     )
 
                 if resolution_result.mlb_game_id:
@@ -683,7 +706,9 @@ class ActionNetworkHistoryProcessor:
                     )
                     return resolution_result.mlb_game_id
 
-            logger.warning(f"No game info found for Action Network game {record.external_game_id}")
+            logger.warning(
+                f"No game info found for Action Network game {record.external_game_id}"
+            )
             return None
 
         except Exception as e:

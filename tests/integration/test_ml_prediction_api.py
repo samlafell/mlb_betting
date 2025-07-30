@@ -19,9 +19,7 @@ import pytest
 import pytest_asyncio
 
 # Test markers for categorization
-pytestmark = [
-    pytest.mark.integration
-]
+pytestmark = [pytest.mark.integration]
 
 
 class TestMLPredictionServiceIntegration:
@@ -39,16 +37,24 @@ class TestMLPredictionServiceIntegration:
             "redis_url": os.getenv("TEST_REDIS_URL", "redis://localhost:6379/15"),
             "redis_ttl": 900,
             "feature_version": "v2.1",
-            "api_secret_key": os.getenv("API_SECRET_KEY", "test_secret_for_testing_only")
+            "api_secret_key": os.getenv(
+                "API_SECRET_KEY", "test_secret_for_testing_only"
+            ),
         }
 
     @pytest.fixture
     def prediction_service(self, mock_config):
         """Initialize prediction service with mocked dependencies"""
-        with patch("src.ml.services.prediction_service.PredictionService") as mock_service:
+        with patch(
+            "src.ml.services.prediction_service.PredictionService"
+        ) as mock_service:
             service = mock_service.return_value
-            service.predict = AsyncMock(return_value={"prediction": 0.75, "confidence": 0.88})
-            service.get_model_info = AsyncMock(return_value={"model": "test_model", "version": "1.0"})
+            service.predict = AsyncMock(
+                return_value={"prediction": 0.75, "confidence": 0.88}
+            )
+            service.get_model_info = AsyncMock(
+                return_value={"model": "test_model", "version": "1.0"}
+            )
             yield service
 
     @pytest.fixture
@@ -63,7 +69,9 @@ class TestMLPredictionServiceIntegration:
     @pytest.fixture
     def redis_feature_store(self, mock_redis_url):
         """Initialize Redis feature store with test configuration"""
-        with patch("src.ml.features.redis_feature_store.RedisFeatureStore") as mock_store:
+        with patch(
+            "src.ml.features.redis_feature_store.RedisFeatureStore"
+        ) as mock_store:
             store = mock_store.return_value
             store.get_features = AsyncMock(return_value={"cached": True})
             store.store_features = AsyncMock(return_value=True)
@@ -87,9 +95,13 @@ class TestMLPredictionServiceIntegration:
             from src.ml.training.lightgbm_trainer import LightGBMTrainer
 
             # Verify classes are importable
-            assert PredictionService is not None, "PredictionService should be importable"
+            assert PredictionService is not None, (
+                "PredictionService should be importable"
+            )
             assert FeaturePipeline is not None, "FeaturePipeline should be importable"
-            assert RedisFeatureStore is not None, "RedisFeatureStore should be importable"
+            assert RedisFeatureStore is not None, (
+                "RedisFeatureStore should be importable"
+            )
             assert LightGBMTrainer is not None, "LightGBMTrainer should be importable"
 
         except ImportError as e:
@@ -102,33 +114,48 @@ class TestMLPredictionServiceIntegration:
         assert prediction_service is not None, "Prediction service should initialize"
 
         # Test service method availability
-        assert hasattr(prediction_service, 'predict'), "Service should have predict method"
-        assert hasattr(prediction_service, 'get_model_info'), "Service should have get_model_info method"
+        assert hasattr(prediction_service, "predict"), (
+            "Service should have predict method"
+        )
+        assert hasattr(prediction_service, "get_model_info"), (
+            "Service should have get_model_info method"
+        )
 
     def test_feature_pipeline_initialization(self, feature_pipeline, mock_config):
         """Test feature pipeline initialization and configuration"""
         assert feature_pipeline is not None, "Feature pipeline should initialize"
-        assert feature_pipeline.feature_version == mock_config["feature_version"], \
+        assert feature_pipeline.feature_version == mock_config["feature_version"], (
             "Feature pipeline should use configured version"
+        )
 
     def test_redis_feature_store_initialization(self, redis_feature_store):
         """Test Redis feature store initialization with secure configuration"""
         assert redis_feature_store is not None, "Redis feature store should initialize"
 
         # Test store method availability
-        assert hasattr(redis_feature_store, 'get_features'), "Store should have get_features method"
-        assert hasattr(redis_feature_store, 'store_features'), "Store should have store_features method"
+        assert hasattr(redis_feature_store, "get_features"), (
+            "Store should have get_features method"
+        )
+        assert hasattr(redis_feature_store, "store_features"), (
+            "Store should have store_features method"
+        )
 
-    def test_lightgbm_trainer_initialization(self, lightgbm_trainer, feature_pipeline, redis_feature_store):
+    def test_lightgbm_trainer_initialization(
+        self, lightgbm_trainer, feature_pipeline, redis_feature_store
+    ):
         """Test LightGBM trainer initialization with dependencies"""
         assert lightgbm_trainer is not None, "LightGBM trainer should initialize"
 
         # Test trainer method availability
-        assert hasattr(lightgbm_trainer, 'train'), "Trainer should have train method"
-        assert hasattr(lightgbm_trainer, 'predict'), "Trainer should have predict method"
+        assert hasattr(lightgbm_trainer, "train"), "Trainer should have train method"
+        assert hasattr(lightgbm_trainer, "predict"), (
+            "Trainer should have predict method"
+        )
 
     @pytest.mark.asyncio
-    async def test_service_integration_workflow(self, prediction_service, feature_pipeline, redis_feature_store):
+    async def test_service_integration_workflow(
+        self, prediction_service, feature_pipeline, redis_feature_store
+    ):
         """Test integrated workflow between services"""
         # Mock a prediction workflow
         game_id = "test_game_12345"
@@ -154,6 +181,7 @@ class TestMLAPIStructure:
         """Test FastAPI app can be imported"""
         try:
             from src.ml.api.main import app
+
             assert app is not None, "FastAPI app should be importable"
 
         except ImportError as e:
@@ -180,8 +208,12 @@ class TestMLAPIStructure:
         try:
             from src.ml.api.dependencies import get_ml_service, get_redis_client
 
-            assert get_ml_service is not None, "ML service dependency should be importable"
-            assert get_redis_client is not None, "Redis client dependency should be importable"
+            assert get_ml_service is not None, (
+                "ML service dependency should be importable"
+            )
+            assert get_redis_client is not None, (
+                "Redis client dependency should be importable"
+            )
 
         except ImportError as e:
             pytest.fail(f"Dependencies import failed: {e}")
@@ -199,14 +231,16 @@ class TestPydanticModels:
 
             # Test valid request
             request = PredictionRequest(
-                game_id="12345",
-                model_name="test_model",
-                include_explanation=True
+                game_id="12345", model_name="test_model", include_explanation=True
             )
 
             assert request.game_id == "12345", "Game ID should be set correctly"
-            assert request.model_name == "test_model", "Model name should be set correctly"
-            assert request.include_explanation is True, "Include explanation should be set correctly"
+            assert request.model_name == "test_model", (
+                "Model name should be set correctly"
+            )
+            assert request.include_explanation is True, (
+                "Include explanation should be set correctly"
+            )
 
         except ImportError as e:
             pytest.fail(f"PredictionRequest import failed: {e}")
@@ -220,13 +254,14 @@ class TestPydanticModels:
 
             # Test valid batch request
             batch_request = BatchPredictionRequest(
-                game_ids=["12345", "12346", "12347"],
-                model_name="test_model"
+                game_ids=["12345", "12346", "12347"], model_name="test_model"
             )
 
             assert len(batch_request.game_ids) == 3, "Should accept multiple game IDs"
             assert "12345" in batch_request.game_ids, "Should contain first game ID"
-            assert batch_request.model_name == "test_model", "Model name should be set correctly"
+            assert batch_request.model_name == "test_model", (
+                "Model name should be set correctly"
+            )
 
         except ImportError as e:
             pytest.fail(f"BatchPredictionRequest import failed: {e}")
@@ -247,14 +282,24 @@ class TestPydanticModels:
                 model_type="classification",
                 is_active=True,
                 created_at=datetime.now(),
-                description="Test model for unit testing"
+                description="Test model for unit testing",
             )
 
-            assert model_info.model_name == "test_model", "Model name should be set correctly"
-            assert model_info.model_version == "1.0", "Model version should be set correctly"
-            assert model_info.model_type == "classification", "Model type should be set correctly"
-            assert model_info.is_active is True, "Model active status should be set correctly"
-            assert model_info.description == "Test model for unit testing", "Description should be set correctly"
+            assert model_info.model_name == "test_model", (
+                "Model name should be set correctly"
+            )
+            assert model_info.model_version == "1.0", (
+                "Model version should be set correctly"
+            )
+            assert model_info.model_type == "classification", (
+                "Model type should be set correctly"
+            )
+            assert model_info.is_active is True, (
+                "Model active status should be set correctly"
+            )
+            assert model_info.description == "Test model for unit testing", (
+                "Description should be set correctly"
+            )
 
         except ImportError as e:
             pytest.fail(f"Model schemas import failed: {e}")
@@ -268,7 +313,9 @@ class TestErrorHandlingAndEdgeCases:
     @pytest.mark.asyncio
     async def test_invalid_model_name_handling(self):
         """Test handling of invalid model names"""
-        with patch("src.ml.services.prediction_service.PredictionService") as mock_service:
+        with patch(
+            "src.ml.services.prediction_service.PredictionService"
+        ) as mock_service:
             service = mock_service.return_value
             service.predict = AsyncMock(side_effect=ValueError("Invalid model name"))
 
@@ -278,9 +325,13 @@ class TestErrorHandlingAndEdgeCases:
     @pytest.mark.asyncio
     async def test_network_failure_handling(self):
         """Test handling of network failures"""
-        with patch("src.ml.features.redis_feature_store.RedisFeatureStore") as mock_store:
+        with patch(
+            "src.ml.features.redis_feature_store.RedisFeatureStore"
+        ) as mock_store:
             store = mock_store.return_value
-            store.get_features = AsyncMock(side_effect=ConnectionError("Redis connection failed"))
+            store.get_features = AsyncMock(
+                side_effect=ConnectionError("Redis connection failed")
+            )
 
             with pytest.raises(ConnectionError, match="Redis connection failed"):
                 await store.get_features("test_game_id")
@@ -300,7 +351,9 @@ class TestErrorHandlingAndEdgeCases:
         """Test handling of resource exhaustion scenarios"""
         with patch("src.ml.training.lightgbm_trainer.LightGBMTrainer") as mock_trainer:
             trainer = mock_trainer.return_value
-            trainer.train = AsyncMock(side_effect=MemoryError("Out of memory during training"))
+            trainer.train = AsyncMock(
+                side_effect=MemoryError("Out of memory during training")
+            )
 
             with pytest.raises(MemoryError, match="Out of memory during training"):
                 await trainer.train()
@@ -329,7 +382,9 @@ class TestResourceManagement:
             await client.ping()
 
         # Verify cleanup was called
-        assert redis_client_mock.__aexit__.called, "Redis client should be properly closed"
+        assert redis_client_mock.__aexit__.called, (
+            "Redis client should be properly closed"
+        )
 
     @pytest_asyncio.fixture
     async def service_with_cleanup(self):

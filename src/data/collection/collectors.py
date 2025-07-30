@@ -1248,7 +1248,9 @@ class OddsAPICollector(BaseCollector):
             self.logger.error("Odds API collection failed", error=str(e))
             raise
 
-    def _process_odds_api_game(self, game_data: dict[str, Any], sport: str) -> dict[str, Any] | None:
+    def _process_odds_api_game(
+        self, game_data: dict[str, Any], sport: str
+    ) -> dict[str, Any] | None:
         """Process individual game data from The Odds API."""
         try:
             # Extract basic game information
@@ -1269,7 +1271,7 @@ class OddsAPICollector(BaseCollector):
                     "key": bookmaker.get("key"),
                     "title": bookmaker.get("title"),
                     "last_update": bookmaker.get("last_update"),
-                    "markets": {}
+                    "markets": {},
                 }
 
                 # Process each market (h2h, spreads, totals)
@@ -1278,7 +1280,7 @@ class OddsAPICollector(BaseCollector):
                     market_data = {
                         "key": market_key,
                         "last_update": market.get("last_update"),
-                        "outcomes": []
+                        "outcomes": [],
                     }
 
                     # Process outcomes for each market
@@ -1304,7 +1306,11 @@ class OddsAPICollector(BaseCollector):
             return game_info
 
         except Exception as e:
-            self.logger.error("Failed to process Odds API game", game_id=game_data.get("id"), error=str(e))
+            self.logger.error(
+                "Failed to process Odds API game",
+                game_id=game_data.get("id"),
+                error=str(e),
+            )
             return None
 
     def _analyze_odds_data(self, game_data: dict[str, Any]) -> dict[str, Any]:
@@ -1313,7 +1319,7 @@ class OddsAPICollector(BaseCollector):
             "total_bookmakers": len(game_data.get("bookmakers", [])),
             "markets_available": set(),
             "price_ranges": {},
-            "consensus": {}
+            "consensus": {},
         }
 
         try:
@@ -1343,23 +1349,31 @@ class OddsAPICollector(BaseCollector):
                         "min": min(prices),
                         "max": max(prices),
                         "avg": sum(prices) / len(prices),
-                        "count": len(prices)
+                        "count": len(prices),
                     }
 
             # Simple consensus calculation (could be enhanced)
             if "h2h" in analysis["markets_available"]:
-                analysis["consensus"]["moneyline"] = self._calculate_consensus(bookmakers, "h2h")
+                analysis["consensus"]["moneyline"] = self._calculate_consensus(
+                    bookmakers, "h2h"
+                )
             if "spreads" in analysis["markets_available"]:
-                analysis["consensus"]["spread"] = self._calculate_consensus(bookmakers, "spreads")
+                analysis["consensus"]["spread"] = self._calculate_consensus(
+                    bookmakers, "spreads"
+                )
             if "totals" in analysis["markets_available"]:
-                analysis["consensus"]["total"] = self._calculate_consensus(bookmakers, "totals")
+                analysis["consensus"]["total"] = self._calculate_consensus(
+                    bookmakers, "totals"
+                )
 
         except Exception as e:
             self.logger.warning("Failed to analyze odds data", error=str(e))
 
         return analysis
 
-    def _calculate_consensus(self, bookmakers: list[dict], market_key: str) -> dict[str, Any]:
+    def _calculate_consensus(
+        self, bookmakers: list[dict], market_key: str
+    ) -> dict[str, Any]:
         """Calculate consensus odds for a specific market."""
         consensus = {"home": [], "away": [], "total_books": 0}
 
@@ -1379,7 +1393,10 @@ class OddsAPICollector(BaseCollector):
                             name = outcome.get("name", "").lower()
                             price = outcome.get("price")
                             if price:
-                                if any(team.lower() in name for team in [bookmaker.get("home_team", "").lower()]):
+                                if any(
+                                    team.lower() in name
+                                    for team in [bookmaker.get("home_team", "").lower()]
+                                ):
                                     consensus["home"].append(price)
                                 else:
                                     consensus["away"].append(price)
@@ -1393,7 +1410,9 @@ class OddsAPICollector(BaseCollector):
                                 if "over" in name:
                                     consensus["home"].append(price)  # Use home for over
                                 elif "under" in name:
-                                    consensus["away"].append(price)  # Use away for under
+                                    consensus["away"].append(
+                                        price
+                                    )  # Use away for under
 
             # Calculate averages
             if consensus["home"]:
@@ -1402,7 +1421,9 @@ class OddsAPICollector(BaseCollector):
                 consensus["away_avg"] = sum(consensus["away"]) / len(consensus["away"])
 
         except Exception as e:
-            self.logger.warning("Failed to calculate consensus", market=market_key, error=str(e))
+            self.logger.warning(
+                "Failed to calculate consensus", market=market_key, error=str(e)
+            )
 
         return consensus
 
@@ -1458,7 +1479,7 @@ class OddsAPICollector(BaseCollector):
                 source=DataSource.ODDS_API,
                 sport=sport,
                 dry_run=True,
-                additional_params={"sport": sport}
+                additional_params={"sport": sport},
             )
 
             # Test data collection
@@ -1475,9 +1496,11 @@ class OddsAPICollector(BaseCollector):
                     "valid_records": valid_count,
                     "validation_rate": valid_count / len(test_data) if test_data else 0,
                     "collection_result": "success",
-                    "sample_record": self.normalize_record(test_data[0]) if test_data else None,
+                    "sample_record": self.normalize_record(test_data[0])
+                    if test_data
+                    else None,
                     "is_real_data": bool(self.api_key),
-                    "test_mode": "with_api_key" if self.api_key else "sample_data_mode"
+                    "test_mode": "with_api_key" if self.api_key else "sample_data_mode",
                 }
             else:
                 return {
@@ -1487,7 +1510,7 @@ class OddsAPICollector(BaseCollector):
                     "valid_records": 0,
                     "validation_rate": 0,
                     "message": "No data collected from Odds API",
-                    "test_mode": "with_api_key" if self.api_key else "sample_data_mode"
+                    "test_mode": "with_api_key" if self.api_key else "sample_data_mode",
                 }
 
         except Exception as e:
@@ -1497,7 +1520,7 @@ class OddsAPICollector(BaseCollector):
                 "raw_records": 0,
                 "valid_records": 0,
                 "validation_rate": 0,
-                "test_mode": "with_api_key" if self.api_key else "sample_data_mode"
+                "test_mode": "with_api_key" if self.api_key else "sample_data_mode",
             }
 
     async def collect_game_data(self, sport: str = "baseball_mlb") -> int:
@@ -1509,7 +1532,7 @@ class OddsAPICollector(BaseCollector):
             request = CollectionRequest(
                 source=DataSource.ODDS_API,
                 sport=sport,
-                additional_params={"sport": sport}
+                additional_params={"sport": sport},
             )
 
             # Use standardized collection interface
@@ -1520,7 +1543,7 @@ class OddsAPICollector(BaseCollector):
                     "Odds API collection completed",
                     sport=sport,
                     status="success",
-                    processed=len(raw_data)
+                    processed=len(raw_data),
                 )
                 return len(raw_data)
             else:
@@ -1543,5 +1566,5 @@ class OddsAPICollector(BaseCollector):
 
 logger.info(
     "Collector registration moved to centralized registry system",
-    location="src.data.collection.registry"
+    location="src.data.collection.registry",
 )

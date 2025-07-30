@@ -76,9 +76,7 @@ class RawZoneConsolidatedProcessor(BaseZoneProcessor):
             "mlb_stats_api_games": "raw_data.mlb_stats_api_games",
         }
 
-    async def process_record(
-        self, record: DataRecord, **kwargs
-    ) -> DataRecord | None:
+    async def process_record(self, record: DataRecord, **kwargs) -> DataRecord | None:
         """
         Process a raw data record with enhanced validation and metadata extraction.
 

@@ -1037,7 +1037,8 @@ class UnifiedBettingLinesCollector(ABC):
             )
 
             return self._execute_insert(
-                "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'", unified_record
+                "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'",
+                unified_record,
             )
 
         except Exception as e:
@@ -1072,7 +1073,8 @@ class UnifiedBettingLinesCollector(ABC):
             )
 
             return self._execute_insert(
-                "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'", unified_record
+                "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'",
+                unified_record,
             )
 
         except Exception as e:
@@ -1107,7 +1109,8 @@ class UnifiedBettingLinesCollector(ABC):
             )
 
             return self._execute_insert(
-                "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread'", unified_record
+                "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread'",
+                unified_record,
             )
 
         except Exception as e:

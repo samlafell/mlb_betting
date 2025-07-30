@@ -234,6 +234,131 @@ class DataSourceSettings(BaseSettings):
         extra = "allow"  # Allow extra fields for backward compatibility
 
 
+class MLPipelineSettings(BaseSettings):
+    """ML Pipeline configuration settings."""
+
+    # Feature Pipeline Settings
+    feature_cache_ttl_seconds: int = Field(
+        default=900, ge=60, le=3600, description="Feature cache TTL in seconds"
+    )
+    
+    batch_processing_max_size: int = Field(
+        default=50, ge=1, le=200, description="Maximum batch size for feature processing"
+    )
+    
+    batch_processing_min_size: int = Field(
+        default=5, ge=1, le=50, description="Minimum batch size for feature processing"
+    )
+    
+    max_concurrent_extractions: int = Field(
+        default=5, ge=1, le=20, description="Maximum concurrent feature extractions"
+    )
+
+    # Memory Management
+    memory_threshold_mb: int = Field(
+        default=2048, ge=512, le=8192, description="Memory threshold in MB before triggering cleanup"
+    )
+    
+    memory_cleanup_trigger_mb: int = Field(
+        default=500, ge=100, le=2048, description="Memory increase threshold to trigger cleanup"
+    )
+
+    # Model Loading
+    model_loading_timeout_seconds: int = Field(
+        default=30, ge=5, le=300, description="Timeout for model loading operations"
+    )
+    
+    model_cache_size: int = Field(
+        default=10, ge=1, le=50, description="Maximum number of models to keep in memory"
+    )
+
+    # Redis Feature Store
+    redis_socket_timeout: float = Field(
+        default=5.0, ge=1.0, le=30.0, description="Redis socket timeout in seconds"
+    )
+    
+    redis_connection_pool_size: int = Field(
+        default=20, ge=5, le=100, description="Redis connection pool size"
+    )
+    
+    redis_max_retries: int = Field(
+        default=3, ge=1, le=10, description="Maximum Redis connection retries"
+    )
+    
+    redis_retry_delay_seconds: float = Field(
+        default=1.0, ge=0.1, le=10.0, description="Initial retry delay in seconds"
+    )
+
+    # Prediction Service
+    prediction_batch_size: int = Field(
+        default=10, ge=1, le=100, description="Batch size for prediction processing"
+    )
+    
+    prediction_cache_ttl_hours: int = Field(
+        default=4, ge=1, le=24, description="Cache TTL for predictions in hours"
+    )
+
+    # Performance Targets
+    api_response_target_ms: int = Field(
+        default=100, ge=10, le=1000, description="Target API response time in milliseconds"
+    )
+    
+    prediction_latency_target_ms: int = Field(
+        default=500, ge=50, le=5000, description="Target prediction latency in milliseconds"
+    )
+
+    # Resource Monitoring Thresholds
+    cpu_warning_threshold: float = Field(
+        default=70.0, ge=10.0, le=100.0, description="CPU usage warning threshold percentage"
+    )
+    
+    cpu_critical_threshold: float = Field(
+        default=85.0, ge=10.0, le=100.0, description="CPU usage critical threshold percentage"
+    )
+    
+    cpu_emergency_threshold: float = Field(
+        default=95.0, ge=10.0, le=100.0, description="CPU usage emergency threshold percentage"
+    )
+    
+    memory_warning_threshold: float = Field(
+        default=75.0, ge=10.0, le=100.0, description="Memory usage warning threshold percentage"
+    )
+    
+    memory_critical_threshold: float = Field(
+        default=85.0, ge=10.0, le=100.0, description="Memory usage critical threshold percentage"
+    )
+    
+    memory_emergency_threshold: float = Field(
+        default=95.0, ge=10.0, le=100.0, description="Memory usage emergency threshold percentage"
+    )
+    
+    disk_warning_threshold: float = Field(
+        default=80.0, ge=10.0, le=100.0, description="Disk usage warning threshold percentage"
+    )
+    
+    disk_critical_threshold: float = Field(
+        default=90.0, ge=10.0, le=100.0, description="Disk usage critical threshold percentage"
+    )
+    
+    disk_emergency_threshold: float = Field(
+        default=95.0, ge=10.0, le=100.0, description="Disk usage emergency threshold percentage"
+    )
+    
+    resource_monitoring_interval: int = Field(
+        default=10, ge=5, le=300, description="Resource monitoring interval in seconds"
+    )
+    
+    resource_alert_cooldown: int = Field(
+        default=300, ge=60, le=3600, description="Resource alert cooldown period in seconds"
+    )
+
+    class Config:
+        env_prefix = "ML_"
+        case_sensitive = False
+        use_enum_values = True
+        extra = "allow"
+
+
 class APISettings(BaseSettings):
     """Unified API configuration for all external services."""
 
@@ -572,39 +697,47 @@ class MonitoringSettings(BaseSettings):
 
     # Prometheus metrics configuration
     enable_prometheus: bool = Field(
-        default=True, description="Enable Prometheus metrics", env="MONITORING_PROMETHEUS_ENABLED"
+        default=True,
+        description="Enable Prometheus metrics",
+        env="MONITORING_PROMETHEUS_ENABLED",
     )
 
     prometheus_port: int = Field(
-        default=8000, ge=1024, le=65535, description="Prometheus metrics port", env="MONITORING_PROMETHEUS_PORT"
+        default=8000,
+        ge=1024,
+        le=65535,
+        description="Prometheus metrics port",
+        env="MONITORING_PROMETHEUS_PORT",
     )
 
     # Pipeline metrics bucket configuration
     pipeline_duration_buckets: list[float] = Field(
         default=[1, 5, 10, 30, 60, 120, 300, 600],
-        description="Histogram buckets for pipeline duration metrics"
+        description="Histogram buckets for pipeline duration metrics",
     )
 
     pipeline_stage_duration_buckets: list[float] = Field(
         default=[0.5, 1, 2, 5, 10, 30, 60, 120],
-        description="Histogram buckets for pipeline stage duration metrics"
+        description="Histogram buckets for pipeline stage duration metrics",
     )
 
     # Database query metrics buckets
     database_query_duration_buckets: list[float] = Field(
         default=[0.01, 0.05, 0.1, 0.5, 1, 2, 5],
-        description="Histogram buckets for database query duration metrics"
+        description="Histogram buckets for database query duration metrics",
     )
 
     # API call metrics buckets
     api_call_duration_buckets: list[float] = Field(
         default=[0.1, 0.5, 1, 2, 5, 10, 30],
-        description="Histogram buckets for API call duration metrics"
+        description="Histogram buckets for API call duration metrics",
     )
 
     # OpenTelemetry configuration
     enable_opentelemetry: bool = Field(
-        default=False, description="Enable OpenTelemetry tracing", env="MONITORING_OTEL_ENABLED"
+        default=False,
+        description="Enable OpenTelemetry tracing",
+        env="MONITORING_OTEL_ENABLED",
     )
 
     otlp_endpoint: str | None = Field(
@@ -617,7 +750,10 @@ class MonitoringSettings(BaseSettings):
     )
 
     metrics_sample_rate: float = Field(
-        default=0.1, ge=0.01, le=1.0, description="Sample rate for high-volume metrics (0.01-1.0)"
+        default=0.1,
+        ge=0.01,
+        le=1.0,
+        description="Sample rate for high-volume metrics (0.01-1.0)",
     )
 
     # Health check configuration
@@ -712,71 +848,71 @@ class FeatureFlags(BaseSettings):
 
 class SecuritySettings(BaseSettings):
     """Security configuration for API endpoints and authentication."""
-    
+
     # Dashboard API Security
     dashboard_api_key: str | None = Field(
         default=None,
         description="API key for dashboard break-glass endpoints",
-        env="DASHBOARD_API_KEY"
+        env="DASHBOARD_API_KEY",
     )
-    
+
     # Security features
     enable_authentication: bool = Field(
         default=True,
         description="Enable authentication for sensitive endpoints",
-        env="ENABLE_AUTH"
+        env="ENABLE_AUTH",
     )
-    
+
     enable_rate_limiting: bool = Field(
         default=True,
         description="Enable rate limiting for API endpoints",
-        env="ENABLE_RATE_LIMIT"
+        env="ENABLE_RATE_LIMIT",
     )
-    
+
     # Rate limiting settings for break-glass endpoints
     break_glass_rate_limit: int = Field(
         default=5,
         ge=1,
         le=100,
         description="Max break-glass requests per hour",
-        env="BREAK_GLASS_RATE_LIMIT"
+        env="BREAK_GLASS_RATE_LIMIT",
     )
-    
+
     # Session security
     session_timeout_minutes: int = Field(
         default=60,
         ge=5,
         le=480,
         description="Session timeout in minutes",
-        env="SESSION_TIMEOUT"
+        env="SESSION_TIMEOUT",
     )
-    
+
     # IP whitelisting for break-glass endpoints
     break_glass_ip_whitelist: list[str] = Field(
         default_factory=lambda: ["127.0.0.1", "::1"],
         description="IP addresses allowed to access break-glass endpoints",
-        env="BREAK_GLASS_IP_WHITELIST"
+        env="BREAK_GLASS_IP_WHITELIST",
     )
-    
+
     enable_ip_whitelisting: bool = Field(
         default=False,
         description="Enable IP whitelisting for break-glass endpoints",
-        env="ENABLE_IP_WHITELIST"
+        env="ENABLE_IP_WHITELIST",
     )
-    
+
     # Redis configuration for production rate limiting
     redis_url: str | None = Field(
         default=None,
         description="Redis URL for production rate limiting",
-        env="REDIS_URL"
+        env="REDIS_URL",
     )
-    
+
     enable_redis_rate_limiting: bool = Field(
         default=False,
         description="Enable Redis-based rate limiting",
-        env="ENABLE_REDIS_RATE_LIMITING"
+        env="ENABLE_REDIS_RATE_LIMITING",
     )
-    
+
     class Config:
         env_prefix = ""
         case_sensitive = False
@@ -786,66 +922,66 @@ class SecuritySettings(BaseSettings):
 
 class DashboardSettings(BaseSettings):
     """Dashboard configuration for monitoring interface."""
-    
+
     # Update intervals
     system_health_update_interval: int = Field(
         default=10,
         ge=5,
         le=300,
         description="System health update interval in seconds",
-        env="DASHBOARD_UPDATE_INTERVAL"
+        env="DASHBOARD_UPDATE_INTERVAL",
     )
-    
+
     error_recovery_delay: int = Field(
         default=30,
         ge=5,
         le=300,
         description="Error recovery delay in seconds",
-        env="DASHBOARD_ERROR_DELAY"
+        env="DASHBOARD_ERROR_DELAY",
     )
-    
+
     websocket_error_delay: int = Field(
         default=15,
         ge=5,
         le=120,
         description="WebSocket error recovery delay in seconds",
-        env="DASHBOARD_WS_ERROR_DELAY"
+        env="DASHBOARD_WS_ERROR_DELAY",
     )
-    
+
     # WebSocket settings
     max_reconnect_attempts: int = Field(
         default=5,
         ge=1,
         le=20,
         description="Maximum WebSocket reconnection attempts",
-        env="DASHBOARD_MAX_RECONNECTS"
+        env="DASHBOARD_MAX_RECONNECTS",
     )
-    
+
     reconnect_interval: int = Field(
         default=5000,
         ge=1000,
         le=30000,
         description="WebSocket reconnection interval in milliseconds",
-        env="DASHBOARD_RECONNECT_INTERVAL"
+        env="DASHBOARD_RECONNECT_INTERVAL",
     )
-    
+
     # Display settings
     recent_pipelines_limit: int = Field(
         default=5,
         ge=1,
         le=50,
         description="Number of recent pipelines to display",
-        env="DASHBOARD_RECENT_LIMIT"
+        env="DASHBOARD_RECENT_LIMIT",
     )
-    
+
     notification_timeout: int = Field(
         default=5000,
         ge=1000,
         le=30000,
         description="Notification display timeout in milliseconds",
-        env="DASHBOARD_NOTIFICATION_TIMEOUT"
+        env="DASHBOARD_NOTIFICATION_TIMEOUT",
     )
-    
+
     class Config:
         env_prefix = ""
         case_sensitive = False
@@ -896,6 +1032,7 @@ class UnifiedSettings(BaseSettings):
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     dashboard: DashboardSettings = Field(default_factory=DashboardSettings)
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
+    ml_pipeline: MLPipelineSettings = Field(default_factory=MLPipelineSettings)
     features: FeatureFlags = Field(default_factory=FeatureFlags)
 
     class Config:

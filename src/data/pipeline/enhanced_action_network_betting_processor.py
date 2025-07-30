@@ -17,6 +17,7 @@ logger = get_logger(__name__, LogComponent.DATA_PIPELINE)
 @dataclass
 class EnhancedHistoricalOddsRecord:
     """Enhanced historical odds record with betting percentage data."""
+
     # Core odds data
     external_game_id: str
     mlb_stats_api_game_id: str | None
@@ -41,15 +42,15 @@ class EnhancedHistoricalOddsRecord:
     raw_data_id: int | None = None
 
     # NEW: Betting percentage data
-    bet_percent_tickets: int | None = None      # Ticket percentage (0-100)
-    bet_percent_money: int | None = None        # Money percentage (0-100)
-    bet_value_tickets: int | None = None        # Actual ticket count
-    bet_value_money: int | None = None          # Actual money amount
-    bet_info_available: bool = False               # Flag indicating betting data exists
+    bet_percent_tickets: int | None = None  # Ticket percentage (0-100)
+    bet_percent_money: int | None = None  # Money percentage (0-100)
+    bet_value_tickets: int | None = None  # Actual ticket count
+    bet_value_money: int | None = None  # Actual money amount
+    bet_info_available: bool = False  # Flag indicating betting data exists
 
     # Derived betting analysis fields
-    betting_divergence: float | None = None     # |tickets% - money%|
-    sharp_action_indicator: str | None = None   # Classification of betting pattern
+    betting_divergence: float | None = None  # |tickets% - money%|
+    sharp_action_indicator: str | None = None  # Classification of betting pattern
 
 
 class EnhancedActionNetworkBettingProcessor:
@@ -60,12 +61,14 @@ class EnhancedActionNetworkBettingProcessor:
         self.db_config = self.settings.database.model_dump()
         self.processing_batch_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    async def extract_bet_info_from_line_data(self, line_data: dict[str, Any]) -> dict[str, Any]:
+    async def extract_bet_info_from_line_data(
+        self, line_data: dict[str, Any]
+    ) -> dict[str, Any]:
         """Extract betting percentage information from Action Network line data.
-        
+
         Args:
             line_data: Individual line data from Action Network history response
-            
+
         Returns:
             Dict containing extracted betting information
         """
@@ -79,7 +82,7 @@ class EnhancedActionNetworkBettingProcessor:
             "bet_value_money": None,
             "bet_info_available": False,
             "betting_divergence": None,
-            "sharp_action_indicator": None
+            "sharp_action_indicator": None,
         }
 
         if not bet_info or not isinstance(bet_info, dict):
@@ -94,14 +97,20 @@ class EnhancedActionNetworkBettingProcessor:
                 tickets_value = tickets_data.get("value")
 
                 # Validate and store ticket percentage
-                if tickets_percent is not None and isinstance(tickets_percent, (int, float)):
+                if tickets_percent is not None and isinstance(
+                    tickets_percent, (int, float)
+                ):
                     if 0 <= tickets_percent <= 100:
                         extracted_data["bet_percent_tickets"] = int(tickets_percent)
                     else:
                         logger.warning(f"Invalid ticket percentage: {tickets_percent}")
 
                 # Store ticket value if meaningful
-                if tickets_value is not None and isinstance(tickets_value, (int, float)) and tickets_value > 0:
+                if (
+                    tickets_value is not None
+                    and isinstance(tickets_value, (int, float))
+                    and tickets_value > 0
+                ):
                     extracted_data["bet_value_tickets"] = int(tickets_value)
 
             # Extract money data
@@ -111,30 +120,38 @@ class EnhancedActionNetworkBettingProcessor:
                 money_value = money_data.get("value")
 
                 # Validate and store money percentage
-                if money_percent is not None and isinstance(money_percent, (int, float)):
+                if money_percent is not None and isinstance(
+                    money_percent, (int, float)
+                ):
                     if 0 <= money_percent <= 100:
                         extracted_data["bet_percent_money"] = int(money_percent)
                     else:
                         logger.warning(f"Invalid money percentage: {money_percent}")
 
                 # Store money value if meaningful
-                if money_value is not None and isinstance(money_value, (int, float)) and money_value > 0:
+                if (
+                    money_value is not None
+                    and isinstance(money_value, (int, float))
+                    and money_value > 0
+                ):
                     extracted_data["bet_value_money"] = int(money_value)
 
             # Determine if betting info is available
             betting_data_exists = (
-                extracted_data["bet_percent_tickets"] is not None or
-                extracted_data["bet_percent_money"] is not None
+                extracted_data["bet_percent_tickets"] is not None
+                or extracted_data["bet_percent_money"] is not None
             )
             extracted_data["bet_info_available"] = betting_data_exists
 
             # Calculate derived metrics if both percentages available
-            if (extracted_data["bet_percent_tickets"] is not None and
-                extracted_data["bet_percent_money"] is not None):
-
+            if (
+                extracted_data["bet_percent_tickets"] is not None
+                and extracted_data["bet_percent_money"] is not None
+            ):
                 # Calculate divergence
                 divergence = abs(
-                    extracted_data["bet_percent_tickets"] - extracted_data["bet_percent_money"]
+                    extracted_data["bet_percent_tickets"]
+                    - extracted_data["bet_percent_money"]
                 )
                 extracted_data["betting_divergence"] = divergence
 
@@ -170,15 +187,15 @@ class EnhancedActionNetworkBettingProcessor:
         self,
         base_record_data: dict[str, Any],
         line_data: dict[str, Any],
-        history_entry: dict[str, Any]
+        history_entry: dict[str, Any],
     ) -> EnhancedHistoricalOddsRecord:
         """Create enhanced historical record with betting percentage data.
-        
+
         Args:
             base_record_data: Base record information (game_id, sportsbook, etc.)
             line_data: Current line data with bet_info
             history_entry: Individual historical entry
-            
+
         Returns:
             EnhancedHistoricalOddsRecord with betting data populated
         """
@@ -197,16 +214,16 @@ class EnhancedActionNetworkBettingProcessor:
             side=base_record_data["side"],
             odds=history_entry["odds"],
             line_value=history_entry.get("value"),
-            updated_at=datetime.fromisoformat(history_entry["updated_at"].replace("Z", "+00:00")),
+            updated_at=datetime.fromisoformat(
+                history_entry["updated_at"].replace("Z", "+00:00")
+            ),
             line_status=history_entry.get("line_status", "normal"),
-
             # Metadata
             data_collection_time=base_record_data.get("collection_time"),
             data_processing_time=datetime.now(),
             market_id=line_data.get("market_id"),
             outcome_id=line_data.get("outcome_id"),
             raw_data_id=base_record_data.get("raw_data_id"),
-
             # Enhanced betting data
             bet_percent_tickets=betting_data["bet_percent_tickets"],
             bet_percent_money=betting_data["bet_percent_money"],
@@ -214,18 +231,16 @@ class EnhancedActionNetworkBettingProcessor:
             bet_value_money=betting_data["bet_value_money"],
             bet_info_available=betting_data["bet_info_available"],
             betting_divergence=betting_data["betting_divergence"],
-            sharp_action_indicator=betting_data["sharp_action_indicator"]
+            sharp_action_indicator=betting_data["sharp_action_indicator"],
         )
 
         return record
 
     async def insert_enhanced_historical_record(
-        self,
-        record: EnhancedHistoricalOddsRecord,
-        conn: asyncpg.Connection
+        self, record: EnhancedHistoricalOddsRecord, conn: asyncpg.Connection
     ) -> None:
         """Insert enhanced historical odds record with betting percentage data.
-        
+
         Args:
             record: Enhanced historical odds record to insert
             conn: Database connection
@@ -287,7 +302,7 @@ class EnhancedActionNetworkBettingProcessor:
                 record.bet_percent_money,
                 record.bet_value_tickets,
                 record.bet_value_money,
-                record.bet_info_available
+                record.bet_info_available,
             )
 
             # Log betting data if available for debugging
@@ -306,17 +321,19 @@ class EnhancedActionNetworkBettingProcessor:
                     "game_id": record.external_game_id,
                     "sportsbook": record.sportsbook_name,
                     "market": record.market_type,
-                    "betting_data_available": record.bet_info_available
-                }
+                    "betting_data_available": record.bet_info_available,
+                },
             )
             raise
 
-    async def validate_betting_data_quality(self, conn: asyncpg.Connection) -> dict[str, Any]:
+    async def validate_betting_data_quality(
+        self, conn: asyncpg.Connection
+    ) -> dict[str, Any]:
         """Validate quality of betting percentage data after processing.
-        
+
         Args:
             conn: Database connection
-            
+
         Returns:
             Dict containing validation metrics
         """
@@ -330,7 +347,7 @@ class EnhancedActionNetworkBettingProcessor:
                 validation_data = dict(validation_result)
                 logger.info(
                     "Betting percentage data quality validation completed",
-                    **validation_data
+                    **validation_data,
                 )
                 return validation_data
             else:
@@ -345,10 +362,10 @@ class EnhancedActionNetworkBettingProcessor:
 # Integration helper functions for existing processor
 def enhance_existing_historical_record_with_betting_data(
     existing_record: Any,  # Your existing HistoricalOddsRecord class
-    line_data: dict[str, Any]
+    line_data: dict[str, Any],
 ) -> Any:
     """Helper function to enhance existing historical records with betting data.
-    
+
     This function can be integrated into your existing staging processor
     to add betting percentage support without major refactoring.
     """
@@ -356,6 +373,7 @@ def enhance_existing_historical_record_with_betting_data(
 
     # Extract betting data
     import asyncio
+
     betting_data = asyncio.run(processor.extract_bet_info_from_line_data(line_data))
 
     # Add betting fields to existing record
@@ -369,12 +387,10 @@ def enhance_existing_historical_record_with_betting_data(
 
 
 async def update_existing_insert_query_with_betting_columns(
-    existing_insert_function: callable,
-    record: Any,
-    conn: asyncpg.Connection
+    existing_insert_function: callable, record: Any, conn: asyncpg.Connection
 ) -> None:
     """Helper to update existing insert queries with betting columns.
-    
+
     This is a wrapper that can be used to enhance existing insert functions
     without completely rewriting them.
     """
