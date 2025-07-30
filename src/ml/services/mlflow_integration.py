@@ -13,12 +13,7 @@ import mlflow.sklearn
 from mlflow.tracking import MlflowClient
 from mlflow.entities import Experiment, Run
 
-# Add src to path for imports
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent.parent))
-
-from core.config import get_database_config
+from ...core.config import get_database_config
 
 logger = logging.getLogger(__name__)
 

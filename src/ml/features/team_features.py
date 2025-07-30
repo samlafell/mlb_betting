@@ -14,10 +14,7 @@ import numpy as np
 
 from .models import TeamFeatures, BaseFeatureExtractor
 
-# Add src to path for imports
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent.parent))
+# Proper package imports
 
 logger = logging.getLogger(__name__)
 

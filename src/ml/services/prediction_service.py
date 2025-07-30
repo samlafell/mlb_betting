@@ -12,10 +12,7 @@ import asyncio
 from decimal import Decimal
 import os
 
-# Add src to path for imports
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent.parent))
+# Proper package imports
 
 import asyncpg
 import mlflow
@@ -25,9 +22,10 @@ from pydantic import ValidationError
 from ..features.feature_pipeline import FeaturePipeline
 from ..features.redis_feature_store import RedisFeatureStore
 from ..training.lightgbm_trainer import LightGBMTrainer
+from ..database.connection_pool import get_db_transaction
 try:
-    from src.core.config import get_unified_config
-except Exception:
+    from ...core.config import get_unified_config
+except ImportError:
     # Fallback for testing environments
     get_unified_config = None
 
@@ -527,9 +525,9 @@ class PredictionService:
             logger.error(f"Prediction caching error for game {game_id}: {e}")
     
     async def _store_prediction_in_database(self, game_id: int, prediction_data: Dict[str, Any], feature_vector):
-        """Store prediction in database"""
+        """Store prediction in database with proper transaction management"""
         try:
-            async with self.db_pool.acquire() as conn:
+            async with get_db_transaction() as conn:
                 # Store in ml_predictions table
                 query = """
                     INSERT INTO curated.ml_predictions (

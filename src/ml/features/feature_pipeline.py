@@ -15,17 +15,13 @@ import polars as pl
 import asyncpg
 
 from .models import FeatureVector, BaseFeatureExtractor
+from ..database.connection_pool import get_db_transaction
 from .temporal_features import TemporalFeatureExtractor
 from .market_features import MarketFeatureExtractor  
 from .team_features import TeamFeatureExtractor
 from .betting_splits_features import BettingSplitsFeatureExtractor
 
-# Add src to path for imports
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent.parent))
-
-from core.config import get_settings
+from ...core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -224,76 +220,75 @@ class FeaturePipeline:
         conn: Optional[asyncpg.Connection] = None
     ) -> bool:
         """
-        Save feature vector to database
+        Save feature vector to database with proper transaction management
         
         Args:
             feature_vector: FeatureVector to save
-            conn: Database connection (optional)
+            conn: Database connection (optional, if None uses connection pool with transaction)
             
         Returns:
             True if successful, False otherwise
         """
         try:
-            should_close = conn is None
-            if conn is None:
-                conn = await asyncpg.connect(
-                    host=self.settings.database.host,
-                    port=self.settings.database.port,
-                    database=self.settings.database.database,
-                    user=self.settings.database.username,
-                    password=self.settings.database.password
-                )
-            
-            # Convert feature vector to database format
-            db_data = self._feature_vector_to_db_format(feature_vector)
-            
-            # Insert into database
-            query = """
-                INSERT INTO curated.ml_feature_vectors (
-                    game_id, feature_cutoff_time, feature_version, feature_hash,
-                    temporal_features, market_features, team_features, betting_splits_features,
-                    derived_features, interaction_features,
-                    feature_completeness_score, data_source_coverage, missing_feature_count, total_feature_count,
-                    action_network_data, vsin_data, sbd_data, mlb_stats_api_data,
-                    normalization_applied, scaling_method, feature_selection_applied, dimensionality_reduction,
-                    created_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
-                ON CONFLICT (game_id, feature_version, feature_cutoff_time) 
-                DO UPDATE SET
-                    feature_hash = EXCLUDED.feature_hash,
-                    temporal_features = EXCLUDED.temporal_features,
-                    market_features = EXCLUDED.market_features,
-                    team_features = EXCLUDED.team_features,
-                    betting_splits_features = EXCLUDED.betting_splits_features,
-                    derived_features = EXCLUDED.derived_features,
-                    interaction_features = EXCLUDED.interaction_features,
-                    feature_completeness_score = EXCLUDED.feature_completeness_score,
-                    data_source_coverage = EXCLUDED.data_source_coverage,
-                    missing_feature_count = EXCLUDED.missing_feature_count,
-                    total_feature_count = EXCLUDED.total_feature_count,
-                    action_network_data = EXCLUDED.action_network_data,
-                    vsin_data = EXCLUDED.vsin_data,
-                    sbd_data = EXCLUDED.sbd_data,
-                    mlb_stats_api_data = EXCLUDED.mlb_stats_api_data,
-                    normalization_applied = EXCLUDED.normalization_applied,
-                    scaling_method = EXCLUDED.scaling_method,
-                    feature_selection_applied = EXCLUDED.feature_selection_applied,
-                    dimensionality_reduction = EXCLUDED.dimensionality_reduction
-            """
-            
-            await conn.execute(query, *db_data)
-            
-            if should_close:
-                await conn.close()
-            
-            logger.debug(f"Saved feature vector for game {feature_vector.game_id}")
-            return True
-            
+            if conn is not None:
+                # Use provided connection (assume caller manages transaction)
+                return await self._save_feature_vector_with_conn(feature_vector, conn)
+            else:
+                # Use connection pool with automatic transaction management
+                async with get_db_transaction() as transaction_conn:
+                    return await self._save_feature_vector_with_conn(feature_vector, transaction_conn)
         except Exception as e:
             logger.error(f"Error saving feature vector: {e}")
-            if should_close and conn:
-                await conn.close()
             return False
+    
+    async def _save_feature_vector_with_conn(
+        self, 
+        feature_vector: FeatureVector, 
+        conn: asyncpg.Connection
+    ) -> bool:
+        """
+        Internal method to save feature vector with given connection
+        """
+        # Convert feature vector to database format
+        db_data = self._feature_vector_to_db_format(feature_vector)
+        
+        # Insert into database
+        query = """
+            INSERT INTO curated.ml_feature_vectors (
+                game_id, feature_cutoff_time, feature_version, feature_hash,
+                temporal_features, market_features, team_features, betting_splits_features,
+                derived_features, interaction_features,
+                feature_completeness_score, data_source_coverage, missing_feature_count, total_feature_count,
+                action_network_data, vsin_data, sbd_data, mlb_stats_api_data,
+                normalization_applied, scaling_method, feature_selection_applied, dimensionality_reduction,
+                created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+            ON CONFLICT (game_id, feature_version, feature_cutoff_time) 
+            DO UPDATE SET
+                feature_hash = EXCLUDED.feature_hash,
+                temporal_features = EXCLUDED.temporal_features,
+                market_features = EXCLUDED.market_features,
+                team_features = EXCLUDED.team_features,
+                betting_splits_features = EXCLUDED.betting_splits_features,
+                derived_features = EXCLUDED.derived_features,
+                interaction_features = EXCLUDED.interaction_features,
+                feature_completeness_score = EXCLUDED.feature_completeness_score,
+                data_source_coverage = EXCLUDED.data_source_coverage,
+                missing_feature_count = EXCLUDED.missing_feature_count,
+                total_feature_count = EXCLUDED.total_feature_count,
+                action_network_data = EXCLUDED.action_network_data,
+                vsin_data = EXCLUDED.vsin_data,
+                sbd_data = EXCLUDED.sbd_data,
+                mlb_stats_api_data = EXCLUDED.mlb_stats_api_data,
+                normalization_applied = EXCLUDED.normalization_applied,
+                scaling_method = EXCLUDED.scaling_method,
+                feature_selection_applied = EXCLUDED.feature_selection_applied,
+                dimensionality_reduction = EXCLUDED.dimensionality_reduction
+        """
+        
+        await conn.execute(query, *db_data)
+        logger.debug(f"Saved feature vector for game {feature_vector.game_id}")
+        return True
     
     async def _load_game_data(self, game_id: int, cutoff_time: datetime) -> Dict[str, pl.DataFrame]:
         """Load all necessary data for feature extraction"""

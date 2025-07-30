@@ -21,15 +21,10 @@ import mlflow.lightgbm
 import mlflow.sklearn
 import joblib
 
-# Add src to path for imports
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent.parent))
-
-from core.config import get_settings
-from ml.features.feature_pipeline import FeaturePipeline
-from ml.features.redis_feature_store import RedisFeatureStore
-from ml.features.models import FeatureVector
+from ...core.config import get_settings
+from ..features.feature_pipeline import FeaturePipeline
+from ..features.redis_feature_store import RedisFeatureStore
+from ..features.models import FeatureVector
 
 logger = logging.getLogger(__name__)
 
