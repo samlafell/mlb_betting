@@ -234,6 +234,131 @@ class DataSourceSettings(BaseSettings):
         extra = "allow"  # Allow extra fields for backward compatibility
 
 
+class MLPipelineSettings(BaseSettings):
+    """ML Pipeline configuration settings."""
+
+    # Feature Pipeline Settings
+    feature_cache_ttl_seconds: int = Field(
+        default=900, ge=60, le=3600, description="Feature cache TTL in seconds"
+    )
+    
+    batch_processing_max_size: int = Field(
+        default=50, ge=1, le=200, description="Maximum batch size for feature processing"
+    )
+    
+    batch_processing_min_size: int = Field(
+        default=5, ge=1, le=50, description="Minimum batch size for feature processing"
+    )
+    
+    max_concurrent_extractions: int = Field(
+        default=5, ge=1, le=20, description="Maximum concurrent feature extractions"
+    )
+
+    # Memory Management
+    memory_threshold_mb: int = Field(
+        default=2048, ge=512, le=8192, description="Memory threshold in MB before triggering cleanup"
+    )
+    
+    memory_cleanup_trigger_mb: int = Field(
+        default=500, ge=100, le=2048, description="Memory increase threshold to trigger cleanup"
+    )
+
+    # Model Loading
+    model_loading_timeout_seconds: int = Field(
+        default=30, ge=5, le=300, description="Timeout for model loading operations"
+    )
+    
+    model_cache_size: int = Field(
+        default=10, ge=1, le=50, description="Maximum number of models to keep in memory"
+    )
+
+    # Redis Feature Store
+    redis_socket_timeout: float = Field(
+        default=5.0, ge=1.0, le=30.0, description="Redis socket timeout in seconds"
+    )
+    
+    redis_connection_pool_size: int = Field(
+        default=20, ge=5, le=100, description="Redis connection pool size"
+    )
+    
+    redis_max_retries: int = Field(
+        default=3, ge=1, le=10, description="Maximum Redis connection retries"
+    )
+    
+    redis_retry_delay_seconds: float = Field(
+        default=1.0, ge=0.1, le=10.0, description="Initial retry delay in seconds"
+    )
+
+    # Prediction Service
+    prediction_batch_size: int = Field(
+        default=10, ge=1, le=100, description="Batch size for prediction processing"
+    )
+    
+    prediction_cache_ttl_hours: int = Field(
+        default=4, ge=1, le=24, description="Cache TTL for predictions in hours"
+    )
+
+    # Performance Targets
+    api_response_target_ms: int = Field(
+        default=100, ge=10, le=1000, description="Target API response time in milliseconds"
+    )
+    
+    prediction_latency_target_ms: int = Field(
+        default=500, ge=50, le=5000, description="Target prediction latency in milliseconds"
+    )
+
+    # Resource Monitoring Thresholds
+    cpu_warning_threshold: float = Field(
+        default=70.0, ge=10.0, le=100.0, description="CPU usage warning threshold percentage"
+    )
+    
+    cpu_critical_threshold: float = Field(
+        default=85.0, ge=10.0, le=100.0, description="CPU usage critical threshold percentage"
+    )
+    
+    cpu_emergency_threshold: float = Field(
+        default=95.0, ge=10.0, le=100.0, description="CPU usage emergency threshold percentage"
+    )
+    
+    memory_warning_threshold: float = Field(
+        default=75.0, ge=10.0, le=100.0, description="Memory usage warning threshold percentage"
+    )
+    
+    memory_critical_threshold: float = Field(
+        default=85.0, ge=10.0, le=100.0, description="Memory usage critical threshold percentage"
+    )
+    
+    memory_emergency_threshold: float = Field(
+        default=95.0, ge=10.0, le=100.0, description="Memory usage emergency threshold percentage"
+    )
+    
+    disk_warning_threshold: float = Field(
+        default=80.0, ge=10.0, le=100.0, description="Disk usage warning threshold percentage"
+    )
+    
+    disk_critical_threshold: float = Field(
+        default=90.0, ge=10.0, le=100.0, description="Disk usage critical threshold percentage"
+    )
+    
+    disk_emergency_threshold: float = Field(
+        default=95.0, ge=10.0, le=100.0, description="Disk usage emergency threshold percentage"
+    )
+    
+    resource_monitoring_interval: int = Field(
+        default=10, ge=5, le=300, description="Resource monitoring interval in seconds"
+    )
+    
+    resource_alert_cooldown: int = Field(
+        default=300, ge=60, le=3600, description="Resource alert cooldown period in seconds"
+    )
+
+    class Config:
+        env_prefix = "ML_"
+        case_sensitive = False
+        use_enum_values = True
+        extra = "allow"
+
+
 class APISettings(BaseSettings):
     """Unified API configuration for all external services."""
 
@@ -907,6 +1032,7 @@ class UnifiedSettings(BaseSettings):
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     dashboard: DashboardSettings = Field(default_factory=DashboardSettings)
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
+    ml_pipeline: MLPipelineSettings = Field(default_factory=MLPipelineSettings)
     features: FeatureFlags = Field(default_factory=FeatureFlags)
 
     class Config:

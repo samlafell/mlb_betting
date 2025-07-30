@@ -11,12 +11,12 @@ from pathlib import Path
 
 from .lightgbm_trainer import LightGBMTrainer
 
-# Add src to path for imports
-import sys
-
-sys.path.append(str(Path(__file__).parent.parent.parent))
-
-from core.config import get_settings
+# Fixed import structure - removed sys.path.append()
+try:
+    from ...core.config import get_settings
+except ImportError:
+    # Fallback for environments where unified config is not available
+    get_settings = None
 
 logger = logging.getLogger(__name__)
 

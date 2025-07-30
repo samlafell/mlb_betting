@@ -16,13 +16,32 @@ import json
 
 from .models import FeatureVector
 
-# Add src to path for imports
-import sys
-from pathlib import Path
+try:
+    from ...core.config import get_settings
+except ImportError:
+    # Fallback for environments where unified config is not available
+    get_settings = None
 
-sys.path.append(str(Path(__file__).parent.parent.parent))
+# Import resilience components
+try:
+    from ..resilience import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerError
+    from ..resilience.fallback_strategies import fallback_strategies
+    from ..resilience.degradation_manager import degradation_manager
+except ImportError:
+    # Fallback for environments where resilience module is not available
+    CircuitBreaker = None
+    CircuitBreakerConfig = None
+    CircuitBreakerError = None
+    fallback_strategies = None
+    degradation_manager = None
 
-from core.config import get_settings
+# Import resource monitoring
+try:
+    from ..monitoring.resource_monitor import get_resource_monitor, check_resource_pressure
+except ImportError:
+    # Fallback for environments where resource monitor is not available
+    get_resource_monitor = None
+    check_resource_pressure = None
 
 logger = logging.getLogger(__name__)
 
@@ -39,23 +58,50 @@ class RedisFeatureStore:
             self.settings, "redis_url", "redis://localhost:6379/0"
         )
         self.redis_client: Optional[redis.Redis] = None
+        
+        # Initialize circuit breaker for resilience
+        self.circuit_breaker: Optional[CircuitBreaker] = None
+        self.fallback_strategy = None
+        self.resilience_enabled = CircuitBreaker is not None
+
+        # Initialize resource monitoring
+        self.resource_monitor = None
+        self.resource_monitoring_enabled = get_resource_monitor is not None
+
+        # Get ML pipeline configuration
+        try:
+            from ...core.config import get_unified_config
+            config = get_unified_config()
+            ml_config = config.ml_pipeline
+            configured_ttl = ml_config.feature_cache_ttl_seconds
+            configured_socket_timeout = ml_config.redis_socket_timeout
+            configured_pool_size = ml_config.redis_connection_pool_size
+            self.max_retries = ml_config.redis_max_retries
+            self.retry_delay = ml_config.redis_retry_delay_seconds
+        except ImportError:
+            # Fallback configuration
+            configured_ttl = 900
+            configured_socket_timeout = 5.0
+            configured_pool_size = 20
+            self.max_retries = 3
+            self.retry_delay = 1.0
 
         # Cache configuration
-        self.default_ttl = 900  # 15 minutes as suggested
+        self.default_ttl = configured_ttl
         self.feature_key_prefix = "ml:features"
         self.model_prediction_prefix = "ml:predictions"
         self.batch_key_prefix = "ml:batch"
 
         # Performance settings
         self.max_batch_size = 100
-        self.connection_pool_size = 10
-        self.socket_timeout = 5
+        self.connection_pool_size = configured_pool_size
+        self.socket_timeout = configured_socket_timeout
 
         # Serialization settings
         self.use_msgpack = True  # Use MessagePack for 2-5x performance improvement
         self.compression_threshold = 1024  # Compress data larger than 1KB
 
-        # Cache statistics
+        # Cache statistics with resource monitoring
         self.cache_stats = {
             "hits": 0,
             "misses": 0,
@@ -63,30 +109,79 @@ class RedisFeatureStore:
             "errors": 0,
             "avg_get_time_ms": 0.0,
             "avg_set_time_ms": 0.0,
+            "resource_pressure_events": 0,
+            "cache_size_limit_hits": 0,
         }
 
     async def initialize(self) -> bool:
-        """Initialize Redis connection with optimized settings"""
-        try:
-            self.redis_client = redis.from_url(
-                self.redis_url,
-                encoding="utf-8",
-                decode_responses=False,  # Handle binary data for MessagePack
-                socket_connect_timeout=self.socket_timeout,
-                socket_timeout=self.socket_timeout,
-                retry_on_timeout=True,
-                health_check_interval=30,
-                max_connections=self.connection_pool_size,
-            )
+        """Initialize Redis connection with optimized settings, retry logic, and resilience patterns"""
+        # Initialize resource monitor if available
+        if self.resource_monitoring_enabled and not self.resource_monitor:
+            try:
+                self.resource_monitor = await get_resource_monitor()
+                if not self.resource_monitor._running:
+                    await self.resource_monitor.start_monitoring()
+                logger.info("✅ Redis Feature Store resource monitoring initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize resource monitoring: {e}")
+                self.resource_monitoring_enabled = False
 
-            # Test connection
-            await self.redis_client.ping()
-            logger.info(f"✅ Redis feature store initialized: {self.redis_url}")
-            return True
+        # Initialize circuit breaker if resilience is enabled
+        if self.resilience_enabled:
+            try:
+                config = CircuitBreakerConfig.from_unified_config("redis")
+                self.circuit_breaker = CircuitBreaker("redis_feature_store", config)
+                
+                # Get fallback strategy
+                if fallback_strategies:
+                    self.fallback_strategy = fallback_strategies.get_strategy("redis")
+                
+                # Register with degradation manager
+                if degradation_manager:
+                    await degradation_manager.register_health_check("redis", self._health_check)
+                    await degradation_manager.register_fallback("redis", self._activate_fallback)
+                    await degradation_manager.register_recovery("redis", self._recovery_check)
+                
+                logger.info("✅ Redis Feature Store resilience patterns initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize resilience patterns: {e}")
+                self.resilience_enabled = False
+        
+        max_retries = self.max_retries
+        retry_delay = self.retry_delay
+        
+        for attempt in range(max_retries):
+            try:
+                self.redis_client = redis.from_url(
+                    self.redis_url,
+                    encoding="utf-8",
+                    decode_responses=False,  # Handle binary data for MessagePack
+                    socket_connect_timeout=self.socket_timeout,
+                    socket_timeout=self.socket_timeout,
+                    retry_on_timeout=True,
+                    health_check_interval=30,
+                    max_connections=self.connection_pool_size,
+                )
 
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize Redis feature store: {e}")
-            return False
+                # Test connection with timeout
+                await asyncio.wait_for(self.redis_client.ping(), timeout=5.0)
+                logger.info(f"✅ Redis feature store initialized: {self.redis_url}")
+                return True
+
+            except asyncio.TimeoutError:
+                logger.warning(f"Redis connection timeout on attempt {attempt + 1}/{max_retries}")
+            except redis.ConnectionError as e:
+                logger.warning(f"Redis connection failed on attempt {attempt + 1}/{max_retries}: {e}")
+            except Exception as e:
+                logger.warning(f"Redis initialization failed on attempt {attempt + 1}/{max_retries}: {e}")
+
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+
+        logger.error(f"❌ Failed to initialize Redis feature store after {max_retries} attempts")
+        self.redis_client = None
+        return False
 
     async def close(self):
         """Close Redis connection"""
@@ -98,7 +193,7 @@ class RedisFeatureStore:
         self, game_id: int, feature_vector: FeatureVector, ttl: Optional[int] = None
     ) -> bool:
         """
-        Cache feature vector with MessagePack optimization
+        Cache feature vector with MessagePack optimization and circuit breaker protection
 
         Args:
             game_id: Game ID for caching key
@@ -108,11 +203,46 @@ class RedisFeatureStore:
         Returns:
             True if cached successfully, False otherwise
         """
+        # Try circuit breaker protected operation first
+        if self.resilience_enabled and self.circuit_breaker:
+            try:
+                return await self.circuit_breaker.call(
+                    self._cache_feature_vector_impl, game_id, feature_vector, ttl
+                )
+            except CircuitBreakerError:
+                logger.warning(f"Circuit breaker open for Redis - using fallback for game {game_id}")
+                return await self._cache_with_fallback(game_id, feature_vector, ttl)
+            except Exception as e:
+                logger.error(f"Circuit breaker error for cache operation: {e}")
+                return await self._cache_with_fallback(game_id, feature_vector, ttl)
+        
+        # Fallback to direct implementation if resilience not enabled
+        return await self._cache_feature_vector_impl(game_id, feature_vector, ttl)
+    
+    async def _cache_feature_vector_impl(
+        self, game_id: int, feature_vector: FeatureVector, ttl: Optional[int] = None
+    ) -> bool:
+        """Internal implementation of cache_feature_vector with resource monitoring"""
         start_time = datetime.utcnow()
 
         try:
+            # Check resource pressure before caching
+            if self.resource_monitoring_enabled and check_resource_pressure:
+                resource_pressure = await check_resource_pressure()
+                if resource_pressure:
+                    logger.warning(f"Resource pressure detected before caching game {game_id}")
+                    self.cache_stats["resource_pressure_events"] += 1
+                    
+                    # Attempt resource cleanup
+                    if self.resource_monitor:
+                        cleanup_results = await self.resource_monitor.force_cleanup()
+                        logger.debug(f"Resource cleanup before caching: {cleanup_results}")
+
             if not self.redis_client:
-                await self.initialize()
+                initialization_success = await self.initialize()
+                if not initialization_success:
+                    logger.error(f"Cannot cache feature vector for game {game_id}: Redis initialization failed")
+                    return False
 
             # Generate cache key
             cache_key = self._generate_feature_key(
@@ -125,8 +255,16 @@ class RedisFeatureStore:
             # Set TTL
             ttl = ttl or self.default_ttl
 
-            # Store in Redis
-            await self.redis_client.setex(cache_key, ttl, serialized_data)
+            # Store in Redis with connection validation
+            try:
+                await self.redis_client.setex(cache_key, ttl, serialized_data)
+            except redis.ConnectionError:
+                logger.warning(f"Redis connection lost during cache operation for game {game_id}, attempting reconnection")
+                initialization_success = await self.initialize()
+                if initialization_success:
+                    await self.redis_client.setex(cache_key, ttl, serialized_data)
+                else:
+                    raise redis.ConnectionError("Failed to reconnect to Redis")
 
             # Update statistics
             processing_time = (datetime.utcnow() - start_time).total_seconds() * 1000
@@ -142,12 +280,22 @@ class RedisFeatureStore:
             self._update_stats("set", processing_time, False)
             logger.error(f"Error caching feature vector for game {game_id}: {e}")
             return False
+    
+    async def _cache_with_fallback(
+        self, game_id: int, feature_vector: FeatureVector, ttl: Optional[int] = None
+    ) -> bool:
+        """Cache using fallback strategy when Redis is unavailable"""
+        if self.fallback_strategy:
+            return await self.fallback_strategy.cache_feature_vector(game_id, feature_vector, ttl)
+        
+        logger.warning(f"No fallback available for caching game {game_id}")
+        return False
 
     async def get_feature_vector(
         self, game_id: int, feature_version: str = "v2.1"
     ) -> Optional[FeatureVector]:
         """
-        Retrieve cached feature vector with MessagePack optimization
+        Retrieve cached feature vector with MessagePack optimization and circuit breaker protection
 
         Args:
             game_id: Game ID to retrieve
@@ -156,11 +304,34 @@ class RedisFeatureStore:
         Returns:
             FeatureVector if found, None otherwise
         """
+        # Try circuit breaker protected operation first
+        if self.resilience_enabled and self.circuit_breaker:
+            try:
+                return await self.circuit_breaker.call(
+                    self._get_feature_vector_impl, game_id, feature_version
+                )
+            except CircuitBreakerError:
+                logger.warning(f"Circuit breaker open for Redis - using fallback for game {game_id}")
+                return await self._get_with_fallback(game_id, feature_version)
+            except Exception as e:
+                logger.error(f"Circuit breaker error for get operation: {e}")
+                return await self._get_with_fallback(game_id, feature_version)
+        
+        # Fallback to direct implementation if resilience not enabled
+        return await self._get_feature_vector_impl(game_id, feature_version)
+    
+    async def _get_feature_vector_impl(
+        self, game_id: int, feature_version: str = "v2.1"
+    ) -> Optional[FeatureVector]:
+        """Internal implementation of get_feature_vector"""
         start_time = datetime.utcnow()
 
         try:
             if not self.redis_client:
-                await self.initialize()
+                initialization_success = await self.initialize()
+                if not initialization_success:
+                    logger.error(f"Cannot retrieve feature vector for game {game_id}: Redis initialization failed")
+                    return None
 
             # Generate cache key
             cache_key = self._generate_feature_key(game_id, feature_version)
@@ -192,6 +363,16 @@ class RedisFeatureStore:
             self._update_stats("get", processing_time, False)
             logger.error(f"Error retrieving feature vector for game {game_id}: {e}")
             return None
+    
+    async def _get_with_fallback(
+        self, game_id: int, feature_version: str = "v2.1"
+    ) -> Optional[FeatureVector]:
+        """Get feature vector using fallback strategy when Redis is unavailable"""
+        if self.fallback_strategy:
+            return await self.fallback_strategy.get_feature_vector(game_id, feature_version)
+        
+        logger.warning(f"No fallback available for retrieving game {game_id}")
+        return None
 
     async def cache_batch_features(
         self,
@@ -601,7 +782,7 @@ class RedisFeatureStore:
             self.cache_stats["avg_set_time_ms"] = new_avg
 
     def get_cache_stats(self) -> Dict[str, Any]:
-        """Get cache performance statistics"""
+        """Get cache performance statistics with resource monitoring data"""
         stats = self.cache_stats.copy()
 
         total_operations = stats["hits"] + stats["misses"]
@@ -609,6 +790,16 @@ class RedisFeatureStore:
             stats["hit_rate"] = stats["hits"] / total_operations
         else:
             stats["hit_rate"] = 0.0
+
+        # Add resource monitoring stats if available
+        if self.resource_monitoring_enabled and self.resource_monitor:
+            stats["resource_monitoring"] = {
+                "enabled": True,
+                "current_metrics": self.resource_monitor.get_current_metrics(),
+                "active_alerts": len(self.resource_monitor.active_alerts),
+            }
+        else:
+            stats["resource_monitoring"] = {"enabled": False}
 
         return stats
 
@@ -651,3 +842,55 @@ class RedisFeatureStore:
                 "error": str(e),
                 "connection_url": self.redis_url,
             }
+    
+    # Resilience pattern helper methods
+    
+    async def _health_check(self) -> bool:
+        """Health check callback for degradation manager"""
+        try:
+            if not self.redis_client:
+                return False
+            
+            await asyncio.wait_for(self.redis_client.ping(), timeout=2.0)
+            return True
+        except Exception:
+            return False
+    
+    async def _activate_fallback(self) -> Any:
+        """Activate fallback callback for degradation manager"""
+        if self.fallback_strategy:
+            await self.fallback_strategy.activate()
+            logger.info("Redis fallback activated via degradation manager")
+        return True
+    
+    async def _recovery_check(self) -> bool:
+        """Recovery check callback for degradation manager"""
+        try:
+            # Test if Redis is back online
+            is_healthy = await self._health_check()
+            
+            if is_healthy and self.fallback_strategy and self.fallback_strategy.fallback_active:
+                # Deactivate fallback if Redis has recovered
+                await self.fallback_strategy.deactivate()
+                logger.info("Redis recovered - fallback deactivated")
+            
+            return is_healthy
+        except Exception as e:
+            logger.error(f"Redis recovery check failed: {e}")
+            return False
+    
+    def get_resilience_status(self) -> Dict[str, Any]:
+        """Get resilience-related status information"""
+        status = {
+            "resilience_enabled": self.resilience_enabled,
+            "circuit_breaker": None,
+            "fallback_strategy": None
+        }
+        
+        if self.circuit_breaker:
+            status["circuit_breaker"] = self.circuit_breaker.get_status()
+        
+        if self.fallback_strategy:
+            status["fallback_strategy"] = self.fallback_strategy.get_status()
+        
+        return status

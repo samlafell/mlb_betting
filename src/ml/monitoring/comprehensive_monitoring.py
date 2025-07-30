@@ -24,6 +24,14 @@ from prometheus_client import (
 from pydantic import BaseModel
 import redis.asyncio as redis
 
+# Import enhanced resource monitoring
+try:
+    from .resource_monitor import get_resource_monitor, ResourceMonitor
+except ImportError:
+    # Fallback for environments where resource monitor is not available
+    get_resource_monitor = None
+    ResourceMonitor = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -526,18 +534,33 @@ class ComprehensiveMonitor:
         self.alert_manager = AlertManager(self.config)
         self.redis_client = redis_client
 
+        # Initialize enhanced resource monitoring
+        self.resource_monitor: Optional[ResourceMonitor] = None
+        self.resource_monitoring_enabled = get_resource_monitor is not None
+
         self._monitoring_task: Optional[asyncio.Task] = None
         self._running = False
 
     async def start_monitoring(self) -> None:
-        """Start the monitoring system"""
+        """Start the monitoring system with enhanced resource monitoring"""
         if self._running:
             logger.warning("Monitoring already running")
             return
 
+        # Initialize enhanced resource monitor if available
+        if self.resource_monitoring_enabled and not self.resource_monitor:
+            try:
+                self.resource_monitor = await get_resource_monitor()
+                if not self.resource_monitor._running:
+                    await self.resource_monitor.start_monitoring()
+                logger.info("✅ Enhanced resource monitoring integrated")
+            except Exception as e:
+                logger.warning(f"Failed to initialize enhanced resource monitoring: {e}")
+                self.resource_monitoring_enabled = False
+
         self._running = True
         self._monitoring_task = asyncio.create_task(self._monitoring_loop())
-        logger.info("✅ Comprehensive monitoring started")
+        logger.info("✅ Comprehensive monitoring started with resource integration")
 
     async def stop_monitoring(self) -> None:
         """Stop the monitoring system"""
@@ -585,16 +608,47 @@ class ComprehensiveMonitor:
                 await asyncio.sleep(self.config.metric_collection_interval)
 
     async def _collect_metrics(self) -> Dict[str, float]:
-        """Collect current metrics values"""
-        # This would integrate with your actual metrics collection
-        # For now, return sample metrics
-        return {
+        """Collect current metrics values with enhanced resource monitoring integration"""
+        metrics = {}
+        
+        # Collect enhanced resource metrics if available
+        if self.resource_monitoring_enabled and self.resource_monitor:
+            try:
+                resource_metrics = self.resource_monitor.get_current_metrics()
+                
+                # Map resource monitor metrics to Prometheus metrics
+                metrics.update({
+                    "ml_system_cpu_percent": resource_metrics.cpu_percent,
+                    "ml_system_memory_percent": resource_metrics.memory_percent,
+                    "ml_system_disk_usage_percent": resource_metrics.disk_usage_percent,
+                    "ml_process_memory_mb": resource_metrics.process_memory_mb,
+                    "ml_process_cpu_percent": resource_metrics.process_cpu_percent,
+                    "ml_network_connections": resource_metrics.network_connections,
+                    "ml_system_load_average_5m": resource_metrics.load_average_5m,
+                })
+                
+                # Update Prometheus gauges with resource data
+                if hasattr(self.metrics, 'memory_usage_bytes'):
+                    self.metrics.memory_usage_bytes.labels(component="system").set(
+                        resource_metrics.memory_used_gb * 1024**3
+                    )
+                    self.metrics.memory_usage_bytes.labels(component="process").set(
+                        resource_metrics.process_memory_mb * 1024**2
+                    )
+                
+            except Exception as e:
+                logger.error(f"Error collecting resource metrics: {e}")
+        
+        # Add default ML pipeline metrics (these would come from actual metrics collection)
+        metrics.update({
             "ml_api_http_request_duration_seconds": 0.15,
             "ml_prediction_latency_seconds": 0.8,
             "ml_errors_total": 2,
             "ml_auth_attempts_total": 5,
             "ml_database_connections_active": 8,
-        }
+        })
+        
+        return metrics
 
     async def _calculate_slis(self) -> Dict[str, float]:
         """Calculate current SLI values"""
@@ -657,11 +711,11 @@ class ComprehensiveMonitor:
         ).inc()
 
     async def get_health_summary(self) -> Dict[str, Any]:
-        """Get comprehensive health summary"""
+        """Get comprehensive health summary with enhanced resource monitoring"""
         slis = await self._calculate_slis()
         current_metrics = await self._collect_metrics()
 
-        return {
+        health_summary = {
             "timestamp": time.time(),
             "status": "healthy" if slis.get("api_availability", 0) > 99 else "degraded",
             "slis": slis,
@@ -672,6 +726,32 @@ class ComprehensiveMonitor:
                 "prediction_latency_ms": self.config.prediction_latency_target_ms,
             },
         }
+
+        # Add enhanced resource monitoring data if available
+        if self.resource_monitoring_enabled and self.resource_monitor:
+            try:
+                resource_status = self.resource_monitor.get_status()
+                health_summary["resource_monitoring"] = {
+                    "enabled": True,
+                    "status": resource_status,
+                    "active_alerts": len(self.resource_monitor.active_alerts),
+                    "monitoring_cycles": resource_status.get("monitoring_stats", {}).get("monitoring_cycles", 0),
+                }
+                
+                # Include resource trends if available
+                try:
+                    resource_trends = self.resource_monitor.get_resource_trends(minutes=60)
+                    health_summary["resource_trends"] = resource_trends
+                except Exception as e:
+                    logger.debug(f"Could not get resource trends: {e}")
+                    
+            except Exception as e:
+                logger.error(f"Error getting resource monitoring status: {e}")
+                health_summary["resource_monitoring"] = {"enabled": True, "error": str(e)}
+        else:
+            health_summary["resource_monitoring"] = {"enabled": False}
+
+        return health_summary
 
 
 # Global monitoring instance

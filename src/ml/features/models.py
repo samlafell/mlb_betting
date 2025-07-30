@@ -12,10 +12,7 @@ from pydantic import BaseModel, Field, ConfigDict, validator, field_validator
 import polars as pl
 
 # Add src to path for imports
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).parent.parent.parent))
+# Removed sys.path.append() for proper import structure
 
 
 class BaseFeatureModel(BaseModel):

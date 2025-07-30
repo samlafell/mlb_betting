@@ -9,13 +9,12 @@ from typing import AsyncGenerator
 import redis.asyncio as redis
 from fastapi import HTTPException
 
-# Add src to path for imports
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).parent.parent.parent))
-
-# from core.config import get_database_config  # Not available in container
+# Fixed import structure - removed sys.path.append()
+try:
+    from ...core.config import get_database_config
+except ImportError:
+    # Fallback for environments where unified config is not available
+    get_database_config = None
 
 logger = logging.getLogger(__name__)
 

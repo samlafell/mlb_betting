@@ -23,6 +23,20 @@ from .betting_splits_features import BettingSplitsFeatureExtractor
 
 from ...core.config import get_settings
 
+# Import resource monitoring
+try:
+    from ..monitoring.resource_monitor import get_resource_monitor, check_resource_pressure
+except ImportError:
+    # Fallback for environments where resource monitor is not available
+    get_resource_monitor = None
+    check_resource_pressure = None
+
+# Import resource allocation controller
+try:
+    from ..monitoring.resource_allocation_controller import get_resource_allocation_controller
+except ImportError:
+    get_resource_allocation_controller = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -42,12 +56,29 @@ class FeaturePipeline:
         self.team_extractor = TeamFeatureExtractor(feature_version)
         self.betting_splits_extractor = BettingSplitsFeatureExtractor(feature_version)
 
+        # Initialize resource monitor
+        self.resource_monitor = None
+        self.resource_monitoring_enabled = get_resource_monitor is not None
+
+        # Initialize resource allocation controller
+        self.allocation_controller = None
+        self.allocation_enabled = get_resource_allocation_controller is not None
+        
+        # Resource allocation parameters (can be dynamically adjusted)
+        self.cpu_allocation = 20.0  # Default CPU percentage
+        self.memory_allocation_mb = 400.0  # Default memory in MB
+        self.batch_size = 10  # Default batch size
+        self.max_concurrent_operations = 5  # Default concurrency
+
         # Performance tracking
         self.extraction_stats = {
             "total_games_processed": 0,
             "successful_extractions": 0,
             "failed_extractions": 0,
             "avg_processing_time_ms": 0.0,
+            "resource_pressure_events": 0,
+            "adaptive_batch_reductions": 0,
+            "allocation_adjustments": 0,
         }
 
     async def extract_features_for_game(
@@ -58,7 +89,7 @@ class FeaturePipeline:
         include_interactions: bool = True,
     ) -> Optional[FeatureVector]:
         """
-        Extract comprehensive features for a single game
+        Extract comprehensive features for a single game with resource monitoring
 
         Args:
             game_id: Game ID for feature extraction
@@ -72,6 +103,28 @@ class FeaturePipeline:
         start_time = datetime.utcnow()
 
         try:
+            # Initialize resource monitor if not already done
+            if self.resource_monitoring_enabled and not self.resource_monitor:
+                self.resource_monitor = await get_resource_monitor()
+                if not self.resource_monitor._running:
+                    await self.resource_monitor.start_monitoring()
+
+            # Initialize resource allocation controller integration if not already done
+            if self.allocation_enabled and not self.allocation_controller:
+                await self._initialize_allocation_integration()
+
+            # Check resource pressure before starting
+            if self.resource_monitoring_enabled and check_resource_pressure:
+                resource_pressure = await check_resource_pressure()
+                if resource_pressure:
+                    logger.warning(f"High resource pressure detected before processing game {game_id}")
+                    self.extraction_stats["resource_pressure_events"] += 1
+                    
+                    # Attempt resource cleanup
+                    if self.resource_monitor:
+                        cleanup_results = await self.resource_monitor.force_cleanup()
+                        logger.info(f"Resource cleanup results: {cleanup_results}")
+
             logger.info(f"Starting feature extraction for game {game_id}")
 
             # Load data from database
@@ -176,7 +229,7 @@ class FeaturePipeline:
         self, game_ids: List[int], cutoff_time: datetime, max_concurrent: int = 5
     ) -> List[Tuple[int, Optional[FeatureVector]]]:
         """
-        Extract features for multiple games concurrently
+        Extract features for multiple games concurrently with memory management
 
         Args:
             game_ids: List of game IDs for feature extraction
@@ -187,10 +240,69 @@ class FeaturePipeline:
             List of (game_id, feature_vector) tuples
         """
         import asyncio
+        import psutil
+        import gc
 
         logger.info(f"Starting batch feature extraction for {len(game_ids)} games")
 
-        # Process games in batches
+        # Get ML pipeline configuration
+        try:
+            from ...core.config import get_unified_config
+            config = get_unified_config()
+            ml_config = config.ml_pipeline
+        except ImportError:
+            # Fallback configuration for environments without unified config
+            class FallbackMLConfig:
+                memory_threshold_mb = 2048
+                batch_processing_min_size = 5
+                batch_processing_max_size = 50
+                memory_cleanup_trigger_mb = 500
+            ml_config = FallbackMLConfig()
+
+        # Memory management configuration from centralized config
+        memory_threshold_mb = ml_config.memory_threshold_mb
+        min_batch_size = ml_config.batch_processing_min_size
+        max_batch_size = ml_config.batch_processing_max_size
+        
+        # Initialize resource monitor if available
+        if self.resource_monitoring_enabled and not self.resource_monitor:
+            self.resource_monitor = await get_resource_monitor()
+            if not self.resource_monitor._running:
+                await self.resource_monitor.start_monitoring()
+
+        # Get initial memory usage
+        process = psutil.Process()
+        initial_memory_mb = process.memory_info().rss / 1024 / 1024
+        
+        # Enhanced adaptive batch sizing with resource monitor integration
+        available_memory_mb = psutil.virtual_memory().available / 1024 / 1024
+        
+        # Check current resource pressure
+        resource_pressure = False
+        if self.resource_monitoring_enabled and check_resource_pressure:
+            resource_pressure = await check_resource_pressure()
+            if resource_pressure:
+                self.extraction_stats["resource_pressure_events"] += 1
+                logger.warning(f"Resource pressure detected at batch start - reducing batch size")
+        
+        # Adaptive batch sizing with resource pressure consideration
+        if resource_pressure or available_memory_mb < 1024:  # Less than 1GB available or pressure
+            adaptive_batch_size = min_batch_size
+            max_concurrent = min(max_concurrent, 2)
+            self.extraction_stats["adaptive_batch_reductions"] += 1
+            logger.warning(f"Reduced batch processing due to resource constraints")
+        elif available_memory_mb < 4096:  # Less than 4GB available
+            adaptive_batch_size = min(len(game_ids) // 4, 20)
+        else:
+            adaptive_batch_size = min(len(game_ids) // 2, max_batch_size)
+        
+        adaptive_batch_size = max(adaptive_batch_size, min_batch_size)
+        
+        logger.info(f"Memory management: Available {available_memory_mb:.1f}MB, "
+                   f"resource_pressure={resource_pressure}, "
+                   f"using batch size {adaptive_batch_size}, max_concurrent {max_concurrent}")
+
+        # Process games in memory-managed batches
         results = []
         semaphore = asyncio.Semaphore(max_concurrent)
 
@@ -198,27 +310,76 @@ class FeaturePipeline:
             game_id: int,
         ) -> Tuple[int, Optional[FeatureVector]]:
             async with semaphore:
+                # Enhanced memory and resource checking
+                current_memory_mb = process.memory_info().rss / 1024 / 1024
+                
+                # Check resource pressure if monitoring enabled
+                current_resource_pressure = False
+                if self.resource_monitoring_enabled and check_resource_pressure:
+                    current_resource_pressure = await check_resource_pressure()
+                
+                # Memory threshold or resource pressure checks
+                if current_memory_mb > memory_threshold_mb or current_resource_pressure:
+                    if current_resource_pressure:
+                        logger.warning(f"Resource pressure detected during game {game_id} processing")
+                        self.extraction_stats["resource_pressure_events"] += 1
+                    else:
+                        logger.warning(f"High memory usage: {current_memory_mb:.1f}MB, triggering GC")
+                    
+                    # Trigger cleanup
+                    gc.collect()
+                    if self.resource_monitor:
+                        cleanup_results = await self.resource_monitor.force_cleanup()
+                        logger.debug(f"Resource cleanup for game {game_id}: {cleanup_results}")
+                    
+                    # Re-check after cleanup
+                    current_memory_mb = process.memory_info().rss / 1024 / 1024
+                    if current_memory_mb > memory_threshold_mb:
+                        logger.error(f"Memory usage still high after cleanup: {current_memory_mb:.1f}MB for game {game_id}")
+                        return game_id, None
+                
                 feature_vector = await self.extract_features_for_game(
                     game_id, cutoff_time
                 )
                 return game_id, feature_vector
 
-        # Create tasks for all games
-        tasks = [extract_single_game(game_id) for game_id in game_ids]
+        # Process in adaptive batches to prevent memory exhaustion
+        for i in range(0, len(game_ids), adaptive_batch_size):
+            batch_game_ids = game_ids[i:i + adaptive_batch_size]
+            logger.info(f"Processing batch {i//adaptive_batch_size + 1}: "
+                       f"{len(batch_game_ids)} games")
+            
+            # Create tasks for this batch
+            batch_tasks = [extract_single_game(game_id) for game_id in batch_game_ids]
 
-        # Execute tasks concurrently
-        batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+            # Execute batch concurrently
+            batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
 
-        # Process results
-        for result in batch_results:
-            if isinstance(result, Exception):
-                logger.error(f"Batch extraction error: {result}")
-                continue
-            results.append(result)
+            # Process batch results
+            for result in batch_results:
+                if isinstance(result, Exception):
+                    logger.error(f"Batch extraction error: {result}")
+                    continue
+                results.append(result)
+            
+            # Memory monitoring after each batch
+            current_memory_mb = process.memory_info().rss / 1024 / 1024
+            memory_increase_mb = current_memory_mb - initial_memory_mb
+            
+            logger.info(f"Batch complete. Memory usage: {current_memory_mb:.1f}MB "
+                       f"(+{memory_increase_mb:.1f}MB from start)")
+            
+            # Cleanup after each batch
+            if memory_increase_mb > ml_config.memory_cleanup_trigger_mb:
+                logger.info("Triggering garbage collection due to memory growth")
+                gc.collect()
 
         successful_extractions = len([r for r in results if r[1] is not None])
+        final_memory_mb = process.memory_info().rss / 1024 / 1024
+        
         logger.info(
-            f"Batch extraction complete: {successful_extractions}/{len(game_ids)} successful"
+            f"Batch extraction complete: {successful_extractions}/{len(game_ids)} successful. "
+            f"Final memory: {final_memory_mb:.1f}MB"
         )
 
         return results
@@ -749,7 +910,7 @@ class FeaturePipeline:
         self.extraction_stats["avg_processing_time_ms"] = new_avg
 
     def get_pipeline_stats(self) -> Dict[str, Any]:
-        """Get pipeline performance statistics"""
+        """Get pipeline performance statistics with resource monitoring data"""
         stats = self.extraction_stats.copy()
         if stats["total_games_processed"] > 0:
             stats["success_rate"] = (
@@ -758,4 +919,131 @@ class FeaturePipeline:
         else:
             stats["success_rate"] = 0.0
 
+        # Add resource monitoring stats if available
+        if self.resource_monitoring_enabled and self.resource_monitor:
+            stats["resource_monitoring"] = {
+                "enabled": True,
+                "current_metrics": self.resource_monitor.get_current_metrics(),
+                "resource_status": self.resource_monitor.get_status(),
+                "active_alerts": len(self.resource_monitor.active_alerts),
+            }
+        else:
+            stats["resource_monitoring"] = {"enabled": False}
+
+        # Add resource allocation stats if available
+        if self.allocation_enabled:
+            stats["resource_allocation"] = {
+                "enabled": True,
+                "cpu_allocation": self.cpu_allocation,
+                "memory_allocation_mb": self.memory_allocation_mb,
+                "batch_size": self.batch_size,
+                "max_concurrent_operations": self.max_concurrent_operations,
+                "allocation_adjustments": self.extraction_stats["allocation_adjustments"],
+            }
+        else:
+            stats["resource_allocation"] = {"enabled": False}
+
         return stats
+
+    # Resource allocation integration methods
+
+    async def _initialize_allocation_integration(self) -> None:
+        """Initialize integration with resource allocation controller"""
+        try:
+            self.allocation_controller = await get_resource_allocation_controller()
+            
+            # Register this component with custom allocation controllers
+            allocation_controllers = {
+                "cpu_percent": self.set_cpu_allocation,
+                "memory_mb": self.set_memory_allocation,
+                "batch_size": self.set_batch_size,
+                "concurrent_operations": self.set_max_concurrent_operations,
+            }
+            
+            success = await self.allocation_controller.register_component(
+                "feature_pipeline", self, allocation_controllers
+            )
+            
+            if success:
+                logger.info("✅ Feature Pipeline registered with resource allocation controller")
+            else:
+                logger.warning("Failed to register Feature Pipeline with resource allocation controller")
+                
+        except Exception as e:
+            logger.error(f"Error initializing allocation integration: {e}")
+            self.allocation_enabled = False
+
+    async def set_cpu_allocation(self, cpu_percent: float) -> bool:
+        """Set CPU allocation for the feature pipeline"""
+        try:
+            old_allocation = self.cpu_allocation
+            self.cpu_allocation = max(5.0, min(80.0, cpu_percent))  # Bound between 5% and 80%
+            
+            if abs(self.cpu_allocation - old_allocation) > 1.0:
+                self.extraction_stats["allocation_adjustments"] += 1
+                logger.info(f"CPU allocation adjusted: {old_allocation:.1f}% → {self.cpu_allocation:.1f}%")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting CPU allocation: {e}")
+            return False
+
+    async def set_memory_allocation(self, memory_mb: float) -> bool:
+        """Set memory allocation for the feature pipeline"""
+        try:
+            old_allocation = self.memory_allocation_mb
+            self.memory_allocation_mb = max(200.0, min(2048.0, memory_mb))  # Bound between 200MB and 2GB
+            
+            if abs(self.memory_allocation_mb - old_allocation) > 50.0:
+                self.extraction_stats["allocation_adjustments"] += 1
+                logger.info(f"Memory allocation adjusted: {old_allocation:.0f}MB → {self.memory_allocation_mb:.0f}MB")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting memory allocation: {e}")
+            return False
+
+    async def set_batch_size(self, batch_size: int) -> bool:
+        """Set batch size for the feature pipeline"""
+        try:
+            old_batch_size = self.batch_size
+            self.batch_size = max(1, min(100, batch_size))  # Bound between 1 and 100
+            
+            if abs(self.batch_size - old_batch_size) >= 1:
+                self.extraction_stats["allocation_adjustments"] += 1
+                logger.info(f"Batch size adjusted: {old_batch_size} → {self.batch_size}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting batch size: {e}")
+            return False
+
+    async def set_max_concurrent_operations(self, concurrency: int) -> bool:
+        """Set maximum concurrent operations for the feature pipeline"""
+        try:
+            old_concurrency = self.max_concurrent_operations
+            self.max_concurrent_operations = max(1, min(20, concurrency))  # Bound between 1 and 20
+            
+            if abs(self.max_concurrent_operations - old_concurrency) >= 1:
+                self.extraction_stats["allocation_adjustments"] += 1
+                logger.info(f"Max concurrent operations adjusted: {old_concurrency} → {self.max_concurrent_operations}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting max concurrent operations: {e}")
+            return False
+
+    def get_current_resource_allocation(self) -> Dict[str, Any]:
+        """Get current resource allocation settings"""
+        return {
+            "cpu_allocation": self.cpu_allocation,
+            "memory_allocation_mb": self.memory_allocation_mb,
+            "batch_size": self.batch_size,
+            "max_concurrent_operations": self.max_concurrent_operations,
+            "allocation_enabled": self.allocation_enabled,
+            "allocation_adjustments": self.extraction_stats["allocation_adjustments"],
+        }

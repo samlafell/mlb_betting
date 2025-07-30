@@ -30,6 +30,20 @@ except ImportError:
     # Fallback for testing environments
     get_unified_config = None
 
+# Import resource monitoring
+try:
+    from ..monitoring.resource_monitor import get_resource_monitor, check_resource_pressure
+except ImportError:
+    # Fallback for environments where resource monitor is not available
+    get_resource_monitor = None
+    check_resource_pressure = None
+
+# Import resource allocation controller
+try:
+    from ..monitoring.resource_allocation_controller import get_resource_allocation_controller
+except ImportError:
+    get_resource_allocation_controller = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,11 +58,50 @@ class PredictionService:
         self.redis_store = None
         self.trainer = None
         self.config = None
+        
+        # Initialize resource monitoring
+        self.resource_monitor = None
+        self.resource_monitoring_enabled = get_resource_monitor is not None
+
+        # Initialize resource allocation controller
+        self.allocation_controller = None
+        self.allocation_enabled = get_resource_allocation_controller is not None
+        
+        # Resource allocation parameters (can be dynamically adjusted)
+        self.cpu_allocation = 25.0  # Default CPU percentage
+        self.memory_allocation_mb = 512.0  # Default memory in MB
+        self.batch_size = 10  # Default batch size for predictions
+        self.max_concurrent_predictions = 5  # Default concurrency
+        
+        # Performance tracking
+        self.prediction_stats = {
+            "total_predictions": 0,
+            "successful_predictions": 0,
+            "failed_predictions": 0,
+            "avg_prediction_time_ms": 0.0,
+            "resource_pressure_events": 0,
+            "allocation_adjustments": 0,
+        }
 
     async def initialize(self):
-        """Initialize the prediction service"""
+        """Initialize the prediction service with resource monitoring"""
         try:
             logger.info("Initializing ML Prediction Service...")
+
+            # Initialize resource monitor if available
+            if self.resource_monitoring_enabled and not self.resource_monitor:
+                try:
+                    self.resource_monitor = await get_resource_monitor()
+                    if not self.resource_monitor._running:
+                        await self.resource_monitor.start_monitoring()
+                    logger.info("✅ Prediction Service resource monitoring initialized")
+                except Exception as e:
+                    logger.warning(f"Failed to initialize resource monitoring: {e}")
+                    self.resource_monitoring_enabled = False
+
+            # Initialize resource allocation controller integration if available
+            if self.allocation_enabled and not self.allocation_controller:
+                await self._initialize_allocation_integration()
 
             # Load configuration
             if get_unified_config:
@@ -78,11 +131,18 @@ class PredictionService:
             self.feature_pipeline = FeaturePipeline(feature_version="v2.1")
             logger.info("✅ Feature pipeline initialized")
 
+            # Get ML pipeline configuration  
+            try:
+                ml_config = self.config.ml_pipeline
+                redis_ttl = ml_config.feature_cache_ttl_seconds
+            except (AttributeError, ImportError):
+                redis_ttl = 900  # Fallback
+
             # Initialize Redis feature store
             self.redis_store = RedisFeatureStore(
                 redis_url=self.config.redis.url,
                 use_msgpack=True,
-                default_ttl=900,  # 15 minutes
+                default_ttl=redis_ttl,
             )
             await self.redis_store.initialize()
             logger.info("✅ Redis feature store initialized")
@@ -157,9 +217,9 @@ class PredictionService:
                     model_key = f"{row['model_name']}_{row['model_version']}"
 
                     try:
-                        # Load model from MLflow
+                        # Load model from MLflow using thread pool for CPU-intensive operation
                         model_uri = f"runs:/{row['run_id']}/model"
-                        model = mlflow.lightgbm.load_model(model_uri)
+                        model = await asyncio.to_thread(mlflow.lightgbm.load_model, model_uri)
 
                         self.models[model_key] = {
                             "model": model,
@@ -199,9 +259,25 @@ class PredictionService:
         include_explanation: bool = False,
     ) -> Optional[Dict[str, Any]]:
         """
-        Get ML prediction for a single game
+        Get ML prediction for a single game with resource monitoring
         """
         try:
+            # Check resource pressure before starting prediction
+            if self.resource_monitoring_enabled and check_resource_pressure:
+                resource_pressure = await check_resource_pressure()
+                if resource_pressure:
+                    logger.warning(f"Resource pressure detected before prediction for game {game_id}")
+                    
+                    # Attempt resource cleanup
+                    if self.resource_monitor:
+                        cleanup_results = await self.resource_monitor.force_cleanup()
+                        logger.info(f"Resource cleanup before prediction: {cleanup_results}")
+                        
+                        # Re-check after cleanup
+                        resource_pressure = await check_resource_pressure()
+                        if resource_pressure:
+                            logger.warning(f"Resource pressure persists after cleanup for game {game_id}")
+
             logger.info(f"Getting prediction for game {game_id}")
 
             # Convert string game_id to int
@@ -559,8 +635,12 @@ class PredictionService:
             else:
                 serialized_data = json.dumps(prediction_data, default=str)
 
-            # Cache for 4 hours (predictions are valid until game starts)
-            ttl = 4 * 60 * 60
+            # Get cache TTL from configuration
+            try:
+                ml_config = self.config.ml_pipeline
+                ttl = ml_config.prediction_cache_ttl_hours * 60 * 60
+            except (AttributeError, ImportError):
+                ttl = 4 * 60 * 60  # Fallback: 4 hours
             await self.redis_store.redis_client.setex(cache_key, ttl, serialized_data)
 
             logger.info(f"Cached prediction for game {game_id}")
@@ -653,9 +733,27 @@ class PredictionService:
             # Create concurrent tasks
             tasks = [get_single_prediction(game_id) for game_id in game_ids]
 
+            # Get batch size from configuration with resource pressure consideration
+            try:
+                ml_config = self.config.ml_pipeline
+                batch_size = ml_config.prediction_batch_size
+            except (AttributeError, ImportError):
+                batch_size = 10  # Fallback
+            
+            # Check resource pressure and adjust batch size accordingly
+            if self.resource_monitoring_enabled and check_resource_pressure:
+                resource_pressure = await check_resource_pressure()
+                if resource_pressure:
+                    logger.warning(f"Resource pressure detected - reducing batch size for {len(game_ids)} predictions")
+                    batch_size = max(2, batch_size // 2)  # Reduce batch size by half, minimum 2
+                    
+                    # Attempt resource cleanup
+                    if self.resource_monitor:
+                        cleanup_results = await self.resource_monitor.force_cleanup()
+                        logger.info(f"Resource cleanup for batch predictions: {cleanup_results}")
+            
             # Execute with concurrency limit to prevent overwhelming the system
             predictions = []
-            batch_size = 10  # Process 10 games at a time
 
             for i in range(0, len(tasks), batch_size):
                 batch_tasks = tasks[i : i + batch_size]
@@ -1177,3 +1275,133 @@ class PredictionService:
         except Exception as e:
             logger.error(f"Recent predictions error: {e}")
             return []
+
+    # Resource allocation integration methods
+
+    async def _initialize_allocation_integration(self) -> None:
+        """Initialize integration with resource allocation controller"""
+        try:
+            self.allocation_controller = await get_resource_allocation_controller()
+            
+            # Register this component with custom allocation controllers
+            allocation_controllers = {
+                "cpu_percent": self.set_cpu_allocation,
+                "memory_mb": self.set_memory_allocation,
+                "batch_size": self.set_batch_size,
+                "concurrent_operations": self.set_max_concurrent_predictions,
+            }
+            
+            success = await self.allocation_controller.register_component(
+                "prediction_service", self, allocation_controllers
+            )
+            
+            if success:
+                logger.info("✅ Prediction Service registered with resource allocation controller")
+            else:
+                logger.warning("Failed to register Prediction Service with resource allocation controller")
+                
+        except Exception as e:
+            logger.error(f"Error initializing allocation integration: {e}")
+            self.allocation_enabled = False
+
+    async def set_cpu_allocation(self, cpu_percent: float) -> bool:
+        """Set CPU allocation for the prediction service"""
+        try:
+            old_allocation = self.cpu_allocation
+            self.cpu_allocation = max(10.0, min(60.0, cpu_percent))  # Bound between 10% and 60%
+            
+            if abs(self.cpu_allocation - old_allocation) > 1.0:
+                self.prediction_stats["allocation_adjustments"] += 1
+                logger.info(f"Prediction Service CPU allocation adjusted: {old_allocation:.1f}% → {self.cpu_allocation:.1f}%")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting CPU allocation: {e}")
+            return False
+
+    async def set_memory_allocation(self, memory_mb: float) -> bool:
+        """Set memory allocation for the prediction service"""
+        try:
+            old_allocation = self.memory_allocation_mb
+            self.memory_allocation_mb = max(256.0, min(1024.0, memory_mb))  # Bound between 256MB and 1GB
+            
+            if abs(self.memory_allocation_mb - old_allocation) > 50.0:
+                self.prediction_stats["allocation_adjustments"] += 1
+                logger.info(f"Prediction Service memory allocation adjusted: {old_allocation:.0f}MB → {self.memory_allocation_mb:.0f}MB")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting memory allocation: {e}")
+            return False
+
+    async def set_batch_size(self, batch_size: int) -> bool:
+        """Set batch size for predictions"""
+        try:
+            old_batch_size = self.batch_size
+            self.batch_size = max(1, min(50, batch_size))  # Bound between 1 and 50
+            
+            if abs(self.batch_size - old_batch_size) >= 1:
+                self.prediction_stats["allocation_adjustments"] += 1
+                logger.info(f"Prediction Service batch size adjusted: {old_batch_size} → {self.batch_size}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting batch size: {e}")
+            return False
+
+    async def set_max_concurrent_predictions(self, concurrency: int) -> bool:
+        """Set maximum concurrent predictions"""
+        try:
+            old_concurrency = self.max_concurrent_predictions
+            self.max_concurrent_predictions = max(1, min(10, concurrency))  # Bound between 1 and 10
+            
+            if abs(self.max_concurrent_predictions - old_concurrency) >= 1:
+                self.prediction_stats["allocation_adjustments"] += 1
+                logger.info(f"Prediction Service max concurrent predictions adjusted: {old_concurrency} → {self.max_concurrent_predictions}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting max concurrent predictions: {e}")
+            return False
+
+    def get_current_resource_allocation(self) -> Dict[str, Any]:
+        """Get current resource allocation settings"""
+        return {
+            "cpu_allocation": self.cpu_allocation,
+            "memory_allocation_mb": self.memory_allocation_mb,
+            "batch_size": self.batch_size,
+            "max_concurrent_predictions": self.max_concurrent_predictions,
+            "allocation_enabled": self.allocation_enabled,
+            "allocation_adjustments": self.prediction_stats["allocation_adjustments"],
+        }
+
+    def get_prediction_stats(self) -> Dict[str, Any]:
+        """Get prediction service statistics with resource allocation data"""
+        stats = self.prediction_stats.copy()
+        
+        if stats["total_predictions"] > 0:
+            stats["success_rate"] = stats["successful_predictions"] / stats["total_predictions"]
+        else:
+            stats["success_rate"] = 0.0
+        
+        # Add resource monitoring stats if available
+        if self.resource_monitoring_enabled and self.resource_monitor:
+            stats["resource_monitoring"] = {
+                "enabled": True,
+                "current_metrics": self.resource_monitor.get_current_metrics(),
+                "active_alerts": len(self.resource_monitor.active_alerts),
+            }
+        else:
+            stats["resource_monitoring"] = {"enabled": False}
+
+        # Add resource allocation stats if available
+        if self.allocation_enabled:
+            stats["resource_allocation"] = self.get_current_resource_allocation()
+        else:
+            stats["resource_allocation"] = {"enabled": False}
+
+        return stats
