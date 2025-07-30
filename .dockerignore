@@ -1,0 +1,125 @@
+# Git and version control
+.git/
+.github/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+docs/
+README*
+CHANGELOG*
+LICENSE*
+
+# Test files and directories
+tests/
+test/
+**/*test.py
+**/*_test.py
+**/test_*.py
+.pytest_cache/
+.coverage
+htmlcov/
+.nyc_output/
+
+# Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.*
+!.env.ml_template
+.envrc
+
+# Logs and temporary files
+logs/
+*.log
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Output and generated files
+output/
+out/
+reports/
+*.csv
+*.json
+*.xlsx
+*.xls
+
+# ML artifacts and models
+models/
+mlruns/
+artifacts/
+checkpoints/
+*.pkl
+*.joblib
+*.h5
+*.ckpt
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Node.js (if any)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Archive and backup files
+*.zip
+*.tar.gz
+*.rar
+*.7z
+*.bak
+*.backup
+
+# Claude task files (development only)
+.claude/
+
+# Development scripts (if not needed in container)
+scripts/dev/
+utilities/dev/
