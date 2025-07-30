@@ -18,7 +18,9 @@ help:
 	@echo "  make logs      - Show all service logs"
 	@echo "  make health    - Check API health"
 	@echo "  make status    - Show container status"
-	@echo "  make test      - Run basic API tests"
+	@echo "  make test      - Run basic API tests
+  make test-full - Run comprehensive integration tests
+  make recover   - Intelligent container recovery"
 	@echo ""
 	@echo "Development:"
 	@echo "  make build     - Build/rebuild containers"
@@ -87,6 +89,16 @@ test:
 	@curl -s http://localhost/api/v1/predict/test_game > /dev/null && echo "✅ Predictions OK" || echo "❌ Predictions failed"
 	@echo "Testing models endpoint..."
 	@curl -s http://localhost/api/v1/models/active > /dev/null && echo "✅ Models OK" || echo "❌ Models failed"
+
+# Comprehensive integration tests
+test-full:
+	@echo "🧪 Running comprehensive integration tests..."
+	@./scripts/test-docker-stack.sh
+
+# Intelligent container recovery
+recover:
+	@echo "🔧 Starting intelligent container recovery..."
+	@./scripts/docker-recovery.sh recover
 
 # Logging
 logs:
