@@ -14,6 +14,7 @@ from src.interfaces.cli.commands.cleanup import cleanup
 from src.interfaces.cli.commands.data import DataCommands
 from src.interfaces.cli.commands.data_quality_improvement import data_quality_group
 from src.interfaces.cli.commands.game_outcomes import outcomes
+from src.interfaces.cli.commands.ml_training import register_ml_training_commands
 from src.interfaces.cli.commands.monitoring import MonitoringCommands
 from src.interfaces.cli.commands.movement_analysis import movement
 from src.interfaces.cli.commands.pipeline import pipeline
@@ -57,6 +58,7 @@ cli.add_command(data_quality_group)  # Add the data quality improvement commands
 cli.add_command(pipeline)  # Add the pipeline management commands
 # Old staging commands removed - use historical approach via action-network pipeline
 cli.add_command(cleanup)  # Add the output folder cleanup command
+register_ml_training_commands(cli)  # Add ML training commands
 
 
 if __name__ == "__main__":
