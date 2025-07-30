@@ -34,7 +34,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.live import Live
-from rich.layout import Layout  
+from rich.layout import Layout
 from rich.text import Text
 
 from ....core.config import UnifiedSettings
@@ -47,7 +47,9 @@ from ....services.monitoring.collector_health_service import (
     HealthStatus,
 )
 from ....services.monitoring.prometheus_metrics_service import get_metrics_service
-from ....services.orchestration.pipeline_orchestration_service import pipeline_orchestration_service
+from ....services.orchestration.pipeline_orchestration_service import (
+    pipeline_orchestration_service,
+)
 
 logger = get_logger(__name__, LogComponent.CLI)
 console = Console()
@@ -327,31 +329,34 @@ class MonitoringCommands:
         @click.option(
             "--host",
             default="0.0.0.0",
-            help="Dashboard host address (default: 0.0.0.0)"
+            help="Dashboard host address (default: 0.0.0.0)",
         )
         @click.option(
             "--port",
             default=8001,
             type=click.IntRange(1024, 65535),
-            help="Dashboard port (default: 8001)"
+            help="Dashboard port (default: 8001)",
         )
         @click.option(
-            "--reload",
-            is_flag=True,
-            help="Enable auto-reload for development"
+            "--reload", is_flag=True, help="Enable auto-reload for development"
         )
         def start_dashboard(host: str, port: int, reload: bool):
             """Start the real-time monitoring dashboard server."""
             try:
                 console.print("🚀 Starting MLB Betting System Monitoring Dashboard...")
-                console.print(f"📊 Dashboard will be available at: [bold blue]http://{host}:{port}[/bold blue]")
-                console.print(f"📈 API documentation at: [bold blue]http://{host}:{port}/api/docs[/bold blue]")
+                console.print(
+                    f"📊 Dashboard will be available at: [bold blue]http://{host}:{port}[/bold blue]"
+                )
+                console.print(
+                    f"📈 API documentation at: [bold blue]http://{host}:{port}/api/docs[/bold blue]"
+                )
                 console.print("🛑 Press Ctrl+C to stop the dashboard")
-                
+
                 # Import and run the dashboard
                 from ....interfaces.api.monitoring_dashboard import run_dashboard
+
                 run_dashboard(host=host, port=port)
-                
+
             except KeyboardInterrupt:
                 console.print("\n🛑 Dashboard stopped by user")
             except Exception as e:
@@ -362,44 +367,58 @@ class MonitoringCommands:
         @click.option(
             "--dashboard-url",
             default="http://localhost:8001",
-            help="Dashboard URL to check (default: http://localhost:8001)"
+            help="Dashboard URL to check (default: http://localhost:8001)",
         )
         @click.option(
             "--detailed",
             is_flag=True,
-            help="Show detailed system status including metrics"
+            help="Show detailed system status including metrics",
         )
         def dashboard_status(dashboard_url: str, detailed: bool):
             """Check dashboard and system status via API."""
             try:
                 import httpx
-                
-                console.print(f"🔍 Checking dashboard status at [bold]{dashboard_url}[/bold]...")
-                
+
+                console.print(
+                    f"🔍 Checking dashboard status at [bold]{dashboard_url}[/bold]..."
+                )
+
                 # Check dashboard health
                 with httpx.Client(timeout=10.0) as client:
                     try:
                         health_response = client.get(f"{dashboard_url}/api/health")
                         if health_response.status_code == 200:
-                            console.print("✅ Dashboard is [bold green]healthy[/bold green]")
-                            
+                            console.print(
+                                "✅ Dashboard is [bold green]healthy[/bold green]"
+                            )
+
                             if detailed:
                                 # Get system health
-                                system_response = client.get(f"{dashboard_url}/api/system/health")
+                                system_response = client.get(
+                                    f"{dashboard_url}/api/system/health"
+                                )
                                 if system_response.status_code == 200:
                                     system_data = system_response.json()
                                     _display_dashboard_system_status(system_data)
                                 else:
-                                    console.print("⚠️ Could not retrieve detailed system status")
+                                    console.print(
+                                        "⚠️ Could not retrieve detailed system status"
+                                    )
                         else:
-                            console.print(f"❌ Dashboard unhealthy - HTTP {health_response.status_code}")
-                            
+                            console.print(
+                                f"❌ Dashboard unhealthy - HTTP {health_response.status_code}"
+                            )
+
                     except httpx.ConnectError:
                         console.print("❌ Dashboard is not running or not accessible")
-                        console.print(f"💡 Start dashboard with: [bold]uv run -m src.interfaces.cli monitoring dashboard[/bold]")
-                        
+                        console.print(
+                            f"💡 Start dashboard with: [bold]uv run -m src.interfaces.cli monitoring dashboard[/bold]"
+                        )
+
             except ImportError:
-                console.print("❌ httpx library not available - install with: pip install httpx")
+                console.print(
+                    "❌ httpx library not available - install with: pip install httpx"
+                )
             except Exception as e:
                 logger.error(f"Status check failed: {e}")
                 console.print(f"❌ Status check failed: {str(e)}")
@@ -408,47 +427,66 @@ class MonitoringCommands:
         @click.option(
             "--dashboard-url",
             default="http://localhost:8001",
-            help="Dashboard URL to connect to (default: http://localhost:8001)"
+            help="Dashboard URL to connect to (default: http://localhost:8001)",
         )
         @click.option(
             "--update-interval",
             default=5,
             type=click.IntRange(1, 60),
-            help="Update interval in seconds (1-60, default: 5)"
+            help="Update interval in seconds (1-60, default: 5)",
         )
         def live_monitoring(dashboard_url: str, update_interval: int):
             """Connect to live monitoring dashboard for real-time updates."""
             try:
                 import httpx
-                
-                console.print(f"🔗 Connecting to live monitoring at [bold]{dashboard_url}[/bold]...")
-                console.print(f"🔄 Update interval: [bold]{update_interval} seconds[/bold]")
+
+                console.print(
+                    f"🔗 Connecting to live monitoring at [bold]{dashboard_url}[/bold]..."
+                )
+                console.print(
+                    f"🔄 Update interval: [bold]{update_interval} seconds[/bold]"
+                )
                 console.print("🛑 Press Ctrl+C to stop monitoring")
-                
+
                 with Live(console=console, refresh_per_second=1) as live:
                     try:
                         while True:
                             with httpx.Client(timeout=10.0) as client:
                                 try:
                                     # Get system health
-                                    response = client.get(f"{dashboard_url}/api/system/health")
+                                    response = client.get(
+                                        f"{dashboard_url}/api/system/health"
+                                    )
                                     if response.status_code == 200:
                                         data = response.json()
-                                        live_display = _create_live_monitoring_display(data)
+                                        live_display = _create_live_monitoring_display(
+                                            data
+                                        )
                                         live.update(live_display)
                                     else:
-                                        live.update(Panel("❌ Failed to fetch system health", style="red"))
-                                        
+                                        live.update(
+                                            Panel(
+                                                "❌ Failed to fetch system health",
+                                                style="red",
+                                            )
+                                        )
+
                                 except httpx.ConnectError:
-                                    live.update(Panel("❌ Dashboard not accessible", style="red"))
-                                
+                                    live.update(
+                                        Panel(
+                                            "❌ Dashboard not accessible", style="red"
+                                        )
+                                    )
+
                             asyncio.run(asyncio.sleep(update_interval))
-                            
+
                     except KeyboardInterrupt:
                         console.print("\n🛑 Live monitoring stopped")
-                        
+
             except ImportError:
-                console.print("❌ httpx library not available - install with: pip install httpx")
+                console.print(
+                    "❌ httpx library not available - install with: pip install httpx"
+                )
             except Exception as e:
                 logger.error(f"Live monitoring failed: {e}")
                 console.print(f"❌ Live monitoring failed: {str(e)}")
@@ -458,71 +496,85 @@ class MonitoringCommands:
             "--pipeline-type",
             default="full",
             type=click.Choice(["full", "data_only", "analysis_only"]),
-            help="Type of pipeline to execute"
+            help="Type of pipeline to execute",
         )
         @click.option(
-            "--force",
-            is_flag=True,
-            help="Force execution regardless of system state"
+            "--force", is_flag=True, help="Force execution regardless of system state"
         )
         @click.option(
             "--dashboard-url",
             default="http://localhost:8001",
-            help="Dashboard URL for manual execution (default: http://localhost:8001)"
+            help="Dashboard URL for manual execution (default: http://localhost:8001)",
         )
         def manual_execute(pipeline_type: str, force: bool, dashboard_url: str):
             """Manually execute pipeline via dashboard API (break-glass procedure)."""
             try:
                 import httpx
-                
-                console.print(f"🚨 [bold red]BREAK-GLASS PROCEDURE[/bold red]: Manual pipeline execution")
+
+                console.print(
+                    f"🚨 [bold red]BREAK-GLASS PROCEDURE[/bold red]: Manual pipeline execution"
+                )
                 console.print(f"📋 Pipeline type: [bold]{pipeline_type}[/bold]")
                 console.print(f"⚡ Force execution: [bold]{force}[/bold]")
-                
-                if not click.confirm("⚠️  Are you sure you want to manually execute this pipeline?"):
+
+                if not click.confirm(
+                    "⚠️  Are you sure you want to manually execute this pipeline?"
+                ):
                     console.print("❌ Manual execution cancelled")
                     return
-                
+
                 reason = click.prompt("📝 Please provide a reason for manual execution")
-                
+
                 console.print(f"🔄 Executing {pipeline_type} pipeline via dashboard...")
-                
+
                 with httpx.Client(timeout=120.0) as client:
                     try:
                         response = client.post(
                             f"{dashboard_url}/api/control/pipeline/execute",
                             params={
                                 "pipeline_type": pipeline_type,
-                                "force_execution": force
-                            }
+                                "force_execution": force,
+                            },
                         )
-                        
+
                         if response.status_code == 200:
                             result = response.json()
-                            console.print("✅ Pipeline execution initiated successfully")
-                            console.print(f"📋 Pipeline ID: [bold]{result.get('pipeline_id')}[/bold]")
-                            console.print(f"📊 Status: [bold]{result.get('status')}[/bold]")
+                            console.print(
+                                "✅ Pipeline execution initiated successfully"
+                            )
+                            console.print(
+                                f"📋 Pipeline ID: [bold]{result.get('pipeline_id')}[/bold]"
+                            )
+                            console.print(
+                                f"📊 Status: [bold]{result.get('status')}[/bold]"
+                            )
                             console.print(f"💬 Message: {result.get('message')}")
-                            
+
                             # Log the manual execution
                             logger.warning(
                                 "Manual pipeline execution via CLI",
                                 pipeline_type=pipeline_type,
                                 force_execution=force,
                                 reason=reason,
-                                pipeline_id=result.get('pipeline_id')
+                                pipeline_id=result.get("pipeline_id"),
                             )
-                            
+
                         else:
-                            console.print(f"❌ Pipeline execution failed - HTTP {response.status_code}")
+                            console.print(
+                                f"❌ Pipeline execution failed - HTTP {response.status_code}"
+                            )
                             console.print(f"📋 Response: {response.text}")
-                            
+
                     except httpx.ConnectError:
                         console.print("❌ Dashboard not accessible")
-                        console.print("💡 Ensure dashboard is running with: [bold]uv run -m src.interfaces.cli monitoring dashboard[/bold]")
-                        
+                        console.print(
+                            "💡 Ensure dashboard is running with: [bold]uv run -m src.interfaces.cli monitoring dashboard[/bold]"
+                        )
+
             except ImportError:
-                console.print("❌ httpx library not available - install with: pip install httpx")
+                console.print(
+                    "❌ httpx library not available - install with: pip install httpx"
+                )
             except Exception as e:
                 logger.error(f"Manual execution failed: {e}")
                 console.print(f"❌ Manual execution failed: {str(e)}")
@@ -849,49 +901,58 @@ def _get_simulated_alert_history(
 
 def _display_dashboard_system_status(data: dict):
     """Display dashboard system status in formatted output."""
-    
-    status_color = "green" if data.get("overall_status") == "healthy" else "yellow" if data.get("overall_status") == "warning" else "red"
-    
+
+    status_color = (
+        "green"
+        if data.get("overall_status") == "healthy"
+        else "yellow"
+        if data.get("overall_status") == "warning"
+        else "red"
+    )
+
     # System overview panel
     system_content = f"""
-[bold]Overall Status:[/bold] [{status_color}]{data.get('overall_status', 'unknown').upper()}[/{status_color}]
-[bold]Uptime:[/bold] {int(data.get('uptime_seconds', 0) // 3600)}h {int((data.get('uptime_seconds', 0) % 3600) // 60)}m
-[bold]Active Pipelines:[/bold] {data.get('active_pipelines', 0)}
-[bold]Success Rate:[/bold] {data.get('recent_success_rate', 0):.1f}%
-[bold]Data Freshness Score:[/bold] {data.get('data_freshness_score', 0):.2f}
+[bold]Overall Status:[/bold] [{status_color}]{data.get("overall_status", "unknown").upper()}[/{status_color}]
+[bold]Uptime:[/bold] {int(data.get("uptime_seconds", 0) // 3600)}h {int((data.get("uptime_seconds", 0) % 3600) // 60)}m
+[bold]Active Pipelines:[/bold] {data.get("active_pipelines", 0)}
+[bold]Success Rate:[/bold] {data.get("recent_success_rate", 0):.1f}%
+[bold]Data Freshness Score:[/bold] {data.get("data_freshness_score", 0):.2f}
 """
-    
-    console.print(Panel(system_content, title="System Health Overview", border_style=status_color))
-    
+
+    console.print(
+        Panel(system_content, title="System Health Overview", border_style=status_color)
+    )
+
     # System load metrics
-    system_load = data.get('system_load', {})
+    system_load = data.get("system_load", {})
     if system_load:
         load_table = Table(title="System Load Metrics")
         load_table.add_column("Metric", style="cyan")
         load_table.add_column("Value", justify="right")
-        
+
         load_table.add_row("CPU Usage", f"{system_load.get('cpu_usage', 0):.1f}%")
         load_table.add_row("Memory Usage", f"{system_load.get('memory_usage', 0):.1f}%")
         load_table.add_row("Disk Usage", f"{system_load.get('disk_usage', 0):.1f}%")
-        
+
         console.print(load_table)
-    
+
     # Active alerts
-    alerts = data.get('alerts', [])
+    alerts = data.get("alerts", [])
     if alerts:
         alert_table = Table(title="Active Alerts")
         alert_table.add_column("Level", style="red")
         alert_table.add_column("Title")
         alert_table.add_column("Message")
-        
+
         for alert in alerts[:5]:  # Show max 5 alerts
-            level_color = "red" if alert.get('level') == 'critical' else "yellow"
+            level_color = "red" if alert.get("level") == "critical" else "yellow"
             alert_table.add_row(
                 f"[{level_color}]{alert.get('level', 'unknown').upper()}[/{level_color}]",
-                alert.get('title', 'Unknown'),
-                alert.get('message', 'No message')[:50] + ('...' if len(alert.get('message', '')) > 50 else '')
+                alert.get("title", "Unknown"),
+                alert.get("message", "No message")[:50]
+                + ("..." if len(alert.get("message", "")) > 50 else ""),
             )
-        
+
         console.print(alert_table)
     else:
         console.print("[green]✅ No active alerts[/green]")
@@ -899,44 +960,51 @@ def _display_dashboard_system_status(data: dict):
 
 def _create_live_monitoring_display(data: dict) -> Panel:
     """Create live monitoring display layout."""
-    
-    status_color = "green" if data.get("overall_status") == "healthy" else "yellow" if data.get("overall_status") == "warning" else "red"
-    
+
+    status_color = (
+        "green"
+        if data.get("overall_status") == "healthy"
+        else "yellow"
+        if data.get("overall_status") == "warning"
+        else "red"
+    )
+
     # Create layout
     layout = Layout()
-    layout.split_column(
-        Layout(name="header", size=3),
-        Layout(name="body")
-    )
-    
-    layout["body"].split_row(
-        Layout(name="left"),
-        Layout(name="right")
-    )
-    
+    layout.split_column(Layout(name="header", size=3), Layout(name="body"))
+
+    layout["body"].split_row(Layout(name="left"), Layout(name="right"))
+
     # Header with timestamp
     from datetime import datetime
+
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    header_text = Text(f"MLB Betting System - Live Monitoring | {timestamp}", style="bold blue")
+    header_text = Text(
+        f"MLB Betting System - Live Monitoring | {timestamp}", style="bold blue"
+    )
     layout["header"].update(Panel(header_text, style="blue"))
-    
+
     # Left panel - System status
     status_content = f"""
-[bold]Status:[/bold] [{status_color}]{data.get('overall_status', 'unknown').upper()}[/{status_color}]
-[bold]Uptime:[/bold] {int(data.get('uptime_seconds', 0) // 3600)}h {int((data.get('uptime_seconds', 0) % 3600) // 60)}m
-[bold]Active Pipelines:[/bold] {data.get('active_pipelines', 0)}
-[bold]Success Rate:[/bold] {data.get('recent_success_rate', 0):.1f}%
+[bold]Status:[/bold] [{status_color}]{data.get("overall_status", "unknown").upper()}[/{status_color}]
+[bold]Uptime:[/bold] {int(data.get("uptime_seconds", 0) // 3600)}h {int((data.get("uptime_seconds", 0) % 3600) // 60)}m
+[bold]Active Pipelines:[/bold] {data.get("active_pipelines", 0)}
+[bold]Success Rate:[/bold] {data.get("recent_success_rate", 0):.1f}%
 """
-    layout["left"].update(Panel(status_content, title="System Health", border_style=status_color))
-    
+    layout["left"].update(
+        Panel(status_content, title="System Health", border_style=status_color)
+    )
+
     # Right panel - System load
-    system_load = data.get('system_load', {})
+    system_load = data.get("system_load", {})
     load_content = f"""
-[bold]CPU:[/bold] {system_load.get('cpu_usage', 0):.1f}%
-[bold]Memory:[/bold] {system_load.get('memory_usage', 0):.1f}%
-[bold]Disk:[/bold] {system_load.get('disk_usage', 0):.1f}%
-[bold]Data Freshness:[/bold] {data.get('data_freshness_score', 0):.2f}
+[bold]CPU:[/bold] {system_load.get("cpu_usage", 0):.1f}%
+[bold]Memory:[/bold] {system_load.get("memory_usage", 0):.1f}%
+[bold]Disk:[/bold] {system_load.get("disk_usage", 0):.1f}%
+[bold]Data Freshness:[/bold] {data.get("data_freshness_score", 0):.2f}
 """
-    layout["right"].update(Panel(load_content, title="System Load", border_style="blue"))
-    
+    layout["right"].update(
+        Panel(load_content, title="System Load", border_style="blue")
+    )
+
     return Panel(layout, title="Live System Monitoring", border_style="bright_blue")

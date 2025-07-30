@@ -80,9 +80,7 @@ class StagingZoneProcessor(BaseZoneProcessor):
             "pointsbet": "PointsBet",
         }
 
-    async def process_record(
-        self, record: DataRecord, **kwargs
-    ) -> DataRecord | None:
+    async def process_record(self, record: DataRecord, **kwargs) -> DataRecord | None:
         """
         Process a single RAW record into a clean STAGING record.
 

@@ -215,7 +215,9 @@ class EnhancedLoggingService:
                 error=str(e),
                 endpoint=otlp_endpoint,
             )
-            self._cleanup_opentelemetry_resources(span_processor, otlp_exporter, tracer_provider)
+            self._cleanup_opentelemetry_resources(
+                span_processor, otlp_exporter, tracer_provider
+            )
             raise
         except ConnectionError as e:
             self.logger.error(
@@ -223,7 +225,9 @@ class EnhancedLoggingService:
                 error=str(e),
                 endpoint=otlp_endpoint,
             )
-            self._cleanup_opentelemetry_resources(span_processor, otlp_exporter, tracer_provider)
+            self._cleanup_opentelemetry_resources(
+                span_processor, otlp_exporter, tracer_provider
+            )
             raise
         except (ImportError, ModuleNotFoundError) as e:
             self.logger.error(
@@ -231,7 +235,9 @@ class EnhancedLoggingService:
                 error=str(e),
                 endpoint=otlp_endpoint,
             )
-            self._cleanup_opentelemetry_resources(span_processor, otlp_exporter, tracer_provider)
+            self._cleanup_opentelemetry_resources(
+                span_processor, otlp_exporter, tracer_provider
+            )
             raise
         except (TimeoutError, OSError) as e:
             self.logger.error(
@@ -239,7 +245,9 @@ class EnhancedLoggingService:
                 error=str(e),
                 endpoint=otlp_endpoint,
             )
-            self._cleanup_opentelemetry_resources(span_processor, otlp_exporter, tracer_provider)
+            self._cleanup_opentelemetry_resources(
+                span_processor, otlp_exporter, tracer_provider
+            )
             raise
         except RuntimeError as e:
             self.logger.error(
@@ -247,7 +255,9 @@ class EnhancedLoggingService:
                 error=str(e),
                 endpoint=otlp_endpoint,
             )
-            self._cleanup_opentelemetry_resources(span_processor, otlp_exporter, tracer_provider)
+            self._cleanup_opentelemetry_resources(
+                span_processor, otlp_exporter, tracer_provider
+            )
             raise
         except Exception as e:
             self.logger.error(
@@ -256,10 +266,14 @@ class EnhancedLoggingService:
                 error_type=type(e).__name__,
                 endpoint=otlp_endpoint,
             )
-            self._cleanup_opentelemetry_resources(span_processor, otlp_exporter, tracer_provider)
+            self._cleanup_opentelemetry_resources(
+                span_processor, otlp_exporter, tracer_provider
+            )
             raise
 
-    def _cleanup_opentelemetry_resources(self, span_processor, otlp_exporter, tracer_provider):
+    def _cleanup_opentelemetry_resources(
+        self, span_processor, otlp_exporter, tracer_provider
+    ):
         """Clean up OpenTelemetry resources in proper order to prevent memory leaks."""
         # Clean up span processor first
         if span_processor:
@@ -468,16 +482,22 @@ class EnhancedLoggingService:
             try:
                 correlation_id_var.reset(token_correlation)
             except (LookupError, RuntimeError) as e:
-                cleanup_errors.append(f"Error resetting correlation_id context variable: {e}")
+                cleanup_errors.append(
+                    f"Error resetting correlation_id context variable: {e}"
+                )
             except Exception as e:
                 cleanup_errors.append(f"Unexpected error resetting correlation_id: {e}")
 
             try:
                 operation_context_var.reset(token_op_context)
             except (LookupError, RuntimeError) as e:
-                cleanup_errors.append(f"Error resetting operation_context variable: {e}")
+                cleanup_errors.append(
+                    f"Error resetting operation_context variable: {e}"
+                )
             except Exception as e:
-                cleanup_errors.append(f"Unexpected error resetting operation_context: {e}")
+                cleanup_errors.append(
+                    f"Unexpected error resetting operation_context: {e}"
+                )
 
             # Log all cleanup errors at once if any occurred
             if cleanup_errors:
@@ -637,16 +657,24 @@ class EnhancedLoggingService:
             try:
                 correlation_id_var.reset(token_correlation)
             except (LookupError, RuntimeError) as e:
-                cleanup_errors.append(f"Error resetting async correlation_id context variable: {e}")
+                cleanup_errors.append(
+                    f"Error resetting async correlation_id context variable: {e}"
+                )
             except Exception as e:
-                cleanup_errors.append(f"Unexpected error resetting async correlation_id: {e}")
+                cleanup_errors.append(
+                    f"Unexpected error resetting async correlation_id: {e}"
+                )
 
             try:
                 operation_context_var.reset(token_op_context)
             except (LookupError, RuntimeError) as e:
-                cleanup_errors.append(f"Error resetting async operation_context variable: {e}")
+                cleanup_errors.append(
+                    f"Error resetting async operation_context variable: {e}"
+                )
             except Exception as e:
-                cleanup_errors.append(f"Unexpected error resetting async operation_context: {e}")
+                cleanup_errors.append(
+                    f"Unexpected error resetting async operation_context: {e}"
+                )
 
             # Log all cleanup errors at once if any occurred
             if cleanup_errors:

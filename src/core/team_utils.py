@@ -134,14 +134,14 @@ def normalize_team_name(team_name: str) -> str:
     # Enhanced input validation
     if not team_name or not isinstance(team_name, str):
         return "UNK"  # Unknown team fallback
-    
+
     # Security: Prevent extremely long input strings that could cause issues
     if len(team_name) > 100:
         return "UNK"  # Reject suspiciously long inputs
 
     # Clean the input
     clean_name = team_name.strip()
-    
+
     # Handle empty string after stripping
     if not clean_name:
         return "UNK"

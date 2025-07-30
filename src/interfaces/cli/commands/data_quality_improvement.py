@@ -374,9 +374,7 @@ async def _health_check(connection):
     # Check data quality views
     try:
         async with connection.get_async_connection() as conn:
-            await conn.fetchval(
-                "SELECT COUNT(*) FROM curated.data_quality_dashboard"
-            )
+            await conn.fetchval("SELECT COUNT(*) FROM curated.data_quality_dashboard")
         click.echo("✅ Data Quality Views: OK")
     except Exception as e:
         click.echo(f"❌ Data Quality Views: FAILED - {str(e)}")

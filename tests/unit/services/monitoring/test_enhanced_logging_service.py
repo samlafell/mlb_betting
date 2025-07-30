@@ -52,27 +52,27 @@ class TestEnhancedLoggingServiceInitialization:
     def test_service_initialization(self, enhanced_logging):
         """Test that service initializes with all required components."""
         assert enhanced_logging is not None
-        assert hasattr(enhanced_logging, 'tracer')
-        assert hasattr(enhanced_logging, 'logger')
-        assert hasattr(enhanced_logging, 'performance_thresholds')
+        assert hasattr(enhanced_logging, "tracer")
+        assert hasattr(enhanced_logging, "logger")
+        assert hasattr(enhanced_logging, "performance_thresholds")
 
     def test_performance_thresholds(self, enhanced_logging):
         """Test that performance thresholds are properly defined."""
         thresholds = enhanced_logging.performance_thresholds
 
-        assert 'excellent' in thresholds
-        assert 'good' in thresholds
-        assert 'acceptable' in thresholds
-        assert 'slow' in thresholds
+        assert "excellent" in thresholds
+        assert "good" in thresholds
+        assert "acceptable" in thresholds
+        assert "slow" in thresholds
 
         # Verify threshold ordering
-        assert thresholds['excellent'] < thresholds['good']
-        assert thresholds['good'] < thresholds['acceptable']
-        assert thresholds['acceptable'] < thresholds['slow']
+        assert thresholds["excellent"] < thresholds["good"]
+        assert thresholds["good"] < thresholds["acceptable"]
+        assert thresholds["acceptable"] < thresholds["slow"]
 
     def test_correlation_id_context_variable(self, enhanced_logging):
         """Test that correlation ID context variable is properly initialized."""
-        assert hasattr(enhanced_logging, 'correlation_id_var')
+        assert hasattr(enhanced_logging, "correlation_id_var")
         assert isinstance(enhanced_logging.correlation_id_var, ContextVar)
 
 
@@ -85,7 +85,7 @@ class TestCorrelationIDManagement:
 
         assert isinstance(correlation_id, str)
         assert len(correlation_id) > 0
-        assert '-' in correlation_id  # UUID format
+        assert "-" in correlation_id  # UUID format
 
     def test_generate_unique_correlation_ids(self, enhanced_logging):
         """Test that correlation IDs are unique."""
@@ -129,7 +129,7 @@ class TestOperationContext:
             correlation_id="test-corr-456",
             start_time=time.time(),
             metadata={"key": "value"},
-            span=Mock()
+            span=Mock(),
         )
 
         assert context.operation_id == "test-op-123"
@@ -145,7 +145,7 @@ class TestOperationContext:
             operation_id="test-op",
             operation_name="test",
             correlation_id="test-corr",
-            start_time=time.time()
+            start_time=time.time(),
         )
 
         assert context.metadata is None
@@ -163,7 +163,7 @@ class TestPerformanceMetrics:
             memory_peak=1024,
             io_operations=15,
             cache_hits=8,
-            cache_misses=2
+            cache_misses=2,
         )
 
         assert metrics.duration == 1.25
@@ -179,9 +179,9 @@ class TestPerformanceMetrics:
         result = metrics.to_dict()
 
         assert isinstance(result, dict)
-        assert 'duration' in result
-        assert 'performance_class' in result
-        assert result['duration'] == 0.5
+        assert "duration" in result
+        assert "performance_class" in result
+        assert result["duration"] == 0.5
 
     def test_performance_classification_excellent(self):
         """Test excellent performance classification."""
@@ -222,7 +222,7 @@ class TestPerformanceMetrics:
 class TestSyncOperationContext:
     """Test synchronous operation context manager."""
 
-    @patch('src.core.enhanced_logging.trace')
+    @patch("src.core.enhanced_logging.trace")
     def test_sync_operation_context_basic(self, mock_trace, enhanced_logging):
         """Test basic synchronous operation context."""
         mock_tracer = Mock()
@@ -240,7 +240,7 @@ class TestSyncOperationContext:
             assert context.correlation_id is not None
             assert context.start_time is not None
 
-    @patch('src.core.enhanced_logging.trace')
+    @patch("src.core.enhanced_logging.trace")
     def test_sync_operation_context_with_metadata(self, mock_trace, enhanced_logging):
         """Test synchronous operation context with metadata."""
         mock_tracer = Mock()
@@ -254,13 +254,14 @@ class TestSyncOperationContext:
         metadata = {"pipeline_id": "test-123", "stage": "data_collection"}
 
         with enhanced_logging.operation_context(
-            "test_operation",
-            metadata=metadata
+            "test_operation", metadata=metadata
         ) as context:
             assert context.metadata == metadata
 
-    @patch('src.core.enhanced_logging.trace')
-    def test_sync_operation_context_with_existing_correlation_id(self, mock_trace, enhanced_logging):
+    @patch("src.core.enhanced_logging.trace")
+    def test_sync_operation_context_with_existing_correlation_id(
+        self, mock_trace, enhanced_logging
+    ):
         """Test using existing correlation ID in sync context."""
         mock_tracer = Mock()
         mock_span = Mock()
@@ -273,8 +274,7 @@ class TestSyncOperationContext:
         existing_id = "existing-correlation-123"
 
         with enhanced_logging.operation_context(
-            "test_operation",
-            correlation_id=existing_id
+            "test_operation", correlation_id=existing_id
         ) as context:
             assert context.correlation_id == existing_id
 
@@ -282,31 +282,39 @@ class TestSyncOperationContext:
 class TestAsyncOperationContext:
     """Test asynchronous operation context manager."""
 
-    @patch('src.core.enhanced_logging.trace')
+    @patch("src.core.enhanced_logging.trace")
     @pytest.mark.asyncio
     async def test_async_operation_context_basic(self, mock_trace, enhanced_logging):
         """Test basic asynchronous operation context."""
         mock_tracer = Mock()
         mock_span = Mock()
-        mock_tracer.start_span.return_value.__aenter__ = AsyncMock(return_value=mock_span)
+        mock_tracer.start_span.return_value.__aenter__ = AsyncMock(
+            return_value=mock_span
+        )
         mock_tracer.start_span.return_value.__aexit__ = AsyncMock(return_value=None)
         mock_trace.get_tracer.return_value = mock_tracer
 
         enhanced_logging.tracer = mock_tracer
 
-        async with enhanced_logging.async_operation_context("async_test_operation") as context:
+        async with enhanced_logging.async_operation_context(
+            "async_test_operation"
+        ) as context:
             assert isinstance(context, OperationContext)
             assert context.operation_name == "async_test_operation"
             assert context.operation_id is not None
             assert context.correlation_id is not None
 
-    @patch('src.core.enhanced_logging.trace')
+    @patch("src.core.enhanced_logging.trace")
     @pytest.mark.asyncio
-    async def test_async_operation_context_with_tags(self, mock_trace, enhanced_logging):
+    async def test_async_operation_context_with_tags(
+        self, mock_trace, enhanced_logging
+    ):
         """Test asynchronous operation context with tags."""
         mock_tracer = Mock()
         mock_span = Mock()
-        mock_tracer.start_span.return_value.__aenter__ = AsyncMock(return_value=mock_span)
+        mock_tracer.start_span.return_value.__aenter__ = AsyncMock(
+            return_value=mock_span
+        )
         mock_tracer.start_span.return_value.__aexit__ = AsyncMock(return_value=None)
         mock_trace.get_tracer.return_value = mock_tracer
 
@@ -315,8 +323,7 @@ class TestAsyncOperationContext:
         tags = {"service": "betting_system", "version": "1.0"}
 
         async with enhanced_logging.async_operation_context(
-            "async_test_operation",
-            tags=tags
+            "async_test_operation", tags=tags
         ) as context:
             assert context.operation_name == "async_test_operation"
             # Tags would be applied to span internally
@@ -335,7 +342,7 @@ class TestPipelineEventLogging:
         enhanced_logging.log_pipeline_start(
             pipeline_id=pipeline_id,
             pipeline_type=pipeline_type,
-            correlation_id=correlation_id
+            correlation_id=correlation_id,
         )
 
     def test_log_pipeline_start_with_metadata(self, enhanced_logging):
@@ -349,7 +356,7 @@ class TestPipelineEventLogging:
             pipeline_id=pipeline_id,
             pipeline_type=pipeline_type,
             correlation_id=correlation_id,
-            metadata=metadata
+            metadata=metadata,
         )
 
     def test_log_pipeline_complete(self, enhanced_logging):
@@ -365,7 +372,7 @@ class TestPipelineEventLogging:
             pipeline_type=pipeline_type,
             correlation_id=correlation_id,
             duration=duration,
-            status=status
+            status=status,
         )
 
     def test_log_pipeline_complete_with_results(self, enhanced_logging):
@@ -383,7 +390,7 @@ class TestPipelineEventLogging:
             correlation_id=correlation_id,
             duration=duration,
             status=status,
-            results=results
+            results=results,
         )
 
     def test_log_pipeline_failed(self, enhanced_logging):
@@ -399,7 +406,7 @@ class TestPipelineEventLogging:
             pipeline_type=pipeline_type,
             correlation_id=correlation_id,
             duration=duration,
-            error=error
+            error=error,
         )
 
     def test_log_pipeline_failed_with_details(self, enhanced_logging):
@@ -417,14 +424,14 @@ class TestPipelineEventLogging:
             correlation_id=correlation_id,
             duration=duration,
             error=error,
-            error_details=error_details
+            error_details=error_details,
         )
 
 
 class TestErrorHandlingAndSpanStatus:
     """Test error handling and OpenTelemetry span status management."""
 
-    @patch('src.core.enhanced_logging.trace')
+    @patch("src.core.enhanced_logging.trace")
     def test_span_error_handling_in_context(self, mock_trace, enhanced_logging):
         """Test that exceptions are properly handled in operation context."""
         mock_tracer = Mock()
@@ -442,20 +449,24 @@ class TestErrorHandlingAndSpanStatus:
         # Verify span exit was called (which should handle the error)
         mock_tracer.start_span.return_value.__exit__.assert_called_once()
 
-    @patch('src.core.enhanced_logging.trace')
+    @patch("src.core.enhanced_logging.trace")
     @pytest.mark.asyncio
     async def test_async_span_error_handling(self, mock_trace, enhanced_logging):
         """Test that exceptions are properly handled in async operation context."""
         mock_tracer = Mock()
         mock_span = Mock()
-        mock_tracer.start_span.return_value.__aenter__ = AsyncMock(return_value=mock_span)
+        mock_tracer.start_span.return_value.__aenter__ = AsyncMock(
+            return_value=mock_span
+        )
         mock_tracer.start_span.return_value.__aexit__ = AsyncMock(return_value=None)
         mock_trace.get_tracer.return_value = mock_tracer
 
         enhanced_logging.tracer = mock_tracer
 
         with pytest.raises(RuntimeError):
-            async with enhanced_logging.async_operation_context("async_error_operation"):
+            async with enhanced_logging.async_operation_context(
+                "async_error_operation"
+            ):
                 raise RuntimeError("Test async error for span handling")
 
         # Verify async span exit was called
@@ -476,11 +487,7 @@ class TestPerformanceMetrics:
     def test_log_performance_metrics_with_metadata(self, enhanced_logging):
         """Test performance metrics logging with additional data."""
         operation = "api_call"
-        metrics = PerformanceMetrics(
-            duration=0.85,
-            memory_peak=2048,
-            io_operations=10
-        )
+        metrics = PerformanceMetrics(duration=0.85, memory_peak=2048, io_operations=10)
 
         # Should not raise any exceptions
         enhanced_logging.log_performance_metrics(operation, metrics)
@@ -491,10 +498,10 @@ class TestIntegrationWithExistingServices:
 
     def test_logger_integration(self, enhanced_logging):
         """Test integration with existing logging system."""
-        assert hasattr(enhanced_logging, 'logger')
+        assert hasattr(enhanced_logging, "logger")
         assert enhanced_logging.logger is not None
 
-    @patch('src.core.enhanced_logging.trace.get_tracer')
+    @patch("src.core.enhanced_logging.trace.get_tracer")
     def test_opentelemetry_tracer_integration(self, mock_get_tracer, enhanced_logging):
         """Test OpenTelemetry tracer integration."""
         mock_tracer = Mock()
@@ -548,5 +555,5 @@ class TestPerformanceMetricsIntegration:
         # Test that metrics can be converted to dict for logging
         metrics_dict = metrics.to_dict()
         assert isinstance(metrics_dict, dict)
-        assert 'duration' in metrics_dict
-        assert 'performance_class' in metrics_dict
+        assert "duration" in metrics_dict
+        assert "performance_class" in metrics_dict

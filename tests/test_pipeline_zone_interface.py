@@ -6,7 +6,6 @@ Tests for zone interface and progression logic.
 Tests the first phase pipeline implementation components.
 """
 
-
 import pytest
 
 

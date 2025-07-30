@@ -841,7 +841,9 @@ async def main():
         print(
             "   SELECT home_team, away_team, sportsbook, home_ml, away_ml, updated_at"
         )
-        print("   FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'")
+        print(
+            "   FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'"
+        )
         print("   WHERE home_team = 'CHC' AND date(game_datetime) = '2025-07-18'")
         print("   ORDER BY updated_at;")
 

@@ -127,8 +127,16 @@ class PrometheusMetricsService:
     def _init_pipeline_histograms(self):
         """Initialize pipeline latency tracking histograms."""
         # Get configurable bucket values from monitoring settings with fallback defaults
-        pipeline_buckets = getattr(self.settings.monitoring, 'pipeline_duration_buckets', [1, 5, 10, 30, 60, 120, 300, 600])
-        stage_buckets = getattr(self.settings.monitoring, 'pipeline_stage_duration_buckets', [0.1, 0.5, 1, 2, 5, 10, 30, 60])
+        pipeline_buckets = getattr(
+            self.settings.monitoring,
+            "pipeline_duration_buckets",
+            [1, 5, 10, 30, 60, 120, 300, 600],
+        )
+        stage_buckets = getattr(
+            self.settings.monitoring,
+            "pipeline_stage_duration_buckets",
+            [0.1, 0.5, 1, 2, 5, 10, 30, 60],
+        )
 
         self.pipeline_duration_seconds = Histogram(
             "mlb_pipeline_duration_seconds",
@@ -261,7 +269,11 @@ class PrometheusMetricsService:
             "mlb_database_query_duration_seconds",
             "Database query execution time",
             ["query_type"],
-            buckets=getattr(self.settings.monitoring, 'database_query_duration_buckets', [0.001, 0.01, 0.1, 0.5, 1, 2, 5, 10]),
+            buckets=getattr(
+                self.settings.monitoring,
+                "database_query_duration_buckets",
+                [0.001, 0.01, 0.1, 0.5, 1, 2, 5, 10],
+            ),
             registry=self.registry,
         )
 
@@ -270,7 +282,11 @@ class PrometheusMetricsService:
             "mlb_external_api_duration_seconds",
             "External API response time",
             ["api_name", "endpoint"],
-            buckets=getattr(self.settings.monitoring, 'api_call_duration_buckets', [0.1, 0.5, 1, 2, 5, 10, 30, 60]),
+            buckets=getattr(
+                self.settings.monitoring,
+                "api_call_duration_buckets",
+                [0.1, 0.5, 1, 2, 5, 10, 30, 60],
+            ),
             registry=self.registry,
         )
 
@@ -435,7 +451,9 @@ class PrometheusMetricsService:
         if not status or not status.strip():
             raise ValueError("Status cannot be empty or None")
         if not isinstance(stages_executed, int) or stages_executed < 0:
-            raise ValueError(f"Stages executed must be a non-negative integer, got: {stages_executed}")
+            raise ValueError(
+                f"Stages executed must be a non-negative integer, got: {stages_executed}"
+            )
 
         # Sanitize inputs
         pipeline_id = pipeline_id.strip()
@@ -735,7 +753,9 @@ class PrometheusMetricsService:
         query_type = query_type.strip()
 
         try:
-            self.database_query_duration_seconds.labels(query_type=query_type).observe(duration)
+            self.database_query_duration_seconds.labels(query_type=query_type).observe(
+                duration
+            )
         except Exception as e:
             self.logger.error(f"Error recording database query metric: {e}")
             raise
@@ -761,13 +781,17 @@ class PrometheusMetricsService:
 
         # Use configured sample rate if none provided and sampling is enabled
         if sample_rate is None:
-            if getattr(self.settings.monitoring, 'enable_metrics_sampling', False):
-                sample_rate = getattr(self.settings.monitoring, 'metrics_sample_rate', 0.1)
+            if getattr(self.settings.monitoring, "enable_metrics_sampling", False):
+                sample_rate = getattr(
+                    self.settings.monitoring, "metrics_sample_rate", 0.1
+                )
             else:
                 sample_rate = 1.0
 
         if not 0.0 <= sample_rate <= 1.0:
-            raise ValueError(f"Sample rate must be between 0.0 and 1.0, got: {sample_rate}")
+            raise ValueError(
+                f"Sample rate must be between 0.0 and 1.0, got: {sample_rate}"
+            )
 
         # Apply sampling for high-volume operations
         if sample_rate < 1.0 and random.random() > sample_rate:

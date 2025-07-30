@@ -33,15 +33,19 @@ async def test_line_movement_filtering():
 
         # Test 1: Validate no post-game movements in new view
         print("\n1. Validating no post-game movements...")
-        result = await conn.fetchrow("SELECT * FROM staging.validate_no_post_game_movements()")
+        result = await conn.fetchrow(
+            "SELECT * FROM staging.validate_no_post_game_movements()"
+        )
 
         if result:
             print(f"   Total movements: {result['total_movements']:,}")
-            print(f"   Time range: {result['min_minutes_before']:.1f} to {result['max_minutes_before']:.1f} minutes before game")
+            print(
+                f"   Time range: {result['min_minutes_before']:.1f} to {result['max_minutes_before']:.1f} minutes before game"
+            )
             print(f"   Post-game count: {result['post_game_count']}")
             print(f"   Status: {result['validation_status']}")
 
-            if result['post_game_count'] == 0:
+            if result["post_game_count"] == 0:
                 print("   ✅ PASS: No post-game movements detected")
             else:
                 print("   ❌ FAIL: Post-game movements still present")
@@ -105,7 +109,9 @@ async def test_line_movement_filtering():
             print("   Timing Category     | Movements | Sharp Moves | Avg Quality")
             print("   -------------------|-----------|-------------|------------")
             for stat in timing_stats:
-                print(f"   {stat['timing_category']:<18} | {stat['movement_count']:>8,} | {stat['sharp_moves']:>10,} | {stat['avg_quality']:>10}")
+                print(
+                    f"   {stat['timing_category']:<18} | {stat['movement_count']:>8,} | {stat['sharp_moves']:>10,} | {stat['avg_quality']:>10}"
+                )
         else:
             print("   ⚠️  No timing statistics available")
 
@@ -132,10 +138,16 @@ async def test_line_movement_filtering():
         if recent_games:
             print("   Recent games with significant line movement activity:")
             for game in recent_games:
-                start_time = game['game_start_time'].strftime('%Y-%m-%d %H:%M %Z') if game['game_start_time'] else 'Unknown'
+                start_time = (
+                    game["game_start_time"].strftime("%Y-%m-%d %H:%M %Z")
+                    if game["game_start_time"]
+                    else "Unknown"
+                )
                 print(f"   📈 {game['home_team']} vs {game['away_team']}")
                 print(f"      Start: {start_time}")
-                print(f"      Movements: {game['total_movements']}, Very Late: {game['very_late_moves']}, Largest: {game['largest_move']}")
+                print(
+                    f"      Movements: {game['total_movements']}, Very Late: {game['very_late_moves']}, Largest: {game['largest_move']}"
+                )
         else:
             print("   ⚠️  No recent games with significant movement activity found")
 
@@ -159,10 +171,18 @@ async def test_line_movement_filtering():
             """)
 
             if sample_sharp:
-                print(f"   📊 Top sharp action: {sample_sharp['home_team']} vs {sample_sharp['away_team']}")
-                print(f"      {sample_sharp['sportsbook_name']} {sample_sharp['market_type']}")
-                print(f"      {sample_sharp['minutes_before_game']:.1f} min before, {sample_sharp['odds_change']} odds change")
-                print(f"      Intensity score: {sample_sharp['sharp_intensity_score']:.1f}/10")
+                print(
+                    f"   📊 Top sharp action: {sample_sharp['home_team']} vs {sample_sharp['away_team']}"
+                )
+                print(
+                    f"      {sample_sharp['sportsbook_name']} {sample_sharp['market_type']}"
+                )
+                print(
+                    f"      {sample_sharp['minutes_before_game']:.1f} min before, {sample_sharp['odds_change']} odds change"
+                )
+                print(
+                    f"      Intensity score: {sample_sharp['sharp_intensity_score']:.1f}/10"
+                )
         else:
             print("   ⚠️  No late sharp action detected (may be normal)")
 
@@ -170,7 +190,11 @@ async def test_line_movement_filtering():
         print("🎯 Line Movement Filter Test Complete")
 
         # Overall assessment
-        if result and result['post_game_count'] == 0 and pre_game_movements < all_movements:
+        if (
+            result
+            and result["post_game_count"] == 0
+            and pre_game_movements < all_movements
+        ):
             print("✅ SUCCESS: Post-game filtering is working correctly!")
         else:
             print("❌ ISSUES DETECTED: Please review the results above")

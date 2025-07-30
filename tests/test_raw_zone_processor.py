@@ -12,7 +12,6 @@ Comprehensive tests for the RAW zone processor functionality including:
 Reference: docs/SYSTEM_DESIGN_ANALYSIS.md
 """
 
-
 # Import pipeline components directly
 import sys
 from unittest.mock import AsyncMock, patch

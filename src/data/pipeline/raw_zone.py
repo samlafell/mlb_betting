@@ -65,9 +65,7 @@ class RawZoneProcessor(BaseZoneProcessor):
             "line_movements_raw": "raw_data.line_movements_raw",
         }
 
-    async def process_record(
-        self, record: DataRecord, **kwargs
-    ) -> DataRecord | None:
+    async def process_record(self, record: DataRecord, **kwargs) -> DataRecord | None:
         """
         Process a raw data record with minimal transformation.
 

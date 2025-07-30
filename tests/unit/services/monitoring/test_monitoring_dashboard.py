@@ -57,7 +57,7 @@ def sample_websocket_message():
     return WebSocketMessage(
         type="pipeline_update",
         data={"pipeline_id": "test-123", "status": "running"},
-        timestamp=datetime.now(timezone.utc)
+        timestamp=datetime.now(timezone.utc),
     )
 
 
@@ -77,7 +77,7 @@ class TestPydanticModels:
             successful_stages=4,
             failed_stages=0,
             system_state={"healthy": True},
-            recommendations=["Continue monitoring"]
+            recommendations=["Continue monitoring"],
         )
 
         assert response.pipeline_id == "test-pipeline-123"
@@ -96,7 +96,7 @@ class TestPydanticModels:
             active_pipelines=2,
             recent_success_rate=0.98,
             slo_compliance={"pipeline_latency": {"status": "healthy"}},
-            alerts=[]
+            alerts=[],
         )
 
         assert response.overall_status == "healthy"
@@ -112,7 +112,7 @@ class TestPydanticModels:
             business_metrics={"opportunities_detected": 25},
             system_metrics={"data_freshness": 45.2},
             sli_metrics={"availability": 0.995},
-            timestamp=timestamp
+            timestamp=timestamp,
         )
 
         assert "executions_total" in response.pipeline_metrics
@@ -121,10 +121,7 @@ class TestPydanticModels:
 
     def test_websocket_message_model(self):
         """Test WebSocketMessage model creation."""
-        message = WebSocketMessage(
-            type="system_health",
-            data={"status": "healthy"}
-        )
+        message = WebSocketMessage(type="system_health", data={"status": "healthy"})
 
         assert message.type == "system_health"
         assert message.data == {"status": "healthy"}
@@ -136,7 +133,7 @@ class TestPydanticModels:
         message = WebSocketMessage(
             type="alert",
             data={"level": "warning", "message": "High CPU usage"},
-            timestamp=timestamp
+            timestamp=timestamp,
         )
 
         assert message.timestamp == timestamp
@@ -157,7 +154,9 @@ class TestConnectionManager:
         assert connection_manager.connection_metadata[mock_websocket] == client_info
 
     @pytest.mark.asyncio
-    async def test_connect_websocket_without_client_info(self, connection_manager, mock_websocket):
+    async def test_connect_websocket_without_client_info(
+        self, connection_manager, mock_websocket
+    ):
         """Test WebSocket connection without client info."""
         await connection_manager.connect(mock_websocket)
 
@@ -184,9 +183,13 @@ class TestConnectionManager:
         assert mock_websocket not in connection_manager.active_connections
 
     @pytest.mark.asyncio
-    async def test_send_personal_message(self, connection_manager, mock_websocket, sample_websocket_message):
+    async def test_send_personal_message(
+        self, connection_manager, mock_websocket, sample_websocket_message
+    ):
         """Test sending personal message to WebSocket client."""
-        await connection_manager.send_personal_message(sample_websocket_message, mock_websocket)
+        await connection_manager.send_personal_message(
+            sample_websocket_message, mock_websocket
+        )
 
         mock_websocket.send_text.assert_called_once()
         # Verify message was serialized to JSON
@@ -196,20 +199,26 @@ class TestConnectionManager:
         json.loads(call_args)
 
     @pytest.mark.asyncio
-    async def test_send_personal_message_failure(self, connection_manager, mock_websocket, sample_websocket_message):
+    async def test_send_personal_message_failure(
+        self, connection_manager, mock_websocket, sample_websocket_message
+    ):
         """Test handling of send message failure."""
         mock_websocket.send_text.side_effect = Exception("Connection failed")
 
         # Add connection first
         connection_manager.active_connections.add(mock_websocket)
 
-        await connection_manager.send_personal_message(sample_websocket_message, mock_websocket)
+        await connection_manager.send_personal_message(
+            sample_websocket_message, mock_websocket
+        )
 
         # Should automatically disconnect on failure
         assert mock_websocket not in connection_manager.active_connections
 
     @pytest.mark.asyncio
-    async def test_broadcast_message(self, connection_manager, sample_websocket_message):
+    async def test_broadcast_message(
+        self, connection_manager, sample_websocket_message
+    ):
         """Test broadcasting message to all connected clients."""
         # Create multiple mock websockets
         websocket1 = Mock(spec=WebSocket)
@@ -226,20 +235,26 @@ class TestConnectionManager:
         websocket2.send_text.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_broadcast_message_no_connections(self, connection_manager, sample_websocket_message):
+    async def test_broadcast_message_no_connections(
+        self, connection_manager, sample_websocket_message
+    ):
         """Test broadcasting with no active connections."""
         # Should not raise exception
         await connection_manager.broadcast(sample_websocket_message)
 
     @pytest.mark.asyncio
-    async def test_broadcast_message_with_failures(self, connection_manager, sample_websocket_message):
+    async def test_broadcast_message_with_failures(
+        self, connection_manager, sample_websocket_message
+    ):
         """Test broadcasting with some connection failures."""
         # Create websockets - one success, one failure
         websocket_success = Mock(spec=WebSocket)
         websocket_success.send_text = AsyncMock()
 
         websocket_failure = Mock(spec=WebSocket)
-        websocket_failure.send_text = AsyncMock(side_effect=Exception("Connection failed"))
+        websocket_failure.send_text = AsyncMock(
+            side_effect=Exception("Connection failed")
+        )
 
         connection_manager.active_connections.add(websocket_success)
         connection_manager.active_connections.add(websocket_failure)
@@ -278,10 +293,16 @@ class TestRestAPIEndpoints:
         assert data["service"] == "monitoring-dashboard"
         assert data["version"] == "1.0.0"
 
-    @patch('src.interfaces.api.monitoring_dashboard.monitoring_service')
-    @patch('src.interfaces.api.monitoring_dashboard.pipeline_orchestration_service')
-    @patch('src.interfaces.api.monitoring_dashboard.metrics_service')
-    def test_get_system_health(self, mock_metrics_service, mock_pipeline_service, mock_monitoring_service, client):
+    @patch("src.interfaces.api.monitoring_dashboard.monitoring_service")
+    @patch("src.interfaces.api.monitoring_dashboard.pipeline_orchestration_service")
+    @patch("src.interfaces.api.monitoring_dashboard.metrics_service")
+    def test_get_system_health(
+        self,
+        mock_metrics_service,
+        mock_pipeline_service,
+        mock_monitoring_service,
+        client,
+    ):
         """Test system health endpoint."""
         # Mock monitoring service response
         mock_health_report = Mock()
@@ -298,12 +319,15 @@ class TestRestAPIEndpoints:
         mock_pipeline_service.get_metrics.return_value = {
             "combined_insights": {"recent_success_rate": 0.98}
         }
-        mock_pipeline_service.get_active_pipelines.return_value = ["pipeline1", "pipeline2"]
+        mock_pipeline_service.get_active_pipelines.return_value = [
+            "pipeline1",
+            "pipeline2",
+        ]
 
         # Mock Prometheus metrics
         mock_metrics_service.get_system_overview.return_value = {
             "uptime_seconds": 3600,
-            "slo_compliance": {"pipeline_latency": {"status": "healthy"}}
+            "slo_compliance": {"pipeline_latency": {"status": "healthy"}},
         }
 
         response = client.get("/api/system/health")
@@ -317,16 +341,22 @@ class TestRestAPIEndpoints:
         assert data["active_pipelines"] == 2
         assert data["recent_success_rate"] == 0.98
 
-    @patch('src.interfaces.api.monitoring_dashboard.monitoring_service')
+    @patch("src.interfaces.api.monitoring_dashboard.monitoring_service")
     def test_get_system_health_error(self, mock_monitoring_service, client):
         """Test system health endpoint with service error."""
-        mock_monitoring_service.get_system_health.side_effect = Exception("Service unavailable")
+        mock_monitoring_service.get_system_health.side_effect = Exception(
+            "Service unavailable"
+        )
 
         response = client.get("/api/system/health")
 
         # Should handle error gracefully (actual error handling depends on implementation)
         # This test verifies the endpoint doesn't crash
-        assert response.status_code in [200, 500, 503]  # Various acceptable error responses
+        assert response.status_code in [
+            200,
+            500,
+            503,
+        ]  # Various acceptable error responses
 
 
 class TestWebSocketIntegration:
@@ -348,7 +378,7 @@ class TestWebSocketIntegration:
         message_dict = {
             "type": "system_health",
             "data": {"status": "healthy"},
-            "timestamp": "2025-01-25T12:00:00Z"
+            "timestamp": "2025-01-25T12:00:00Z",
         }
 
         # Test model validation
@@ -361,21 +391,23 @@ class TestWebSocketIntegration:
 class TestBreakGlassControls:
     """Test break-glass manual control endpoints."""
 
-    @patch('src.interfaces.api.monitoring_dashboard.pipeline_orchestration_service')
-    @patch('src.interfaces.api.monitoring_dashboard.metrics_service')
-    def test_manual_pipeline_execution_endpoint(self, mock_metrics_service, mock_pipeline_service, client):
+    @patch("src.interfaces.api.monitoring_dashboard.pipeline_orchestration_service")
+    @patch("src.interfaces.api.monitoring_dashboard.metrics_service")
+    def test_manual_pipeline_execution_endpoint(
+        self, mock_metrics_service, mock_pipeline_service, client
+    ):
         """Test manual pipeline execution via API."""
         # Mock successful pipeline execution
         mock_pipeline_service.execute_smart_pipeline.return_value = {
             "pipeline_id": "manual-123",
             "status": "success",
-            "execution_time": 15.2
+            "execution_time": 15.2,
         }
 
         # This test would require the actual endpoint implementation
         # For now, test that the service integration points exist
-        assert hasattr(mock_pipeline_service, 'execute_smart_pipeline')
-        assert hasattr(mock_metrics_service, 'record_emergency_execution')
+        assert hasattr(mock_pipeline_service, "execute_smart_pipeline")
+        assert hasattr(mock_metrics_service, "record_emergency_execution")
 
     def test_system_override_capabilities(self):
         """Test that system override capabilities are available."""
@@ -387,9 +419,9 @@ class TestBreakGlassControls:
         metrics_service = get_metrics_service()
 
         # Should have break-glass metrics
-        assert hasattr(metrics_service, 'record_break_glass_activation')
-        assert hasattr(metrics_service, 'record_manual_override')
-        assert hasattr(metrics_service, 'record_emergency_execution')
+        assert hasattr(metrics_service, "record_break_glass_activation")
+        assert hasattr(metrics_service, "record_manual_override")
+        assert hasattr(metrics_service, "record_emergency_execution")
 
 
 class TestErrorHandling:
@@ -441,7 +473,9 @@ class TestDashboardHTMLGeneration:
         assert "<body" in html_content.lower()
 
         # Should contain dashboard-specific elements
-        assert "monitoring" in html_content.lower() or "dashboard" in html_content.lower()
+        assert (
+            "monitoring" in html_content.lower() or "dashboard" in html_content.lower()
+        )
 
     def test_dashboard_html_contains_javascript(self):
         """Test that dashboard HTML contains JavaScript for live updates."""
@@ -461,7 +495,10 @@ class TestCORSConfiguration:
         response = client.options("/api/health")
 
         # FastAPI with CORSMiddleware should handle OPTIONS requests
-        assert response.status_code in [200, 405]  # Either allowed or method not allowed
+        assert response.status_code in [
+            200,
+            405,
+        ]  # Either allowed or method not allowed
 
         # Test with actual request
         response = client.get("/api/health")
@@ -492,7 +529,7 @@ class TestAppConfiguration:
 class TestIntegrationWithServices:
     """Test integration with existing monitoring services."""
 
-    @patch('src.interfaces.api.monitoring_dashboard.monitoring_service')
+    @patch("src.interfaces.api.monitoring_dashboard.monitoring_service")
     def test_monitoring_service_integration(self, mock_monitoring_service):
         """Test integration with UnifiedMonitoringService."""
         from src.interfaces.api.monitoring_dashboard import monitoring_service
@@ -500,7 +537,7 @@ class TestIntegrationWithServices:
         # Should be initialized
         assert monitoring_service is not None
 
-    @patch('src.interfaces.api.monitoring_dashboard.metrics_service')
+    @patch("src.interfaces.api.monitoring_dashboard.metrics_service")
     def test_prometheus_metrics_integration(self, mock_metrics_service):
         """Test integration with PrometheusMetricsService."""
         from src.interfaces.api.monitoring_dashboard import metrics_service
@@ -508,7 +545,7 @@ class TestIntegrationWithServices:
         # Should be initialized
         assert metrics_service is not None
 
-    @patch('src.interfaces.api.monitoring_dashboard.pipeline_orchestration_service')
+    @patch("src.interfaces.api.monitoring_dashboard.pipeline_orchestration_service")
     def test_pipeline_orchestration_integration(self, mock_pipeline_service):
         """Test integration with PipelineOrchestrationService."""
         from src.interfaces.api.monitoring_dashboard import (
@@ -522,15 +559,15 @@ class TestIntegrationWithServices:
 class TestStartupAndShutdown:
     """Test app startup and shutdown events."""
 
-    @patch('src.interfaces.api.monitoring_dashboard.monitoring_service.initialize')
-    @patch('src.interfaces.api.monitoring_dashboard.asyncio.create_task')
+    @patch("src.interfaces.api.monitoring_dashboard.monitoring_service.initialize")
+    @patch("src.interfaces.api.monitoring_dashboard.asyncio.create_task")
     def test_startup_event(self, mock_create_task, mock_initialize):
         """Test startup event handler."""
         # The startup event is registered, test would require FastAPI test event handling
         # For now, verify the components are properly initialized
         assert mock_initialize is not None
 
-    @patch('src.interfaces.api.monitoring_dashboard.monitoring_service.cleanup')
+    @patch("src.interfaces.api.monitoring_dashboard.monitoring_service.cleanup")
     def test_shutdown_event(self, mock_cleanup):
         """Test shutdown event handler."""
         # The shutdown event is registered
@@ -546,10 +583,7 @@ class TestRealTimeUpdates:
         message_types = ["pipeline_update", "system_health", "metrics_update", "alert"]
 
         for msg_type in message_types:
-            message = WebSocketMessage(
-                type=msg_type,
-                data={"test": "data"}
-            )
+            message = WebSocketMessage(type=msg_type, data={"test": "data"})
 
             assert message.type == msg_type
             assert isinstance(message.data, dict)
@@ -562,7 +596,10 @@ class TestRealTimeUpdates:
 
         message = WebSocketMessage(
             type="system_health",
-            data={"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
+            data={
+                "status": "healthy",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
         )
 
         # Should not raise exception even with no connections

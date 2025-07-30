@@ -135,9 +135,7 @@ class CuratedZoneProcessor(BaseZoneProcessor):
                 error_message=str(e),
             )
 
-    async def process_record(
-        self, record: DataRecord, **kwargs
-    ) -> DataRecord | None:
+    async def process_record(self, record: DataRecord, **kwargs) -> DataRecord | None:
         """Process a single record from staging to curated."""
         return await self._enhance_record(record)
 

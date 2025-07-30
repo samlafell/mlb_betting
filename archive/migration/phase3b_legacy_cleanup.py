@@ -206,9 +206,18 @@ class Phase3BLegacyCleanup:
 
             # Check that new schema tables have data
             new_schema_tables = [
-                ("curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'", "moneyline"),
-                ("curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's", "spreads"),
-                ("curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'", "totals"),
+                (
+                    "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'",
+                    "moneyline",
+                ),
+                (
+                    "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's",
+                    "spreads",
+                ),
+                (
+                    "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'",
+                    "totals",
+                ),
                 ("curated.games_complete", "games"),
             ]
 
@@ -394,7 +403,11 @@ class Phase3BLegacyCleanup:
                     "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's",
                     "mlb_betting.spreads",
                 ),
-                ("totals", "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'", "mlb_betting.totals"),
+                (
+                    "totals",
+                    "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'",
+                    "mlb_betting.totals",
+                ),
             ]
 
             with self.db_manager.get_cursor() as cursor:

@@ -36,7 +36,7 @@ class MovementAnalyzer:
         """Robustly parse timestamp strings with various microsecond precisions."""
         if not timestamp_str:
             return datetime.now()
-        
+
         try:
             # First try direct parsing
             dt = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
@@ -46,30 +46,32 @@ class MovementAnalyzer:
             return dt
         except ValueError:
             pass
-        
+
         try:
             # Handle microsecond precision issues
             import re
-            
+
             # Match ISO format with optional microseconds
-            pattern = r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})?'
+            pattern = (
+                r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})?"
+            )
             match = re.match(pattern, timestamp_str)
-            
+
             if match:
                 date_time = match.group(1)
                 microseconds = match.group(2) or "0"
                 timezone = match.group(3) or "+00:00"
-                
+
                 # Normalize microseconds to 6 digits (pad or truncate)
                 if len(microseconds) > 6:
                     microseconds = microseconds[:6]
                 else:
-                    microseconds = microseconds.ljust(6, '0')
-                
+                    microseconds = microseconds.ljust(6, "0")
+
                 # Normalize timezone
                 if timezone == "Z":
                     timezone = "+00:00"
-                
+
                 # Reconstruct timestamp
                 normalized_timestamp = f"{date_time}.{microseconds}{timezone}"
                 dt = datetime.fromisoformat(normalized_timestamp)
@@ -79,7 +81,9 @@ class MovementAnalyzer:
                 return dt
             else:
                 # Fallback: try without microseconds
-                pattern_simple = r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(Z|[+-]\d{2}:\d{2})?'
+                pattern_simple = (
+                    r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(Z|[+-]\d{2}:\d{2})?"
+                )
                 match_simple = re.match(pattern_simple, timestamp_str)
                 if match_simple:
                     date_time = match_simple.group(1)
@@ -90,11 +94,11 @@ class MovementAnalyzer:
                     if dt.tzinfo is None:
                         dt = dt.replace(tzinfo=timezone.utc)
                     return dt
-                
+
         except Exception as e:
             print(f"Warning: Could not parse timestamp '{timestamp_str}': {e}")
             return datetime.now(timezone.utc)
-        
+
         # Final fallback
         print(f"Warning: Using current time for unparseable timestamp: {timestamp_str}")
         return datetime.now(timezone.utc)
@@ -554,7 +558,11 @@ class MovementAnalyzer:
 
                 if time_span <= 600:  # 10 minutes
                     # Handle both string and enum market types
-                    market_type_str = market_type.value if hasattr(market_type, 'value') else str(market_type)
+                    market_type_str = (
+                        market_type.value
+                        if hasattr(market_type, "value")
+                        else str(market_type)
+                    )
                     rapid_patterns.append(
                         f"{self.sportsbook_names.get(sportsbook_id, sportsbook_id)} {market_type_str}"
                     )
@@ -573,7 +581,7 @@ class MovementAnalyzer:
         recent_movements = defaultdict(list)
         current_time = datetime.now(timezone.utc)
         one_hour_ago = current_time.replace(hour=current_time.hour - 1)
-        
+
         for movement in movements:
             if movement.timestamp > one_hour_ago:  # Last hour
                 recent_movements[movement.market_type].append(movement)
@@ -592,7 +600,11 @@ class MovementAnalyzer:
                     min_odds = min(odds_values)
 
                     if max_odds - min_odds > 20:  # Significant discrepancy
-                        market_type_str = market_type.value if hasattr(market_type, 'value') else str(market_type)
+                        market_type_str = (
+                            market_type.value
+                            if hasattr(market_type, "value")
+                            else str(market_type)
+                        )
                         opportunities.append(
                             {
                                 "market_type": market_type_str,

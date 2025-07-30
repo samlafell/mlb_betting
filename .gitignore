@@ -68,3 +68,6 @@ original_vsin/
 
 ## Do not have .env in git
 **/.env
+
+**/scripts/archive/
+**/archive/

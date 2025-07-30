@@ -55,8 +55,8 @@ def sample_pipeline_update():
             "status": "running",
             "progress": 0.75,
             "current_stage": "data_analysis",
-            "estimated_completion": datetime.now(timezone.utc).isoformat()
-        }
+            "estimated_completion": datetime.now(timezone.utc).isoformat(),
+        },
     )
 
 
@@ -70,8 +70,8 @@ def sample_system_health_update():
             "cpu_usage": 0.35,
             "memory_usage": 0.52,
             "active_pipelines": 2,
-            "data_freshness_score": 0.96
-        }
+            "data_freshness_score": 0.96,
+        },
     )
 
 
@@ -86,7 +86,9 @@ class TestWebSocketConnectionManagement:
 
         mock_websocket.accept.assert_called_once()
         assert mock_websocket in manager.active_connections
-        assert manager.connection_metadata[mock_websocket]["client_id"] == "test-client-1"
+        assert (
+            manager.connection_metadata[mock_websocket]["client_id"] == "test-client-1"
+        )
 
         # Test disconnection
         manager.disconnect(mock_websocket)
@@ -124,7 +126,7 @@ class TestWebSocketConnectionManagement:
             "client_id": "dashboard-001",
             "user_agent": "Mozilla/5.0 (Test Browser)",
             "ip_address": "127.0.0.1",
-            "connection_time": datetime.now(timezone.utc).isoformat()
+            "connection_time": datetime.now(timezone.utc).isoformat(),
         }
 
         await manager.connect(mock_websocket, metadata)
@@ -254,10 +256,16 @@ class TestRealtimeBroadcasting:
 class TestDashboardAPIIntegration:
     """Test dashboard API integration with monitoring services."""
 
-    @patch('src.interfaces.api.monitoring_dashboard.monitoring_service')
-    @patch('src.interfaces.api.monitoring_dashboard.pipeline_orchestration_service')
-    @patch('src.interfaces.api.monitoring_dashboard.metrics_service')
-    def test_system_health_api_integration(self, mock_metrics_service, mock_pipeline_service, mock_monitoring_service, test_client):
+    @patch("src.interfaces.api.monitoring_dashboard.monitoring_service")
+    @patch("src.interfaces.api.monitoring_dashboard.pipeline_orchestration_service")
+    @patch("src.interfaces.api.monitoring_dashboard.metrics_service")
+    def test_system_health_api_integration(
+        self,
+        mock_metrics_service,
+        mock_pipeline_service,
+        mock_monitoring_service,
+        test_client,
+    ):
         """Test system health API integration with all monitoring services."""
         # Mock monitoring service
         mock_health_report = Mock()
@@ -274,12 +282,15 @@ class TestDashboardAPIIntegration:
         mock_pipeline_service.get_metrics.return_value = {
             "combined_insights": {"recent_success_rate": 0.98}
         }
-        mock_pipeline_service.get_active_pipelines.return_value = ["pipeline1", "pipeline2"]
+        mock_pipeline_service.get_active_pipelines.return_value = [
+            "pipeline1",
+            "pipeline2",
+        ]
 
         # Mock metrics service
         mock_metrics_service.get_system_overview.return_value = {
             "uptime_seconds": 3600,
-            "slo_compliance": {"pipeline_latency": {"status": "healthy"}}
+            "slo_compliance": {"pipeline_latency": {"status": "healthy"}},
         }
 
         # Test API call
@@ -295,7 +306,7 @@ class TestDashboardAPIIntegration:
         assert data["active_pipelines"] == 2
         assert data["recent_success_rate"] == 0.98
 
-    @patch('src.interfaces.api.monitoring_dashboard.metrics_service')
+    @patch("src.interfaces.api.monitoring_dashboard.metrics_service")
     def test_prometheus_metrics_integration(self, mock_metrics_service, test_client):
         """Test Prometheus metrics endpoint integration."""
         mock_metrics_service.get_metrics.return_value = """
@@ -306,7 +317,7 @@ mlb_pipeline_executions_total{pipeline_type="full",status="success"} 150
 
         # Note: This would test the actual metrics endpoint if implemented
         # For now, verify the metrics service integration exists
-        assert hasattr(mock_metrics_service, 'get_metrics')
+        assert hasattr(mock_metrics_service, "get_metrics")
 
     def test_dashboard_html_serving(self, test_client):
         """Test dashboard HTML page serving."""
@@ -318,7 +329,9 @@ mlb_pipeline_executions_total{pipeline_type="full",status="success"} 150
         # Should contain dashboard HTML
         html_content = response.text
         assert "<html" in html_content.lower()
-        assert "dashboard" in html_content.lower() or "monitoring" in html_content.lower()
+        assert (
+            "dashboard" in html_content.lower() or "monitoring" in html_content.lower()
+        )
 
 
 class TestRealTimeSystemUpdates:
@@ -339,8 +352,8 @@ class TestRealTimeSystemUpdates:
                 "current_stage": "data_collection",
                 "stages_completed": 2,
                 "stages_total": 4,
-                "estimated_completion": datetime.now(timezone.utc).isoformat()
-            }
+                "estimated_completion": datetime.now(timezone.utc).isoformat(),
+            },
         )
 
         # Verify message structure
@@ -360,18 +373,18 @@ class TestRealTimeSystemUpdates:
                 "pipeline_metrics": {
                     "active_pipelines": 3,
                     "completed_today": 25,
-                    "success_rate": 0.96
+                    "success_rate": 0.96,
                 },
                 "system_metrics": {
                     "cpu_usage": 0.42,
                     "memory_usage": 0.58,
-                    "disk_usage": 0.35
+                    "disk_usage": 0.35,
                 },
                 "business_metrics": {
                     "opportunities_detected": 15,
-                    "total_value_identified": 1250.75
-                }
-            }
+                    "total_value_identified": 1250.75,
+                },
+            },
         )
 
         # Verify message structure
@@ -396,9 +409,9 @@ class TestRealTimeSystemUpdates:
                 "details": {
                     "current_usage": 0.85,
                     "threshold": 0.80,
-                    "duration_minutes": 5
-                }
-            }
+                    "duration_minutes": 5,
+                },
+            },
         )
 
         # Verify alert message structure
@@ -411,17 +424,21 @@ class TestRealTimeSystemUpdates:
 class TestBreakGlassControlsIntegration:
     """Test break-glass manual controls integration."""
 
-    @patch('src.interfaces.api.monitoring_dashboard.pipeline_orchestration_service')
-    @patch('src.interfaces.api.monitoring_dashboard.metrics_service')
-    def test_manual_pipeline_execution_api(self, mock_metrics_service, mock_pipeline_service, test_client):
+    @patch("src.interfaces.api.monitoring_dashboard.pipeline_orchestration_service")
+    @patch("src.interfaces.api.monitoring_dashboard.metrics_service")
+    def test_manual_pipeline_execution_api(
+        self, mock_metrics_service, mock_pipeline_service, test_client
+    ):
         """Test manual pipeline execution via API."""
         # Mock successful pipeline execution
-        mock_pipeline_service.execute_smart_pipeline = AsyncMock(return_value=Mock(
-            pipeline_id="manual-execution-123",
-            status="success",
-            execution_time_seconds=15.2,
-            stages_executed=4
-        ))
+        mock_pipeline_service.execute_smart_pipeline = AsyncMock(
+            return_value=Mock(
+                pipeline_id="manual-execution-123",
+                status="success",
+                execution_time_seconds=15.2,
+                stages_executed=4,
+            )
+        )
 
         # Mock metrics recording
         mock_metrics_service.record_break_glass_activation = Mock()
@@ -431,13 +448,13 @@ class TestBreakGlassControlsIntegration:
         request_data = {
             "pipeline_type": "data_only",
             "force": True,
-            "reason": "Emergency data collection needed"
+            "reason": "Emergency data collection needed",
         }
 
         # Note: This would test the actual manual execution endpoint
         # For now, verify the service integration exists
-        assert hasattr(mock_pipeline_service, 'execute_smart_pipeline')
-        assert hasattr(mock_metrics_service, 'record_break_glass_activation')
+        assert hasattr(mock_pipeline_service, "execute_smart_pipeline")
+        assert hasattr(mock_metrics_service, "record_break_glass_activation")
 
     @pytest.mark.asyncio
     async def test_break_glass_websocket_notification(self):
@@ -451,8 +468,8 @@ class TestBreakGlassControlsIntegration:
                 "initiated_by": "dashboard_user",
                 "pipeline_id": "emergency-execution-456",
                 "estimated_duration": 300,  # seconds
-                "status": "in_progress"
-            }
+                "status": "in_progress",
+            },
         )
 
         # Create mock connection
@@ -470,14 +487,14 @@ class TestBreakGlassControlsIntegration:
         # Clean up
         manager.disconnect(mock_websocket)
 
-    @patch('src.interfaces.api.monitoring_dashboard.metrics_service')
+    @patch("src.interfaces.api.monitoring_dashboard.metrics_service")
     def test_system_override_controls(self, mock_metrics_service, test_client):
         """Test system override control endpoints."""
         mock_metrics_service.record_manual_override = Mock()
 
         # Test that override capabilities are available
-        assert hasattr(mock_metrics_service, 'record_manual_override')
-        assert hasattr(mock_metrics_service, 'record_break_glass_activation')
+        assert hasattr(mock_metrics_service, "record_manual_override")
+        assert hasattr(mock_metrics_service, "record_break_glass_activation")
 
 
 class TestMultiClientWebSocketHandling:
@@ -499,7 +516,7 @@ class TestMultiClientWebSocketHandling:
         # Create admin-only message
         admin_message = WebSocketMessage(
             type="admin_alert",
-            data={"message": "System maintenance required", "sensitive": True}
+            data={"message": "System maintenance required", "sensitive": True},
         )
 
         # For now, broadcast to all (selective broadcasting would require implementation)
@@ -527,7 +544,9 @@ class TestMultiClientWebSocketHandling:
         await manager.connect(metrics_client, {"subscriptions": ["metrics_updates"]})
 
         # Send different message types
-        pipeline_message = WebSocketMessage(type="pipeline_update", data={"status": "running"})
+        pipeline_message = WebSocketMessage(
+            type="pipeline_update", data={"status": "running"}
+        )
         metrics_message = WebSocketMessage(type="metrics_update", data={"cpu": 0.5})
 
         await manager.broadcast(pipeline_message)
@@ -633,7 +652,9 @@ class TestDashboardPerformanceIntegration:
         avg_response_time = sum(response_times) / len(response_times)
 
         # Response time should be reasonable (< 100ms average)
-        assert avg_response_time < 0.1, f"Average response time too high: {avg_response_time:.3f}s"
+        assert avg_response_time < 0.1, (
+            f"Average response time too high: {avg_response_time:.3f}s"
+        )
 
 
 class TestIntegrationErrorHandling:
@@ -669,11 +690,13 @@ class TestIntegrationErrorHandling:
         # Clean up
         manager.disconnect(stable_ws)
 
-    @patch('src.interfaces.api.monitoring_dashboard.monitoring_service')
+    @patch("src.interfaces.api.monitoring_dashboard.monitoring_service")
     def test_api_service_failure_handling(self, mock_monitoring_service, test_client):
         """Test API handling when underlying services fail."""
         # Mock service failure
-        mock_monitoring_service.get_system_health.side_effect = Exception("Service unavailable")
+        mock_monitoring_service.get_system_health.side_effect = Exception(
+            "Service unavailable"
+        )
 
         # API should handle the failure gracefully
         response = test_client.get("/api/system/health")

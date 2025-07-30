@@ -9,7 +9,7 @@ from .models import (
     MarketFeatures,
     TeamFeatures,
     BettingSplitsFeatures,
-    BaseFeatureExtractor
+    BaseFeatureExtractor,
 )
 
 from .temporal_features import TemporalFeatureExtractor
@@ -21,7 +21,7 @@ from .feature_pipeline import FeaturePipeline
 __all__ = [
     "FeatureVector",
     "TemporalFeatures",
-    "MarketFeatures", 
+    "MarketFeatures",
     "TeamFeatures",
     "BettingSplitsFeatures",
     "BaseFeatureExtractor",
@@ -29,5 +29,5 @@ __all__ = [
     "MarketFeatureExtractor",
     "TeamFeatureExtractor",
     "BettingSplitsFeatureExtractor",
-    "FeaturePipeline"
+    "FeaturePipeline",
 ]

@@ -8,7 +8,6 @@ Focuses on testing the core pipeline components in isolation.
 Reference: docs/PIPELINE_IMPLEMENTATION_GUIDE.md
 """
 
-
 import pytest
 
 # Test the zone interface components directly

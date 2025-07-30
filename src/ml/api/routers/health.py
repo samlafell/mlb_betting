@@ -17,7 +17,9 @@ router = APIRouter()
 
 
 @router.get("/health")
-async def health_check(redis_client: redis.Redis = Depends(get_redis_client)) -> Dict[str, Any]:
+async def health_check(
+    redis_client: redis.Redis = Depends(get_redis_client),
+) -> Dict[str, Any]:
     """
     Health check endpoint for the ML prediction service
     """
@@ -26,58 +28,58 @@ async def health_check(redis_client: redis.Redis = Depends(get_redis_client)) ->
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
         "version": "0.1.0",
-        "checks": {}
+        "checks": {},
     }
-    
+
     # Check Redis connection
     try:
         await redis_client.ping()
         health_status["checks"]["redis"] = {
             "status": "healthy",
-            "message": "Redis connection successful"
+            "message": "Redis connection successful",
         }
     except Exception as e:
         logger.error(f"Redis health check failed: {e}")
         health_status["checks"]["redis"] = {
-            "status": "unhealthy", 
-            "message": f"Redis connection failed: {str(e)}"
+            "status": "unhealthy",
+            "message": f"Redis connection failed: {str(e)}",
         }
         health_status["status"] = "degraded"
-    
+
     # Check database connection (basic)
     try:
         # TODO: Add database health check
         health_status["checks"]["database"] = {
             "status": "healthy",
-            "message": "Database connection not implemented yet"
+            "message": "Database connection not implemented yet",
         }
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
         health_status["checks"]["database"] = {
             "status": "unhealthy",
-            "message": f"Database connection failed: {str(e)}"
+            "message": f"Database connection failed: {str(e)}",
         }
         health_status["status"] = "unhealthy"
-    
+
     # Check MLflow connection
     try:
         # TODO: Add MLflow health check
         health_status["checks"]["mlflow"] = {
-            "status": "healthy", 
-            "message": "MLflow connection not implemented yet"
+            "status": "healthy",
+            "message": "MLflow connection not implemented yet",
         }
     except Exception as e:
         logger.error(f"MLflow health check failed: {e}")
         health_status["checks"]["mlflow"] = {
             "status": "unhealthy",
-            "message": f"MLflow connection failed: {str(e)}"
+            "message": f"MLflow connection failed: {str(e)}",
         }
         health_status["status"] = "degraded"
-    
+
     # Return appropriate HTTP status
     if health_status["status"] == "unhealthy":
         raise HTTPException(status_code=503, detail=health_status)
-    
+
     return health_status
 
 
@@ -89,7 +91,7 @@ async def readiness_check() -> Dict[str, Any]:
     return {
         "service": "mlb-ml-prediction-api",
         "ready": True,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.utcnow().isoformat(),
     }
 
 
@@ -99,7 +101,7 @@ async def liveness_check() -> Dict[str, Any]:
     Liveness check - indicates if service is alive
     """
     return {
-        "service": "mlb-ml-prediction-api", 
+        "service": "mlb-ml-prediction-api",
         "alive": True,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.utcnow().isoformat(),
     }

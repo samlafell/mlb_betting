@@ -45,13 +45,9 @@ class OutcomeMetric(BaseModel):
     )
 
     # Metric values
-    predicted_value: Decimal | None = Field(
-        None, description="Predicted outcome value"
-    )
+    predicted_value: Decimal | None = Field(None, description="Predicted outcome value")
     actual_value: Decimal | None = Field(None, description="Actual outcome value")
-    accuracy_score: float | None = Field(
-        None, description="Accuracy score (0.0-1.0)"
-    )
+    accuracy_score: float | None = Field(None, description="Accuracy score (0.0-1.0)")
     confidence_level: float | None = Field(
         None, description="Confidence level (0.0-1.0)"
     )
@@ -476,9 +472,7 @@ class OutcomeMetricsService:
             logger.error(f"Failed to store outcome metric: {e}")
             raise
 
-    async def _get_game_data_quality_score(
-        self, game_external_id: str
-    ) -> float | None:
+    async def _get_game_data_quality_score(self, game_external_id: str) -> float | None:
         """Get the data quality score for a game."""
         try:
             async with get_connection() as conn:
@@ -588,7 +582,9 @@ class OutcomeMetricsService:
                 sum_a = sum(accuracy_scores)
                 sum_q2 = sum(q * q for q in quality_scores)
                 sum_a2 = sum(a * a for a in accuracy_scores)
-                sum_qa = sum(q * a for q, a in zip(quality_scores, accuracy_scores, strict=False))
+                sum_qa = sum(
+                    q * a for q, a in zip(quality_scores, accuracy_scores, strict=False)
+                )
 
                 numerator = n * sum_qa - sum_q * sum_a
                 denominator = (

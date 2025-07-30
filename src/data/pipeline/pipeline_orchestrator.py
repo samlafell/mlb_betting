@@ -504,9 +504,7 @@ class DataPipelineOrchestrator:
         except Exception as e:
             logger.error(f"Error logging pipeline execution: {e}")
 
-    async def get_execution_status(
-        self, execution_id: UUID
-    ) -> dict[str, Any] | None:
+    async def get_execution_status(self, execution_id: UUID) -> dict[str, Any] | None:
         """Get status of a pipeline execution."""
         execution = self.active_executions.get(execution_id)
         if not execution:

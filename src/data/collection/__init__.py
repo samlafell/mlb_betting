@@ -66,7 +66,7 @@ __all__ = [
     # Centralized Registry
     "CollectorRegistry",
     "get_collector_class",
-    "get_collector_instance", 
+    "get_collector_instance",
     "initialize_all_collectors",
     "get_registry_status",
     "clear_collector_cache",

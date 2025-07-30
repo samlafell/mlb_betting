@@ -407,7 +407,11 @@ class Phase3TestSuite:
                     "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'spread's",
                     "mlb_betting.spreads",
                 ),
-                ("totals", "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'", "mlb_betting.totals"),
+                (
+                    "totals",
+                    "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'",
+                    "mlb_betting.totals",
+                ),
             ]
 
             with self.db_manager.get_cursor() as cursor:

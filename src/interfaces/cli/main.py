@@ -47,7 +47,9 @@ monitoring_commands = MonitoringCommands()
 
 # Add command groups
 cli.add_command(data_commands.create_group(), name="data")
-cli.add_command(monitoring_commands.create_group(), name="monitoring")  # Add monitoring commands
+cli.add_command(
+    monitoring_commands.create_group(), name="monitoring"
+)  # Add monitoring commands
 cli.add_command(batch_collection)  # Add the batch collection commands
 cli.add_command(movement)  # Add the new movement analysis commands
 cli.add_command(action_network)  # Add the complete Action Network pipeline

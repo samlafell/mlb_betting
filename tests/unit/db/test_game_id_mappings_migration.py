@@ -30,13 +30,17 @@ class TestGameIDMappingsMigration:
         # Setup - ensure clean state
         async with get_connection() as conn:
             # Drop test data if exists
-            await conn.execute("DELETE FROM staging.game_id_mappings WHERE mlb_stats_api_game_id LIKE 'TEST_%'")
+            await conn.execute(
+                "DELETE FROM staging.game_id_mappings WHERE mlb_stats_api_game_id LIKE 'TEST_%'"
+            )
 
         yield
 
         # Teardown - clean up test data
         async with get_connection() as conn:
-            await conn.execute("DELETE FROM staging.game_id_mappings WHERE mlb_stats_api_game_id LIKE 'TEST_%'")
+            await conn.execute(
+                "DELETE FROM staging.game_id_mappings WHERE mlb_stats_api_game_id LIKE 'TEST_%'"
+            )
 
     async def test_table_creation(self):
         """Test that the game_id_mappings table exists with proper structure."""
@@ -59,25 +63,36 @@ class TestGameIDMappingsMigration:
                 ORDER BY ordinal_position
             """)
 
-            column_dict = {col['column_name']: col for col in columns}
+            column_dict = {col["column_name"]: col for col in columns}
 
             # Verify key columns exist
             expected_columns = [
-                'id', 'mlb_stats_api_game_id', 'action_network_game_id',
-                'vsin_game_id', 'sbd_game_id', 'sbr_game_id',
-                'home_team', 'away_team', 'game_date', 'game_datetime',
-                'resolution_confidence', 'primary_source', 'last_verified_at',
-                'verification_attempts', 'created_at', 'updated_at'
+                "id",
+                "mlb_stats_api_game_id",
+                "action_network_game_id",
+                "vsin_game_id",
+                "sbd_game_id",
+                "sbr_game_id",
+                "home_team",
+                "away_team",
+                "game_date",
+                "game_datetime",
+                "resolution_confidence",
+                "primary_source",
+                "last_verified_at",
+                "verification_attempts",
+                "created_at",
+                "updated_at",
             ]
 
             for col_name in expected_columns:
                 assert col_name in column_dict, f"Column {col_name} should exist"
 
             # Verify NOT NULL constraints
-            assert column_dict['mlb_stats_api_game_id']['is_nullable'] == 'NO'
-            assert column_dict['home_team']['is_nullable'] == 'NO'
-            assert column_dict['away_team']['is_nullable'] == 'NO'
-            assert column_dict['game_date']['is_nullable'] == 'NO'
+            assert column_dict["mlb_stats_api_game_id"]["is_nullable"] == "NO"
+            assert column_dict["home_team"]["is_nullable"] == "NO"
+            assert column_dict["away_team"]["is_nullable"] == "NO"
+            assert column_dict["game_date"]["is_nullable"] == "NO"
 
     async def test_table_constraints(self):
         """Test table constraints and validation rules."""
@@ -133,18 +148,18 @@ class TestGameIDMappingsMigration:
                 ORDER BY indexname
             """)
 
-            index_names = [idx['indexname'] for idx in indexes]
+            index_names = [idx["indexname"] for idx in indexes]
 
             expected_indexes = [
-                'game_id_mappings_pkey',  # Primary key
-                'idx_game_mappings_mlb_id',
-                'idx_game_mappings_action_network',
-                'idx_game_mappings_vsin',
-                'idx_game_mappings_sbd',
-                'idx_game_mappings_sbr',
-                'idx_game_mappings_date_teams',
-                'idx_game_mappings_verification',
-                'idx_game_mappings_external_ids'
+                "game_id_mappings_pkey",  # Primary key
+                "idx_game_mappings_mlb_id",
+                "idx_game_mappings_action_network",
+                "idx_game_mappings_vsin",
+                "idx_game_mappings_sbd",
+                "idx_game_mappings_sbr",
+                "idx_game_mappings_date_teams",
+                "idx_game_mappings_verification",
+                "idx_game_mappings_external_ids",
             ]
 
             for expected_idx in expected_indexes:
@@ -161,16 +176,18 @@ class TestGameIDMappingsMigration:
                 AND routine_name IN ('find_unmapped_external_ids', 'get_game_id_mapping_stats', 'validate_game_id_mappings')
             """)
 
-            function_names = [func['routine_name'] for func in functions]
+            function_names = [func["routine_name"] for func in functions]
 
             expected_functions = [
-                'find_unmapped_external_ids',
-                'get_game_id_mapping_stats',
-                'validate_game_id_mappings'
+                "find_unmapped_external_ids",
+                "get_game_id_mapping_stats",
+                "validate_game_id_mappings",
             ]
 
             for expected_func in expected_functions:
-                assert expected_func in function_names, f"Function {expected_func} should exist"
+                assert expected_func in function_names, (
+                    f"Function {expected_func} should exist"
+                )
 
     async def test_find_unmapped_external_ids_function(self):
         """Test the find_unmapped_external_ids utility function."""
@@ -191,16 +208,18 @@ class TestGameIDMappingsMigration:
             # Should find our test unmapped ID
             test_result = None
             for result in results:
-                if result['external_id'] == 'TEST_UNMAPPED_123':
+                if result["external_id"] == "TEST_UNMAPPED_123":
                     test_result = result
                     break
 
             assert test_result is not None, "Should find test unmapped ID"
-            assert test_result['source_type'] == 'action_network'
-            assert test_result['raw_table'] == 'raw_data.action_network_games'
+            assert test_result["source_type"] == "action_network"
+            assert test_result["raw_table"] == "raw_data.action_network_games"
 
             # Clean up
-            await conn.execute("DELETE FROM raw_data.action_network_games WHERE external_game_id = 'TEST_UNMAPPED_123'")
+            await conn.execute(
+                "DELETE FROM raw_data.action_network_games WHERE external_game_id = 'TEST_UNMAPPED_123'"
+            )
 
     async def test_get_mapping_stats_function(self):
         """Test the get_game_id_mapping_stats utility function."""
@@ -216,13 +235,21 @@ class TestGameIDMappingsMigration:
             """)
 
             # Call function
-            stats = await conn.fetchrow("SELECT * FROM staging.get_game_id_mapping_stats()")
+            stats = await conn.fetchrow(
+                "SELECT * FROM staging.get_game_id_mapping_stats()"
+            )
 
-            assert stats['total_mappings'] >= 2, "Should have at least 2 test mappings"
-            assert stats['action_network_count'] >= 2, "Should have at least 2 Action Network mappings"
-            assert stats['vsin_count'] >= 1, "Should have at least 1 VSIN mapping"
-            assert float(stats['avg_confidence']) > 0.0, "Should have positive average confidence"
-            assert stats['last_updated'] is not None, "Should have last updated timestamp"
+            assert stats["total_mappings"] >= 2, "Should have at least 2 test mappings"
+            assert stats["action_network_count"] >= 2, (
+                "Should have at least 2 Action Network mappings"
+            )
+            assert stats["vsin_count"] >= 1, "Should have at least 1 VSIN mapping"
+            assert float(stats["avg_confidence"]) > 0.0, (
+                "Should have positive average confidence"
+            )
+            assert stats["last_updated"] is not None, (
+                "Should have last updated timestamp"
+            )
 
     async def test_validate_mappings_function(self):
         """Test the validate_game_id_mappings utility function."""
@@ -237,58 +264,73 @@ class TestGameIDMappingsMigration:
             """)
 
             # Call function
-            validations = await conn.fetch("SELECT * FROM staging.validate_game_id_mappings()")
+            validations = await conn.fetch(
+                "SELECT * FROM staging.validate_game_id_mappings()"
+            )
 
             # Convert to dict for easier testing
-            validation_dict = {v['validation_type']: v for v in validations}
+            validation_dict = {v["validation_type"]: v for v in validations}
 
             # Should detect low confidence mapping
-            if 'low_confidence_mappings' in validation_dict:
-                assert validation_dict['low_confidence_mappings']['issue_count'] >= 1
+            if "low_confidence_mappings" in validation_dict:
+                assert validation_dict["low_confidence_mappings"]["issue_count"] >= 1
 
             # Should detect old unverified mapping
-            if 'unverified_mappings' in validation_dict:
-                assert validation_dict['unverified_mappings']['issue_count'] >= 1
+            if "unverified_mappings" in validation_dict:
+                assert validation_dict["unverified_mappings"]["issue_count"] >= 1
 
     async def test_data_insertion_and_retrieval(self):
         """Test basic data insertion and retrieval operations."""
         async with get_connection() as conn:
             # Insert test record
             test_data = {
-                'mlb_stats_api_game_id': 'TEST_INSERT_123',
-                'action_network_game_id': 'AN_INSERT_123',
-                'vsin_game_id': 'VSIN_INSERT_123',
-                'home_team': 'LAD',
-                'away_team': 'NYY',
-                'game_date': date(2024, 7, 1),
-                'resolution_confidence': Decimal('0.95'),
-                'primary_source': 'action_network'
+                "mlb_stats_api_game_id": "TEST_INSERT_123",
+                "action_network_game_id": "AN_INSERT_123",
+                "vsin_game_id": "VSIN_INSERT_123",
+                "home_team": "LAD",
+                "away_team": "NYY",
+                "game_date": date(2024, 7, 1),
+                "resolution_confidence": Decimal("0.95"),
+                "primary_source": "action_network",
             }
 
-            await conn.execute("""
+            await conn.execute(
+                """
                 INSERT INTO staging.game_id_mappings 
                 (mlb_stats_api_game_id, action_network_game_id, vsin_game_id, home_team, away_team, 
                  game_date, resolution_confidence, primary_source)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            """, *test_data.values())
+            """,
+                *test_data.values(),
+            )
 
             # Retrieve and verify
-            retrieved = await conn.fetchrow("""
+            retrieved = await conn.fetchrow(
+                """
                 SELECT * FROM staging.game_id_mappings 
                 WHERE mlb_stats_api_game_id = $1
-            """, test_data['mlb_stats_api_game_id'])
+            """,
+                test_data["mlb_stats_api_game_id"],
+            )
 
             assert retrieved is not None, "Should retrieve inserted record"
-            assert retrieved['mlb_stats_api_game_id'] == test_data['mlb_stats_api_game_id']
-            assert retrieved['action_network_game_id'] == test_data['action_network_game_id']
-            assert retrieved['vsin_game_id'] == test_data['vsin_game_id']
-            assert retrieved['home_team'] == test_data['home_team']
-            assert retrieved['away_team'] == test_data['away_team']
-            assert retrieved['game_date'] == test_data['game_date']
-            assert retrieved['resolution_confidence'] == test_data['resolution_confidence']
-            assert retrieved['primary_source'] == test_data['primary_source']
-            assert retrieved['created_at'] is not None
-            assert retrieved['updated_at'] is not None
+            assert (
+                retrieved["mlb_stats_api_game_id"] == test_data["mlb_stats_api_game_id"]
+            )
+            assert (
+                retrieved["action_network_game_id"]
+                == test_data["action_network_game_id"]
+            )
+            assert retrieved["vsin_game_id"] == test_data["vsin_game_id"]
+            assert retrieved["home_team"] == test_data["home_team"]
+            assert retrieved["away_team"] == test_data["away_team"]
+            assert retrieved["game_date"] == test_data["game_date"]
+            assert (
+                retrieved["resolution_confidence"] == test_data["resolution_confidence"]
+            )
+            assert retrieved["primary_source"] == test_data["primary_source"]
+            assert retrieved["created_at"] is not None
+            assert retrieved["updated_at"] is not None
 
     async def test_index_performance(self):
         """Test that indexes provide expected performance benefits."""
@@ -296,23 +338,28 @@ class TestGameIDMappingsMigration:
             # Insert test data for performance testing
             test_records = []
             for i in range(100):
-                test_records.append((
-                    f'TEST_PERF_{i}',
-                    f'AN_PERF_{i}',
-                    f'VSIN_PERF_{i}',
-                    'LAD',
-                    'NYY',
-                    '2024-07-01',
-                    0.95,
-                    'action_network'
-                ))
+                test_records.append(
+                    (
+                        f"TEST_PERF_{i}",
+                        f"AN_PERF_{i}",
+                        f"VSIN_PERF_{i}",
+                        "LAD",
+                        "NYY",
+                        "2024-07-01",
+                        0.95,
+                        "action_network",
+                    )
+                )
 
-            await conn.executemany("""
+            await conn.executemany(
+                """
                 INSERT INTO staging.game_id_mappings 
                 (mlb_stats_api_game_id, action_network_game_id, vsin_game_id, home_team, away_team, 
                  game_date, resolution_confidence, primary_source)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            """, test_records)
+            """,
+                test_records,
+            )
 
             # Test index usage with EXPLAIN
             explain_result = await conn.fetch("""
@@ -323,8 +370,10 @@ class TestGameIDMappingsMigration:
             """)
 
             # Should use index scan (not sequential scan)
-            plan = explain_result[0]['QUERY PLAN'][0]['Plan']
-            assert 'Index' in plan['Node Type'], "Should use index scan for action_network_game_id lookup"
+            plan = explain_result[0]["QUERY PLAN"][0]["Plan"]
+            assert "Index" in plan["Node Type"], (
+                "Should use index scan for action_network_game_id lookup"
+            )
 
     async def test_migration_rollback_compatibility(self):
         """Test that migration can be rolled back safely."""
@@ -332,9 +381,15 @@ class TestGameIDMappingsMigration:
             # Test that we can drop the created elements (simulating rollback)
 
             # Drop functions (in reverse dependency order)
-            await conn.execute("DROP FUNCTION IF EXISTS staging.find_unmapped_external_ids(VARCHAR, INTEGER)")
-            await conn.execute("DROP FUNCTION IF EXISTS staging.get_game_id_mapping_stats()")
-            await conn.execute("DROP FUNCTION IF EXISTS staging.validate_game_id_mappings()")
+            await conn.execute(
+                "DROP FUNCTION IF EXISTS staging.find_unmapped_external_ids(VARCHAR, INTEGER)"
+            )
+            await conn.execute(
+                "DROP FUNCTION IF EXISTS staging.get_game_id_mapping_stats()"
+            )
+            await conn.execute(
+                "DROP FUNCTION IF EXISTS staging.validate_game_id_mappings()"
+            )
 
             # Drop table (indexes will be dropped automatically)
             await conn.execute("DROP TABLE IF EXISTS staging.game_id_mappings")
@@ -483,7 +538,9 @@ async def test_migration_integration():
     """Integration test for the complete migration."""
     # Setup - ensure clean state
     async with get_connection() as conn:
-        await conn.execute("DELETE FROM staging.game_id_mappings WHERE mlb_stats_api_game_id LIKE 'TEST_%'")
+        await conn.execute(
+            "DELETE FROM staging.game_id_mappings WHERE mlb_stats_api_game_id LIKE 'TEST_%'"
+        )
 
     try:
         test_instance = TestGameIDMappingsMigration()
@@ -500,7 +557,9 @@ async def test_migration_integration():
     finally:
         # Cleanup
         async with get_connection() as conn:
-            await conn.execute("DELETE FROM staging.game_id_mappings WHERE mlb_stats_api_game_id LIKE 'TEST_%'")
+            await conn.execute(
+                "DELETE FROM staging.game_id_mappings WHERE mlb_stats_api_game_id LIKE 'TEST_%'"
+            )
 
 
 if __name__ == "__main__":
