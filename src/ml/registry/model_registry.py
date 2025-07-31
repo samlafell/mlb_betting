@@ -50,29 +50,30 @@ class ModelRegistryService:
         self.settings = get_settings()
         self.client: Optional[MlflowClient] = None
         
-        # Performance thresholds for automatic staging
+        # Performance thresholds for automatic staging (from configuration)
         self.staging_thresholds = {
-            "min_accuracy": 0.55,  # Above MLB baseline
-            "min_roc_auc": 0.60,
-            "min_precision": 0.50,
-            "min_recall": 0.50,
-            "max_training_samples": 50  # Minimum training samples
+            "min_accuracy": self.settings.ml.model_thresholds.staging_min_accuracy,
+            "min_roc_auc": self.settings.ml.model_thresholds.staging_min_roc_auc,
+            "min_precision": self.settings.ml.model_thresholds.staging_min_precision,
+            "min_recall": self.settings.ml.model_thresholds.staging_min_recall,
+            "max_training_samples": self.settings.ml.model_thresholds.staging_min_training_samples
         }
         
-        # Production promotion thresholds
+        # Production promotion thresholds (from configuration)  
         self.production_thresholds = {
-            "min_accuracy": 0.60,
-            "min_roc_auc": 0.65,
-            "min_f1_score": 0.58,
-            "min_roi": 0.05,  # 5% ROI minimum
-            "evaluation_days": 7  # Days of staging evaluation
+            "min_accuracy": self.settings.ml.model_thresholds.production_min_accuracy,
+            "min_roc_auc": self.settings.ml.model_thresholds.production_min_roc_auc,
+            "min_f1_score": self.settings.ml.model_thresholds.production_min_f1_score,
+            "min_roi": self.settings.ml.model_thresholds.production_min_roi,
+            "evaluation_days": self.settings.ml.model_thresholds.production_evaluation_days
         }
 
     async def initialize(self) -> bool:
         """Initialize MLflow client connection"""
         try:
-            # Set MLflow tracking URI
-            mlflow.set_tracking_uri("http://localhost:5001")
+            # Set MLflow tracking URI from configuration
+            tracking_uri = self.settings.ml.mlflow.tracking_uri
+            mlflow.set_tracking_uri(tracking_uri)
             self.client = MlflowClient()
             
             # Test connection

@@ -100,9 +100,9 @@ class AutomatedRetrainingService:
         self.trainer = LightGBMTrainer()
         self.feature_pipeline = FeaturePipeline()
         
-        # Performance monitoring
-        self.monitoring_enabled = True
-        self.monitoring_interval_minutes = 60
+        # Performance monitoring (from configuration)
+        self.monitoring_enabled = self.settings.ml.retraining.auto_retraining_enabled
+        self.monitoring_interval_minutes = self.settings.ml.retraining.monitoring_interval_minutes
         self.last_performance_check = {}
 
     async def initialize(self) -> bool:
@@ -418,8 +418,9 @@ class AutomatedRetrainingService:
                 
                 # Auto-promote to production if configured and meets criteria
                 if config and config.auto_promote_to_production:
-                    # Add delay for staging evaluation
-                    await asyncio.sleep(60)  # Wait 1 minute (in production, would be longer)
+                    # Add delay for staging evaluation (configurable)
+                    staging_delay = self.settings.ml.retraining.staging_evaluation_delay_seconds
+                    await asyncio.sleep(staging_delay)
                     
                     promoted = await model_registry.promote_to_production(
                         job.model_name,
@@ -578,16 +579,68 @@ class AutomatedRetrainingService:
         return job_id
 
     async def _get_recent_model_performance(self, model_name: str) -> Optional[Dict[str, float]]:
-        """Get recent model performance metrics"""
-        # This would typically query your production monitoring system
-        # For now, return mock data
-        return {
-            "accuracy": 0.62,
-            "precision": 0.60,
-            "recall": 0.65,
-            "f1_score": 0.62,
-            "roc_auc": 0.68
-        }
+        """Get recent model performance metrics from Prometheus monitoring system"""
+        try:
+            # Import the existing Prometheus metrics service
+            from ...services.monitoring.prometheus_metrics_service import PrometheusMetricsService
+            
+            # Get metrics service instance
+            metrics_service = PrometheusMetricsService()
+            
+            # Query recent model performance from Prometheus metrics
+            # This integrates with the existing monitoring infrastructure
+            current_time = time.time()
+            lookback_seconds = 3600 * 24  # 24 hours lookback
+            
+            # Get performance metrics from the monitoring system
+            performance_metrics = {}
+            
+            # Query accuracy metrics
+            accuracy_metric = metrics_service.get_metric_value(
+                f"ml_model_accuracy{{model_name=\"{model_name}\"}}"
+            )
+            if accuracy_metric is not None:
+                performance_metrics["accuracy"] = accuracy_metric
+            
+            # Query precision metrics
+            precision_metric = metrics_service.get_metric_value(
+                f"ml_model_precision{{model_name=\"{model_name}\"}}"
+            )
+            if precision_metric is not None:
+                performance_metrics["precision"] = precision_metric
+                
+            # Query recall metrics
+            recall_metric = metrics_service.get_metric_value(
+                f"ml_model_recall{{model_name=\"{model_name}\"}}"
+            )
+            if recall_metric is not None:
+                performance_metrics["recall"] = recall_metric
+            
+            # Query F1 score metrics
+            f1_metric = metrics_service.get_metric_value(
+                f"ml_model_f1_score{{model_name=\"{model_name}\"}}"
+            )
+            if f1_metric is not None:
+                performance_metrics["f1_score"] = f1_metric
+                
+            # Query ROC AUC metrics
+            roc_auc_metric = metrics_service.get_metric_value(
+                f"ml_model_roc_auc{{model_name=\"{model_name}\"}}"
+            )
+            if roc_auc_metric is not None:
+                performance_metrics["roc_auc"] = roc_auc_metric
+            
+            if performance_metrics:
+                logger.info(f"Retrieved performance metrics for {model_name}: {performance_metrics}")
+                return performance_metrics
+            else:
+                logger.warning(f"No performance metrics found for model {model_name}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Failed to retrieve performance metrics for {model_name}: {e}")
+            # Fallback to None rather than mock data in production
+            return None
 
     async def _load_retraining_configs(self):
         """Load retraining configurations from storage"""

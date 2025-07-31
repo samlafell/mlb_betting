@@ -1112,6 +1112,112 @@ class DashboardSettings(BaseSettings):
         extra = "allow"
 
 
+# ML System Configuration Classes
+class MLflowConfig(BaseModel):
+    """MLflow Model Registry Configuration"""
+    tracking_uri: str = Field(default="http://localhost:5001", description="MLflow tracking server URI")
+    experiment_name: str = Field(default="mlb_betting_models", description="Default experiment name")
+    artifact_store: str = Field(default="s3://mlb-betting-artifacts", description="Artifact storage location")
+    connection_timeout: int = Field(default=30, description="Connection timeout in seconds")
+    retry_attempts: int = Field(default=3, description="Number of retry attempts")
+    api_key: str = Field(default="${MLFLOW_API_KEY}", description="API key for authentication")
+
+
+class RedisConfig(BaseModel):
+    """Redis Feature Store Configuration"""
+    host: str = Field(default="localhost", description="Redis server host")
+    port: int = Field(default=6379, description="Redis server port")
+    password: str = Field(default="${REDIS_PASSWORD}", description="Redis password")
+    ssl_enabled: bool = Field(default=False, description="Enable SSL/TLS encryption")
+    ssl_cert_path: str = Field(default="", description="Path to SSL certificate")
+    ssl_key_path: str = Field(default="", description="Path to SSL private key")
+    ssl_ca_path: str = Field(default="", description="Path to SSL CA certificate")
+    connection_pool_size: int = Field(default=20, description="Connection pool size")
+    socket_timeout: float = Field(default=5.0, description="Socket timeout in seconds")
+    max_retries: int = Field(default=3, description="Maximum connection retries")
+    retry_delay_seconds: float = Field(default=1.0, description="Initial retry delay in seconds")
+    database: int = Field(default=0, description="Redis database number")
+
+
+class ModelThresholdsConfig(BaseModel):
+    """Model Performance Thresholds Configuration"""
+    # Staging promotion thresholds
+    staging_min_accuracy: float = Field(default=0.55, description="Minimum accuracy for staging")
+    staging_min_roc_auc: float = Field(default=0.60, description="Minimum ROC AUC for staging")
+    staging_min_precision: float = Field(default=0.50, description="Minimum precision for staging")
+    staging_min_recall: float = Field(default=0.50, description="Minimum recall for staging")
+    staging_min_training_samples: int = Field(default=50, description="Minimum training samples")
+    
+    # Production promotion thresholds
+    production_min_accuracy: float = Field(default=0.60, description="Minimum accuracy for production")
+    production_min_roc_auc: float = Field(default=0.65, description="Minimum ROC AUC for production")
+    production_min_f1_score: float = Field(default=0.58, description="Minimum F1 score for production")
+    production_min_roi: float = Field(default=0.05, description="Minimum ROI for production")
+    production_evaluation_days: int = Field(default=7, description="Days of staging evaluation")
+
+
+class PerformanceConfig(BaseModel):
+    """Performance and Resource Management Configuration"""
+    memory_limit_mb: int = Field(default=2048, description="Memory threshold for cleanup")
+    batch_size_limit: int = Field(default=50, description="Maximum batch processing size")
+    connection_pool_size: int = Field(default=20, description="Database connection pool size")
+    feature_cache_ttl_seconds: int = Field(default=900, description="Feature cache TTL")
+    model_cache_size: int = Field(default=10, description="Maximum models in memory")
+    model_loading_timeout_seconds: int = Field(default=30, description="Model loading timeout")
+    memory_cleanup_trigger_mb: int = Field(default=500, description="Memory cleanup trigger")
+    max_concurrent_extractions: int = Field(default=5, description="Max concurrent extractions")
+    dataframe_chunk_size: int = Field(default=1000, description="DataFrame chunk size")
+
+
+class RetrainingConfig(BaseModel):
+    """Automated Retraining Configuration"""
+    monitoring_interval_minutes: int = Field(default=30, description="Performance monitoring interval")
+    staging_evaluation_delay_seconds: int = Field(default=300, description="Staging evaluation delay")
+    performance_check_interval_hours: int = Field(default=1, description="Performance check interval")
+    performance_degradation_threshold: float = Field(default=0.05, description="Degradation threshold")
+    data_drift_threshold: float = Field(default=0.1, description="Data drift threshold")
+    auto_retraining_enabled: bool = Field(default=True, description="Enable automatic retraining")
+    max_concurrent_retraining_jobs: int = Field(default=2, description="Max concurrent jobs")
+    default_schedule_cron: str = Field(default="0 2 * * *", description="Default schedule")
+    default_sliding_window_days: int = Field(default=90, description="Default training window")
+    default_min_samples: int = Field(default=100, description="Default minimum samples")
+
+
+class MLSecurityConfig(BaseModel):
+    """ML System Security Configuration"""
+    enable_api_authentication: bool = Field(default=True, description="Enable API authentication")
+    api_key_header: str = Field(default="X-ML-API-Key", description="API key header name")
+    enable_audit_logging: bool = Field(default=True, description="Enable audit logging")
+    audit_log_level: str = Field(default="INFO", description="Audit log level")
+    sensitive_data_masking: bool = Field(default=True, description="Mask sensitive data in logs")
+    model_encryption_enabled: bool = Field(default=False, description="Enable model encryption")
+
+
+class MLMonitoringConfig(BaseModel):
+    """ML System Monitoring Configuration"""
+    enable_prometheus_metrics: bool = Field(default=True, description="Enable Prometheus metrics")
+    metrics_port: int = Field(default=9090, description="Metrics endpoint port")
+    enable_model_drift_detection: bool = Field(default=True, description="Enable drift detection")
+    drift_detection_interval_hours: int = Field(default=6, description="Drift detection interval")
+    enable_performance_alerts: bool = Field(default=True, description="Enable performance alerts")
+    alert_webhook_url: str = Field(default="${ML_ALERT_WEBHOOK}", description="Alert webhook URL")
+    collect_prediction_metrics: bool = Field(default=True, description="Collect prediction metrics")
+    collect_feature_metrics: bool = Field(default=True, description="Collect feature metrics")
+    collect_training_metrics: bool = Field(default=True, description="Collect training metrics")
+    metrics_retention_days: int = Field(default=30, description="Metrics retention period")
+
+
+class MLSystemConfig(BaseModel):
+    """Complete ML System Configuration"""
+    mlflow: MLflowConfig = Field(default_factory=MLflowConfig)
+    redis: RedisConfig = Field(default_factory=RedisConfig)
+    model_thresholds: ModelThresholdsConfig = Field(default_factory=ModelThresholdsConfig)
+    performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
+    retraining: RetrainingConfig = Field(default_factory=RetrainingConfig)
+    security: MLSecurityConfig = Field(default_factory=MLSecurityConfig)
+    monitoring: MLMonitoringConfig = Field(default_factory=MLMonitoringConfig)
+
+
 class UnifiedSettings(BaseSettings):
     """
     Main unified settings class consolidating all configuration.
@@ -1157,6 +1263,7 @@ class UnifiedSettings(BaseSettings):
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
     mlflow: MLflowSettings = Field(default_factory=MLflowSettings)
     ml_pipeline: MLPipelineSettings = Field(default_factory=MLPipelineSettings)
+    ml: MLSystemConfig = Field(default_factory=MLSystemConfig)
     features: FeatureFlags = Field(default_factory=FeatureFlags)
 
     class Config:
