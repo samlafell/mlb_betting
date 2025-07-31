@@ -14,7 +14,7 @@ from unittest.mock import Mock
 import asyncpg
 
 from src.core.config import get_settings
-from src.data.database.connection_pool import create_db_pool
+from src.data.database.connection import get_connection, get_connection_pool
 
 
 logger = logging.getLogger(__name__)
@@ -80,7 +80,20 @@ class TestDatabaseManager:
         """Initialize database connection pool."""
         if self._pool is None:
             try:
-                self._pool = await create_db_pool()
+                # Use the unified connection system
+                connection_pool = get_connection_pool()
+                
+                # Initialize database connections from settings
+                from src.data.database.connection import initialize_connections
+                initialize_connections(self._config)
+                
+                # Connect all connections
+                await connection_pool.connect_all()
+                
+                # Get the main database connection for testing
+                db_connection = connection_pool.get_connection("main")
+                self._pool = db_connection._async_pool  # Access the underlying pool
+                
                 logger.info("Test database pool initialized successfully")
             except Exception as e:
                 sanitized_config = sanitize_db_config(self._config.database.model_dump())
@@ -91,7 +104,9 @@ class TestDatabaseManager:
     async def cleanup(self) -> None:
         """Clean up database connections."""
         if self._pool:
-            await self._pool.close()
+            # Use the unified connection system for cleanup
+            connection_pool = get_connection_pool()
+            await connection_pool.disconnect_all()
             self._pool = None
             logger.info("Test database pool closed successfully")
     
