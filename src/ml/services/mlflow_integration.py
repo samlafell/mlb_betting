@@ -33,9 +33,12 @@ class MLflowService:
         self._setup_mlflow()
 
     def _setup_mlflow(self):
-        """Configure MLflow to use existing PostgreSQL database with retry logic"""
+        """Configure MLflow to use existing PostgreSQL database with retry logic and authentication"""
         for attempt in range(self.max_retries):
             try:
+                # Set up MLflow authentication if configured
+                self._setup_mlflow_authentication()
+                
                 # MLflow backend store URI - uses same PostgreSQL database
                 # This tells MLflow to store experiment metadata in PostgreSQL
                 backend_store_uri = (
@@ -44,7 +47,7 @@ class MLflowService:
                 )
 
                 # Set MLflow tracking URI from configuration
-                tracking_uri = self.settings.mlflow.effective_tracking_uri
+                tracking_uri = self.settings.ml.mlflow.tracking_uri
                 mlflow.set_tracking_uri(tracking_uri)
 
                 # Artifact root - configurable or default
@@ -75,6 +78,35 @@ class MLflowService:
                 else:
                     logger.error(f"Failed to setup MLflow after {self.max_retries} attempts")
                     raise
+
+    def _setup_mlflow_authentication(self):
+        """Setup MLflow authentication using API key if configured"""
+        try:
+            # Check if API key authentication is configured
+            if hasattr(self.settings.ml.mlflow, 'api_key') and self.settings.ml.mlflow.api_key:
+                api_key = self.settings.ml.mlflow.api_key
+                
+                # Support environment variable substitution
+                if api_key.startswith('${') and api_key.endswith('}'):
+                    env_var = api_key[2:-1]
+                    api_key = os.getenv(env_var)
+                    
+                if api_key:
+                    # Set MLflow authentication environment variables
+                    os.environ['MLFLOW_TRACKING_TOKEN'] = api_key
+                    
+                    # Also set authorization header for HTTP requests
+                    os.environ['MLFLOW_TRACKING_AUTH'] = f'Bearer {api_key}'
+                    
+                    logger.info("MLflow API key authentication configured")
+                else:
+                    logger.warning("MLflow API key environment variable not found or empty")
+            else:
+                logger.info("MLflow API key authentication not configured - using unauthenticated access")
+                
+        except Exception as e:
+            logger.error(f"Failed to setup MLflow authentication: {e}")
+            # Don't raise here - allow MLflow to work without authentication
 
     def _retry_operation(self, operation, operation_name: str, *args, **kwargs):
         """Retry an MLflow operation with exponential backoff"""
