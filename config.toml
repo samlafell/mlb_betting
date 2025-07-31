@@ -98,3 +98,101 @@ disk_emergency_threshold = 95.0    # Disk usage emergency threshold percentage
 
 resource_monitoring_interval = 10  # Resource monitoring interval in seconds
 resource_alert_cooldown = 300      # Resource alert cooldown period in seconds
+
+# =============================================================================
+# ML SYSTEM CONFIGURATION
+# =============================================================================
+
+[ml.mlflow]
+# MLflow Model Registry Configuration
+tracking_uri = "http://localhost:5001"        # MLflow tracking server URI
+experiment_name = "mlb_betting_models"        # Default experiment name
+artifact_store = "s3://mlb-betting-artifacts" # Optional S3 artifact storage
+connection_timeout = 30                       # Connection timeout in seconds
+retry_attempts = 3                           # Number of retry attempts
+api_key = "${MLFLOW_API_KEY}"               # API key for authentication (env var)
+
+[ml.redis]
+# Redis Feature Store Configuration  
+host = "localhost"                           # Redis server host
+port = 6379                                 # Redis server port
+password = "${REDIS_PASSWORD}"              # Redis password (env var)
+ssl_enabled = false                         # Enable SSL/TLS encryption
+ssl_cert_path = ""                          # Path to SSL certificate
+ssl_key_path = ""                           # Path to SSL private key
+ssl_ca_path = ""                            # Path to SSL CA certificate
+connection_pool_size = 20                   # Connection pool size
+socket_timeout = 5.0                        # Socket timeout in seconds
+max_retries = 3                             # Maximum connection retries
+retry_delay_seconds = 1.0                   # Initial retry delay in seconds
+database = 0                                # Redis database number
+
+[ml.model_thresholds]
+# Model Performance Thresholds (MLB-specific with business context)
+
+# Staging Promotion Thresholds
+staging_min_accuracy = 0.55        # Above random baseline (50%) + market efficiency buffer
+staging_min_roc_auc = 0.60         # Meaningful discrimination capability for betting
+staging_min_precision = 0.50       # Balanced precision/recall for betting scenarios
+staging_min_recall = 0.50          # Ensure we catch profitable opportunities
+staging_min_training_samples = 50  # Minimum samples for statistical significance
+
+# Production Promotion Thresholds  
+production_min_accuracy = 0.60     # Higher bar for production deployment
+production_min_roc_auc = 0.65      # Strong discrimination required in production
+production_min_f1_score = 0.58     # Balanced performance for live betting
+production_min_roi = 0.05          # 5% ROI minimum for profitability in MLB betting
+production_evaluation_days = 7     # Days of staging evaluation before production
+
+[ml.performance]
+# Performance and Resource Management
+memory_limit_mb = 2048              # Memory threshold for cleanup (MB)
+batch_size_limit = 50               # Maximum batch processing size
+connection_pool_size = 20           # Database connection pool size
+feature_cache_ttl_seconds = 900     # Feature cache time-to-live (15 minutes)
+model_cache_size = 10               # Maximum models to keep in memory
+model_loading_timeout_seconds = 30  # Timeout for model loading operations
+
+# Memory Management Thresholds
+memory_cleanup_trigger_mb = 500     # Memory increase threshold to trigger cleanup
+max_concurrent_extractions = 5      # Maximum concurrent feature extractions
+dataframe_chunk_size = 1000         # Chunk size for large DataFrame operations
+
+[ml.retraining]
+# Automated Retraining Configuration
+monitoring_interval_minutes = 30              # Performance monitoring interval
+staging_evaluation_delay_seconds = 300       # 5 minutes delay before production promotion
+performance_check_interval_hours = 1         # How often to check model performance
+performance_degradation_threshold = 0.05     # 5% degradation triggers retraining
+data_drift_threshold = 0.1                   # Data drift threshold for retraining
+auto_retraining_enabled = true               # Enable automatic retraining
+max_concurrent_retraining_jobs = 2           # Maximum concurrent retraining jobs
+
+# Default Retraining Schedule
+default_schedule_cron = "0 2 * * *"          # Daily at 2 AM
+default_sliding_window_days = 90             # 90-day training window
+default_min_samples = 100                    # Minimum samples for retraining
+
+[ml.security]
+# ML System Security Configuration
+enable_api_authentication = true            # Enable API key authentication
+api_key_header = "X-ML-API-Key"             # Header name for API key
+enable_audit_logging = true                 # Enable audit logging for ML operations
+audit_log_level = "INFO"                    # Audit log level
+sensitive_data_masking = true               # Mask sensitive data in logs
+model_encryption_enabled = false            # Enable model artifact encryption (future)
+
+[ml.monitoring]
+# ML System Monitoring and Observability  
+enable_prometheus_metrics = true            # Enable Prometheus metrics collection
+metrics_port = 9090                         # Port for metrics endpoint
+enable_model_drift_detection = true        # Enable model drift monitoring
+drift_detection_interval_hours = 6         # How often to check for drift
+enable_performance_alerts = true           # Enable performance degradation alerts
+alert_webhook_url = "${ML_ALERT_WEBHOOK}"   # Webhook for alerts (env var)
+
+# Metric Collection Settings
+collect_prediction_metrics = true          # Collect prediction latency/accuracy
+collect_feature_metrics = true             # Collect feature extraction metrics  
+collect_training_metrics = true            # Collect training pipeline metrics
+metrics_retention_days = 30                # How long to retain detailed metrics

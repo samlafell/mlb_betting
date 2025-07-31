@@ -11,10 +11,11 @@ from src.interfaces.cli.commands.action_network_pipeline import action_network
 from src.interfaces.cli.commands.backtesting import backtesting_group
 from src.interfaces.cli.commands.batch_collection import batch_collection
 from src.interfaces.cli.commands.cleanup import cleanup
+from src.interfaces.cli.commands.curated import curated
 from src.interfaces.cli.commands.data import DataCommands
 from src.interfaces.cli.commands.data_quality_improvement import data_quality_group
 from src.interfaces.cli.commands.game_outcomes import outcomes
-from src.interfaces.cli.commands.ml_training import register_ml_training_commands
+from src.interfaces.cli.commands.ml_commands import ml
 from src.interfaces.cli.commands.monitoring import MonitoringCommands
 from src.interfaces.cli.commands.movement_analysis import movement
 from src.interfaces.cli.commands.pipeline import pipeline
@@ -58,9 +59,10 @@ cli.add_command(database)  # Add the database setup and management commands
 cli.add_command(backtesting_group)  # Add the backtesting commands
 cli.add_command(data_quality_group)  # Add the data quality improvement commands
 cli.add_command(pipeline)  # Add the pipeline management commands
+cli.add_command(curated)  # Add the CURATED zone management commands
 # Old staging commands removed - use historical approach via action-network pipeline
 cli.add_command(cleanup)  # Add the output folder cleanup command
-register_ml_training_commands(cli)  # Add ML training commands
+cli.add_command(ml)  # Add the ML experiment management commands
 
 
 if __name__ == "__main__":
