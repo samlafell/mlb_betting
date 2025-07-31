@@ -129,6 +129,74 @@ class DatabaseSettings(BaseSettings):
         """Get async PostgreSQL connection string."""
         return f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
 
+    @computed_field
+    @property
+    def masked_connection_string(self) -> str:
+        """Get connection string with masked password for logging."""
+        masked_password = "*" * len(self.password) if self.password else ""
+        return f"postgresql://{self.user}:{masked_password}@{self.host}:{self.port}/{self.database}"
+
+    def validate_connection_config(self) -> dict[str, bool]:
+        """
+        Validate database configuration completeness.
+        
+        Returns:
+            Dictionary with validation results for each required field
+        """
+        validation_results = {
+            "host": bool(self.host and self.host.strip()),
+            "port": 1 <= self.port <= 65535,
+            "database": bool(self.database and self.database.strip()),
+            "user": bool(self.user and self.user.strip()),
+            "password": bool(self.password and self.password.strip()),
+            "connection_timeout": 1 <= self.connection_timeout <= 300,
+            "query_timeout": 1 <= self.query_timeout <= 3600,
+            "min_connections": 1 <= self.min_connections <= self.max_connections,
+            "max_connections": self.min_connections <= self.max_connections <= 100,
+        }
+        return validation_results
+
+    def get_connection_issues(self) -> list[str]:
+        """
+        Get list of connection configuration issues.
+        
+        Returns:
+            List of human-readable validation error messages
+        """
+        validation_results = self.validate_connection_config()
+        issues = []
+        
+        if not validation_results["host"]:
+            issues.append("Database host is required and cannot be empty")
+        if not validation_results["port"]:
+            issues.append("Database port must be between 1 and 65535")
+        if not validation_results["database"]:
+            issues.append("Database name is required and cannot be empty")
+        if not validation_results["user"]:
+            issues.append("Database user is required and cannot be empty")
+        if not validation_results["password"]:
+            issues.append("Database password is required and cannot be empty")
+        if not validation_results["connection_timeout"]:
+            issues.append("Connection timeout must be between 1 and 300 seconds")
+        if not validation_results["query_timeout"]:
+            issues.append("Query timeout must be between 1 and 3600 seconds")
+        if not validation_results["min_connections"]:
+            issues.append("Minimum connections must be at least 1 and not exceed maximum connections")
+        if not validation_results["max_connections"]:
+            issues.append("Maximum connections must be at least minimum connections and not exceed 100")
+            
+        return issues
+
+    def is_configuration_complete(self) -> bool:
+        """
+        Check if database configuration is complete and valid.
+        
+        Returns:
+            True if all required configuration is present and valid
+        """
+        validation_results = self.validate_connection_config()
+        return all(validation_results.values())
+
 
 class SchemaSettings(BaseSettings):
     """Database schema configuration."""
