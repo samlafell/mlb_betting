@@ -129,6 +129,74 @@ class DatabaseSettings(BaseSettings):
         """Get async PostgreSQL connection string."""
         return f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
 
+    @computed_field
+    @property
+    def masked_connection_string(self) -> str:
+        """Get connection string with masked password for logging."""
+        masked_password = "*" * len(self.password) if self.password else ""
+        return f"postgresql://{self.user}:{masked_password}@{self.host}:{self.port}/{self.database}"
+
+    def validate_connection_config(self) -> dict[str, bool]:
+        """
+        Validate database configuration completeness.
+        
+        Returns:
+            Dictionary with validation results for each required field
+        """
+        validation_results = {
+            "host": bool(self.host and self.host.strip()),
+            "port": 1 <= self.port <= 65535,
+            "database": bool(self.database and self.database.strip()),
+            "user": bool(self.user and self.user.strip()),
+            "password": bool(self.password and self.password.strip()),
+            "connection_timeout": 1 <= self.connection_timeout <= 300,
+            "query_timeout": 1 <= self.query_timeout <= 3600,
+            "min_connections": 1 <= self.min_connections <= self.max_connections,
+            "max_connections": self.min_connections <= self.max_connections <= 100,
+        }
+        return validation_results
+
+    def get_connection_issues(self) -> list[str]:
+        """
+        Get list of connection configuration issues.
+        
+        Returns:
+            List of human-readable validation error messages
+        """
+        validation_results = self.validate_connection_config()
+        issues = []
+        
+        if not validation_results["host"]:
+            issues.append("Database host is required and cannot be empty")
+        if not validation_results["port"]:
+            issues.append("Database port must be between 1 and 65535")
+        if not validation_results["database"]:
+            issues.append("Database name is required and cannot be empty")
+        if not validation_results["user"]:
+            issues.append("Database user is required and cannot be empty")
+        if not validation_results["password"]:
+            issues.append("Database password is required and cannot be empty")
+        if not validation_results["connection_timeout"]:
+            issues.append("Connection timeout must be between 1 and 300 seconds")
+        if not validation_results["query_timeout"]:
+            issues.append("Query timeout must be between 1 and 3600 seconds")
+        if not validation_results["min_connections"]:
+            issues.append("Minimum connections must be at least 1 and not exceed maximum connections")
+        if not validation_results["max_connections"]:
+            issues.append("Maximum connections must be at least minimum connections and not exceed 100")
+            
+        return issues
+
+    def is_configuration_complete(self) -> bool:
+        """
+        Check if database configuration is complete and valid.
+        
+        Returns:
+            True if all required configuration is present and valid
+        """
+        validation_results = self.validate_connection_config()
+        return all(validation_results.values())
+
 
 class SchemaSettings(BaseSettings):
     """Database schema configuration."""
@@ -234,6 +302,61 @@ class DataSourceSettings(BaseSettings):
         extra = "allow"  # Allow extra fields for backward compatibility
 
 
+class MLflowSettings(BaseSettings):
+    """MLflow configuration for experiment tracking and model management."""
+
+    # MLflow Tracking Server Configuration
+    tracking_uri: str = Field(
+        default="http://localhost:5001",
+        description="MLflow tracking server URI",
+        env="MLFLOW_TRACKING_URI",
+    )
+
+    # Connection and retry settings
+    max_retries: int = Field(
+        default=3, ge=1, le=10, description="Maximum connection retry attempts"
+    )
+
+    retry_delay: float = Field(
+        default=1.0, ge=0.1, le=10.0, description="Delay between retries in seconds"
+    )
+
+    connection_timeout: int = Field(
+        default=30, ge=5, le=120, description="Connection timeout in seconds"
+    )
+
+    # Default experiment configuration
+    default_experiment_name: str = Field(
+        default="mlb_betting_experiments", description="Default experiment name"
+    )
+
+    # Artifact storage
+    artifact_root: str | None = Field(
+        default=None,
+        description="MLflow artifact root directory",
+        env="MLFLOW_DEFAULT_ARTIFACT_ROOT",
+    )
+
+    # Backend store (if different from tracking URI)
+    backend_store_uri: str | None = Field(
+        default=None,
+        description="MLflow backend store URI (overrides tracking_uri for metadata)",
+        env="MLFLOW_BACKEND_STORE_URI",
+    )
+
+    class Config:
+        env_prefix = "MLFLOW_"
+        case_sensitive = False
+        use_enum_values = True
+        extra = "allow"
+
+    @computed_field
+    @property
+    def effective_tracking_uri(self) -> str:
+        """Get effective tracking URI, preferring backend_store_uri if provided."""
+        return self.backend_store_uri or self.tracking_uri
+
+
 class MLPipelineSettings(BaseSettings):
     """ML Pipeline configuration settings."""
 
@@ -241,15 +364,15 @@ class MLPipelineSettings(BaseSettings):
     feature_cache_ttl_seconds: int = Field(
         default=900, ge=60, le=3600, description="Feature cache TTL in seconds"
     )
-    
+
     batch_processing_max_size: int = Field(
         default=50, ge=1, le=200, description="Maximum batch size for feature processing"
     )
-    
+
     batch_processing_min_size: int = Field(
         default=5, ge=1, le=50, description="Minimum batch size for feature processing"
     )
-    
+
     max_concurrent_extractions: int = Field(
         default=5, ge=1, le=20, description="Maximum concurrent feature extractions"
     )
@@ -258,7 +381,7 @@ class MLPipelineSettings(BaseSettings):
     memory_threshold_mb: int = Field(
         default=2048, ge=512, le=8192, description="Memory threshold in MB before triggering cleanup"
     )
-    
+
     memory_cleanup_trigger_mb: int = Field(
         default=500, ge=100, le=2048, description="Memory increase threshold to trigger cleanup"
     )
@@ -267,7 +390,7 @@ class MLPipelineSettings(BaseSettings):
     model_loading_timeout_seconds: int = Field(
         default=30, ge=5, le=300, description="Timeout for model loading operations"
     )
-    
+
     model_cache_size: int = Field(
         default=10, ge=1, le=50, description="Maximum number of models to keep in memory"
     )
@@ -276,15 +399,15 @@ class MLPipelineSettings(BaseSettings):
     redis_socket_timeout: float = Field(
         default=5.0, ge=1.0, le=30.0, description="Redis socket timeout in seconds"
     )
-    
+
     redis_connection_pool_size: int = Field(
         default=20, ge=5, le=100, description="Redis connection pool size"
     )
-    
+
     redis_max_retries: int = Field(
         default=3, ge=1, le=10, description="Maximum Redis connection retries"
     )
-    
+
     redis_retry_delay_seconds: float = Field(
         default=1.0, ge=0.1, le=10.0, description="Initial retry delay in seconds"
     )
@@ -293,7 +416,7 @@ class MLPipelineSettings(BaseSettings):
     prediction_batch_size: int = Field(
         default=10, ge=1, le=100, description="Batch size for prediction processing"
     )
-    
+
     prediction_cache_ttl_hours: int = Field(
         default=4, ge=1, le=24, description="Cache TTL for predictions in hours"
     )
@@ -302,7 +425,7 @@ class MLPipelineSettings(BaseSettings):
     api_response_target_ms: int = Field(
         default=100, ge=10, le=1000, description="Target API response time in milliseconds"
     )
-    
+
     prediction_latency_target_ms: int = Field(
         default=500, ge=50, le=5000, description="Target prediction latency in milliseconds"
     )
@@ -311,43 +434,43 @@ class MLPipelineSettings(BaseSettings):
     cpu_warning_threshold: float = Field(
         default=70.0, ge=10.0, le=100.0, description="CPU usage warning threshold percentage"
     )
-    
+
     cpu_critical_threshold: float = Field(
         default=85.0, ge=10.0, le=100.0, description="CPU usage critical threshold percentage"
     )
-    
+
     cpu_emergency_threshold: float = Field(
         default=95.0, ge=10.0, le=100.0, description="CPU usage emergency threshold percentage"
     )
-    
+
     memory_warning_threshold: float = Field(
         default=75.0, ge=10.0, le=100.0, description="Memory usage warning threshold percentage"
     )
-    
+
     memory_critical_threshold: float = Field(
         default=85.0, ge=10.0, le=100.0, description="Memory usage critical threshold percentage"
     )
-    
+
     memory_emergency_threshold: float = Field(
         default=95.0, ge=10.0, le=100.0, description="Memory usage emergency threshold percentage"
     )
-    
+
     disk_warning_threshold: float = Field(
         default=80.0, ge=10.0, le=100.0, description="Disk usage warning threshold percentage"
     )
-    
+
     disk_critical_threshold: float = Field(
         default=90.0, ge=10.0, le=100.0, description="Disk usage critical threshold percentage"
     )
-    
+
     disk_emergency_threshold: float = Field(
         default=95.0, ge=10.0, le=100.0, description="Disk usage emergency threshold percentage"
     )
-    
+
     resource_monitoring_interval: int = Field(
         default=10, ge=5, le=300, description="Resource monitoring interval in seconds"
     )
-    
+
     resource_alert_cooldown: int = Field(
         default=300, ge=60, le=3600, description="Resource alert cooldown period in seconds"
     )
@@ -1032,6 +1155,7 @@ class UnifiedSettings(BaseSettings):
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     dashboard: DashboardSettings = Field(default_factory=DashboardSettings)
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
+    mlflow: MLflowSettings = Field(default_factory=MLflowSettings)
     ml_pipeline: MLPipelineSettings = Field(default_factory=MLPipelineSettings)
     features: FeatureFlags = Field(default_factory=FeatureFlags)
 

@@ -3,17 +3,20 @@ MLflow Integration Service
 Connects MLflow to existing PostgreSQL database and ML tables
 """
 
-import os
 import logging
-from typing import Optional, Dict, Any, List
+import os
+import random
+import time
 from datetime import datetime
+from typing import Any
 
 import mlflow
 import mlflow.sklearn
+from mlflow.entities import Experiment
+from mlflow.exceptions import MlflowException
 from mlflow.tracking import MlflowClient
-from mlflow.entities import Experiment, Run
 
-from ...core.config import get_database_config
+from ...core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -21,67 +24,105 @@ logger = logging.getLogger(__name__)
 class MLflowService:
     """MLflow integration service that connects to existing PostgreSQL database"""
 
-    def __init__(self):
-        self.client: Optional[MlflowClient] = None
+    def __init__(self, max_retries: int = 3, retry_delay: float = 1.0):
+        self.client: MlflowClient | None = None
+        self.settings = get_settings()
+        self.max_retries = max_retries or self.settings.mlflow.max_retries
+        self.retry_delay = retry_delay or self.settings.mlflow.retry_delay
+        self.connection_timeout = self.settings.mlflow.connection_timeout
         self._setup_mlflow()
 
     def _setup_mlflow(self):
-        """Configure MLflow to use existing PostgreSQL database"""
-        try:
-            # Get database configuration from existing config
-            db_config = get_database_config()
+        """Configure MLflow to use existing PostgreSQL database with retry logic"""
+        for attempt in range(self.max_retries):
+            try:
+                # MLflow backend store URI - uses same PostgreSQL database
+                # This tells MLflow to store experiment metadata in PostgreSQL
+                backend_store_uri = (
+                    f"postgresql://{self.settings.database.user}:{self.settings.database.password}"
+                    f"@{self.settings.database.host}:{self.settings.database.port}/{self.settings.database.database}"
+                )
 
-            # MLflow backend store URI - uses same PostgreSQL database
-            # This tells MLflow to store experiment metadata in PostgreSQL
-            backend_store_uri = (
-                f"postgresql://{db_config.username}:{db_config.password}"
-                f"@{db_config.host}:{db_config.port}/{db_config.database}"
-            )
+                # Set MLflow tracking URI from configuration
+                tracking_uri = self.settings.mlflow.effective_tracking_uri
+                mlflow.set_tracking_uri(tracking_uri)
 
-            # Set MLflow tracking URI
-            mlflow.set_tracking_uri(backend_store_uri)
+                # Artifact root - configurable or default
+                artifact_root = self.settings.mlflow.artifact_root or os.getenv("MLFLOW_DEFAULT_ARTIFACT_ROOT", "./mlruns")
 
-            # Artifact root - local file storage for models, plots, etc.
-            artifact_root = os.getenv("MLFLOW_DEFAULT_ARTIFACT_ROOT", "./mlruns")
+                logger.info(f"MLflow configured (attempt {attempt + 1}/{self.max_retries}):")
+                logger.info(f"  Tracking URI: {tracking_uri}")
+                logger.info(f"  Backend store: {self.settings.database.host}:{self.settings.database.port}/{self.settings.database.database}")
+                logger.info(f"  Artifact root: {artifact_root}")
 
-            logger.info(f"MLflow configured:")
-            logger.info(
-                f"  Backend store: {db_config.host}:{db_config.port}/{db_config.database}"
-            )
-            logger.info(f"  Artifact root: {artifact_root}")
+                # Initialize MLflow client with connection pooling
+                self.client = MlflowClient(tracking_uri=tracking_uri)
 
-            # Initialize MLflow client
-            self.client = MlflowClient()
+                # Verify connection with timeout
+                experiments = self._retry_operation(
+                    lambda: self.client.search_experiments(),
+                    "search experiments"
+                )
+                logger.info(f"✅ MLflow connected - found {len(experiments)} experiments")
+                return
 
-            # Verify connection
-            experiments = self.client.search_experiments()
-            logger.info(f"✅ MLflow connected - found {len(experiments)} experiments")
+            except Exception as e:
+                logger.warning(f"MLflow setup attempt {attempt + 1} failed: {e}")
+                if attempt < self.max_retries - 1:
+                    delay = self.retry_delay * (2 ** attempt) + random.uniform(0, 1)
+                    logger.info(f"Retrying in {delay:.2f} seconds...")
+                    time.sleep(delay)
+                else:
+                    logger.error(f"Failed to setup MLflow after {self.max_retries} attempts")
+                    raise
 
-        except Exception as e:
-            logger.error(f"Failed to setup MLflow: {e}")
-            raise
+    def _retry_operation(self, operation, operation_name: str, *args, **kwargs):
+        """Retry an MLflow operation with exponential backoff"""
+        for attempt in range(self.max_retries):
+            try:
+                return operation(*args, **kwargs)
+            except (MlflowException, ConnectionError, TimeoutError) as e:
+                if attempt < self.max_retries - 1:
+                    delay = self.retry_delay * (2 ** attempt) + random.uniform(0, 1)
+                    logger.warning(f"MLflow {operation_name} attempt {attempt + 1} failed: {e}. Retrying in {delay:.2f}s...")
+                    time.sleep(delay)
+                else:
+                    logger.error(f"MLflow {operation_name} failed after {self.max_retries} attempts: {e}")
+                    raise
+            except Exception as e:
+                logger.error(f"MLflow {operation_name} failed with non-retryable error: {e}")
+                raise
 
     def create_experiment(
-        self, name: str, description: str = None, tags: Dict[str, str] = None
+        self, name: str, description: str = None, tags: dict[str, str] = None
     ) -> str:
-        """Create a new MLflow experiment"""
+        """Create a new MLflow experiment with retry logic"""
         try:
             # Check if experiment already exists
-            experiment = self.client.get_experiment_by_name(name)
+            experiment = self._retry_operation(
+                lambda: self.client.get_experiment_by_name(name),
+                "get experiment by name"
+            )
             if experiment:
                 logger.info(f"Using existing experiment: {name}")
                 return experiment.experiment_id
 
             # Create new experiment
-            experiment_id = self.client.create_experiment(
-                name=name,
-                artifact_location=None,  # Use default artifact root
-                tags=tags or {},
+            experiment_id = self._retry_operation(
+                lambda: self.client.create_experiment(
+                    name=name,
+                    artifact_location=None,  # Use default artifact root
+                    tags=tags or {},
+                ),
+                "create experiment"
             )
 
             if description:
-                self.client.set_experiment_tag(
-                    experiment_id, "description", description
+                self._retry_operation(
+                    lambda: self.client.set_experiment_tag(
+                        experiment_id, "description", description
+                    ),
+                    "set experiment tag"
                 )
 
             logger.info(f"Created MLflow experiment: {name} (ID: {experiment_id})")
@@ -92,7 +133,7 @@ class MLflowService:
             raise
 
     def start_run(
-        self, experiment_id: str, run_name: str = None, tags: Dict[str, str] = None
+        self, experiment_id: str, run_name: str = None, tags: dict[str, str] = None
     ):
         """Start a new MLflow run"""
         try:
@@ -109,25 +150,37 @@ class MLflowService:
             logger.error(f"Failed to start MLflow run: {e}")
             raise
 
-    def log_model_metrics(self, metrics: Dict[str, float], step: int = None):
-        """Log model performance metrics to MLflow"""
+    def log_model_metrics(self, metrics: dict[str, float], step: int = None):
+        """Log model performance metrics to MLflow with retry logic"""
         try:
-            for metric_name, value in metrics.items():
-                mlflow.log_metric(metric_name, value, step=step)
+            def _log_metrics():
+                for metric_name, value in metrics.items():
+                    mlflow.log_metric(metric_name, value, step=step)
+                return len(metrics)
 
-            logger.debug(f"Logged {len(metrics)} metrics to MLflow")
+            metric_count = self._retry_operation(
+                _log_metrics,
+                "log metrics"
+            )
+            logger.debug(f"Logged {metric_count} metrics to MLflow")
 
         except Exception as e:
             logger.error(f"Failed to log metrics: {e}")
             raise
 
-    def log_model_params(self, params: Dict[str, Any]):
-        """Log model parameters to MLflow"""
+    def log_model_params(self, params: dict[str, Any]):
+        """Log model parameters to MLflow with retry logic"""
         try:
-            for param_name, value in params.items():
-                mlflow.log_param(param_name, str(value))
+            def _log_params():
+                for param_name, value in params.items():
+                    mlflow.log_param(param_name, str(value))
+                return len(params)
 
-            logger.debug(f"Logged {len(params)} parameters to MLflow")
+            param_count = self._retry_operation(
+                _log_params,
+                "log parameters"
+            )
+            logger.debug(f"Logged {param_count} parameters to MLflow")
 
         except Exception as e:
             logger.error(f"Failed to log parameters: {e}")
@@ -146,17 +199,20 @@ class MLflowService:
             logger.error(f"Failed to log sklearn model: {e}")
             raise
 
-    def get_experiment_by_name(self, name: str) -> Optional[Experiment]:
-        """Get experiment by name"""
+    def get_experiment_by_name(self, name: str) -> Experiment | None:
+        """Get experiment by name with retry logic"""
         try:
-            return self.client.get_experiment_by_name(name)
+            return self._retry_operation(
+                lambda: self.client.get_experiment_by_name(name),
+                "get experiment by name"
+            )
         except Exception as e:
             logger.error(f"Failed to get experiment {name}: {e}")
             return None
 
     def get_latest_model(
         self, experiment_name: str, metric_name: str = "accuracy"
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Get the best model from an experiment based on a metric"""
         try:
             experiment = self.get_experiment_by_name(experiment_name)
@@ -196,7 +252,7 @@ class MLflowService:
         except Exception as e:
             logger.error(f"Failed to end MLflow run: {e}")
 
-    def sync_with_ml_experiments_table(self, experiment_id: str) -> Dict[str, Any]:
+    def sync_with_ml_experiments_table(self, experiment_id: str) -> dict[str, Any]:
         """
         Sync MLflow experiment data with our custom curated.ml_experiments table
         This bridges MLflow's internal storage with our ML prediction system
