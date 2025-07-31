@@ -24,6 +24,7 @@ from src.data.pipeline.staging_action_network_unified_processor import (
 from src.services.cross_site_game_resolution_service import (
     CrossSiteGameResolutionService,
 )
+from src.core.config import get_settings
 
 
 class TestDatabaseConfigurationIntegration:
@@ -312,3 +313,24 @@ class TestDatabaseConfigurationIntegration:
                 assert config == configs[0], (
                     f"Configuration mismatch between component 0 and {i}: {configs[0]} vs {config}"
                 )
+
+    def test_database_config_compatibility(self):
+        """Ensure settings.database.user works correctly"""
+        settings = get_settings()
+        assert hasattr(settings.database, 'user')
+        assert not hasattr(settings.database, 'username')  # Deprecated
+        
+        # Test that the new 'user' field works properly
+        assert isinstance(settings.database.user, str)
+        assert len(settings.database.user) > 0
+        
+        # Test database connection string generation uses 'user' field
+        connection_string = settings.database.connection_string
+        assert settings.database.user in connection_string
+        
+        # Test that legacy username field doesn't exist in new config
+        try:
+            _ = settings.database.username
+            pytest.fail("Legacy 'username' field should not exist in new configuration")
+        except AttributeError:
+            pass  # This is expected behavior

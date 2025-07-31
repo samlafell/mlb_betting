@@ -34,6 +34,88 @@ This document clarifies the complementary roles of MLFlow and our custom monitor
 - Feature drift detection for data quality issues
 - Business stakeholder notifications for model performance
 
+## Future Enhancement: Circuit Breaker Pattern
+
+### 🛡️ **MLflow Service Resilience Enhancement**
+
+**Purpose**: Implement circuit breaker pattern for MLflow service integration to ensure system resilience when MLflow is unavailable.
+
+**Current State**: 
+- MLflow URI configuration uses `settings.mlflow.effective_tracking_uri` (✅ Implemented)
+- Retry logic with `max_retries` and `retry_delay` configuration
+- Connection timeout management via `connection_timeout` setting
+
+**Proposed Enhancement**:
+
+**Circuit Breaker States**:
+- **Closed**: Normal operation, requests flow to MLflow
+- **Open**: MLflow unavailable, requests fail fast without attempting connection
+- **Half-Open**: Testing if MLflow has recovered, limited requests allowed
+
+**Implementation Strategy**:
+```python
+class MLflowCircuitBreaker:
+    def __init__(self, failure_threshold: int = 5, recovery_timeout: int = 60):
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
+    
+    async def call_with_circuit_breaker(self, operation):
+        if self.state == "OPEN":
+            if time.time() - self.last_failure_time > self.recovery_timeout:
+                self.state = "HALF_OPEN"
+            else:
+                raise CircuitBreakerOpenError("MLflow service unavailable")
+        
+        try:
+            result = await operation()
+            if self.state == "HALF_OPEN":
+                self.state = "CLOSED"
+                self.failure_count = 0
+            return result
+        except Exception as e:
+            self.failure_count += 1
+            self.last_failure_time = time.time()
+            
+            if self.failure_count >= self.failure_threshold:
+                self.state = "OPEN"
+            
+            raise e
+```
+
+**Graceful Degradation**:
+- **Training continues**: Models can be trained without MLflow tracking
+- **Local artifacts**: Store model artifacts locally when MLflow unavailable  
+- **Queued metrics**: Buffer metrics for later upload when service recovers
+- **Alert notifications**: Notify operations team of MLflow service issues
+
+**Configuration Integration**:
+```python
+class MLflowSettings(BaseSettings):
+    # Existing settings...
+    
+    # Circuit breaker settings
+    enable_circuit_breaker: bool = Field(
+        default=True, description="Enable circuit breaker for MLflow resilience"
+    )
+    circuit_breaker_failure_threshold: int = Field(
+        default=5, ge=1, le=20, description="Failures before opening circuit"
+    )
+    circuit_breaker_recovery_timeout: int = Field(
+        default=60, ge=30, le=300, description="Recovery timeout in seconds"
+    )
+```
+
+**Benefits**:
+- **System Resilience**: Training pipelines continue operating during MLflow outages
+- **Fast Failure**: Avoid hanging on unavailable MLflow service calls
+- **Automatic Recovery**: Seamless reconnection when MLflow service recovers
+- **Operational Visibility**: Clear alerts and status for MLflow service health
+
+**Implementation Priority**: Future enhancement for production hardening
+
 ## Integration Points
 
 ### 🔗 **Unified Data Flow**
