@@ -13,7 +13,7 @@ import mlflow.sklearn
 from mlflow.tracking import MlflowClient
 from mlflow.entities import Experiment, Run
 
-from ...core.config import get_database_config
+from ...core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +29,13 @@ class MLflowService:
         """Configure MLflow to use existing PostgreSQL database"""
         try:
             # Get database configuration from existing config
-            db_config = get_database_config()
+            settings = get_settings()
 
             # MLflow backend store URI - uses same PostgreSQL database
             # This tells MLflow to store experiment metadata in PostgreSQL
             backend_store_uri = (
-                f"postgresql://{db_config.username}:{db_config.password}"
-                f"@{db_config.host}:{db_config.port}/{db_config.database}"
+                f"postgresql://{settings.database.user}:{settings.database.password}"
+                f"@{settings.database.host}:{settings.database.port}/{settings.database.database}"
             )
 
             # Set MLflow tracking URI
@@ -46,7 +46,7 @@ class MLflowService:
 
             logger.info(f"MLflow configured:")
             logger.info(
-                f"  Backend store: {db_config.host}:{db_config.port}/{db_config.database}"
+                f"  Backend store: {settings.database.host}:{settings.database.port}/{settings.database.database}"
             )
             logger.info(f"  Artifact root: {artifact_root}")
 

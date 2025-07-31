@@ -359,9 +359,8 @@ class LightGBMTrainer:
     async def _initialize_mlflow_tracking(self):
         """Initialize MLflow experiment tracking"""
         try:
-            # Set MLflow tracking URI to PostgreSQL backend
-            mlflow_uri = f"postgresql://{self.settings.database.username}:{self.settings.database.password}@{self.settings.database.host}:{self.settings.database.port}/{self.settings.database.database}"
-            mlflow.set_tracking_uri(mlflow_uri)
+            # Set MLflow tracking URI to existing container
+            mlflow.set_tracking_uri("http://localhost:5001")
 
             # Create or get experiment
             try:
@@ -396,7 +395,7 @@ class LightGBMTrainer:
                 host=self.settings.database.host,
                 port=self.settings.database.port,
                 database=self.settings.database.database,
-                user=self.settings.database.username,
+                user=self.settings.database.user,
                 password=self.settings.database.password,
             )
 
