@@ -129,6 +129,74 @@ class DatabaseSettings(BaseSettings):
         """Get async PostgreSQL connection string."""
         return f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
 
+    @computed_field
+    @property
+    def masked_connection_string(self) -> str:
+        """Get connection string with masked password for logging."""
+        masked_password = "*" * len(self.password) if self.password else ""
+        return f"postgresql://{self.user}:{masked_password}@{self.host}:{self.port}/{self.database}"
+
+    def validate_connection_config(self) -> dict[str, bool]:
+        """
+        Validate database configuration completeness.
+        
+        Returns:
+            Dictionary with validation results for each required field
+        """
+        validation_results = {
+            "host": bool(self.host and self.host.strip()),
+            "port": 1 <= self.port <= 65535,
+            "database": bool(self.database and self.database.strip()),
+            "user": bool(self.user and self.user.strip()),
+            "password": bool(self.password and self.password.strip()),
+            "connection_timeout": 1 <= self.connection_timeout <= 300,
+            "query_timeout": 1 <= self.query_timeout <= 3600,
+            "min_connections": 1 <= self.min_connections <= self.max_connections,
+            "max_connections": self.min_connections <= self.max_connections <= 100,
+        }
+        return validation_results
+
+    def get_connection_issues(self) -> list[str]:
+        """
+        Get list of connection configuration issues.
+        
+        Returns:
+            List of human-readable validation error messages
+        """
+        validation_results = self.validate_connection_config()
+        issues = []
+        
+        if not validation_results["host"]:
+            issues.append("Database host is required and cannot be empty")
+        if not validation_results["port"]:
+            issues.append("Database port must be between 1 and 65535")
+        if not validation_results["database"]:
+            issues.append("Database name is required and cannot be empty")
+        if not validation_results["user"]:
+            issues.append("Database user is required and cannot be empty")
+        if not validation_results["password"]:
+            issues.append("Database password is required and cannot be empty")
+        if not validation_results["connection_timeout"]:
+            issues.append("Connection timeout must be between 1 and 300 seconds")
+        if not validation_results["query_timeout"]:
+            issues.append("Query timeout must be between 1 and 3600 seconds")
+        if not validation_results["min_connections"]:
+            issues.append("Minimum connections must be at least 1 and not exceed maximum connections")
+        if not validation_results["max_connections"]:
+            issues.append("Maximum connections must be at least minimum connections and not exceed 100")
+            
+        return issues
+
+    def is_configuration_complete(self) -> bool:
+        """
+        Check if database configuration is complete and valid.
+        
+        Returns:
+            True if all required configuration is present and valid
+        """
+        validation_results = self.validate_connection_config()
+        return all(validation_results.values())
+
 
 class SchemaSettings(BaseSettings):
     """Database schema configuration."""
@@ -234,6 +302,61 @@ class DataSourceSettings(BaseSettings):
         extra = "allow"  # Allow extra fields for backward compatibility
 
 
+class MLflowSettings(BaseSettings):
+    """MLflow configuration for experiment tracking and model management."""
+
+    # MLflow Tracking Server Configuration
+    tracking_uri: str = Field(
+        default="http://localhost:5001",
+        description="MLflow tracking server URI",
+        env="MLFLOW_TRACKING_URI",
+    )
+
+    # Connection and retry settings
+    max_retries: int = Field(
+        default=3, ge=1, le=10, description="Maximum connection retry attempts"
+    )
+
+    retry_delay: float = Field(
+        default=1.0, ge=0.1, le=10.0, description="Delay between retries in seconds"
+    )
+
+    connection_timeout: int = Field(
+        default=30, ge=5, le=120, description="Connection timeout in seconds"
+    )
+
+    # Default experiment configuration
+    default_experiment_name: str = Field(
+        default="mlb_betting_experiments", description="Default experiment name"
+    )
+
+    # Artifact storage
+    artifact_root: str | None = Field(
+        default=None,
+        description="MLflow artifact root directory",
+        env="MLFLOW_DEFAULT_ARTIFACT_ROOT",
+    )
+
+    # Backend store (if different from tracking URI)
+    backend_store_uri: str | None = Field(
+        default=None,
+        description="MLflow backend store URI (overrides tracking_uri for metadata)",
+        env="MLFLOW_BACKEND_STORE_URI",
+    )
+
+    class Config:
+        env_prefix = "MLFLOW_"
+        case_sensitive = False
+        use_enum_values = True
+        extra = "allow"
+
+    @computed_field
+    @property
+    def effective_tracking_uri(self) -> str:
+        """Get effective tracking URI, preferring backend_store_uri if provided."""
+        return self.backend_store_uri or self.tracking_uri
+
+
 class MLPipelineSettings(BaseSettings):
     """ML Pipeline configuration settings."""
 
@@ -241,15 +364,15 @@ class MLPipelineSettings(BaseSettings):
     feature_cache_ttl_seconds: int = Field(
         default=900, ge=60, le=3600, description="Feature cache TTL in seconds"
     )
-    
+
     batch_processing_max_size: int = Field(
         default=50, ge=1, le=200, description="Maximum batch size for feature processing"
     )
-    
+
     batch_processing_min_size: int = Field(
         default=5, ge=1, le=50, description="Minimum batch size for feature processing"
     )
-    
+
     max_concurrent_extractions: int = Field(
         default=5, ge=1, le=20, description="Maximum concurrent feature extractions"
     )
@@ -258,7 +381,7 @@ class MLPipelineSettings(BaseSettings):
     memory_threshold_mb: int = Field(
         default=2048, ge=512, le=8192, description="Memory threshold in MB before triggering cleanup"
     )
-    
+
     memory_cleanup_trigger_mb: int = Field(
         default=500, ge=100, le=2048, description="Memory increase threshold to trigger cleanup"
     )
@@ -267,7 +390,7 @@ class MLPipelineSettings(BaseSettings):
     model_loading_timeout_seconds: int = Field(
         default=30, ge=5, le=300, description="Timeout for model loading operations"
     )
-    
+
     model_cache_size: int = Field(
         default=10, ge=1, le=50, description="Maximum number of models to keep in memory"
     )
@@ -276,15 +399,15 @@ class MLPipelineSettings(BaseSettings):
     redis_socket_timeout: float = Field(
         default=5.0, ge=1.0, le=30.0, description="Redis socket timeout in seconds"
     )
-    
+
     redis_connection_pool_size: int = Field(
         default=20, ge=5, le=100, description="Redis connection pool size"
     )
-    
+
     redis_max_retries: int = Field(
         default=3, ge=1, le=10, description="Maximum Redis connection retries"
     )
-    
+
     redis_retry_delay_seconds: float = Field(
         default=1.0, ge=0.1, le=10.0, description="Initial retry delay in seconds"
     )
@@ -293,7 +416,7 @@ class MLPipelineSettings(BaseSettings):
     prediction_batch_size: int = Field(
         default=10, ge=1, le=100, description="Batch size for prediction processing"
     )
-    
+
     prediction_cache_ttl_hours: int = Field(
         default=4, ge=1, le=24, description="Cache TTL for predictions in hours"
     )
@@ -302,7 +425,7 @@ class MLPipelineSettings(BaseSettings):
     api_response_target_ms: int = Field(
         default=100, ge=10, le=1000, description="Target API response time in milliseconds"
     )
-    
+
     prediction_latency_target_ms: int = Field(
         default=500, ge=50, le=5000, description="Target prediction latency in milliseconds"
     )
@@ -311,43 +434,43 @@ class MLPipelineSettings(BaseSettings):
     cpu_warning_threshold: float = Field(
         default=70.0, ge=10.0, le=100.0, description="CPU usage warning threshold percentage"
     )
-    
+
     cpu_critical_threshold: float = Field(
         default=85.0, ge=10.0, le=100.0, description="CPU usage critical threshold percentage"
     )
-    
+
     cpu_emergency_threshold: float = Field(
         default=95.0, ge=10.0, le=100.0, description="CPU usage emergency threshold percentage"
     )
-    
+
     memory_warning_threshold: float = Field(
         default=75.0, ge=10.0, le=100.0, description="Memory usage warning threshold percentage"
     )
-    
+
     memory_critical_threshold: float = Field(
         default=85.0, ge=10.0, le=100.0, description="Memory usage critical threshold percentage"
     )
-    
+
     memory_emergency_threshold: float = Field(
         default=95.0, ge=10.0, le=100.0, description="Memory usage emergency threshold percentage"
     )
-    
+
     disk_warning_threshold: float = Field(
         default=80.0, ge=10.0, le=100.0, description="Disk usage warning threshold percentage"
     )
-    
+
     disk_critical_threshold: float = Field(
         default=90.0, ge=10.0, le=100.0, description="Disk usage critical threshold percentage"
     )
-    
+
     disk_emergency_threshold: float = Field(
         default=95.0, ge=10.0, le=100.0, description="Disk usage emergency threshold percentage"
     )
-    
+
     resource_monitoring_interval: int = Field(
         default=10, ge=5, le=300, description="Resource monitoring interval in seconds"
     )
-    
+
     resource_alert_cooldown: int = Field(
         default=300, ge=60, le=3600, description="Resource alert cooldown period in seconds"
     )
@@ -989,6 +1112,112 @@ class DashboardSettings(BaseSettings):
         extra = "allow"
 
 
+# ML System Configuration Classes
+class MLflowConfig(BaseModel):
+    """MLflow Model Registry Configuration"""
+    tracking_uri: str = Field(default="http://localhost:5001", description="MLflow tracking server URI")
+    experiment_name: str = Field(default="mlb_betting_models", description="Default experiment name")
+    artifact_store: str = Field(default="s3://mlb-betting-artifacts", description="Artifact storage location")
+    connection_timeout: int = Field(default=30, description="Connection timeout in seconds")
+    retry_attempts: int = Field(default=3, description="Number of retry attempts")
+    api_key: str = Field(default="${MLFLOW_API_KEY}", description="API key for authentication")
+
+
+class RedisConfig(BaseModel):
+    """Redis Feature Store Configuration"""
+    host: str = Field(default="localhost", description="Redis server host")
+    port: int = Field(default=6379, description="Redis server port")
+    password: str = Field(default="${REDIS_PASSWORD}", description="Redis password")
+    ssl_enabled: bool = Field(default=False, description="Enable SSL/TLS encryption")
+    ssl_cert_path: str = Field(default="", description="Path to SSL certificate")
+    ssl_key_path: str = Field(default="", description="Path to SSL private key")
+    ssl_ca_path: str = Field(default="", description="Path to SSL CA certificate")
+    connection_pool_size: int = Field(default=20, description="Connection pool size")
+    socket_timeout: float = Field(default=5.0, description="Socket timeout in seconds")
+    max_retries: int = Field(default=3, description="Maximum connection retries")
+    retry_delay_seconds: float = Field(default=1.0, description="Initial retry delay in seconds")
+    database: int = Field(default=0, description="Redis database number")
+
+
+class ModelThresholdsConfig(BaseModel):
+    """Model Performance Thresholds Configuration"""
+    # Staging promotion thresholds
+    staging_min_accuracy: float = Field(default=0.55, description="Minimum accuracy for staging")
+    staging_min_roc_auc: float = Field(default=0.60, description="Minimum ROC AUC for staging")
+    staging_min_precision: float = Field(default=0.50, description="Minimum precision for staging")
+    staging_min_recall: float = Field(default=0.50, description="Minimum recall for staging")
+    staging_min_training_samples: int = Field(default=50, description="Minimum training samples")
+    
+    # Production promotion thresholds
+    production_min_accuracy: float = Field(default=0.60, description="Minimum accuracy for production")
+    production_min_roc_auc: float = Field(default=0.65, description="Minimum ROC AUC for production")
+    production_min_f1_score: float = Field(default=0.58, description="Minimum F1 score for production")
+    production_min_roi: float = Field(default=0.05, description="Minimum ROI for production")
+    production_evaluation_days: int = Field(default=7, description="Days of staging evaluation")
+
+
+class PerformanceConfig(BaseModel):
+    """Performance and Resource Management Configuration"""
+    memory_limit_mb: int = Field(default=2048, description="Memory threshold for cleanup")
+    batch_size_limit: int = Field(default=50, description="Maximum batch processing size")
+    connection_pool_size: int = Field(default=20, description="Database connection pool size")
+    feature_cache_ttl_seconds: int = Field(default=900, description="Feature cache TTL")
+    model_cache_size: int = Field(default=10, description="Maximum models in memory")
+    model_loading_timeout_seconds: int = Field(default=30, description="Model loading timeout")
+    memory_cleanup_trigger_mb: int = Field(default=500, description="Memory cleanup trigger")
+    max_concurrent_extractions: int = Field(default=5, description="Max concurrent extractions")
+    dataframe_chunk_size: int = Field(default=1000, description="DataFrame chunk size")
+
+
+class RetrainingConfig(BaseModel):
+    """Automated Retraining Configuration"""
+    monitoring_interval_minutes: int = Field(default=30, description="Performance monitoring interval")
+    staging_evaluation_delay_seconds: int = Field(default=300, description="Staging evaluation delay")
+    performance_check_interval_hours: int = Field(default=1, description="Performance check interval")
+    performance_degradation_threshold: float = Field(default=0.05, description="Degradation threshold")
+    data_drift_threshold: float = Field(default=0.1, description="Data drift threshold")
+    auto_retraining_enabled: bool = Field(default=True, description="Enable automatic retraining")
+    max_concurrent_retraining_jobs: int = Field(default=2, description="Max concurrent jobs")
+    default_schedule_cron: str = Field(default="0 2 * * *", description="Default schedule")
+    default_sliding_window_days: int = Field(default=90, description="Default training window")
+    default_min_samples: int = Field(default=100, description="Default minimum samples")
+
+
+class MLSecurityConfig(BaseModel):
+    """ML System Security Configuration"""
+    enable_api_authentication: bool = Field(default=True, description="Enable API authentication")
+    api_key_header: str = Field(default="X-ML-API-Key", description="API key header name")
+    enable_audit_logging: bool = Field(default=True, description="Enable audit logging")
+    audit_log_level: str = Field(default="INFO", description="Audit log level")
+    sensitive_data_masking: bool = Field(default=True, description="Mask sensitive data in logs")
+    model_encryption_enabled: bool = Field(default=False, description="Enable model encryption")
+
+
+class MLMonitoringConfig(BaseModel):
+    """ML System Monitoring Configuration"""
+    enable_prometheus_metrics: bool = Field(default=True, description="Enable Prometheus metrics")
+    metrics_port: int = Field(default=9090, description="Metrics endpoint port")
+    enable_model_drift_detection: bool = Field(default=True, description="Enable drift detection")
+    drift_detection_interval_hours: int = Field(default=6, description="Drift detection interval")
+    enable_performance_alerts: bool = Field(default=True, description="Enable performance alerts")
+    alert_webhook_url: str = Field(default="${ML_ALERT_WEBHOOK}", description="Alert webhook URL")
+    collect_prediction_metrics: bool = Field(default=True, description="Collect prediction metrics")
+    collect_feature_metrics: bool = Field(default=True, description="Collect feature metrics")
+    collect_training_metrics: bool = Field(default=True, description="Collect training metrics")
+    metrics_retention_days: int = Field(default=30, description="Metrics retention period")
+
+
+class MLSystemConfig(BaseModel):
+    """Complete ML System Configuration"""
+    mlflow: MLflowConfig = Field(default_factory=MLflowConfig)
+    redis: RedisConfig = Field(default_factory=RedisConfig)
+    model_thresholds: ModelThresholdsConfig = Field(default_factory=ModelThresholdsConfig)
+    performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
+    retraining: RetrainingConfig = Field(default_factory=RetrainingConfig)
+    security: MLSecurityConfig = Field(default_factory=MLSecurityConfig)
+    monitoring: MLMonitoringConfig = Field(default_factory=MLMonitoringConfig)
+
+
 class UnifiedSettings(BaseSettings):
     """
     Main unified settings class consolidating all configuration.
@@ -1032,7 +1261,9 @@ class UnifiedSettings(BaseSettings):
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     dashboard: DashboardSettings = Field(default_factory=DashboardSettings)
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
+    mlflow: MLflowSettings = Field(default_factory=MLflowSettings)
     ml_pipeline: MLPipelineSettings = Field(default_factory=MLPipelineSettings)
+    ml: MLSystemConfig = Field(default_factory=MLSystemConfig)
     features: FeatureFlags = Field(default_factory=FeatureFlags)
 
     class Config:

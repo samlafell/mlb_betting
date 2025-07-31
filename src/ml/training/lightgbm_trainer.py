@@ -3,34 +3,31 @@ LightGBM Training Pipeline with MLflow Integration
 High-performance ML training for MLB betting predictions with experiment tracking
 """
 
+import json
 import logging
-import asyncio
-from typing import Dict, List, Optional, Any, Tuple, Union
 from datetime import datetime, timedelta
 from decimal import Decimal
-import json
+from typing import Any
 
-import pandas as pd
-import numpy as np
 import lightgbm as lgb
-from sklearn.model_selection import train_test_split, TimeSeriesSplit
-from sklearn.metrics import (
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-    roc_auc_score,
-)
-from sklearn.preprocessing import StandardScaler, LabelEncoder
 import mlflow
 import mlflow.lightgbm
 import mlflow.sklearn
-import joblib
+import numpy as np
+import pandas as pd
+from sklearn.metrics import (
+    accuracy_score,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
+from sklearn.model_selection import TimeSeriesSplit
 
 from ...core.config import get_settings
 from ..features.feature_pipeline import FeaturePipeline
-from ..features.redis_feature_store import RedisFeatureStore
 from ..features.models import FeatureVector
+from ..features.redis_feature_store import RedisFeatureStore
 
 logger = logging.getLogger(__name__)
 
@@ -109,11 +106,11 @@ class LightGBMTrainer:
         self,
         start_date: datetime,
         end_date: datetime,
-        prediction_targets: List[str] = None,
+        prediction_targets: list[str] = None,
         use_cached_features: bool = True,
         cross_validation_folds: int = 5,
         test_size: float = 0.2,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Train LightGBM models for specified prediction targets
 
@@ -214,7 +211,7 @@ class LightGBMTrainer:
 
     async def retrain_model(
         self, model_name: str, sliding_window_days: int = 7, min_samples: int = 100
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Retrain a specific model with sliding window approach
 
@@ -281,7 +278,7 @@ class LightGBMTrainer:
 
     async def evaluate_model_performance(
         self, model_name: str, evaluation_start: datetime, evaluation_end: datetime
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Evaluate trained model performance on out-of-sample data
 
@@ -359,8 +356,9 @@ class LightGBMTrainer:
     async def _initialize_mlflow_tracking(self):
         """Initialize MLflow experiment tracking"""
         try:
-            # Set MLflow tracking URI to PostgreSQL backend
-            mlflow_uri = f"postgresql://{self.settings.database.username}:{self.settings.database.password}@{self.settings.database.host}:{self.settings.database.port}/{self.settings.database.database}"
+            # Set MLflow tracking URI from configuration
+            settings = get_settings()
+            mlflow_uri = settings.mlflow.effective_tracking_uri
             mlflow.set_tracking_uri(mlflow_uri)
 
             # Create or get experiment
@@ -386,7 +384,7 @@ class LightGBMTrainer:
 
     async def _load_training_data(
         self, start_date: datetime, end_date: datetime, use_cached_features: bool = True
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Load training data with feature vectors"""
         try:
             import asyncpg
@@ -396,7 +394,7 @@ class LightGBMTrainer:
                 host=self.settings.database.host,
                 port=self.settings.database.port,
                 database=self.settings.database.database,
-                user=self.settings.database.username,
+                user=self.settings.database.user,
                 password=self.settings.database.password,
             )
 
@@ -482,8 +480,8 @@ class LightGBMTrainer:
             raise
 
     async def _prepare_target_dataset(
-        self, training_data: List[Dict[str, Any]], target: str
-    ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+        self, training_data: list[dict[str, Any]], target: str
+    ) -> tuple[np.ndarray, np.ndarray, list[str]]:
         """Prepare dataset for specific prediction target"""
         try:
             features_list = []
@@ -529,7 +527,7 @@ class LightGBMTrainer:
 
     def _feature_vector_to_array(
         self, feature_vector: FeatureVector
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         """Convert FeatureVector to numpy array for model training"""
         try:
             feature_dict = {}
@@ -634,7 +632,7 @@ class LightGBMTrainer:
             logger.error(f"Error converting feature vector to array: {e}")
             return None
 
-    def _get_feature_names(self) -> List[str]:
+    def _get_feature_names(self) -> list[str]:
         """Get consistent feature names for model interpretability"""
         # This should match the order in _feature_vector_to_array
         # For now, return a basic set - this should be expanded based on actual features
@@ -671,11 +669,11 @@ class LightGBMTrainer:
         self,
         X: np.ndarray,
         y: np.ndarray,
-        feature_names: List[str],
+        feature_names: list[str],
         target: str,
         cv_folds: int = 5,
         test_size: float = 0.2,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Train LightGBM model for specific target"""
         try:
             # Split data chronologically (important for time series)
@@ -742,7 +740,7 @@ class LightGBMTrainer:
                 }
 
             # Feature importance
-            feature_importance = dict(zip(feature_names, model.feature_importance()))
+            feature_importance = dict(zip(feature_names, model.feature_importance(), strict=False))
 
             # Cross-validation scores
             cv_scores = await self._perform_cross_validation(
@@ -765,8 +763,8 @@ class LightGBMTrainer:
             raise
 
     async def _perform_cross_validation(
-        self, X: np.ndarray, y: np.ndarray, model_config: Dict[str, Any], cv_folds: int
-    ) -> Dict[str, float]:
+        self, X: np.ndarray, y: np.ndarray, model_config: dict[str, Any], cv_folds: int
+    ) -> dict[str, float]:
         """Perform time series cross-validation"""
         try:
             # Use TimeSeriesSplit for chronological data
@@ -815,9 +813,9 @@ class LightGBMTrainer:
 
     async def _log_model_results(
         self,
-        results: Dict[str, Any],
+        results: dict[str, Any],
         target: str,
-        feature_names: List[str],
+        feature_names: list[str],
         is_retrain: bool = False,
     ):
         """Log model results to MLflow"""
@@ -862,7 +860,7 @@ class LightGBMTrainer:
 
     def _detect_feature_drift(
         self,
-        current_importance: Dict[str, float],
+        current_importance: dict[str, float],
         model_name: str,
         drift_threshold: float = 0.1,
     ) -> bool:
@@ -908,7 +906,7 @@ class LightGBMTrainer:
             return False
 
     def _update_training_stats(
-        self, training_results: Dict[str, Any], training_time: float
+        self, training_results: dict[str, Any], training_time: float
     ):
         """Update training statistics"""
         self.training_stats["models_trained"] += len(training_results)
@@ -934,6 +932,6 @@ class LightGBMTrainer:
                 if value > current_best:
                     self.training_stats["best_model_scores"][target][metric] = value
 
-    def get_training_stats(self) -> Dict[str, Any]:
+    def get_training_stats(self) -> dict[str, Any]:
         """Get training pipeline statistics"""
         return self.training_stats.copy()

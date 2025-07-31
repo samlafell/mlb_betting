@@ -54,9 +54,24 @@ class RedisFeatureStore:
 
     def __init__(self, redis_url: Optional[str] = None):
         self.settings = get_settings()
-        self.redis_url = redis_url or getattr(
-            self.settings, "redis_url", "redis://localhost:6379/0"
-        )
+        # Use Redis configuration from ML settings with security support
+        if redis_url:
+            self.redis_url = redis_url
+        else:
+            # Build Redis URL from configuration with authentication
+            redis_config = self.settings.ml.redis
+            auth_part = ""
+            if hasattr(redis_config, 'password') and redis_config.password:
+                # Support environment variable substitution
+                password = redis_config.password
+                if password.startswith('${') and password.endswith('}'):
+                    import os
+                    env_var = password[2:-1]
+                    password = os.getenv(env_var, "")
+                if password:
+                    auth_part = f":{password}@"
+            
+            self.redis_url = f"redis://{auth_part}{redis_config.host}:{redis_config.port}/{redis_config.database}"
         self.redis_client: Optional[redis.Redis] = None
         
         # Initialize circuit breaker for resilience
@@ -152,20 +167,51 @@ class RedisFeatureStore:
         
         for attempt in range(max_retries):
             try:
-                self.redis_client = redis.from_url(
-                    self.redis_url,
-                    encoding="utf-8",
-                    decode_responses=False,  # Handle binary data for MessagePack
-                    socket_connect_timeout=self.socket_timeout,
-                    socket_timeout=self.socket_timeout,
-                    retry_on_timeout=True,
-                    health_check_interval=30,
-                    max_connections=self.connection_pool_size,
-                )
+                # Build Redis connection with security configuration
+                redis_config = self.settings.ml.redis
+                connection_params = {
+                    "encoding": "utf-8",
+                    "decode_responses": False,  # Handle binary data for MessagePack
+                    "socket_connect_timeout": redis_config.socket_timeout,
+                    "socket_timeout": redis_config.socket_timeout,
+                    "retry_on_timeout": True,
+                    "health_check_interval": 30,
+                    "max_connections": redis_config.connection_pool_size,
+                }
+                
+                # Add SSL/TLS configuration if enabled
+                if hasattr(redis_config, 'ssl_enabled') and redis_config.ssl_enabled:
+                    import ssl
+                    ssl_context = ssl.create_default_context()
+                    
+                    # Configure SSL certificates if provided
+                    if hasattr(redis_config, 'ssl_cert_path') and redis_config.ssl_cert_path:
+                        ssl_context.load_cert_chain(
+                            redis_config.ssl_cert_path,
+                            redis_config.ssl_key_path if hasattr(redis_config, 'ssl_key_path') else None
+                        )
+                    
+                    # Configure CA certificate if provided
+                    if hasattr(redis_config, 'ssl_ca_path') and redis_config.ssl_ca_path:
+                        ssl_context.load_verify_locations(redis_config.ssl_ca_path)
+                    
+                    connection_params["ssl"] = ssl_context
+                    connection_params["ssl_check_hostname"] = False  # Allow self-signed certificates
+                    
+                    # Use rediss:// scheme for SSL connections
+                    redis_url = self.redis_url.replace("redis://", "rediss://")
+                    logger.info("Redis SSL/TLS encryption enabled")
+                else:
+                    redis_url = self.redis_url
+                
+                self.redis_client = redis.from_url(redis_url, **connection_params)
 
                 # Test connection with timeout
                 await asyncio.wait_for(self.redis_client.ping(), timeout=5.0)
-                logger.info(f"✅ Redis feature store initialized: {self.redis_url}")
+                
+                # Log connection success without exposing credentials
+                safe_url = self._mask_credentials_in_url(redis_url)
+                logger.info(f"✅ Redis feature store initialized: {safe_url}")
                 return True
 
             except asyncio.TimeoutError:
@@ -182,6 +228,13 @@ class RedisFeatureStore:
         logger.error(f"❌ Failed to initialize Redis feature store after {max_retries} attempts")
         self.redis_client = None
         return False
+
+    def _mask_credentials_in_url(self, redis_url: str) -> str:
+        """Mask credentials in Redis URL for safe logging"""
+        import re
+        # Replace password in redis://username:password@host:port/db format
+        masked_url = re.sub(r'://([^:]+:)[^@]+(@)', r'://\1***\2', redis_url)
+        return masked_url
 
     async def close(self):
         """Close Redis connection"""
