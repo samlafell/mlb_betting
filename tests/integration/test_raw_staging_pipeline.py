@@ -21,6 +21,8 @@ from src.core.config import get_settings
 from src.data.database.connection_pool import create_db_pool
 from src.data.pipeline.pipeline_orchestrator import create_pipeline_orchestrator
 from src.data.pipeline.zone_interface import ZoneType, ProcessingStatus
+from tests.utils.database_utils import get_test_db_manager, sanitize_db_config
+from tests.utils.logging_utils import create_test_logger, setup_secure_test_logging
 
 
 @pytest.mark.asyncio
@@ -29,67 +31,58 @@ class TestRawStagingPipeline:
     
     @pytest.fixture(autouse=True)
     async def setup(self):
-        """Setup test environment"""
+        """Setup test environment with secure utilities"""
+        # Setup secure logging
+        setup_secure_test_logging(log_level="INFO", include_sanitization=True)
+        self.logger = create_test_logger("raw_staging_pipeline")
+        
+        # Use secure database manager
+        self.db_manager = get_test_db_manager()
+        await self.db_manager.initialize()
+        
+        # Legacy support - create db_pool reference for existing code
+        self.db_pool = self.db_manager._pool
         self.config = get_settings()
-        self.db_pool = await create_db_pool()
         
         # Track test data for cleanup
         self.test_external_ids = []
+        self.test_name = "raw_staging_pipeline_test"
         
         # Clean up any previous test data
-        await self._cleanup_test_data()
+        await self.db_manager.cleanup_test_data(self.test_name)
+        
+        self.logger.info("Test environment setup completed")
+        sanitized_config = sanitize_db_config(self.config.database.model_dump())
+        self.logger.log_dict("debug", "Database configuration", sanitized_config)
         
         yield
         
         # Clean up after tests
-        await self._cleanup_test_data()
+        await self.db_manager.cleanup_test_data(self.test_name)
+        await self.db_manager.cleanup()
         
-        if self.db_pool:
-            await self.db_pool.close()
+        self.logger.info("Test environment cleanup completed")
     
     async def _cleanup_test_data(self):
-        """Clean up test data from all zones"""
-        if not self.db_pool:
-            return
-            
-        async with self.db_pool.acquire() as conn:
-            # Clean up test data in reverse dependency order
-            test_id_list = ", ".join([f"'{id}'" for id in self.test_external_ids])
-            
-            if self.test_external_ids:
-                # Clean staging data
-                await conn.execute(f"""
-                    DELETE FROM staging.action_network_odds_historical 
-                    WHERE external_game_id IN ({test_id_list})
-                """)
-                await conn.execute(f"""
-                    DELETE FROM staging.action_network_games 
-                    WHERE external_game_id IN ({test_id_list})
-                """)
-                
-                # Clean raw data
-                await conn.execute(f"""
-                    DELETE FROM raw_data.action_network_odds 
-                    WHERE external_game_id IN ({test_id_list})
-                """)
-                await conn.execute(f"""
-                    DELETE FROM raw_data.action_network_history 
-                    WHERE external_game_id IN ({test_id_list})
-                """)
+        """Clean up test data from all zones (legacy method - now uses secure db manager)"""
+        if self.test_external_ids:
+            self.db_manager.track_test_data(self.test_name, self.test_external_ids)
+            await self.db_manager.cleanup_test_data(self.test_name)
+            self.test_external_ids.clear()
 
     async def test_pipeline_orchestrator_initialization(self):
         """Test that pipeline orchestrator can be created and configured"""
         try:
             orchestrator = await create_pipeline_orchestrator()
             assert orchestrator is not None, "Pipeline orchestrator should initialize"
-            print("✅ Pipeline orchestrator initialized successfully")
+            self.logger.info("✅ Pipeline orchestrator initialized successfully")
             
             # Test getting pipeline status
             try:
                 status = orchestrator.get_pipeline_status()
-                print(f"✅ Pipeline status available: {type(status)}")
+                self.logger.info(f"✅ Pipeline status available: {type(status)}")
             except AttributeError:
-                print("ℹ️  Pipeline status method not implemented yet")
+                self.logger.info("ℹ️  Pipeline status method not implemented yet")
             
             await orchestrator.cleanup()
             
@@ -115,11 +108,11 @@ class TestRawStagingPipeline:
             missing_tables = [table for table in expected_tables if table not in found_tables]
             
             if missing_tables:
-                print(f"⚠️  Missing RAW tables: {missing_tables}")
-                print(f"📊 Available tables: {found_tables}")
+                self.logger.warning(f"⚠️  Missing RAW tables: {missing_tables}")
+                self.logger.info(f"📊 Available tables: {found_tables}")
                 pytest.skip(f"Required RAW tables not available: {missing_tables}")
             
-            print(f"✅ RAW zone structure validated: {len(found_tables)} Action Network tables found")
+            self.logger.info(f"✅ RAW zone structure validated: {len(found_tables)} Action Network tables found")
             
             # Check key columns exist in main odds table
             odds_columns = await conn.fetch("""
@@ -138,7 +131,7 @@ class TestRawStagingPipeline:
             if missing_columns:
                 pytest.skip(f"Required columns missing from raw_data.action_network_odds: {missing_columns}")
             
-            print(f"✅ RAW table structure validated: {len(found_columns)} columns in action_network_odds")
+            self.logger.info(f"✅ RAW table structure validated: {len(found_columns)} columns in action_network_odds")
 
     async def test_staging_data_structure_validation(self):
         """Test that STAGING zone has the expected table structure"""
@@ -160,7 +153,7 @@ class TestRawStagingPipeline:
             if missing_staging_tables:
                 pytest.skip(f"Required STAGING tables not available: {missing_staging_tables}")
             
-            print(f"✅ STAGING zone structure validated: {len(found_staging_tables)} tables found")
+            self.logger.info(f"✅ STAGING zone structure validated: {len(found_staging_tables)} tables found")
             
             # Check staging.action_network_odds_historical structure
             historical_columns = await conn.fetch("""
@@ -182,15 +175,16 @@ class TestRawStagingPipeline:
             if missing_staging_columns:
                 pytest.skip(f"Required columns missing from staging.action_network_odds_historical: {missing_staging_columns}")
             
-            print(f"✅ STAGING historical table structure validated: {len(found_staging_columns)} columns")
+            self.logger.info(f"✅ STAGING historical table structure validated: {len(found_staging_columns)} columns")
 
     async def test_create_sample_raw_data(self):
         """Create sample RAW data for pipeline testing"""
         async with self.db_pool.acquire() as conn:
             
-            # Create test game ID
+            # Create test game ID and track it securely
             test_game_id = f"test_game_{uuid4().hex[:8]}"
             self.test_external_ids.append(test_game_id)
+            self.db_manager.track_test_data(self.test_name, [test_game_id])
             
             # Insert sample raw data
             raw_insert = """
@@ -229,7 +223,7 @@ class TestRawStagingPipeline:
             )
             
             assert raw_id is not None, "Should insert raw data successfully"
-            print(f"✅ Created sample RAW data: game_id={test_game_id}, raw_id={raw_id}")
+            self.logger.info(f"✅ Created sample RAW data: game_id={test_game_id}, raw_id={raw_id}")
             
             # Verify insertion
             verify_raw = await conn.fetchrow("""
@@ -242,7 +236,7 @@ class TestRawStagingPipeline:
             assert verify_raw['external_game_id'] == test_game_id, "Game ID should match"
             assert verify_raw['processed_at'] is None, "Should not be processed yet"
             
-            print("✅ Sample RAW data creation and verification successful")
+            self.logger.info("✅ Sample RAW data creation and verification successful")
 
     async def test_manual_pipeline_processing(self):
         """Test manual pipeline processing from RAW to STAGING"""
@@ -264,7 +258,7 @@ class TestRawStagingPipeline:
             """, test_game_id)
             
             assert raw_count > 0, f"Should have unprocessed RAW data for {test_game_id}"
-            print(f"📊 Found {raw_count} unprocessed RAW records for pipeline test")
+            self.logger.info(f"📊 Found {raw_count} unprocessed RAW records for pipeline test")
             
             # Check initial STAGING state
             staging_count_before = await conn.fetchval("""
@@ -272,7 +266,7 @@ class TestRawStagingPipeline:
                 WHERE external_game_id = $1
             """, test_game_id)
             
-            print(f"📊 STAGING records before processing: {staging_count_before}")
+            self.logger.info(f"📊 STAGING records before processing: {staging_count_before}")
             
             # Test pipeline orchestrator processing
             try:
@@ -299,11 +293,11 @@ class TestRawStagingPipeline:
                         {"test_mode": True, "cli_initiated": True}
                     )
                     
-                    print(f"✅ Pipeline execution completed: {execution.status}")
+                    self.logger.info(f"✅ Pipeline execution completed: {execution.status}")
                     
                     # Check if processing was successful
                     if execution.status == ProcessingStatus.COMPLETED:
-                        print(f"📊 Pipeline metrics: {execution.metrics.total_records} total, {execution.metrics.successful_records} successful")
+                        self.logger.info(f"📊 Pipeline metrics: {execution.metrics.total_records} total, {execution.metrics.successful_records} successful")
                         
                         # Verify STAGING data was created
                         staging_count_after = await conn.fetchval("""
@@ -311,21 +305,21 @@ class TestRawStagingPipeline:
                             WHERE external_game_id = $1
                         """, test_game_id)
                         
-                        print(f"📊 STAGING records after processing: {staging_count_after}")
+                        self.logger.info(f"📊 STAGING records after processing: {staging_count_after}")
                         
                         if staging_count_after > staging_count_before:
-                            print("✅ Pipeline successfully moved data RAW → STAGING")
+                            self.logger.info("✅ Pipeline successfully moved data RAW → STAGING")
                         else:
-                            print("ℹ️  No new STAGING data created (could be due to data format or filters)")
+                            self.logger.info("ℹ️  No new STAGING data created (could be due to data format or filters)")
                         
                     else:
-                        print(f"⚠️  Pipeline execution status: {execution.status}")
+                        self.logger.warning(f"⚠️  Pipeline execution status: {execution.status}")
                         if execution.errors:
                             for error in execution.errors[:3]:
-                                print(f"   Error: {error}")
+                                self.logger.error(f"   Error: {error}")
                     
                 except Exception as e:
-                    print(f"⚠️  Pipeline execution issue: {e}")
+                    self.logger.warning(f"⚠️  Pipeline execution issue: {e}")
                     # Don't fail the test - pipeline might not be fully implemented
                     pytest.skip(f"Pipeline execution not ready: {e}")
                 
@@ -342,6 +336,7 @@ class TestRawStagingPipeline:
             # Create test game in staging.action_network_games first
             test_game_id = f"manual_test_{uuid4().hex[:8]}"
             self.test_external_ids.append(test_game_id)
+            self.db_manager.track_test_data(self.test_name, [test_game_id])
             
             games_insert = """
                 INSERT INTO staging.action_network_games (
@@ -361,7 +356,7 @@ class TestRawStagingPipeline:
             )
             
             assert game_id is not None, "Should insert staging game successfully"
-            print(f"✅ Created staging game: id={game_id}, external_id={test_game_id}")
+            self.logger.info(f"✅ Created staging game: id={game_id}, external_id={test_game_id}")
             
             # Insert historical odds data
             odds_insert = """
@@ -391,7 +386,7 @@ class TestRawStagingPipeline:
                 odds_ids.append(odds_id)
             
             assert len(odds_ids) == 6, "Should insert all 6 odds records"
-            print(f"✅ Created {len(odds_ids)} staging odds records")
+            self.logger.info(f"✅ Created {len(odds_ids)} staging odds records")
             
             # Verify data structure and constraints
             verify_query = """
@@ -413,7 +408,7 @@ class TestRawStagingPipeline:
             ]
             
             assert sorted(combinations) == sorted(expected_combinations), f"Market/side combinations should match. Got: {combinations}"
-            print("✅ Market type/side combinations validated correctly")
+            self.logger.info("✅ Market type/side combinations validated correctly")
             
             # Verify line value logic
             for row in odds_records:
@@ -422,7 +417,7 @@ class TestRawStagingPipeline:
                 else:
                     assert row['line_value'] is not None, f"{row['market_type']} should have line_value, got {row['line_value']}"
             
-            print("✅ Line value logic validated correctly")
+            self.logger.info("✅ Line value logic validated correctly")
 
     async def test_data_quality_and_constraints(self):
         """Test STAGING zone constraints and data quality features"""
@@ -431,6 +426,7 @@ class TestRawStagingPipeline:
             
             test_game_id = f"constraint_test_{uuid4().hex[:8]}"
             self.test_external_ids.append(test_game_id)
+            self.db_manager.track_test_data(self.test_name, [test_game_id])
             
             # Test valid data insertion (should succeed)
             valid_insert = """
@@ -449,7 +445,7 @@ class TestRawStagingPipeline:
                     test_game_id, "test_book", "Test Book",
                     "moneyline", "home", -150, now
                 )
-                print("✅ Valid data insertion successful")
+                self.logger.info("✅ Valid data insertion successful")
             except Exception as e:
                 pytest.fail(f"Valid data insertion should succeed: {e}")
             
@@ -468,7 +464,7 @@ class TestRawStagingPipeline:
                     await conn.execute(valid_insert, *test_data[:-1])
                     pytest.fail(f"Constraint violation should fail: {test_data[-1]}")
                 except Exception as e:
-                    print(f"✅ Constraint properly enforced: {test_data[-1]} - {type(e).__name__}")
+                    self.logger.info(f"✅ Constraint properly enforced: {test_data[-1]} - {type(e).__name__}")
             
             # Test unique constraint (duplicate data should fail)
             try:
@@ -479,7 +475,7 @@ class TestRawStagingPipeline:
                 )
                 pytest.fail("Duplicate insert should fail due to unique constraint")
             except Exception as e:
-                print(f"✅ Unique constraint properly enforced: {type(e).__name__}")
+                self.logger.info(f"✅ Unique constraint properly enforced: {type(e).__name__}")
 
     async def test_temporal_data_integrity(self):
         """Test temporal data features and timestamp handling"""
@@ -488,6 +484,7 @@ class TestRawStagingPipeline:
             
             test_game_id = f"temporal_test_{uuid4().hex[:8]}"
             self.test_external_ids.append(test_game_id)
+            self.db_manager.track_test_data(self.test_name, [test_game_id])
             
             # Insert odds with different timestamps to test temporal ordering
             base_time = datetime.utcnow()
@@ -516,7 +513,7 @@ class TestRawStagingPipeline:
                     "moneyline", "home", odds_value, timestamp, base_time, is_current
                 )
             
-            print(f"✅ Inserted {len(timestamps)} temporal odds records")
+            self.logger.info(f"✅ Inserted {len(timestamps)} temporal odds records")
             
             # Verify temporal ordering
             temporal_query = """
@@ -539,7 +536,7 @@ class TestRawStagingPipeline:
                 expected_current = (i == len(temporal_records) - 1)
                 assert record['is_current_odds'] == expected_current, f"is_current_odds should be {expected_current} for record {i}"
             
-            print("✅ Temporal data integrity and ordering validated")
+            self.logger.info("✅ Temporal data integrity and ordering validated")
             
             # Test getting current odds only
             current_odds_query = """
@@ -551,7 +548,7 @@ class TestRawStagingPipeline:
             assert len(current_odds) == 1, "Should have exactly 1 current odds record"
             assert current_odds[0]['odds'] == -140, "Current odds should be the latest value"
             
-            print("✅ Current odds filtering validated")
+            self.logger.info("✅ Current odds filtering validated")
 
     async def test_pipeline_error_recovery(self):
         """Test pipeline error handling and recovery scenarios"""
@@ -561,6 +558,7 @@ class TestRawStagingPipeline:
             # Create intentionally problematic data
             problem_game_id = f"error_test_{uuid4().hex[:8]}"
             self.test_external_ids.append(problem_game_id)
+            self.db_manager.track_test_data(self.test_name, [problem_game_id])
             
             # Insert raw data with incomplete/problematic JSON
             problematic_raw = """
@@ -584,7 +582,7 @@ class TestRawStagingPipeline:
                 now
             )
             
-            print(f"✅ Created problematic RAW data: id={problem_id}")
+            self.logger.info(f"✅ Created problematic RAW data: id={problem_id}")
             
             # Test that processing handles errors gracefully
             try:
@@ -607,18 +605,18 @@ class TestRawStagingPipeline:
                     {"test_mode": True, "error_test": True}
                 )
                 
-                print(f"✅ Pipeline handled problematic data: status={execution.status}")
+                self.logger.info(f"✅ Pipeline handled problematic data: status={execution.status}")
                 
                 # Check if error was recorded properly
                 if execution.errors:
-                    print(f"📊 Pipeline recorded {len(execution.errors)} errors (expected)")
+                    self.logger.info(f"📊 Pipeline recorded {len(execution.errors)} errors (expected)")
                     for error in execution.errors[:2]:
-                        print(f"   Recorded error: {str(error)[:100]}...")
+                        self.logger.info(f"   Recorded error: {str(error)[:100]}...")
                 
                 await orchestrator.cleanup()
                 
             except Exception as e:
-                print(f"⚠️  Pipeline error handling test: {e}")
+                self.logger.warning(f"⚠️  Pipeline error handling test: {e}")
                 # This is expected - just validating the pipeline doesn't crash completely
                 pytest.skip(f"Pipeline error handling test - {e}")
 
@@ -628,7 +626,7 @@ class TestRawStagingPipeline:
         # This test is skipped by default as it's comprehensive
         # Run manually with: pytest -k test_manual_complete_pipeline_flow -s
         
-        print("🧪 Running complete RAW → STAGING pipeline flow test...")
+        self.logger.info("🧪 Running complete RAW → STAGING pipeline flow test...")
         
         # 1. Create realistic raw data
         await self.test_create_sample_raw_data()
@@ -645,7 +643,7 @@ class TestRawStagingPipeline:
         # 5. Test error handling
         await self.test_pipeline_error_recovery()
         
-        print("✅ Complete RAW → STAGING pipeline flow test successful")
+        self.logger.info("✅ Complete RAW → STAGING pipeline flow test successful")
 
 
 # Utility functions for pipeline testing
@@ -712,7 +710,8 @@ async def validate_pipeline_processing_status(db_pool, external_game_id: str) ->
 if __name__ == "__main__":
     # Run a quick manual test
     async def quick_pipeline_test():
-        print("🧪 Running quick RAW → STAGING pipeline test...")
+        logger = create_test_logger("quick_pipeline_test")
+        logger.info("🧪 Running quick RAW → STAGING pipeline test...")
         
         config = get_settings()
         db_pool = await create_db_pool()
@@ -723,18 +722,18 @@ if __name__ == "__main__":
                 raw_count = await conn.fetchval("SELECT COUNT(*) FROM raw_data.action_network_odds WHERE processed_at IS NULL LIMIT 10")
                 staging_count = await conn.fetchval("SELECT COUNT(*) FROM staging.action_network_odds_historical LIMIT 10")
                 
-                print(f"📊 Unprocessed RAW records: {raw_count}")
-                print(f"📊 STAGING records: {staging_count}")
+                logger.info(f"📊 Unprocessed RAW records: {raw_count}")
+                logger.info(f"📊 STAGING records: {staging_count}")
                 
                 if raw_count > 0:
-                    print("✅ RAW zone has data available for processing")
+                    logger.info("✅ RAW zone has data available for processing")
                 else:
-                    print("ℹ️  No unprocessed RAW data found")
+                    logger.info("ℹ️  No unprocessed RAW data found")
                     
                 if staging_count > 0:
-                    print("✅ STAGING zone has processed data")
+                    logger.info("✅ STAGING zone has processed data")
                 else:
-                    print("ℹ️  No STAGING data found")
+                    logger.info("ℹ️  No STAGING data found")
                     
         finally:
             await db_pool.close()
