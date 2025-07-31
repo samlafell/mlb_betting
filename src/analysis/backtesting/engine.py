@@ -34,6 +34,7 @@ from src.analysis.models.unified_models import (
     UnifiedBettingSignal,
 )
 from src.analysis.strategies.base import BaseStrategyProcessor
+from src.core.datetime_utils import EST
 from src.core.exceptions import BacktestingError
 from src.core.logging import LogComponent, get_logger
 from src.data.database import UnifiedRepository
@@ -345,9 +346,13 @@ class RecommendationBasedBacktestingEngine:
                     home_score = np.random.randint(0, 15)
                     away_score = np.random.randint(0, 15)
 
+                    # Make datetime timezone-aware for strategy processors
+                    game_datetime = EST.localize(current_date)
+                    
                     game_data = {
                         "game_id": game_id,
                         "game_date": current_date,
+                        "game_datetime": game_datetime,  # Add timezone-aware game_datetime field
                         "home_team": f"Team_H_{game_num:02d}",
                         "away_team": f"Team_A_{game_num:02d}",
                         "home_score": home_score,
@@ -415,7 +420,7 @@ class RecommendationBasedBacktestingEngine:
                 try:
                     # Create context for processor (like live system)
                     context = {
-                        "processing_time": datetime.combine(date, datetime.min.time()),
+                        "processing_time": EST.localize(datetime.combine(date, datetime.min.time())),
                         "minutes_ahead": 1440,  # Process as if 24 hours ahead
                         "backtest_mode": True,
                     }
@@ -592,7 +597,7 @@ class RecommendationBasedBacktestingEngine:
             outcome = recommendation["outcome"]
             if outcome == BetOutcome.WIN:
                 # Calculate profit based on odds (simplified to -110)
-                profit = bet_size * (100 / 110)  # Standard -110 odds
+                profit = bet_size * Decimal("0.909090909")  # Standard -110 odds (100/110)
                 current_bankroll += profit
                 result.winning_bets += 1
                 consecutive_wins += 1
@@ -614,7 +619,7 @@ class RecommendationBasedBacktestingEngine:
                 consecutive_losses = 0
 
             # Apply commission
-            current_bankroll -= bet_size * result.config.commission_rate
+            current_bankroll -= bet_size * Decimal(str(result.config.commission_rate))
 
             # Update bankroll tracking
             result.bankroll_history.append(current_bankroll)

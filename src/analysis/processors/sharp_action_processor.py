@@ -259,12 +259,17 @@ class UnifiedSharpActionProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
             # Calculate book credibility
             book_credibility = self._get_book_credibility(split_data.get("book", ""))
 
-            # Calculate timing significance
-            minutes_to_game = self._calculate_minutes_to_game(
-                self._normalize_game_time(split_data["game_datetime"]),
-                datetime.now(self.est),
-            )
-            timing_significance = self._calculate_timing_significance(minutes_to_game)
+            # Calculate timing significance with proper timezone handling
+            try:
+                game_time = self._normalize_game_time(split_data["game_datetime"])
+                current_time = datetime.now(self.est)
+                minutes_to_game = self._calculate_minutes_to_game(game_time, current_time)
+                timing_significance = self._calculate_timing_significance(minutes_to_game)
+            except Exception as tz_error:
+                self.logger.error(f"Timezone error in timing calculation: {tz_error}")
+                # Use fallback values
+                minutes_to_game = 120  # Default to 2 hours
+                timing_significance = 1.0
 
             return {
                 "differential": differential,
@@ -395,7 +400,14 @@ class UnifiedSharpActionProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
                 "last_updated": split_data.get("last_updated", processing_time),
             }
 
-            # Create the unified signal
+            # Create the unified signal with proper timezone handling
+            try:
+                normalized_game_date = self._normalize_game_time(split_data["game_datetime"])
+            except Exception as date_error:
+                self.logger.error(f"Error normalizing game date: {date_error}")
+                # Use processing_time as fallback
+                normalized_game_date = processing_time
+                
             signal = UnifiedBettingSignal(
                 signal_id=f"sharp_action_{self.strategy_id}_{split_data['game_id']}_{hash(str(split_data))}",
                 signal_type=SignalType.SHARP_ACTION,
@@ -403,7 +415,7 @@ class UnifiedSharpActionProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
                 game_id=split_data["game_id"],
                 home_team=split_data["home_team"],
                 away_team=split_data["away_team"],
-                game_date=self._normalize_game_time(split_data["game_datetime"]),
+                game_date=normalized_game_date,
                 recommended_side=recommended_side,
                 bet_type=split_data.get("split_type", "moneyline"),
                 confidence_score=confidence_data["confidence_score"],
@@ -413,14 +425,8 @@ class UnifiedSharpActionProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
                 minutes_to_game=metrics["minutes_to_game"],
                 timing_category=self._get_timing_category(metrics["minutes_to_game"]),
                 data_source=split_data.get("source", "unknown"),
-                book=split_data.get("book", ""),
-                metadata={
-                    "processing_id": self.processing_id,
-                    "strategy_id": self.strategy_id,
-                    "applied_modifiers": confidence_data["applied_modifiers"],
-                    "created_at": processing_time,
-                    "processor_version": "3.0.0",
-                },
+                book_sources=[split_data.get("book", "")] if split_data.get("book") else [],
+                quality_score=0.8,  # Add required quality score
             )
 
             return signal

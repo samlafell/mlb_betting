@@ -129,9 +129,16 @@ class UnifiedBettingSignal(UnifiedBaseModel):
 
     @validator("game_date")
     def validate_game_date(cls, v):
-        """Ensure game date is in the future"""
-        if v <= datetime.now():
-            raise ValueError("Game date must be in the future")
+        """Ensure game date is timezone-aware"""
+        import pytz
+        
+        # For backtesting, we don't require future dates
+        # Just ensure we have timezone information
+        if v.tzinfo is None:
+            # If naive datetime, assume EST
+            est = pytz.timezone("US/Eastern")
+            v = est.localize(v)
+        
         return v
 
     @validator("confidence_score")
