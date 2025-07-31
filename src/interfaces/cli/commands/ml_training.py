@@ -15,8 +15,8 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from ml.training import MLTrainingService
-from core.config import get_settings
+from src.ml.training.training_service import MLTrainingService
+from src.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +151,7 @@ def retrain_models(
                     }
                 )
 
-                from ml.training import LightGBMTrainer
+                from src.ml.training.lightgbm_trainer import LightGBMTrainer
 
                 trainer = LightGBMTrainer()
 
