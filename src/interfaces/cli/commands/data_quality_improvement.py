@@ -43,16 +43,14 @@ def setup(execute: bool, phase: str):
         click.echo("⚠️  DRY RUN MODE - Use --execute to apply changes")
 
     try:
-        connection = get_connection()
-
-        asyncio.run(_run_setup(connection, execute, phase))
+        asyncio.run(_run_setup(execute, phase))
 
     except Exception as e:
         click.echo(f"❌ Setup failed: {str(e)}", err=True)
         raise click.Abort()
 
 
-async def _run_setup(connection, execute: bool, phase: str):
+async def _run_setup(execute: bool, phase: str):
     """Execute the setup phases."""
 
     sql_files = []
@@ -73,8 +71,7 @@ async def _run_setup(connection, execute: bool, phase: str):
             }
         )
 
-    await connection.connect()
-    try:
+    async with get_connection() as conn:
         for sql_config in sql_files:
             click.echo(f"\n📋 {sql_config['name']}")
 
@@ -85,9 +82,7 @@ async def _run_setup(connection, execute: bool, phase: str):
 
                 if execute:
                     # Execute the SQL
-                    await connection.execute_async(
-                        sql_content, fetch=None, table="data_quality_setup"
-                    )
+                    await conn.execute(sql_content)
                     click.echo(f"✅ {sql_config['name']} applied successfully")
                 else:
                     click.echo(f"📄 Would execute: {sql_config['file']}")
@@ -97,8 +92,6 @@ async def _run_setup(connection, execute: bool, phase: str):
             except Exception as e:
                 click.echo(f"❌ Failed to apply {sql_config['name']}: {str(e)}")
                 raise
-    finally:
-        await connection.close()
 
 
 @data_quality_group.command()
@@ -221,26 +214,54 @@ def status(detailed: bool, days: int):
     click.echo("=" * 50)
 
     try:
-        connection = get_connection()
-
-        asyncio.run(_show_status(connection, detailed, days))
+        asyncio.run(_show_status(detailed, days))
 
     except Exception as e:
         click.echo(f"❌ Status check failed: {str(e)}", err=True)
         raise click.Abort()
 
 
-async def _show_status(connection, detailed: bool, days: int):
+async def _show_status(detailed: bool, days: int):
     """Show data quality status."""
 
-    async with connection.get_async_connection() as conn:
+    async with get_connection() as conn:
+        # Check if data quality infrastructure exists
+        try:
+            table_exists = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_schema = 'curated' 
+                    AND table_name = 'data_quality_dashboard'
+                )
+            """)
+            
+            if not table_exists:
+                click.echo("\n⚠️  Data Quality Infrastructure Not Set Up")
+                click.echo("-" * 50)
+                click.echo("The data quality infrastructure tables haven't been created yet.")
+                click.echo("\nTo set up data quality infrastructure, run:")
+                click.echo("  uv run -m src.interfaces.cli data-quality setup --execute")
+                click.echo("\nOnce set up, you can:")
+                click.echo("  • Monitor data quality metrics")
+                click.echo("  • Track sportsbook mapping completeness")
+                click.echo("  • View sharp action detection statistics")
+                return
+                
+        except Exception as e:
+            click.echo(f"\n❌ Error checking infrastructure: {e}")
+            return
+
         # Overall quality dashboard
         dashboard_query = """
             SELECT * FROM curated.data_quality_dashboard 
             ORDER BY table_name
         """
 
-        dashboard_rows = await conn.fetch(dashboard_query)
+        try:
+            dashboard_rows = await conn.fetch(dashboard_query)
+        except Exception as e:
+            click.echo(f"\n❌ Error fetching dashboard data: {e}")
+            return
 
         click.echo("\n🏆 Overall Data Quality Dashboard:")
         click.echo("-" * 70)
@@ -279,7 +300,11 @@ async def _show_status(connection, detailed: bool, days: int):
                 LIMIT 20
             """
 
-            trend_rows = await conn.fetch(trend_query.replace("%s", f"'{days} days'"))
+            try:
+                trend_rows = await conn.fetch(trend_query.replace("%s", f"'{days} days'"))
+            except Exception as e:
+                click.echo(f"\n⚠️  Trend data not available: {e}")
+                trend_rows = []
 
             if trend_rows:
                 click.echo(f"\n📈 Recent Quality Trends (Last {days} days):")
@@ -305,7 +330,11 @@ async def _show_status(connection, detailed: bool, days: int):
                 ORDER BY avg_completeness DESC
             """
 
-            source_rows = await conn.fetch(source_query)
+            try:
+                source_rows = await conn.fetch(source_query)
+            except Exception as e:
+                click.echo(f"\n⚠️  Detailed source analysis not available: {e}")
+                source_rows = []
 
             click.echo("\n🔍 Data Source Quality Analysis:")
             click.echo("-" * 70)
@@ -334,21 +363,19 @@ def health():
     click.echo("=" * 40)
 
     try:
-        connection = get_connection()
-
-        asyncio.run(_health_check(connection))
+        asyncio.run(_health_check())
 
     except Exception as e:
         click.echo(f"❌ Health check failed: {str(e)}", err=True)
         raise click.Abort()
 
 
-async def _health_check(connection):
+async def _health_check():
     """Perform comprehensive health check."""
 
     # Check database connection
     try:
-        async with connection.get_async_connection() as conn:
+        async with get_connection() as conn:
             await conn.fetchval("SELECT 1")
         click.echo("✅ Database connection: OK")
     except Exception as e:
@@ -357,6 +384,7 @@ async def _health_check(connection):
 
     # Check sharp action detection service
     try:
+        connection = get_connection()
         service = SharpActionDetectionService(connection)
         health_result = await service.health_check()
 
@@ -373,7 +401,7 @@ async def _health_check(connection):
 
     # Check data quality views
     try:
-        async with connection.get_async_connection() as conn:
+        async with get_connection() as conn:
             await conn.fetchval("SELECT COUNT(*) FROM curated.data_quality_dashboard")
         click.echo("✅ Data Quality Views: OK")
     except Exception as e:
@@ -381,7 +409,7 @@ async def _health_check(connection):
 
     # Check sportsbook mapping
     try:
-        async with connection.get_async_connection() as conn:
+        async with get_connection() as conn:
             mapping_count = await conn.fetchval(
                 "SELECT COUNT(*) FROM curated.sportsbook_mappings"
             )

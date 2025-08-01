@@ -442,14 +442,20 @@ class BaseStrategyProcessor(ABC):
             try:
                 dt = datetime.fromisoformat(game_datetime.replace("Z", "+00:00"))
             except ValueError:
-                dt = datetime.strptime(game_datetime, "%Y-%m-%d %H:%M:%S")
+                try:
+                    dt = datetime.strptime(game_datetime, "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    # Try parsing as date only and assume midnight
+                    dt = datetime.strptime(game_datetime, "%Y-%m-%d")
         else:
             dt = game_datetime
 
-        # Convert to EST if not already
+        # Convert to EST if not already - handle timezone-aware datetime objects
         if dt.tzinfo is None:
+            # Naive datetime - assume it's meant to be EST
             dt = self.est.localize(dt)
         else:
+            # Already timezone-aware - convert to EST
             dt = dt.astimezone(self.est)
 
         return dt
@@ -458,10 +464,16 @@ class BaseStrategyProcessor(ABC):
         self, game_time: datetime, current_time: datetime
     ) -> int:
         """Calculate minutes until game start"""
+        # Ensure both datetimes are timezone-aware and in EST
         if game_time.tzinfo is None:
             game_time = self.est.localize(game_time)
+        else:
+            game_time = game_time.astimezone(self.est)
+            
         if current_time.tzinfo is None:
             current_time = self.est.localize(current_time)
+        else:
+            current_time = current_time.astimezone(self.est)
 
         time_diff = game_time - current_time
         return max(0, int(time_diff.total_seconds() / 60))
@@ -528,6 +540,28 @@ class StrategyProcessorMixin:
         self, signal_data: dict[str, Any], confidence_data: dict[str, Any]
     ) -> UnifiedBettingSignal:
         """Create a unified betting signal from processed data"""
+        # Ensure we have access to the EST timezone and _normalize_game_time method from BaseStrategyProcessor
+        est = pytz.timezone("US/Eastern")
+        
+        # Handle game_datetime normalization safely
+        game_datetime = signal_data.get("game_datetime")
+        if hasattr(self, '_normalize_game_time'):
+            normalized_game_date = self._normalize_game_time(game_datetime)
+        else:
+            # Fallback normalization if method not available
+            if isinstance(game_datetime, str):
+                try:
+                    dt = datetime.fromisoformat(game_datetime.replace("Z", "+00:00"))
+                except ValueError:
+                    dt = datetime.strptime(game_datetime, "%Y-%m-%d %H:%M:%S")
+            else:
+                dt = game_datetime
+            
+            if dt.tzinfo is None:
+                normalized_game_date = est.localize(dt)
+            else:
+                normalized_game_date = dt.astimezone(est)
+        
         return UnifiedBettingSignal(
             signal_id=str(uuid.uuid4()),
             signal_type=self.get_signal_type(),
@@ -537,7 +571,7 @@ class StrategyProcessorMixin:
             ),
             home_team=signal_data["home_team"],
             away_team=signal_data["away_team"],
-            game_date=self._normalize_game_time(signal_data["game_datetime"]),
+            game_date=normalized_game_date,
             recommended_side=signal_data.get("recommended_side", ""),
             bet_type=signal_data.get("bet_type", "moneyline"),
             confidence_score=confidence_data["confidence_score"],
@@ -554,7 +588,7 @@ class StrategyProcessorMixin:
                 "processing_id": getattr(self, "processing_id", None),
                 "strategy_id": getattr(self, "strategy_id", None),
                 "applied_modifiers": confidence_data.get("applied_modifiers", {}),
-                "created_at": datetime.now(pytz.timezone("US/Eastern")),
+                "created_at": datetime.now(est),
             },
         )
 

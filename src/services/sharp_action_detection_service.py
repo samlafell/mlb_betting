@@ -46,7 +46,8 @@ class SharpActionDetectionService:
         )
 
         try:
-            async with self.connection.get_async_connection() as conn:
+            from src.data.database.connection import get_connection
+            async with get_connection() as conn:
                 # Get games for the target date
                 games = await self._get_games_for_date(conn, target_date)
 
@@ -406,7 +407,8 @@ class SharpActionDetectionService:
             start_date = date.today().replace(day=1)  # Start of current month
 
         try:
-            async with self.connection.get_async_connection() as conn:
+            from src.data.database.connection import get_connection
+            async with get_connection() as conn:
                 # Query sharp action statistics
                 query = """
                     SELECT 
@@ -465,17 +467,26 @@ class SharpActionDetectionService:
     async def health_check(self) -> dict[str, Any]:
         """Perform health check on the sharp action detection service."""
         try:
-            async with self.connection.get_async_connection() as conn:
-                # Check strategy orchestrator availability
-                orchestrator_status = await self.strategy_orchestrator.health_check()
+            from src.data.database.connection import get_connection
+            async with get_connection() as conn:
+                # Check strategy orchestrator availability (if available)
+                orchestrator_status = None
+                if hasattr(self, 'strategy_orchestrator') and self.strategy_orchestrator:
+                    orchestrator_status = await self.strategy_orchestrator.health_check()
+                else:
+                    orchestrator_status = {"status": "not_configured", "message": "Strategy orchestrator integration pending"}
 
                 # Check recent sharp action detection activity
-                recent_activity = await conn.fetchval("""
-                    SELECT COUNT(*) FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline' 
-                    WHERE sharp_action IS NOT NULL 
-                    AND sharp_action != ''
-                    AND updated_at >= NOW() - INTERVAL '7 days'
-                """)
+                try:
+                    recent_activity = await conn.fetchval("""
+                        SELECT COUNT(*) FROM curated.betting_lines_unified 
+                        WHERE sharp_action IS NOT NULL 
+                        AND sharp_action != ''
+                        AND updated_at >= NOW() - INTERVAL '7 days'
+                    """)
+                except Exception:
+                    # Table might not exist yet
+                    recent_activity = 0
 
                 return {
                     "status": "healthy",

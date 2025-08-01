@@ -149,6 +149,80 @@ The system includes comprehensive data quality monitoring:
 - Automatic sportsbook ID resolution
 - EST/EDT timezone consistency
 
+## Data Validation & Testing
+
+### Pipeline Health Check
+```bash
+# Quick pipeline assessment
+uv run assess_pipeline_data.py
+
+# Database connectivity test
+uv run test_db_connectivity.py
+
+# Run integration tests
+uv run pytest tests/integration/ -v
+```
+
+### Data Source Validation
+```bash
+# Test individual data sources
+uv run -m src.interfaces.cli data test --source action_network --real
+uv run -m src.interfaces.cli data test --source vsin --real
+uv run -m src.interfaces.cli data test --source sbd --real
+
+# Check data freshness
+uv run -m src.interfaces.cli data status --detailed
+```
+
+### Pipeline Processing Tests
+```bash
+# Test RAW → STAGING pipeline
+uv run -m src.interfaces.cli pipeline run --zone staging --dry-run
+
+# Test full pipeline
+uv run -m src.interfaces.cli pipeline run --zone all --dry-run
+
+# Check pipeline status
+uv run -m src.interfaces.cli pipeline status --detailed
+```
+
+### Data Quality Validation
+```bash
+# Check for processing backlogs
+uv run -c "
+from src.data.database.connection import get_connection, initialize_connections
+from src.core.config import get_settings
+import asyncio
+
+async def check_backlog():
+    config = get_settings()
+    initialize_connections(config)
+    async with get_connection() as conn:
+        backlog = await conn.fetchval('''
+            SELECT COUNT(*) FROM raw_data.action_network_odds 
+            WHERE processed_at IS NULL
+        ''')
+        print(f'Unprocessed records: {backlog}')
+
+asyncio.run(check_backlog())
+"
+
+# Validate data completeness
+uv run -m src.interfaces.cli data-quality status
+```
+
+### Expected Data Volumes
+Based on current system state:
+- **RAW Zone**: ~19,500 total records, ~9,000 recent (7d)
+- **STAGING Zone**: ~89,000 historical odds records
+- **CURATED Zone**: ~16,000 betting lines, ~1,400 games
+
+### Data Quality Thresholds
+- **Action Network**: Should have data within 2 hours
+- **SBD**: Should have data within 4 hours  
+- **VSIN**: Should have data within 6 hours
+- **Pipeline Backlog**: Should be < 100 unprocessed records
+
 ## Troubleshooting
 
 ### Common Issues
@@ -170,6 +244,22 @@ The system includes comprehensive data quality monitoring:
 4. **Pipeline Problems**
    - Check the monitoring dashboard at http://localhost:8080
    - Use `uv run -m src.interfaces.cli monitoring status` for CLI diagnostics
+
+5. **Pipeline Backlog Issues**
+   ```bash
+   # Check for processing delays
+   uv run assess_pipeline_data.py
+   
+   # Manual pipeline processing
+   uv run -m src.interfaces.cli pipeline run --zone staging --source action_network
+   ```
+
+6. **Stale Data Sources**
+   ```bash
+   # Restart data collection for stale sources
+   uv run -m src.interfaces.cli data collect --source sbd --real
+   uv run -m src.interfaces.cli data collect --source vsin --real
+   ```
 
 ### Getting Help
 - Check system logs in `logs/` directory

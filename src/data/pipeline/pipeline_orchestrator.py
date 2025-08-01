@@ -330,33 +330,62 @@ class DataPipelineOrchestrator:
     ) -> list[DataRecord]:
         """Get processed records from current zone for next zone processing."""
         try:
-            # This would typically query the database to get processed records
-            # For now, return empty list as placeholder
-            # In real implementation, query the zone's output tables
+            # Query processed records from current zone for next zone processing
+            # Uses wider time windows and fallback logic to ensure data flow
 
             if current_zone == ZoneType.RAW:
                 # Query source-specific raw_data tables for recently processed records
                 # Use Action Network as primary source for pipeline flow
-                query = """
-                SELECT * FROM raw_data.action_network_odds 
-                WHERE processed_at > NOW() - INTERVAL '1 hour'
-                ORDER BY processed_at DESC
-                LIMIT $1
-                """
+                # Try 24-hour window first, then fallback to most recent records
+                queries = [
+                    """
+                    SELECT * FROM raw_data.action_network_odds 
+                    WHERE processed_at > NOW() - INTERVAL '24 hours'
+                    ORDER BY processed_at DESC
+                    LIMIT $1
+                    """,
+                    """
+                    SELECT * FROM raw_data.action_network_odds 
+                    WHERE processed_at IS NOT NULL
+                    ORDER BY processed_at DESC
+                    LIMIT $1
+                    """
+                ]
             elif current_zone == ZoneType.STAGING:
                 # Query historical staging table for recently processed records
-                query = """
-                SELECT * FROM staging.action_network_odds_historical
-                WHERE data_processing_time > NOW() - INTERVAL '1 hour'
-                ORDER BY data_processing_time DESC
-                LIMIT $1
-                """
+                # Try 24-hour window first, then fallback to most recent records
+                queries = [
+                    """
+                    SELECT * FROM staging.action_network_odds_historical
+                    WHERE data_processing_time > NOW() - INTERVAL '24 hours'
+                    ORDER BY data_processing_time DESC
+                    LIMIT $1
+                    """,
+                    """
+                    SELECT * FROM staging.action_network_odds_historical
+                    WHERE data_processing_time IS NOT NULL
+                    ORDER BY data_processing_time DESC
+                    LIMIT $1
+                    """
+                ]
             else:
                 return []
 
-            # Execute query and convert to DataRecord objects
+            # Execute queries with fallback logic
+            rows = []
             async with get_connection() as connection:
-                rows = await connection.fetch(query, limit)
+                for i, query in enumerate(queries):
+                    try:
+                        rows = await connection.fetch(query, limit)
+                        if rows:
+                            if i == 0:
+                                logger.info(f"Found {len(rows)} records in 24-hour window from {current_zone} zone")
+                            else:
+                                logger.info(f"Using fallback query: found {len(rows)} most recent records from {current_zone} zone")
+                            break
+                    except Exception as e:
+                        logger.warning(f"Query {i+1} failed for {current_zone} zone: {e}")
+                        continue
 
             # Convert rows to DataRecord objects (simplified)
             records = []
@@ -371,7 +400,7 @@ class DataPipelineOrchestrator:
                 )
                 records.append(record)
 
-            logger.info(f"Retrieved {len(records)} records from {current_zone} zone")
+            logger.info(f"Retrieved {len(records)} records from {current_zone} zone for next zone processing")
             return records
 
         except Exception as e:
