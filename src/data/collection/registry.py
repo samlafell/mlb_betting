@@ -340,14 +340,23 @@ class CollectorRegistry:
 
         # Create new instance
         try:
-            if config:
-                instance = collector_class(config)
+            # Always create a proper CollectorConfig, even if settings are provided
+            from .base import CollectorConfig
+            
+            if isinstance(source, DataSource):
+                source_enum = source
             else:
-                # Create default config if none provided
-                from .base import CollectorConfig
-
-                default_config = CollectorConfig(source=source)
-                instance = collector_class(default_config)
+                # Convert string to DataSource
+                try:
+                    source_enum = DataSource(source)
+                except ValueError:
+                    source_enum = DataSource.ACTION_NETWORK  # fallback
+            
+            # Create CollectorConfig with the source
+            collector_config = CollectorConfig(source=source_enum)
+            
+            # Pass the config to collector
+            instance = collector_class(collector_config)
 
             # Ensure cache size before adding new entry
             self._ensure_cache_size()

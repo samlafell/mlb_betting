@@ -1007,6 +1007,93 @@ def _display_pipeline_summary(pipeline_results: dict, analysis_result: dict):
 
 @action_network.command()
 @click.option(
+    "--days",
+    "-d",
+    type=int,
+    default=15,
+    help="Number of days to collect historical data (default: 15)",
+)
+@click.option(
+    "--output-dir",
+    "-o",
+    type=click.Path(path_type=Path),
+    default=Path("output"),
+    help="Directory to save output files",
+)
+@click.option(
+    "--max-games",
+    "-m",
+    type=int,
+    help="Maximum number of games to process per day",
+)
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
+def history(
+    days: int,
+    output_dir: Path,
+    max_games: int | None,
+    verbose: bool,
+):
+    """
+    Collect historical betting line movement data for specified days.
+
+    This command collects historical line movement data from Action Network
+    for the specified number of days back from today.
+
+    Examples:
+        # Collect 15 days of historical data (default)
+        uv run -m src.interfaces.cli action-network history
+
+        # Collect 30 days of historical data  
+        uv run -m src.interfaces.cli action-network history --days 30
+
+        # Collect with max games limit
+        uv run -m src.interfaces.cli action-network history --days 7 --max-games 10
+    """
+    # Use batch-collection under the hood for actual implementation
+    console.print(
+        Panel.fit(
+            f"[bold blue]📊 Action Network Historical Data Collection[/bold blue]\n"
+            f"Days: [yellow]{days}[/yellow]\n"
+            f"Output Directory: [yellow]{output_dir}[/yellow]\n" 
+            f"Max Games per Day: [yellow]{max_games or 'All'}[/yellow]",
+            title="Historical Data Collection",
+        )
+    )
+
+    # Calculate date range
+    from datetime import datetime, timedelta
+    end_date = datetime.now().date()
+    start_date = end_date - timedelta(days=days)
+
+    console.print(f"[cyan]📅 Collecting data from {start_date} to {end_date}[/cyan]")
+
+    # Redirect to batch-collection collect-range command
+    import subprocess
+    import sys
+
+    cmd = [
+        sys.executable, "-m", "src.interfaces.cli", "batch-collection", "collect-range",
+        "--start-date", str(start_date),
+        "--end-date", str(end_date),
+        "--output-dir", str(output_dir)
+    ]
+
+    if max_games:
+        cmd.extend(["--max-games", str(max_games)])
+
+    # Note: batch-collection doesn't have --verbose flag, so we skip it
+
+    try:
+        console.print("[cyan]Executing batch collection...[/cyan]")
+        result = subprocess.run(cmd, check=True)
+        console.print("[green]✅ Historical data collection completed successfully![/green]")
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]❌ Historical data collection failed: {e}[/red]")
+        console.print("[yellow]💡 You can also use: uv run -m src.interfaces.cli batch-collection collect-range[/yellow]")
+
+
+@action_network.command()
+@click.option(
     "--hours",
     "-h",
     type=int,

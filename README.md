@@ -21,8 +21,13 @@ uv run -m src.interfaces.cli data status
 uv run -m src.interfaces.cli data test --source action_network --real
 
 # Action Network Pipeline (Enhanced Integration)
-uv run -m src.interfaces.cli action-network collect --date today
-uv run -m src.interfaces.cli action-network history --days 30
+uv run -m src.interfaces.cli action-network pipeline --date today
+uv run -m src.interfaces.cli action-network history --days 30                    # Quick historical collection
+uv run -m src.interfaces.cli action-network opportunities --hours 24
+
+# Historical Data Collection Options
+uv run -m src.interfaces.cli action-network history --days 15                    # Simple historical (recommended)
+uv run -m src.interfaces.cli batch-collection collect-range --start-date 2024-01-01 --end-date 2024-01-15  # Precise dates
 
 # Movement Analysis & Strategy Detection
 uv run -m src.interfaces.cli movement analyze --input-file output/action_network_history.json
@@ -30,8 +35,8 @@ uv run -m src.interfaces.cli movement rlm --input-file output/action_network_his
 uv run -m src.interfaces.cli movement steam --input-file output/action_network_history.json --show-details
 
 # Backtesting & Performance
-uv run -m src.interfaces.cli backtest run --start-date 2024-06-01 --end-date 2024-06-30 --strategies sharp_action consensus
-uv run -m src.interfaces.cli backtest run --start-date 2024-06-01 --end-date 2024-06-30 --strategies sharp_action --initial-bankroll 10000 --bet-size 100
+uv run -m src.interfaces.cli backtest run --start-date 2025-06-01 --end-date 2025-07-30 --strategies sharp_action
+uv run -m src.interfaces.cli backtest run --start-date 2025-06-01 --end-date 2025-06-30 --strategies sharp_action --initial-bankroll 10000 --bet-size 100
 
 # Database Management
 uv run -m src.interfaces.cli database setup-action-network

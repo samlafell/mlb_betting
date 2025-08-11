@@ -127,8 +127,8 @@ def batch_collection():
 )
 @click.option(
     "--source",
-    type=click.Choice(["sports_betting_report", "sbr"], case_sensitive=False),
-    default="sports_betting_report",
+    type=click.Choice(["action_network", "sports_book_review", "sbr", "vsin", "sbd", "mlb_stats_api"], case_sensitive=False),
+    default="action_network",
     help="Data source for collection",
 )
 @click.option(
@@ -444,8 +444,8 @@ def list_batches(output_dir: Path):
 )
 @click.option(
     "--source",
-    type=click.Choice(["sports_betting_report", "sbr"], case_sensitive=False),
-    default="sports_betting_report",
+    type=click.Choice(["action_network", "sports_book_review", "sbr", "vsin", "sbd", "mlb_stats_api"], case_sensitive=False),
+    default="action_network",
     help="Data source for collection",
 )
 @click.option(

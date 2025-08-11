@@ -77,6 +77,21 @@ docs/
 
 **Benefits**: ~20 redundant files cleaned up, ~3,000+ lines of duplicate code eliminated, clearer project structure, centralized documentation, 40% performance improvement.
 
+### CLI Command Fix & Documentation Update (August 2025)
+- **Added Missing Command**: Implemented missing `action-network history` command that was referenced in documentation but didn't exist
+- **Command Structure**: New command delegates to `batch-collection collect-range` for actual implementation
+- **Documentation Sync**: Updated CLAUDE.md and README.md to reflect accurate command structure and usage examples
+- **User Experience**: Fixed the exact failing command `uv run -m src.interfaces.cli action-network history --days 15` that users were trying to use
+- **Multiple Options**: Documented all three approaches for historical data collection (action-network, batch-collection, data collect)
+
+### Batch Collection Service Fix (August 2025)
+- **Fixed Missing Dependency**: Resolved `'BatchCollectionService' object has no attribute 'game_resolver'` error
+- **Refactored Architecture**: Updated service to work with centralized collector registry system instead of deprecated SBR-specific components
+- **Multi-Collector Support**: Now supports Action Network, VSIN, SBD, Sports Book Review, and MLB Stats API collectors
+- **Configuration Flexibility**: Added fallback collector initialization for improved compatibility
+- **Improved Error Messages**: Better error reporting showing available data sources when requested source is unavailable
+- **Working Implementation**: Successfully tested batch collection with sports_book_review source collecting real data
+
 ## TEST EVERYTHIGN
 every time you create a new feature, test it.
 Run integration tests and unit tests.
@@ -148,8 +163,24 @@ uv run -m src.interfaces.cli data collect --source sbd --real
 uv run -m src.interfaces.cli data status
 
 # Action Network pipeline
-uv run -m src.interfaces.cli action-network collect --date today
+uv run -m src.interfaces.cli action-network pipeline --date today
 uv run -m src.interfaces.cli action-network history --days 30
+uv run -m src.interfaces.cli action-network opportunities --hours 24
+
+# Historical Data Collection (Multiple Options)
+# Option 1: Action Network specific historical data
+uv run -m src.interfaces.cli action-network history --days 15        # Default: 15 days
+uv run -m src.interfaces.cli action-network history --days 30        # Custom days
+uv run -m src.interfaces.cli action-network history --days 7 --max-games 10  # Limited games
+
+# Option 2: Batch collection for comprehensive historical data
+uv run -m src.interfaces.cli batch-collection collect-range --start-date 2024-01-01 --end-date 2024-01-15
+uv run -m src.interfaces.cli batch-collection collect-season --season 2024
+uv run -m src.interfaces.cli batch-collection list-batches
+uv run -m src.interfaces.cli batch-collection retry-failed
+
+# Option 3: General data collection
+uv run -m src.interfaces.cli data collect --source action_network --real
 
 # Movement analysis
 uv run -m src.interfaces.cli movement analyze --input-file output/action_network_history.json
@@ -345,6 +376,26 @@ The system includes multiple strategy processors located in `src/analysis/proces
 - **Error handling**: Improved error reporting and recovery mechanisms
 
 ## Development Workflow
+
+### Historical Data Collection Commands - When to Use Each
+
+**For Action Network specific historical data (recommended for most users):**
+```bash
+# Simple historical collection - collects last N days of data
+uv run -m src.interfaces.cli action-network history --days 15   # Most common usage
+```
+
+**For comprehensive batch collection (power users):**
+```bash  
+# Precise date range collection with full control
+uv run -m src.interfaces.cli batch-collection collect-range --start-date 2024-01-01 --end-date 2024-01-15
+```
+
+**For general data testing and validation:**
+```bash
+# Real-time data collection and testing
+uv run -m src.interfaces.cli data collect --source action_network --real
+```
 
 ### Primary Development Commands
 ```bash
