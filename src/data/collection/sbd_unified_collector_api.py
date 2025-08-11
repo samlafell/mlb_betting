@@ -565,9 +565,9 @@ class SBDUnifiedCollectorAPI(BaseCollector):
             import psycopg2
             import psycopg2.extras
 
-            # Use environment variables or construct connection string
+            # Use environment variables or construct connection string for containerized PostgreSQL
             db_url = os.getenv(
-                "DATABASE_URL", "postgresql://samlafell@localhost:5432/mlb_betting"
+                "DATABASE_URL", "postgresql://samlafell:postgres@postgres:5432/mlb_betting"
             )
 
             with psycopg2.connect(db_url) as conn:
