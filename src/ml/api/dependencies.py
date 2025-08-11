@@ -80,7 +80,7 @@ async def get_database_connection():
         import asyncpg
 
         # Get database configuration from environment variables
-        host = os.getenv("POSTGRES_HOST", "localhost")
+        host = os.getenv("POSTGRES_HOST", "postgres")
         port = os.getenv("POSTGRES_PORT", "5432")
         database = os.getenv("POSTGRES_DB", "mlb_betting")
         user = os.getenv("POSTGRES_USER", "samlafell")

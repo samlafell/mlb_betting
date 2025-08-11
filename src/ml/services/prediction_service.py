@@ -171,7 +171,7 @@ class PredictionService:
         try:
             # Use environment variables for database connection
             db_config = {
-                "host": os.getenv("DATABASE_HOST", "localhost"),
+                "host": os.getenv("DATABASE_HOST", "postgres"),
                 "port": int(os.getenv("DATABASE_PORT", "5432")),
                 "database": os.getenv("DATABASE_NAME", "mlb_betting"),
                 "user": os.getenv("DATABASE_USERNAME", "samlafell"),
