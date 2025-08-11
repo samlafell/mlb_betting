@@ -302,7 +302,7 @@ mlb_betting_program/
    - RLM (Reverse Line Movement) detection
 
 3. **Database Layer** (`src/data/database/`)
-   - PostgreSQL integration with source-specific raw tables
+   - PostgreSQL integration with source-specific raw tables (default to Postgres in Docker)
    - Repository pattern for data access
    - Schema migrations and management (see `sql/migrations/004_create_source_specific_zones.sql`)
    - Unified historical staging with temporal precision
@@ -340,7 +340,7 @@ The system includes multiple strategy processors located in `src/analysis/proces
 
 ### Database Schema
 
-- Uses PostgreSQL with proper foreign key relationships
+- Use Docker PostgreSQL with proper foreign key relationships
 - Separate schemas for different data types (raw data, analysis results, etc.)
 - Comprehensive indexing for performance
 - Migration system for schema evolution
@@ -415,7 +415,7 @@ uv run ruff format && uv run ruff check && uv run mypy src/
 ## Configuration
 
 - **Centralized Configuration**: All settings managed through `config.toml`
-- **Database Settings**: PostgreSQL connections via environment variables or config.toml
+- **Database Settings**: PostgreSQL connections via environment variables (default to Postgres in Docker) or config.toml
 - **Data Sources**: SBD (WordPress JSON API), VSIN, Action Network, MLB Stats API, Odds API
 - **Feature Flags**: Control system behavior via config
 - **Rate Limiting**: Configured per data source to respect API limits
