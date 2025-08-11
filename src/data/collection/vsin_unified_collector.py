@@ -2019,7 +2019,7 @@ class VSINUnifiedCollector(BaseCollector):
             )
             return {
                 "host": os.getenv("POSTGRES_HOST", "postgres"),
-                "port": int(os.getenv("POSTGRES_PORT", "5432")),
+                "port": int(os.getenv("POSTGRES_PORT", "5433")),
                 "database": os.getenv("POSTGRES_DB", "mlb_betting"),
                 "user": os.getenv("POSTGRES_USER", "samlafell"),
                 "password": os.getenv("POSTGRES_PASSWORD", ""),

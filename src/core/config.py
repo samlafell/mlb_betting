@@ -30,7 +30,7 @@ class DatabaseSettings(BaseSettings):
     # PostgreSQL settings (primary) - Default to container hostname for Docker compatibility
     host: str = Field(default="postgres", description="Database host", env="DB_HOST")
 
-    port: int = Field(default=5432, description="Database port", env="DB_PORT")
+    port: int = Field(default=5433, description="Database port", env="DB_PORT")
 
     database: str = Field(
         default="mlb_betting", description="Database name", env="DB_NAME"
