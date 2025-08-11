@@ -90,7 +90,7 @@ class ActionNetworkURLBuilder:
                 "Could not import settings, using environment variables"
             )
             return {
-                "host": os.getenv("POSTGRES_HOST", "localhost"),
+                "host": os.getenv("POSTGRES_HOST", "postgres"),
                 "port": int(os.getenv("POSTGRES_PORT", "5432")),
                 "database": os.getenv("POSTGRES_DB", "mlb_betting"),
                 "user": os.getenv("POSTGRES_USER", "samlafell"),
