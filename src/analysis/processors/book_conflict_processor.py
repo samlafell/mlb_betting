@@ -769,6 +769,29 @@ class UnifiedBookConflictProcessor(BaseStrategyProcessor, StrategyProcessorMixin
     ) -> UnifiedBettingSignal | None:
         """Create a unified book conflict signal"""
         try:
+            # Validate game_odds structure and provide fallbacks
+            game_id = game_odds.get("game_id")
+            if not game_id:
+                # Generate unique fallback game_id including conflict hash
+                home_team = game_odds.get("home_team", "UNKNOWN_HOME")
+                away_team = game_odds.get("away_team", "UNKNOWN_AWAY")
+                conflict_hash = abs(hash(str(conflict))) % 10000  # Unique per conflict
+                game_id = f"{home_team}_vs_{away_team}_{int(processing_time.timestamp())}_{conflict_hash}"
+                self.logger.warning(f"Missing game_id, generated fallback: {game_id}")
+            
+            # Validate required fields
+            home_team = game_odds.get("home_team")
+            away_team = game_odds.get("away_team")
+            game_datetime = game_odds.get("game_datetime")
+            
+            if not home_team or not away_team:
+                self.logger.error(f"Missing required team data: home={home_team}, away={away_team}")
+                return None
+                
+            if not game_datetime:
+                self.logger.error(f"Missing game_datetime for game_id: {game_id}")
+                return None
+
             # Determine recommended side
             recommended_side = conflict_metrics["recommended_side"]
 
@@ -799,39 +822,36 @@ class UnifiedBookConflictProcessor(BaseStrategyProcessor, StrategyProcessorMixin
 
             # Create the unified signal
             signal = UnifiedBettingSignal(
-                signal_id=f"conflict_{self.strategy_id}_{game_odds['game_id']}_{hash(str(conflict))}",
+                signal_id=f"conflict_{self.strategy_id}_{game_id}_{hash(str(conflict))}",
                 signal_type=SignalType.BOOK_CONFLICT,
                 strategy_category=StrategyCategory.MARKET_INEFFICIENCY,
-                game_id=game_odds["game_id"],
-                home_team=game_odds["home_team"],
-                away_team=game_odds["away_team"],
-                game_date=self._normalize_game_time(game_odds["game_datetime"]),
+                game_id=game_id,
+                home_team=home_team,
+                away_team=away_team,
+                game_date=self._normalize_game_time(game_datetime),
                 recommended_side=recommended_side,
                 bet_type=conflict_metrics["market_type"],
                 confidence_score=confidence_data["confidence_score"],
                 confidence_level=confidence_data["confidence_level"],
                 strategy_data=strategy_data,
                 signal_strength=confidence_data["conflict_strength"],
-                minutes_to_game=self._calculate_minutes_to_game(
-                    self._normalize_game_time(game_odds["game_datetime"]),
-                    processing_time,
-                ),
-                timing_category=self._get_timing_category(
+                minutes_to_game=int(
                     self._calculate_minutes_to_game(
-                        self._normalize_game_time(game_odds["game_datetime"]),
+                        self._normalize_game_time(game_datetime),
                         processing_time,
                     )
                 ),
+                timing_category=self._get_timing_category(
+                    int(
+                        self._calculate_minutes_to_game(
+                            self._normalize_game_time(game_datetime),
+                            processing_time,
+                        )
+                    )
+                ),
                 data_source="multi_book_analysis",
-                book="multiple",
-                metadata={
-                    "processing_id": self.processing_id,
-                    "strategy_id": self.strategy_id,
-                    "applied_modifiers": confidence_data["applied_modifiers"],
-                    "created_at": processing_time,
-                    "processor_version": "3.0.0",
-                    "conflict_analysis_version": "1.0.0",
-                },
+                book_sources=["multiple"],
+                quality_score=0.8,  # Default quality score for book conflicts
             )
 
             return signal

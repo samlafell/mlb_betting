@@ -540,6 +540,10 @@ class StrategyFactory:
         """Get dict of successfully loaded strategies"""
         return self._strategy_instances.copy()
 
+    def get_strategy(self, strategy_name: str) -> BaseStrategyProcessor | None:
+        """Get a specific strategy instance by name"""
+        return self._strategy_instances.get(strategy_name)
+
     def get_strategy_by_signal_type(
         self, signal_type: SignalType
     ) -> list[BaseStrategyProcessor]:

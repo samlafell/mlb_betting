@@ -631,6 +631,28 @@ class UnifiedTimingBasedProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
     ) -> UnifiedBettingSignal | None:
         """Create a unified timing-based signal"""
         try:
+            # Validate and extract game_id with fallback
+            game_id = split_data.get("game_id")
+            if not game_id:
+                # Generate fallback game_id
+                home_team = split_data.get("home_team", "UNKNOWN_HOME")
+                away_team = split_data.get("away_team", "UNKNOWN_AWAY")
+                game_id = f"{home_team}_vs_{away_team}_{int(processing_time.timestamp())}"
+                self.logger.warning(f"Missing game_id in timing processor, generated fallback: {game_id}")
+            
+            # Validate required fields
+            home_team = split_data.get("home_team")
+            away_team = split_data.get("away_team")
+            game_datetime = split_data.get("game_datetime")
+            
+            if not home_team or not away_team:
+                self.logger.error(f"Missing required team data: home={home_team}, away={away_team}")
+                return None
+                
+            if not game_datetime:
+                self.logger.error(f"Missing game_datetime for game_id: {game_id}")
+                return None
+
             # Determine recommended side
             recommended_side = timing_metrics["sharp_direction"]
 
@@ -656,21 +678,29 @@ class UnifiedTimingBasedProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
                 "is_ultra_late": timing_metrics["is_ultra_late"],
                 "consensus_strength": timing_metrics["consensus_strength"],
                 "source": split_data.get("source", "unknown"),
-                "book": split_data.get("book", ""),
+                "book_name": split_data.get("book", ""),  # Renamed from "book" to avoid forbidden field
                 "split_type": split_data.get("split_type", "moneyline"),
                 "split_value": split_data.get("split_value", 0),
                 "last_updated": split_data.get("last_updated", processing_time),
+                "processing_metadata": {  # Moved metadata into strategy_data
+                    "processing_id": self.processing_id,
+                    "strategy_id": self.strategy_id,
+                    "applied_modifiers": confidence_data["applied_modifiers"],
+                    "created_at": processing_time,
+                    "processor_version": "3.0.0",
+                    "timing_analysis_version": "2.0.0",
+                }
             }
 
             # Create the unified signal
             signal = UnifiedBettingSignal(
-                signal_id=f"timing_{self.strategy_id}_{split_data['game_id']}_{hash(str(split_data))}",
+                signal_id=f"timing_{self.strategy_id}_{game_id}_{hash(str(split_data))}",
                 signal_type=SignalType.TIMING_BASED,
                 strategy_category=StrategyCategory.TIMING_ANALYSIS,
-                game_id=split_data["game_id"],
-                home_team=split_data["home_team"],
-                away_team=split_data["away_team"],
-                game_date=self._normalize_game_time(split_data["game_datetime"]),
+                game_id=game_id,
+                home_team=home_team,
+                away_team=away_team,
+                game_date=self._normalize_game_time(game_datetime),
                 recommended_side=recommended_side,
                 bet_type=split_data.get("split_type", "moneyline"),
                 confidence_score=confidence_data["confidence_score"],
@@ -680,15 +710,8 @@ class UnifiedTimingBasedProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
                 minutes_to_game=int(timing_metrics["minutes_before_game"]),
                 timing_category=timing_metrics["timing_category"].value,
                 data_source=split_data.get("source", "unknown"),
-                book=split_data.get("book", ""),
-                metadata={
-                    "processing_id": self.processing_id,
-                    "strategy_id": self.strategy_id,
-                    "applied_modifiers": confidence_data["applied_modifiers"],
-                    "created_at": processing_time,
-                    "processor_version": "3.0.0",
-                    "timing_analysis_version": "2.0.0",
-                },
+                book_sources=[split_data.get("book", "unknown")],  # Use book_sources instead of book
+                quality_score=0.85,  # Add required quality_score field for timing-based signals
             )
 
             return signal

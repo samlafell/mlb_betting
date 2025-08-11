@@ -37,7 +37,7 @@ class DatabaseSettings(BaseSettings):
     )
 
     user: str = Field(
-        default="postgres", description="Database username", env="DB_USER"
+        default="samlafell", description="Database username", env="DB_USER"
     )
 
     password: str = Field(

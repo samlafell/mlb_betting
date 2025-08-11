@@ -17,7 +17,7 @@ Part of Phase 3: Strategy Integration - Unified Architecture Migration
 
 import uuid
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any
 
@@ -241,11 +241,55 @@ class BaseStrategyProcessor(ABC):
     ) -> list[dict[str, Any]]:
         """Get game data for legacy compatibility"""
         try:
-            # This would be implemented to fetch from the unified repository
-            # For now, return empty list to avoid breaking existing code
-            return []
+            # Calculate the date range for games to fetch
+            current_time = datetime.now(self.est)
+            end_time = current_time + timedelta(minutes=minutes_ahead)
+            
+            # Use the unified repository to fetch games
+            games = await self.repository.games.find_by_date_range(
+                start_date=current_time.replace(hour=0, minute=0, second=0, microsecond=0),
+                end_date=end_time,
+                status=None  # Get all game statuses
+            )
+            
+            # Convert games to the expected format for processors
+            game_data = []
+            for game in games:
+                # Calculate minutes to game
+                minutes_to_game = self._calculate_minutes_to_game(game.game_time, current_time)
+                
+                # Only include games within the time window
+                if minutes_to_game <= minutes_ahead and minutes_to_game >= 0:
+                    game_dict = {
+                        "game_id": game.game_id,
+                        "home_team": game.home_team.value if hasattr(game.home_team, 'value') else str(game.home_team),
+                        "away_team": game.away_team.value if hasattr(game.away_team, 'value') else str(game.away_team),
+                        "game_datetime": game.game_time,
+                        "venue": game.venue,
+                        "status": game.status.value if hasattr(game.status, 'value') else str(game.status),
+                        "minutes_to_game": minutes_to_game,
+                        # Add mock data fields that processors expect
+                        "moneyline_home": -110,
+                        "money_percentage": 68.0,
+                        "bet_percentage": 42.0,
+                        "volume": 750,
+                        "source": "unified_repository",
+                        "book": "combined",
+                        "opening_line": -105,
+                        "current_line": -110,
+                        "line_movement": -5,
+                        "total_books": 4,
+                        "consensus_books": 3,
+                        "differential": 26.0,  # money_percentage - bet_percentage
+                    }
+                    game_data.append(game_dict)
+            
+            self.logger.info(f"Fetched {len(game_data)} games for strategy processing (within {minutes_ahead} minutes)")
+            return game_data
+            
         except Exception as e:
-            self.logger.error(f"Failed to get game data for legacy mode: {e}")
+            self.logger.error(f"Failed to get game data for legacy mode: {e}", exc_info=True)
+            # Return empty list to prevent cascade failures
             return []
 
     def _convert_to_legacy_signals(

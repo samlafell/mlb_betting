@@ -140,17 +140,16 @@ class PredictionService:
 
             # Initialize Redis feature store
             self.redis_store = RedisFeatureStore(
-                redis_url=self.config.redis.url,
-                use_msgpack=True,
-                default_ttl=redis_ttl,
+                redis_url=self.config.redis.url
             )
             await self.redis_store.initialize()
             logger.info("✅ Redis feature store initialized")
 
             # Initialize trainer for model loading
+            # LightGBMTrainer creates its own feature_pipeline and redis_store internally
             self.trainer = LightGBMTrainer(
-                feature_pipeline=self.feature_pipeline,
-                redis_feature_store=self.redis_store,
+                experiment_name=self.config.mlflow.experiment_name,
+                model_version="v2.1"
             )
             logger.info("✅ LightGBM trainer initialized")
 
@@ -175,7 +174,7 @@ class PredictionService:
                 "host": os.getenv("DATABASE_HOST", "localhost"),
                 "port": int(os.getenv("DATABASE_PORT", "5432")),
                 "database": os.getenv("DATABASE_NAME", "mlb_betting"),
-                "user": os.getenv("DATABASE_USERNAME", "postgres"),
+                "user": os.getenv("DATABASE_USERNAME", "samlafell"),
                 "password": os.getenv("DATABASE_PASSWORD", ""),
             }
 
@@ -199,14 +198,14 @@ class PredictionService:
                 query = """
                     SELECT DISTINCT 
                         experiment_name,
-                        run_id, 
+                        mlflow_run_id as run_id, 
                         model_name,
                         model_version,
                         prediction_target,
                         is_active,
                         created_at,
                         metrics
-                    FROM curated.ml_experiments 
+                    FROM curated.ml_models 
                     WHERE is_active = true
                     ORDER BY created_at DESC
                 """
@@ -1405,3 +1404,9 @@ class PredictionService:
             stats["resource_allocation"] = {"enabled": False}
 
         return stats
+    
+    async def generate_todays_predictions(
+        self, model_name: Optional[str] = None, min_confidence: Optional[float] = None
+    ) -> List[Dict[str, Any]]:
+        """Alias for get_todays_predictions for CLI compatibility"""
+        return await self.get_todays_predictions(model_name, min_confidence)

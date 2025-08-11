@@ -93,7 +93,7 @@ class ActionNetworkURLBuilder:
                 "host": os.getenv("POSTGRES_HOST", "localhost"),
                 "port": int(os.getenv("POSTGRES_PORT", "5432")),
                 "database": os.getenv("POSTGRES_DB", "mlb_betting"),
-                "user": os.getenv("POSTGRES_USER", "postgres"),
+                "user": os.getenv("POSTGRES_USER", "samlafell"),
                 "password": os.getenv("POSTGRES_PASSWORD", ""),
             }
 

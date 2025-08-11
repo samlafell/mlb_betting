@@ -264,7 +264,7 @@ class StrategyOrchestrator:
         plan_id = str(uuid.uuid4())
 
         # Validate all strategies are available
-        available_strategies = self.factory.get_all_strategies()
+        available_strategies = self.factory.get_loaded_strategies()
         missing_strategies = [
             name for name in strategy_names if name not in available_strategies
         ]
@@ -303,8 +303,9 @@ class StrategyOrchestrator:
         # Get strategy information
         strategy_info = {}
         for name in strategy_names:
-            info = self.factory.get_strategy_info(name)
-            if info:
+            # Get strategy info from registry
+            if hasattr(self.factory, 'STRATEGY_REGISTRY') and name in self.factory.STRATEGY_REGISTRY:
+                info = self.factory.STRATEGY_REGISTRY[name]
                 strategy_info[name] = info
 
         # Simple execution order based on priority
@@ -487,7 +488,7 @@ class StrategyOrchestrator:
         self, game_data: list[dict[str, Any]], context: dict[str, Any] | None = None
     ) -> OrchestrationResult:
         """Execute all available strategies"""
-        all_strategies = list(self.factory.get_all_strategies().keys())
+        all_strategies = list(self.factory.get_loaded_strategies().keys())
         return await self.execute_strategies(all_strategies, game_data, context)
 
     async def execute_strategies_by_category(

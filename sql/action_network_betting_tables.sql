@@ -86,21 +86,21 @@ CREATE TABLE IF NOT EXISTS action_network.betting_lines (
     history_url TEXT,
     
     -- Constraints
-    UNIQUE(game_id, book_id, market_type, side, line_timestamp),
-    
-    -- Indexes for performance
-    INDEX idx_betting_lines_game_id (game_id),
-    INDEX idx_betting_lines_book_id (book_id),
-    INDEX idx_betting_lines_market_type (market_type),
-    INDEX idx_betting_lines_game_book_market (game_id, book_id, market_type),
-    INDEX idx_betting_lines_teams (home_team, away_team),
-    INDEX idx_betting_lines_game_datetime (game_datetime),
-    INDEX idx_betting_lines_line_timestamp (line_timestamp),
-    INDEX idx_betting_lines_period (period),
-    INDEX idx_betting_lines_extracted_at (extracted_at),
-    INDEX idx_betting_lines_opening_closing (is_opening_line, is_closing_line),
-    INDEX idx_betting_lines_sharp_action (sharp_action, reverse_line_movement, steam_move)
+    UNIQUE(game_id, book_id, market_type, side, line_timestamp)
 );
+
+-- Create indexes for performance (must be created separately after table creation)
+CREATE INDEX IF NOT EXISTS idx_betting_lines_game_id ON action_network.betting_lines (game_id);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_book_id ON action_network.betting_lines (book_id);  
+CREATE INDEX IF NOT EXISTS idx_betting_lines_market_type ON action_network.betting_lines (market_type);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_game_book_market ON action_network.betting_lines (game_id, book_id, market_type);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_teams ON action_network.betting_lines (home_team, away_team);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_game_datetime ON action_network.betting_lines (game_datetime);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_line_timestamp ON action_network.betting_lines (line_timestamp);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_period ON action_network.betting_lines (period);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_extracted_at ON action_network.betting_lines (extracted_at);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_opening_closing ON action_network.betting_lines (is_opening_line, is_closing_line);
+CREATE INDEX IF NOT EXISTS idx_betting_lines_sharp_action ON action_network.betting_lines (sharp_action, reverse_line_movement, steam_move);
 
 -- Table for tracking the last extraction time per game to enable incremental updates
 CREATE TABLE IF NOT EXISTS action_network.extraction_log (
@@ -125,13 +125,13 @@ CREATE TABLE IF NOT EXISTS action_network.extraction_log (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     
     -- Constraints
-    UNIQUE(game_id),
-    
-    -- Indexes
-    INDEX idx_extraction_log_game_id (game_id),
-    INDEX idx_extraction_log_last_extracted (last_extracted_at),
-    INDEX idx_extraction_log_status (extraction_status)
+    UNIQUE(game_id)
 );
+
+-- Create indexes for extraction_log table
+CREATE INDEX IF NOT EXISTS idx_extraction_log_game_id ON action_network.extraction_log (game_id);
+CREATE INDEX IF NOT EXISTS idx_extraction_log_last_extracted ON action_network.extraction_log (last_extracted_at);
+CREATE INDEX IF NOT EXISTS idx_extraction_log_status ON action_network.extraction_log (extraction_status);
 
 -- Table for line movement summaries (aggregated data for faster queries)
 CREATE TABLE IF NOT EXISTS action_network.line_movement_summary (
@@ -179,14 +179,14 @@ CREATE TABLE IF NOT EXISTS action_network.line_movement_summary (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     
     -- Constraints
-    UNIQUE(game_id, book_id, market_type, side),
-    
-    -- Indexes
-    INDEX idx_line_movement_summary_game_id (game_id),
-    INDEX idx_line_movement_summary_book_market (book_id, market_type),
-    INDEX idx_line_movement_summary_game_book_market (game_id, book_id, market_type),
-    INDEX idx_line_movement_summary_sharp_action (sharp_action_direction, reverse_line_movement_detected)
+    UNIQUE(game_id, book_id, market_type, side)
 );
+
+-- Create indexes for line_movement_summary table
+CREATE INDEX IF NOT EXISTS idx_line_movement_summary_game_id ON action_network.line_movement_summary (game_id);
+CREATE INDEX IF NOT EXISTS idx_line_movement_summary_book_market ON action_network.line_movement_summary (book_id, market_type);
+CREATE INDEX IF NOT EXISTS idx_line_movement_summary_game_book_market ON action_network.line_movement_summary (game_id, book_id, market_type);
+CREATE INDEX IF NOT EXISTS idx_line_movement_summary_sharp_action ON action_network.line_movement_summary (sharp_action_direction, reverse_line_movement_detected);
 
 -- Function to automatically update line movement summary
 CREATE OR REPLACE FUNCTION action_network.update_line_movement_summary()

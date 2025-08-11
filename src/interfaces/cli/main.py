@@ -19,6 +19,8 @@ from src.interfaces.cli.commands.ml_commands import ml
 from src.interfaces.cli.commands.monitoring import MonitoringCommands
 from src.interfaces.cli.commands.movement_analysis import movement
 from src.interfaces.cli.commands.pipeline import pipeline
+from src.interfaces.cli.commands.predictions import create_predictions_commands
+from src.interfaces.cli.commands.quickstart import quickstart
 from src.interfaces.cli.commands.setup_database import database
 
 # Old staging commands removed - consolidated into historical approach
@@ -28,10 +30,24 @@ from src.interfaces.cli.commands.setup_database import database
 @click.version_option()
 def cli():
     """
-    MLB Sharp Betting - Unified Data Collection and Analysis System
-
-    A comprehensive system for collecting, analyzing, and generating betting insights
-    from multiple sportsbooks and data sources.
+    🎯 MLB Betting System - AI-Powered Sports Betting Analysis
+    
+    Generate profitable betting predictions using machine learning and sharp action detection.
+    
+    🚀 Quick Start (New Users):
+        uv run -m src.interfaces.cli quickstart setup
+        
+    🎯 Get Today's Predictions:
+        uv run -m src.interfaces.cli predictions today
+        
+    ⚡ Run Complete Pipeline:
+        uv run -m src.interfaces.cli pipeline run-full --generate-predictions
+        
+    📊 View Model Performance:
+        uv run -m src.interfaces.cli ml models --profitable-only
+        
+    📈 Start Monitoring Dashboard:
+        uv run -m src.interfaces.cli monitoring dashboard
     """
     # Initialize database connections with settings
     try:
@@ -45,8 +61,11 @@ def cli():
 # Create command instances
 data_commands = DataCommands()
 monitoring_commands = MonitoringCommands()
+predictions_commands = create_predictions_commands()
 
 # Add command groups
+cli.add_command(quickstart)  # Add quickstart commands first for new users
+cli.add_command(predictions_commands, name="predictions")  # Add predictions commands  
 cli.add_command(data_commands.create_group(), name="data")
 cli.add_command(
     monitoring_commands.create_group(), name="monitoring"

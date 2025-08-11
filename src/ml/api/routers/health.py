@@ -236,7 +236,7 @@ async def _check_database_health() -> Dict[str, Any]:
         host = os.getenv("POSTGRES_HOST", "localhost")
         port = os.getenv("POSTGRES_PORT", "5432")
         database = os.getenv("POSTGRES_DB", "mlb_betting")
-        user = os.getenv("POSTGRES_USER", "postgres")
+        user = os.getenv("POSTGRES_USER", "samlafell")
         password = os.getenv("POSTGRES_PASSWORD", "")
         
         dsn = f"postgresql://{user}:{password}@{host}:{port}/{database}"

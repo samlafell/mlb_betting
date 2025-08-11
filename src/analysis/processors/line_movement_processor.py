@@ -120,7 +120,7 @@ class UnifiedLineMovementProcessor(BaseStrategyProcessor, StrategyProcessorMixin
 
     def get_strategy_category(self) -> StrategyCategory:
         """Return strategy category for proper routing"""
-        return StrategyCategory.MOVEMENT_ANALYSIS
+        return StrategyCategory.MARKET_INEFFICIENCY
 
     def get_required_tables(self) -> list[str]:
         """Return database tables required for this strategy"""
@@ -685,7 +685,7 @@ class UnifiedLineMovementProcessor(BaseStrategyProcessor, StrategyProcessorMixin
             signal = UnifiedBettingSignal(
                 signal_id=f"movement_{self.strategy_id}_{current_line.get('game_id', 'unknown')}_{hash(str(movement_data))}",
                 signal_type=SignalType.LINE_MOVEMENT,
-                strategy_category=StrategyCategory.MOVEMENT_ANALYSIS,
+                strategy_category=StrategyCategory.MARKET_INEFFICIENCY,
                 game_id=current_line.get(
                     "game_id",
                     f"{current_line.get('home_team', 'unknown')}_vs_{current_line.get('away_team', 'unknown')}",
