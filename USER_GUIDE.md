@@ -9,7 +9,15 @@ uv sync
 
 # Setup database (one-time)
 uv run -m src.interfaces.cli database setup-action-network --test-connection
+
+# If setup fails, try test-only mode to check connection:
+uv run -m src.interfaces.cli database setup-action-network --test-only
 ```
+
+**Database Setup Troubleshooting:**
+- If you see "relation does not exist" errors, run the missing table migrations first
+- For "trigger already exists" errors, use `--test-only` flag to skip schema setup
+- Check that PostgreSQL is running on the correct port (5433 for Docker, 5432 for local)
 
 ### 2. Start Real-Time Monitoring Dashboard
 ```bash
@@ -156,6 +164,11 @@ The system includes comprehensive data quality monitoring:
 # Quick pipeline assessment
 uv run assess_pipeline_data.py
 
+# Note: Expected warnings from pipeline assessment:
+# - "N/A (no created_at column)" - Normal for some tables
+# - "N/A (no processed_at column)" - Normal for raw data tables
+# - "Table does not exist" - Normal for unused data sources
+
 # Database connectivity test
 uv run test_db_connectivity.py
 
@@ -289,6 +302,41 @@ uv run -m src.interfaces.cli backtest run \
 - Use Redis for production rate limiting to support multiple instances
 - Configure connection pooling for high-volume operations
 - Enable distributed tracing for complex debugging
+
+## Pipeline Backlog Monitoring & Resolution
+
+### Identifying Backlogs
+Pipeline backlogs occur when RAW → STAGING processing falls behind data collection:
+
+```bash
+# Check for unprocessed records
+uv run assess_pipeline_data.py | grep "Pipeline backlog"
+
+# Manual check for specific tables
+PGPASSWORD=postgres psql -h localhost -p 5433 -U samlafell -d mlb_betting -c "
+SELECT COUNT(*) as unprocessed_count 
+FROM raw_data.action_network_odds 
+WHERE processed_at IS NULL AND created_at > NOW() - INTERVAL '24 hours'
+"
+```
+
+### Resolving Backlogs
+```bash
+# Run staging zone processing to clear backlog
+uv run -m src.interfaces.cli pipeline run --zone staging
+
+# For persistent backlogs, run specific processor
+uv run -m src.data.pipeline.staging_zone process --source action_network --batch-size 100
+
+# Monitor processing progress
+uv run assess_pipeline_data.py
+```
+
+### Prevention & Monitoring
+- **Automated Processing**: Set up cron jobs or scheduled tasks for regular pipeline runs
+- **Resource Monitoring**: Monitor CPU/memory usage during peak collection times
+- **Alert Thresholds**: Set up alerts when unprocessed records exceed 500
+- **Performance Tuning**: Increase batch sizes for large backlogs (default 100)
 
 ### Production Deployment
 - Follow the security guide in `docs/PRODUCTION_SECURITY_GUIDE.md`
