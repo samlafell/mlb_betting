@@ -29,9 +29,27 @@ async def setup_ml_database():
         print(
             f"Connecting to database: {db_config.host}:{db_config.port}/{db_config.database}"
         )
+        print(f"Environment: Docker={os.getenv('DOCKER_ENV', 'false')}")
+        
+        # Add environment context
+        if db_config.host == 'postgres' and not os.getenv('DOCKER_ENV'):
+            print("💡 Detected Docker hostname 'postgres' but not in Docker environment")
+            print("💡 Make sure Docker Compose is running or update database config")
 
-        # Connect to database
-        conn = await asyncpg.connect(dsn)
+        # Connect to database with timeout
+        try:
+            conn = await asyncio.wait_for(
+                asyncpg.connect(dsn), timeout=30.0
+            )
+            print("✅ Successfully connected to database")
+        except asyncio.TimeoutError:
+            print("❌ Database connection timed out after 30 seconds")
+            print("💡 Check if PostgreSQL is running and accessible")
+            sys.exit(1)
+        except Exception as e:
+            print(f"❌ Database connection failed: {e}")
+            print("💡 Check database credentials and network connectivity")
+            sys.exit(1)
 
         # Check if curated schema exists
         schema_exists = await conn.fetchval(
@@ -63,10 +81,17 @@ async def setup_ml_database():
                     sql_content = f.read()
 
                 try:
-                    # Execute the migration SQL
-                    await conn.execute(sql_content)
+                    # Execute the migration SQL with timeout
+                    await asyncio.wait_for(
+                        conn.execute(sql_content), timeout=60.0
+                    )
                     print(f"✅ Successfully applied {migration_file}")
 
+                except asyncio.TimeoutError:
+                    print(f"⏱️  Migration {migration_file} timed out after 60 seconds")
+                    print("💡 Large migration files may take longer - consider running manually")
+                    # Continue with other migrations
+                    continue
                 except Exception as e:
                     print(f"⚠️  Warning applying {migration_file}: {e}")
                     # Continue with other migrations
@@ -111,5 +136,19 @@ async def setup_ml_database():
         sys.exit(1)
 
 
+async def main():
+    """Main function with overall timeout"""
+    try:
+        # Run setup with overall timeout of 5 minutes
+        await asyncio.wait_for(setup_ml_database(), timeout=300.0)
+    except asyncio.TimeoutError:
+        print("❌ ML database setup timed out after 5 minutes")
+        print("💡 Consider running migrations manually or increasing timeout")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ ML database setup failed: {e}")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
-    asyncio.run(setup_ml_database())
+    asyncio.run(main())
