@@ -1086,7 +1086,40 @@ def history(
     try:
         console.print("[cyan]Executing batch collection...[/cyan]")
         result = subprocess.run(cmd, check=True)
+        
+        # Create a convenient symlink for movement analysis commands
+        expected_file = output_dir / "action_network_history.json"
+        latest_historical_file = None
+        
+        # Find the most recent historical_line_movement_full_*.json file
+        import glob
+        pattern = str(output_dir / "historical_line_movement_full_*.json")
+        historical_files = glob.glob(pattern)
+        
+        if historical_files:
+            # Get the most recent file
+            latest_historical_file = Path(max(historical_files, key=lambda x: Path(x).stat().st_mtime))
+            
+            # Remove existing symlink if it exists
+            if expected_file.exists() or expected_file.is_symlink():
+                expected_file.unlink()
+            
+            # Create relative symlink
+            try:
+                expected_file.symlink_to(latest_historical_file.name)
+                console.print(f"[green]📎 Created symlink: {expected_file} -> {latest_historical_file.name}[/green]")
+            except OSError:
+                # If symlink fails (Windows or permissions), copy the file instead
+                import shutil
+                shutil.copy2(latest_historical_file, expected_file)
+                console.print(f"[green]📄 Copied latest file to: {expected_file}[/green]")
+        
         console.print("[green]✅ Historical data collection completed successfully![/green]")
+        
+        if expected_file.exists():
+            console.print(f"[yellow]💡 Use this file for movement analysis:[/yellow]")
+            console.print(f"[cyan]uv run -m src.interfaces.cli movement analyze --input-file {expected_file}[/cyan]")
+        
     except subprocess.CalledProcessError as e:
         console.print(f"[red]❌ Historical data collection failed: {e}[/red]")
         console.print("[yellow]💡 You can also use: uv run -m src.interfaces.cli batch-collection collect-range[/yellow]")

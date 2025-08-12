@@ -33,8 +33,11 @@ def database():
 @click.option(
     "--test-connection", "-t", is_flag=True, help="Test database connection after setup"
 )
+@click.option(
+    "--test-only", is_flag=True, help="Only test connection, skip schema setup"
+)
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
-def setup_action_network(schema_file: Path, test_connection: bool, verbose: bool):
+def setup_action_network(schema_file: Path, test_connection: bool, test_only: bool, verbose: bool):
     """
     Set up Action Network database schema.
 
@@ -54,11 +57,11 @@ def setup_action_network(schema_file: Path, test_connection: bool, verbose: bool
         # Setup and test connection
         uv run python -m src.interfaces.cli database setup-action-network -t
     """
-    asyncio.run(_setup_action_network_async(schema_file, test_connection, verbose))
+    asyncio.run(_setup_action_network_async(schema_file, test_connection, test_only, verbose))
 
 
 async def _setup_action_network_async(
-    schema_file: Path, test_connection: bool, verbose: bool
+    schema_file: Path, test_connection: bool, test_only: bool, verbose: bool
 ):
     """Async implementation of Action Network database setup."""
     if verbose:
@@ -75,32 +78,43 @@ async def _setup_action_network_async(
 
         logger.info("Connected to database successfully")
 
-        # Read and execute schema file
-        if not schema_file.exists():
-            raise click.ClickException(f"Schema file not found: {schema_file}")
+        # Skip schema setup if test_only is True
+        if not test_only:
+            # Read and execute schema file
+            if not schema_file.exists():
+                raise click.ClickException(f"Schema file not found: {schema_file}")
 
-        with open(schema_file) as f:
-            schema_sql = f.read()
+            with open(schema_file) as f:
+                schema_sql = f.read()
 
-        if verbose:
-            logger.info(
-                "Executing schema SQL",
-                file_size=len(schema_sql),
-                file_path=str(schema_file),
-            )
+            if verbose:
+                logger.info(
+                    "Executing schema SQL",
+                    file_size=len(schema_sql),
+                    file_path=str(schema_file),
+                )
 
-        # Execute schema SQL
-        await connection.execute_async(schema_sql, fetch=None, table="schema_setup")
+            # Execute schema SQL
+            await connection.execute_async(schema_sql, fetch=None, table="schema_setup")
 
-        logger.info("✅ Action Network database schema setup completed successfully")
+            logger.info("✅ Action Network database schema setup completed successfully")
+        else:
+            logger.info("Skipping schema setup (test-only mode)")
 
         # Test connection and repository if requested
-        if test_connection:
+        if test_connection or test_only:
             await _test_action_network_connection(connection, verbose)
 
     except Exception as e:
-        logger.error("❌ Failed to setup Action Network database schema", error=str(e))
-        raise click.ClickException(f"Database setup failed: {str(e)}")
+        # Safely extract error message
+        error_msg = str(e)
+        if hasattr(e, 'message'):
+            error_msg = e.message
+        elif hasattr(e, 'args') and e.args:
+            error_msg = str(e.args[0])
+        
+        logger.error("❌ Failed to setup Action Network database schema", error=error_msg)
+        raise click.ClickException(f"Database setup failed: {error_msg}")
 
     finally:
         if connection:

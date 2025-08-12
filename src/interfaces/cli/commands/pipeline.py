@@ -663,32 +663,65 @@ async def _get_real_records(source: str | None, limit: int) -> list[DataRecord]:
                     # Get table-specific column names
                     external_id_col = _get_external_id_column(table)
 
-                    query = f"""
-                        SELECT id, 
-                               {external_id_col} as external_id,
-                               collected_at,
-                               CASE WHEN created_at IS NOT NULL THEN created_at ELSE collected_at END as created_at
-                        FROM raw_data.{table}
-                        WHERE processed_at IS NULL
-                        ORDER BY collected_at DESC
-                        LIMIT $1
-                    """
+                    # Enhanced query to include actual raw data for multi-bet type processing
+                    if table == "action_network_odds":
+                        query = f"""
+                            SELECT id, 
+                                   {external_id_col} as external_id,
+                                   raw_odds,
+                                   collected_at,
+                                   processed_at,
+                                   CASE WHEN created_at IS NOT NULL THEN created_at ELSE collected_at END as created_at
+                            FROM raw_data.{table}
+                            WHERE processed_at IS NULL OR processed_at > NOW() - INTERVAL '1 hour'
+                            ORDER BY collected_at DESC
+                            LIMIT $1
+                        """
+                    else:
+                        query = f"""
+                            SELECT id, 
+                                   {external_id_col} as external_id,
+                                   collected_at,
+                                   processed_at,
+                                   CASE WHEN created_at IS NOT NULL THEN created_at ELSE collected_at END as created_at
+                            FROM raw_data.{table}
+                            WHERE processed_at IS NULL
+                            ORDER BY collected_at DESC
+                            LIMIT $1
+                        """
 
                     rows = await conn.fetch(query, min(limit, 50))
 
                     for row in rows:
-                        # Create DataRecord from real database data
+                        # Create DataRecord with actual raw data for enhanced processing
+                        raw_data = None
+                        if table == "action_network_odds" and "raw_odds" in row:
+                            # Parse JSON string to dictionary for multi-bet type processing
+                            try:
+                                import json
+                                raw_odds_value = row["raw_odds"]
+                                if isinstance(raw_odds_value, str):
+                                    raw_data = json.loads(raw_odds_value)
+                                elif isinstance(raw_odds_value, dict):
+                                    raw_data = raw_odds_value
+                                else:
+                                    raw_data = raw_odds_value
+                            except (json.JSONDecodeError, TypeError) as e:
+                                logger.warning(f"Failed to parse raw_odds JSON for record {row['id']}: {e}")
+                                raw_data = None
+                        
                         record = DataRecord(
+                            id=row["id"],
                             external_id=row["external_id"] or f"{table}_{row['id']}",
                             source=_get_source_from_table(table),
-                            raw_data={
-                                "table": table,
-                                "id": row["id"],
-                                "real_data": True,  # Mark as real data
-                            },
+                            raw_data=raw_data,
                             created_at=row["created_at"],
                             collected_at=row["collected_at"],
+                            processed_at=row.get("processed_at"),
                         )
+                        
+                        # Note: raw_data field already contains the parsed JSON for multi-bet type processing
+                        
                         real_records.append(record)
 
                         if len(real_records) >= limit:
