@@ -535,3 +535,6 @@ uv run pytest tests/unit/
 uv run pytest tests/integration/
 uv run pytest tests/manual/
 ```
+
+## Postgres
+- Postgres uses Port 5433 with password postgres
