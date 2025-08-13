@@ -41,6 +41,7 @@ def pipeline_group():
     Pipeline Management Commands
 
     Manage the RAW → STAGING → CURATED data pipeline for MLB betting data.
+    Uses the unified staging model with staging.betting_odds_unified table.
     """
     pass
 
@@ -79,10 +80,13 @@ async def _run_pipeline_async(
 ):
     """
     Run the data pipeline for processing betting data.
+    
+    Data flows: RAW → STAGING (unified table) → CURATED
+    STAGING zone uses staging.betting_odds_unified for all market types.
 
     Examples:
     \b
-        # Run full pipeline (all zones)
+        # Run full pipeline (all zones) - populates unified staging table
         uv run -m src.interfaces.cli pipeline run --zone all
 
         # Process only RAW zone
@@ -710,9 +714,14 @@ async def _get_real_records(source: str | None, limit: int) -> list[DataRecord]:
                                 logger.warning(f"Failed to parse raw_odds JSON for record {row['id']}: {e}")
                                 raw_data = None
                         
+                        # Ensure external_id is never None
+                        external_id = row.get("external_id")
+                        if not external_id:
+                            external_id = f"{table}_{row['id']}"
+                        
                         record = DataRecord(
                             id=row["id"],
-                            external_id=row["external_id"] or f"{table}_{row['id']}",
+                            external_id=external_id,
                             source=_get_source_from_table(table),
                             raw_data=raw_data,
                             created_at=row["created_at"],
