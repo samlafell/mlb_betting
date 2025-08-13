@@ -1,9 +1,235 @@
 """
 MLB Team Name Utilities
 
-Provides team name normalization and abbreviation mapping for PostgreSQL integration.
-Maps full team names to database-compatible abbreviations.
+Provides team name normalization, abbreviation mapping, and advanced team resolution
+for PostgreSQL integration. Includes both simple normalization and multi-strategy
+team name population from various data sources.
 """
+
+import asyncio
+from typing import Dict, Any, Optional, TypedDict
+from dataclasses import dataclass
+
+
+class TeamResolutionError(Exception):
+    """Raised when team resolution fails."""
+    pass
+
+
+@dataclass
+class TeamInfo:
+    """Team information result."""
+    home_team: str
+    away_team: str
+    source: str  # Which resolution strategy was used
+    confidence: float = 1.0
+
+
+# Multi-strategy team name resolution functions
+
+async def populate_team_names(
+    external_game_id: str,
+    raw_data: Optional[Dict[str, Any]] = None,
+    mlb_stats_api_game_id: Optional[str] = None
+) -> TeamInfo:
+    """
+    Populate team names using multiple resolution strategies.
+    
+    Args:
+        external_game_id: External game identifier
+        raw_data: Raw data from data source
+        mlb_stats_api_game_id: MLB Stats API game ID
+        
+    Returns:
+        TeamInfo: Resolved team information
+        
+    Raises:
+        TeamResolutionError: If team resolution fails
+    """
+    strategies = [
+        _extract_from_raw_data_direct,
+        _extract_from_raw_data_game_object,
+        _extract_from_raw_data_teams_array,
+        _extract_from_raw_data_pattern_inference
+    ]
+    
+    for strategy in strategies:
+        try:
+            result = await strategy(external_game_id, raw_data, mlb_stats_api_game_id)
+            if result:
+                return result
+        except Exception as e:
+            continue  # Try next strategy
+    
+    raise TeamResolutionError(f"Failed to resolve team names for game {external_game_id}")
+
+
+async def _extract_from_raw_data_direct(
+    external_game_id: str,
+    raw_data: Optional[Dict[str, Any]],
+    mlb_stats_api_game_id: Optional[str]
+) -> Optional[TeamInfo]:
+    """Extract team names from direct home_team/away_team fields."""
+    if not raw_data:
+        return None
+        
+    home_team = raw_data.get('home_team')
+    away_team = raw_data.get('away_team')
+    
+    if home_team and away_team:
+        return TeamInfo(
+            home_team=normalize_team_name(str(home_team)),
+            away_team=normalize_team_name(str(away_team)),
+            source='raw_data_direct',
+            confidence=0.9
+        )
+    
+    return None
+
+
+async def _extract_from_raw_data_game_object(
+    external_game_id: str,
+    raw_data: Optional[Dict[str, Any]],
+    mlb_stats_api_game_id: Optional[str]
+) -> Optional[TeamInfo]:
+    """Extract team names from game object structure."""
+    if not raw_data:
+        return None
+        
+    game_obj = raw_data.get('game', {})
+    if not isinstance(game_obj, dict):
+        return None
+        
+    home_team = game_obj.get('home_team')
+    away_team = game_obj.get('away_team')
+    
+    if home_team and away_team:
+        return TeamInfo(
+            home_team=normalize_team_name(str(home_team)),
+            away_team=normalize_team_name(str(away_team)),
+            source='raw_data_game_object',
+            confidence=0.8
+        )
+    
+    return None
+
+
+async def _extract_from_raw_data_teams_array(
+    external_game_id: str,
+    raw_data: Optional[Dict[str, Any]],
+    mlb_stats_api_game_id: Optional[str]
+) -> Optional[TeamInfo]:
+    """Extract team names from teams array structure."""
+    if not raw_data:
+        return None
+        
+    teams = raw_data.get('teams', [])
+    if not isinstance(teams, list) or len(teams) < 2:
+        return None
+        
+    home_team = None
+    away_team = None
+    
+    for team in teams:
+        if isinstance(team, dict):
+            if team.get('is_home'):
+                home_team = team.get('name')
+            else:
+                away_team = team.get('name')
+    
+    if home_team and away_team:
+        return TeamInfo(
+            home_team=normalize_team_name(str(home_team)),
+            away_team=normalize_team_name(str(away_team)),
+            source='raw_data_teams_array',
+            confidence=0.7
+        )
+    
+    return None
+
+
+async def _extract_from_raw_data_pattern_inference(
+    external_game_id: str,
+    raw_data: Optional[Dict[str, Any]],
+    mlb_stats_api_game_id: Optional[str]
+) -> Optional[TeamInfo]:
+    """Extract team names using pattern inference."""
+    if not raw_data:
+        return None
+        
+    # Look for team names in various field patterns
+    team_fields = []
+    
+    def extract_team_like_fields(obj, prefix=''):
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                full_key = f"{prefix}.{key}" if prefix else key
+                if any(word in key.lower() for word in ['team', 'home', 'away']):
+                    if isinstance(value, str) and len(value) > 2:
+                        team_fields.append((full_key, value))
+                elif isinstance(value, (dict, list)):
+                    extract_team_like_fields(value, full_key)
+        elif isinstance(obj, list):
+            for i, item in enumerate(obj):
+                extract_team_like_fields(item, f"{prefix}[{i}]")
+    
+    extract_team_like_fields(raw_data)
+    
+    # Simple heuristic: if we found exactly 2 team-like fields, use them
+    if len(team_fields) == 2:
+        team1_name = normalize_team_name(team_fields[0][1])
+        team2_name = normalize_team_name(team_fields[1][1])
+        
+        # Determine home/away (simple heuristic)
+        if 'home' in team_fields[0][0].lower():
+            home_team, away_team = team1_name, team2_name
+        elif 'away' in team_fields[0][0].lower():
+            home_team, away_team = team2_name, team1_name
+        else:
+            # Default assignment
+            home_team, away_team = team1_name, team2_name
+        
+        return TeamInfo(
+            home_team=home_team,
+            away_team=away_team,
+            source='pattern_inference',
+            confidence=0.5
+        )
+    
+    return None
+
+
+def validate_team_names(home_team: str, away_team: str) -> bool:
+    """
+    Validate that team names are reasonable.
+    
+    Args:
+        home_team: Home team name
+        away_team: Away team name
+        
+    Returns:
+        bool: True if team names appear valid
+    """
+    if not home_team or not away_team:
+        return False
+        
+    if home_team == away_team:
+        return False
+        
+    # Check if teams are in known MLB teams
+    known_teams = set(MLB_TEAM_MAPPINGS.values())
+    home_normalized = normalize_team_name(home_team)
+    away_normalized = normalize_team_name(away_team)
+    
+    # If both teams map to known abbreviations, they're valid
+    if home_normalized in known_teams and away_normalized in known_teams:
+        return True
+        
+    # If they don't contain "unknown" they're probably valid
+    return 'unknown' not in home_team.lower() and 'unknown' not in away_team.lower()
+
+
+# Original simple normalization functions below
 
 # Comprehensive MLB team mapping
 MLB_TEAM_MAPPINGS = {
