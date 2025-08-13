@@ -296,7 +296,7 @@ class EnhancedGamesService:
         
         # Build enhanced game data
         enhanced_game = EnhancedGameData(
-            staging_game_id=None,  # TODO: Fix FK constraint issue - bypassing for now
+            staging_game_id=staging_game.get("id"),  # Use staging table ID if available
             action_network_game_id=staging_game["action_network_game_id"],
             mlb_stats_api_game_id=staging_game["mlb_stats_api_game_id"],
             
