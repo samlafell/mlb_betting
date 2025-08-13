@@ -146,8 +146,11 @@ class LightGBMTrainer:
             )
 
             if not training_data or len(training_data) < 50:
+                data_count = len(training_data) if training_data else 0
                 raise ValueError(
-                    f"Insufficient training data: {len(training_data) if training_data else 0} samples"
+                    f"Insufficient training data: {data_count} samples (minimum: 50). "
+                    f"Date range: {start_date.date()} to {end_date.date()}. "
+                    f"Try increasing --days parameter or check if games have outcomes in database."
                 )
 
             # Train models for each prediction target
@@ -206,7 +209,27 @@ class LightGBMTrainer:
             }
 
         except Exception as e:
+            error_context = {
+                "start_date": start_date.isoformat() if start_date else None,
+                "end_date": end_date.isoformat() if end_date else None, 
+                "prediction_targets": prediction_targets,
+                "use_cached_features": use_cached_features,
+                "training_data_samples": len(training_data) if 'training_data' in locals() else "unknown"
+            }
             logger.error(f"Error in training pipeline: {e}")
+            logger.error(f"Training context: {error_context}")
+            
+            # Provide specific guidance for common errors
+            if "No games found" in str(e) or "Insufficient training data" in str(e):
+                logger.error("Data availability issue. Try:")
+                logger.error("  1. Check if games exist in curated.enhanced_games for the date range")
+                logger.error("  2. Increase training window with --days parameter")
+                logger.error("  3. Verify database has sufficient game outcome data")
+            elif "prediction_targets" in str(e):
+                logger.error("Configuration issue. Available targets:")
+                for target in self.model_configs.keys():
+                    logger.error(f"  - {target}")
+            
             raise
 
     async def retrain_model(

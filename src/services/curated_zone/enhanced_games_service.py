@@ -185,54 +185,99 @@ class EnhancedGamesService:
         """Get staging games that need to be processed to curated zone."""
         
         async with get_connection() as conn:
-            # Extract games from raw data with game metadata
-            # This works with the available staging data by joining with raw data
+            # Get games from staging.betting_odds_unified with game metadata from raw data
             query = """
-                WITH game_metadata AS (
+                WITH staging_games AS (
                     SELECT DISTINCT
-                        rd.external_game_id,
-                        rd.external_game_id::INTEGER as action_network_game_id,
-                        rd.raw_odds->'game_metadata'->>'away_team' as away_team_name,  
-                        rd.raw_odds->'game_metadata'->>'home_team' as home_team_name,
-                        (rd.raw_odds->'game_metadata'->>'game_datetime')::TIMESTAMPTZ as game_datetime,
-                        EXTRACT(YEAR FROM (rd.raw_odds->'game_metadata'->>'game_datetime')::TIMESTAMPTZ) as season,
-                        rd.collected_at,
+                        sbu.external_game_id,
+                        -- Only convert to integer if the external_game_id is numeric
+                        CASE 
+                            WHEN sbu.external_game_id ~ '^[0-9]+$' 
+                            THEN sbu.external_game_id::INTEGER 
+                            ELSE NULL 
+                        END as action_network_game_id,
+                        sbu.mlb_stats_api_game_id,
+                        sbu.home_team as home_team_name,
+                        sbu.away_team as away_team_name,
+                        sbu.home_team as home_team_normalized,
+                        sbu.away_team as away_team_normalized,
+                        sbu.data_quality_score,
+                        sbu.created_at,
+                        sbu.updated_at,
                         -- Count odds records for this game
-                        (SELECT COUNT(*) FROM staging.action_network_odds_historical soh 
-                         WHERE soh.external_game_id = rd.external_game_id) as odds_records_count
-                    FROM raw_data.action_network_odds rd
-                    WHERE rd.collected_at > NOW() - INTERVAL '%s days'
-                        AND rd.external_game_id IS NOT NULL
+                        COUNT(*) as odds_records_count,
+                        COUNT(DISTINCT sbu.sportsbook_name) as sportsbooks_count,
+                        COUNT(DISTINCT sbu.market_type) as market_types_count
+                    FROM staging.betting_odds_unified sbu
+                    WHERE sbu.created_at > NOW() - INTERVAL '%s days'
+                        AND sbu.external_game_id IS NOT NULL
+                        AND sbu.external_game_id ~ '^[0-9]+$'  -- Only numeric game IDs
+                        AND sbu.home_team IS NOT NULL
+                        AND sbu.away_team IS NOT NULL
+                    GROUP BY 
+                        sbu.external_game_id, sbu.mlb_stats_api_game_id, 
+                        sbu.home_team, sbu.away_team, sbu.data_quality_score, 
+                        sbu.created_at, sbu.updated_at
+                ),
+                game_summary AS (
+                    SELECT 
+                        sg.*,
+                        -- Get game metadata from raw data
+                        rd.raw_odds->'game_metadata'->>'game_datetime' as game_datetime_str,
+                        CASE 
+                            WHEN rd.raw_odds->'game_metadata'->>'game_datetime' IS NOT NULL
+                            THEN (rd.raw_odds->'game_metadata'->>'game_datetime')::TIMESTAMPTZ
+                            ELSE (CURRENT_DATE + INTERVAL '19:00')::TIMESTAMPTZ  -- Default fallback
+                        END as game_datetime,
+                        CASE 
+                            WHEN rd.raw_odds->'game_metadata'->>'game_datetime' IS NOT NULL
+                            THEN EXTRACT(YEAR FROM (rd.raw_odds->'game_metadata'->>'game_datetime')::TIMESTAMPTZ)
+                            ELSE EXTRACT(YEAR FROM CURRENT_DATE)
+                        END as season,
+                        CASE 
+                            WHEN rd.raw_odds->'game_metadata'->>'game_datetime' IS NOT NULL
+                            THEN (rd.raw_odds->'game_metadata'->>'game_datetime')::TIMESTAMPTZ::DATE
+                            ELSE CURRENT_DATE
+                        END as game_date
+                    FROM staging_games sg
+                    LEFT JOIN raw_data.action_network_odds rd 
+                        ON sg.external_game_id = rd.external_game_id
                         AND rd.raw_odds->'game_metadata' IS NOT NULL
                         AND rd.raw_odds->'game_metadata'->>'game_datetime' IS NOT NULL
+                    WHERE rd.external_game_id IS NOT NULL  -- Only include games with metadata
                 )
                 SELECT 
                     NULL as id,  -- No staging games table ID available
-                    gm.external_game_id,
-                    gm.action_network_game_id,
-                    NULL as mlb_stats_api_game_id,  -- Not available in raw data
-                    gm.home_team_name,
+                    gs.external_game_id,
+                    gs.action_network_game_id,
+                    gs.mlb_stats_api_game_id,
+                    gs.home_team_name,
                     NULL as home_team_abbr,
-                    gm.home_team_name as home_team_normalized,  -- Use as normalized
-                    gm.away_team_name,
+                    gs.home_team_normalized,
+                    gs.away_team_name,
                     NULL as away_team_abbr,
-                    gm.away_team_name as away_team_normalized,  -- Use as normalized
-                    gm.game_datetime,
-                    CAST(gm.game_datetime::DATE AS DATE) as game_date,
-                    gm.season,
+                    gs.away_team_normalized,
+                    gs.game_datetime,
+                    gs.game_date,
+                    gs.season,
                     'regular' as game_type,
                     'scheduled' as game_status,
-                    -- Calculate data quality score based on odds records count
-                    LEAST(1.0, gm.odds_records_count / 100.0) as data_quality_score,
-                    gm.collected_at as created_at,
-                    gm.collected_at as updated_at,
-                    gm.odds_records_count
-                FROM game_metadata gm
+                    -- Use calculated data quality score based on coverage
+                    GREATEST(
+                        COALESCE(gs.data_quality_score, 0.0),
+                        LEAST(1.0, (gs.odds_records_count::FLOAT / 50.0) * (gs.sportsbooks_count::FLOAT / 5.0))
+                    ) as data_quality_score,
+                    gs.created_at,
+                    gs.updated_at,
+                    gs.odds_records_count,
+                    gs.sportsbooks_count,
+                    gs.market_types_count
+                FROM game_summary gs
                 LEFT JOIN curated.enhanced_games ceg 
-                    ON gm.action_network_game_id = ceg.action_network_game_id
+                    ON gs.action_network_game_id = ceg.action_network_game_id
                 WHERE ceg.action_network_game_id IS NULL  -- Not yet in curated
-                    AND gm.odds_records_count > 0  -- Only include games with odds data
-                ORDER BY gm.game_datetime DESC, gm.odds_records_count DESC
+                    AND gs.odds_records_count > 0  -- Only include games with odds data
+                ORDER BY gs.game_date DESC, gs.odds_records_count DESC
             """ % days_back
             
             if limit:
@@ -281,7 +326,7 @@ class EnhancedGamesService:
         
         try:
             async with get_connection() as conn:
-                # Get market summary from odds data
+                # Get market summary from staging.betting_odds_unified
                 market_query = """
                     SELECT 
                         market_type,
@@ -289,9 +334,21 @@ class EnhancedGamesService:
                         COUNT(DISTINCT sportsbook_name) as sportsbooks_count,
                         MIN(updated_at) as earliest_odds,
                         MAX(updated_at) as latest_odds,
-                        AVG(CASE WHEN odds > 0 THEN odds ELSE NULL END) as avg_positive_odds,
-                        AVG(CASE WHEN odds < 0 THEN odds ELSE NULL END) as avg_negative_odds
-                    FROM staging.action_network_odds_historical
+                        -- Calculate average odds for moneyline markets
+                        AVG(CASE 
+                            WHEN market_type = 'moneyline' AND home_moneyline_odds > 0 
+                            THEN home_moneyline_odds 
+                            ELSE NULL 
+                        END) as avg_home_ml_positive,
+                        AVG(CASE 
+                            WHEN market_type = 'moneyline' AND away_moneyline_odds > 0 
+                            THEN away_moneyline_odds 
+                            ELSE NULL 
+                        END) as avg_away_ml_positive,
+                        -- Calculate average spreads and totals
+                        AVG(spread_line) as avg_spread,
+                        AVG(total_line) as avg_total
+                    FROM staging.betting_odds_unified
                     WHERE external_game_id = $1
                     GROUP BY market_type
                 """
@@ -307,12 +364,21 @@ class EnhancedGamesService:
                         (row["latest_odds"] - row["earliest_odds"]).total_seconds() / 3600
                         if row["latest_odds"] and row["earliest_odds"] else 0
                     )
+                    
+                    # Add market-specific features
+                    if market_type == 'moneyline':
+                        market_features["avg_home_ml_positive"] = float(row["avg_home_ml_positive"]) if row["avg_home_ml_positive"] else None
+                        market_features["avg_away_ml_positive"] = float(row["avg_away_ml_positive"]) if row["avg_away_ml_positive"] else None
+                    elif market_type == 'spread':
+                        market_features["avg_spread"] = float(row["avg_spread"]) if row["avg_spread"] else None
+                    elif market_type == 'total':
+                        market_features["avg_total"] = float(row["avg_total"]) if row["avg_total"] else None
                 
                 enhanced_game.market_features = market_features
                 
                 # Calculate source coverage score based on market diversity
                 total_records = sum(row["records_count"] for row in market_data)
-                unique_sportsbooks = len(set(row["sportsbooks_count"] for row in market_data))
+                unique_sportsbooks = max(row["sportsbooks_count"] for row in market_data) if market_data else 0
                 enhanced_game.source_coverage_score = min(1.0, (total_records / 100) * (unique_sportsbooks / 5))
                 
         except Exception as e:
@@ -349,16 +415,16 @@ class EnhancedGamesService:
         async with get_connection() as conn:
             insert_query = """
                 INSERT INTO curated.enhanced_games (
-                    staging_game_id, action_network_game_id, mlb_stats_api_game_id,
+                    action_network_game_id, mlb_stats_api_game_id,
                     home_team, away_team, home_team_full_name, away_team_full_name,
                     game_datetime, game_date, season,
                     venue_name, venue_city, venue_state,
-                    feature_data, weather_features, team_form_features, market_features,
-                    data_quality_score, source_coverage_score, ml_metadata,
+                    feature_data, ml_metadata,
+                    data_quality_score, source_coverage_score,
                     created_at, updated_at
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 
-                    $14, $15, $16, $17, $18, $19, $20, $21, $22
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 
+                    $13, $14, $15, $16, $17, $18
                 )
             """
             
@@ -366,7 +432,6 @@ class EnhancedGamesService:
             
             await conn.execute(
                 insert_query,
-                enhanced_game.staging_game_id,
                 enhanced_game.action_network_game_id,
                 enhanced_game.mlb_stats_api_game_id,
                 enhanced_game.home_team,
@@ -380,12 +445,9 @@ class EnhancedGamesService:
                 enhanced_game.venue_city,
                 enhanced_game.venue_state,
                 json.dumps(enhanced_game.feature_data),
-                json.dumps(enhanced_game.weather_features),
-                json.dumps(enhanced_game.team_form_features),
-                json.dumps(enhanced_game.market_features),
+                json.dumps(enhanced_game.ml_metadata),
                 enhanced_game.data_quality_score,
                 enhanced_game.source_coverage_score,
-                json.dumps(enhanced_game.ml_metadata),
                 now,
                 now
             )

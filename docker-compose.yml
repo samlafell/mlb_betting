@@ -1,6 +1,39 @@
-version: '3.8'
+# Docker Compose v2 syntax - version attribute is obsolete
 
 services:
+  # PostgreSQL - Primary database for ML and application data
+  postgres:
+    image: postgres:15-alpine
+    container_name: mlb_postgres
+    restart: unless-stopped
+    ports:
+      - "5433:5432"  # Use different external port to avoid conflict
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d/
+      - ./logs/postgres:/var/log/postgresql
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - mlb_network
+
   # Redis - Feature cache and online store (512MB limit)
   redis:
     image: redis:7-alpine
@@ -44,7 +77,7 @@ services:
     ports:
       - "5001:5000"
     environment:
-      - MLFLOW_BACKEND_STORE_URI=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@host.docker.internal:5432/${POSTGRES_DB}
+      - MLFLOW_BACKEND_STORE_URI=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - MLFLOW_DEFAULT_ARTIFACT_ROOT=/mlflow/artifacts
       - MLFLOW_HOST=0.0.0.0
       - MLFLOW_PORT=5000
@@ -70,17 +103,21 @@ services:
           memory: 512M
           cpus: '0.25'
     depends_on:
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -f http://localhost:5000/health || curl -f http://localhost:5000/api/2.0/mlflow/experiments/list"]
-      interval: 20s
-      timeout: 15s
-      retries: 6
-      start_period: 90s
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
     networks:
       - mlb_network
 
-  # FastAPI - ML Prediction Service
+  # FastAPI - ML Prediction Service with improved configuration
+  # Also accessible as 'ml-api' for convenience
   fastapi:
     build:
       context: .
@@ -90,39 +127,56 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@host.docker.internal:5432/${POSTGRES_DB}
+      # Database configuration - explicit container networking
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB}
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
       - REDIS_URL=redis://redis:6379/0
       - MLFLOW_TRACKING_URI=http://mlflow:5000
+      # Application configuration
       - LOG_LEVEL=INFO
-      - MAX_WORKERS=2
+      - MAX_WORKERS=1
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      # UV virtual environment configuration
+      - UV_PROJECT_ENVIRONMENT=/app/.venv
     volumes:
       - ./src:/app/src:ro
       - ./models:/app/models
       - ./logs/fastapi:/app/logs
       - ./config.toml:/app/config.toml:ro
-    command: >
-      uv run uvicorn src.ml.api.main:app
-      --host 0.0.0.0
-      --port 8000
-      --workers 2
-      --access-log
+    # Use the Dockerfile's CMD instead of overriding
+    # command: from Dockerfile handles uv run properly
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 1G
           cpus: '1.0'
         reservations:
-          memory: 256M
+          memory: 512M
           cpus: '0.5'
     depends_on:
-      - redis
-      - mlflow
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -f http://localhost:8000/health && curl -f http://localhost:8000/api/health"]
-      interval: 15s
-      timeout: 10s
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 20s
+      timeout: 15s
       retries: 5
-      start_period: 60s
+      start_period: 90s
     networks:
       - mlb_network
 
@@ -148,13 +202,14 @@ services:
           memory: 64M
           cpus: '0.1'
     depends_on:
-      - fastapi
+      fastapi:
+        condition: service_started
     healthcheck:
-      test: ["CMD", "sh", "-c", "wget --quiet --tries=1 --spider http://localhost/health && wget --quiet --tries=1 --spider http://localhost/api/health"]
-      interval: 20s
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
       timeout: 10s
-      retries: 4
-      start_period: 45s
+      retries: 3
+      start_period: 60s
     networks:
       - mlb_network
 
@@ -177,6 +232,8 @@ services:
   #     - mlb_network
 
 volumes:
+  postgres_data:
+    driver: local
   redis_data:
     driver: local
   mlflow_artifacts:

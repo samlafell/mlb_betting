@@ -6,12 +6,14 @@ VSIN (Vegas Stats & Information Network) collector adapted to use the unified be
 Integrates with core_betting schema and provides standardized data quality tracking.
 """
 
+import os
 import re
 import uuid
 from datetime import datetime
 from typing import Any
 
 import aiohttp
+import psycopg2
 import psycopg2.extras
 import structlog
 from bs4 import BeautifulSoup
@@ -21,6 +23,10 @@ from .base import (
     CollectionRequest,
     CollectorConfig,
     DataSource,
+)
+from .unified_betting_lines_collector import (
+    UnifiedCollectionResult,
+    CollectionStatus,
 )
 
 # Note: MCP bridge removed - browser automation no longer available
@@ -1991,6 +1997,168 @@ class VSINUnifiedCollector(BaseCollector):
             self.logger.error("Error in collect_game_data", error=str(e))
             return 0
 
+    def _get_db_config(self) -> dict:
+        """Get database configuration from settings or environment."""
+        try:
+            # Try to import from the main project settings
+            from ...core.config import get_settings
+            
+            settings = get_settings()
+            
+            return {
+                "host": settings.database.host,
+                "port": settings.database.port,
+                "database": settings.database.database,
+                "user": settings.database.user,
+                "password": settings.database.password,
+            }
+        except ImportError:
+            # Fallback to environment variables
+            self.logger.warning(
+                "Could not import settings, using environment variables"
+            )
+            return {
+                "host": os.getenv("POSTGRES_HOST", "postgres"),
+                "port": int(os.getenv("POSTGRES_PORT", "5433")),
+                "database": os.getenv("POSTGRES_DB", "mlb_betting"),
+                "user": os.getenv("POSTGRES_USER", "samlafell"),
+                "password": os.getenv("POSTGRES_PASSWORD", ""),
+            }
+
+    def collect_and_store(self, sport: str = "mlb", sportsbook: str = "dk", **kwargs) -> UnifiedCollectionResult:
+        """
+        Collect VSIN data and store it in the database.
+        
+        Args:
+            sport: Sport type (default: mlb)
+            sportsbook: Sportsbook view (default: dk) 
+            **kwargs: Additional parameters
+            
+        Returns:
+            UnifiedCollectionResult with collection status and metrics
+        """
+        try:
+            self.logger.info("Starting VSIN collect_and_store", sport=sport, sportsbook=sportsbook)
+            
+            # Collect raw data using existing synchronous method
+            raw_data = self._collect_vsin_data_sync(sport, sportsbook=sportsbook, **kwargs)
+            
+            if not raw_data:
+                return UnifiedCollectionResult(
+                    status=CollectionStatus.SUCCESS,
+                    records_processed=0,
+                    records_stored=0,
+                    message="No data available for collection"
+                )
+            
+            self.logger.info(f"Collected {len(raw_data)} raw records from VSIN")
+            
+            # Process and store records
+            stored_count = 0
+            batch_id = uuid.uuid4()
+            
+            for record in raw_data:
+                try:
+                    # Validate record first
+                    if self.validate_record(record):
+                        # Normalize record
+                        normalized_record = self.normalize_record(record)
+                        
+                        # Store in database
+                        if self._store_record_in_database(normalized_record, batch_id):
+                            stored_count += 1
+                        else:
+                            self.logger.warning("Failed to store record", record_id=record.get('id'))
+                    else:
+                        self.logger.warning("Invalid record skipped", record=record)
+                        
+                except Exception as e:
+                    self.logger.error("Error processing individual record", error=str(e), record=record)
+                    continue
+            
+            # Create result
+            result = UnifiedCollectionResult(
+                status=CollectionStatus.SUCCESS if stored_count > 0 else CollectionStatus.PARTIAL,
+                records_processed=len(raw_data),
+                records_stored=stored_count,
+                message=f"Successfully stored {stored_count} out of {len(raw_data)} records"
+            )
+            
+            self.logger.info(
+                "VSIN collect_and_store completed",
+                sport=sport,
+                sportsbook=sportsbook,
+                processed=result.records_processed,
+                stored=result.records_stored,
+                success_rate=f"{(stored_count/len(raw_data)*100):.1f}%" if raw_data else "0%"
+            )
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error("Error in collect_and_store", error=str(e))
+            return UnifiedCollectionResult(
+                status=CollectionStatus.FAILED,
+                records_processed=0,
+                records_stored=0,
+                message=f"Collection failed: {str(e)}",
+                errors=[str(e)]
+            )
+
+    def _store_record_in_database(self, record: dict[str, Any], batch_id: uuid.UUID) -> bool:
+        """
+        Store a single record in the database.
+        
+        Args:
+            record: Normalized VSIN record
+            batch_id: Collection batch identifier
+            
+        Returns:
+            True if stored successfully, False otherwise
+        """
+        try:
+            db_config = self._get_db_config()
+            
+            # Insert into raw_data.vsin table (source-specific raw zone)
+            with psycopg2.connect(**db_config) as conn:
+                with conn.cursor() as cursor:
+                    # Insert into VSIN raw data table
+                    insert_sql = """
+                        INSERT INTO raw_data.vsin (
+                            external_game_id,
+                            sport, 
+                            sportsbook,
+                            betting_data,
+                            sharp_action_detected,
+                            collection_timestamp,
+                            batch_id,
+                            data_quality_score
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (external_game_id, sportsbook, collection_timestamp) 
+                        DO UPDATE SET
+                            betting_data = EXCLUDED.betting_data,
+                            sharp_action_detected = EXCLUDED.sharp_action_detected,
+                            data_quality_score = EXCLUDED.data_quality_score
+                    """
+                    
+                    cursor.execute(insert_sql, (
+                        record.get('external_game_id', record.get('id')),
+                        record.get('sport', 'mlb'),
+                        record.get('sportsbook', 'unknown'),
+                        psycopg2.extras.Json(record),  # Store full record as JSON
+                        record.get('sharp_action_detected', False),
+                        record.get('collection_timestamp', datetime.now()),
+                        str(batch_id),
+                        record.get('data_quality_score', 0.0)
+                    ))
+                    
+                    conn.commit()
+                    return True
+                    
+        except Exception as e:
+            self.logger.error("Error storing record in database", error=str(e), record_id=record.get('id'))
+            return False
+
     async def test_collection(self, sport: str = "mlb") -> dict[str, Any]:
         """
         Test method for validating VSIN collection.
@@ -2501,25 +2669,29 @@ class VSINUnifiedCollector(BaseCollector):
         Returns:
             True if valid, False otherwise
         """
-        required_fields = ["teams", "data_source", "timestamp"]
+        # Updated required fields to match actual VSIN record structure
+        required_fields = ["external_source_id", "bet_type", "home_team", "away_team"]
 
         # Check basic structure
         if not all(field in record for field in required_fields):
             return False
 
-        # Validate teams field has content
-        teams = record.get("teams", "")
-        if not teams or len(teams.strip()) < 3:
+        # Validate team fields have content
+        home_team = record.get("home_team", "")
+        away_team = record.get("away_team", "")
+        if not home_team or not away_team or len(home_team.strip()) < 2 or len(away_team.strip()) < 2:
             return False
 
-        # Validate at least one betting metric is present
+        # Validate at least one betting percentage is present (using actual field names)
         betting_metrics = [
-            "moneyline_handle",
-            "moneyline_bets",
-            "total_handle",
-            "total_bets",
-            "runline_handle",
-            "runline_bets",
+            "home_money_percentage",
+            "away_money_percentage", 
+            "home_bets_percentage",
+            "away_bets_percentage",
+            "over_money_percentage",
+            "under_money_percentage",
+            "over_bets_percentage", 
+            "under_bets_percentage",
         ]
 
         if not any(record.get(metric) for metric in betting_metrics):

@@ -27,10 +27,10 @@ from .pydantic_compat import computed_field, field_validator, model_validator
 class DatabaseSettings(BaseSettings):
     """Unified database configuration supporting multiple database types."""
 
-    # PostgreSQL settings (primary)
-    host: str = Field(default="localhost", description="Database host", env="DB_HOST")
+    # PostgreSQL settings (primary) - Default to container hostname for Docker compatibility
+    host: str = Field(default="postgres", description="Database host", env="DB_HOST")
 
-    port: int = Field(default=5432, description="Database port", env="DB_PORT")
+    port: int = Field(default=5433, description="Database port", env="DB_PORT")
 
     database: str = Field(
         default="mlb_betting", description="Database name", env="DB_NAME"

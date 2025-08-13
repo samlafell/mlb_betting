@@ -32,22 +32,59 @@ async def assess_pipeline_data():
                 try:
                     # Get record counts
                     total_count = await conn.fetchval(f"SELECT COUNT(*) FROM raw_data.{table_name}")
-                    recent_count = await conn.fetchval(f"""
-                        SELECT COUNT(*) FROM raw_data.{table_name} 
-                        WHERE created_at > NOW() - INTERVAL '7 days'
+                    
+                    # Check if created_at column exists
+                    created_at_exists = await conn.fetchval(f"""
+                        SELECT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_schema = 'raw_data' AND table_name = '{table_name}' 
+                            AND column_name = 'created_at'
+                        )
                     """)
                     
-                    # Check for unprocessed records
-                    try:
+                    # Check if collected_at column exists as fallback
+                    collected_at_exists = await conn.fetchval(f"""
+                        SELECT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_schema = 'raw_data' AND table_name = '{table_name}' 
+                            AND column_name = 'collected_at'
+                        )
+                    """)
+                    
+                    # Choose the appropriate timestamp column
+                    timestamp_col = None
+                    if created_at_exists:
+                        timestamp_col = 'created_at'
+                    elif collected_at_exists:
+                        timestamp_col = 'collected_at'
+                    
+                    if timestamp_col:
+                        recent_count = await conn.fetchval(f"""
+                            SELECT COUNT(*) FROM raw_data.{table_name} 
+                            WHERE {timestamp_col} > NOW() - INTERVAL '7 days'
+                        """)
+                    else:
+                        recent_count = "N/A (no timestamp column)"
+                    
+                    # Check for unprocessed records (only if processed_at column exists)
+                    processed_at_exists = await conn.fetchval(f"""
+                        SELECT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_schema = 'raw_data' AND table_name = '{table_name}' 
+                            AND column_name = 'processed_at'
+                        )
+                    """)
+                    
+                    if processed_at_exists:
                         unprocessed_count = await conn.fetchval(f"""
                             SELECT COUNT(*) FROM raw_data.{table_name} 
                             WHERE processed_at IS NULL
                         """)
-                    except:
-                        unprocessed_count = "N/A"
+                    else:
+                        unprocessed_count = "N/A (no processed_at column)"
                     
                     print(f"  📋 {table_name}")
-                    print(f"      Total: {total_count:,} | Recent (7d): {recent_count:,} | Unprocessed: {unprocessed_count}")
+                    print(f"      Total: {total_count:,} | Recent (7d): {recent_count} | Unprocessed: {unprocessed_count}")
                     
                 except Exception as e:
                     print(f"  ❌ {table_name}: Error - {e}")
@@ -67,29 +104,49 @@ async def assess_pipeline_data():
                 table_name = table['table_name']
                 try:
                     total_count = await conn.fetchval(f"SELECT COUNT(*) FROM staging.{table_name}")
-                    recent_count = await conn.fetchval(f"""
-                        SELECT COUNT(*) FROM staging.{table_name} 
-                        WHERE created_at > NOW() - INTERVAL '7 days'
+                    
+                    # Check if created_at column exists
+                    created_at_exists = await conn.fetchval(f"""
+                        SELECT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_schema = 'staging' AND table_name = '{table_name}' 
+                            AND column_name = 'created_at'
+                        )
                     """)
                     
-                    print(f"  📋 {table_name}")
-                    print(f"      Total: {total_count:,} | Recent (7d): {recent_count:,}")
-                    
-                    # Additional details for key tables
-                    if table_name == 'action_network_odds_historical':
-                        # Market breakdown
-                        markets = await conn.fetch(f"""
-                            SELECT market_type, side, COUNT(*) as count
-                            FROM staging.{table_name}
+                    if created_at_exists:
+                        recent_count = await conn.fetchval(f"""
+                            SELECT COUNT(*) FROM staging.{table_name} 
                             WHERE created_at > NOW() - INTERVAL '7 days'
-                            GROUP BY market_type, side
-                            ORDER BY market_type, side
+                        """)
+                    else:
+                        recent_count = "N/A (no created_at column)"
+                    
+                    print(f"  📋 {table_name}")
+                    print(f"      Total: {total_count:,} | Recent (7d): {recent_count}")
+                    
+                    # Additional details for key tables (only if they have the required columns)
+                    if table_name == 'action_network_odds_historical' and created_at_exists:
+                        # Check if market_type and side columns exist
+                        market_cols_exist = await conn.fetchval(f"""
+                            SELECT COUNT(*) FROM information_schema.columns 
+                            WHERE table_schema = 'staging' AND table_name = '{table_name}' 
+                            AND column_name IN ('market_type', 'side')
                         """)
                         
-                        if markets:
-                            print("      Market breakdown (7d):")
-                            for market in markets:
-                                print(f"        {market['market_type']}.{market['side']}: {market['count']:,}")
+                        if market_cols_exist >= 2:  # Both columns exist
+                            markets = await conn.fetch(f"""
+                                SELECT market_type, side, COUNT(*) as count
+                                FROM staging.{table_name}
+                                WHERE created_at > NOW() - INTERVAL '7 days'
+                                GROUP BY market_type, side
+                                ORDER BY market_type, side
+                            """)
+                            
+                            if markets:
+                                print("      Market breakdown (7d):")
+                                for market in markets:
+                                    print(f"        {market['market_type']}.{market['side']}: {market['count']:,}")
                     
                 except Exception as e:
                     print(f"  ❌ {table_name}: Error - {e}")
@@ -109,13 +166,26 @@ async def assess_pipeline_data():
                 table_name = table['table_name']
                 try:
                     total_count = await conn.fetchval(f"SELECT COUNT(*) FROM curated.{table_name}")
-                    recent_count = await conn.fetchval(f"""
-                        SELECT COUNT(*) FROM curated.{table_name} 
-                        WHERE created_at > NOW() - INTERVAL '7 days'
+                    
+                    # Check if created_at column exists
+                    created_at_exists = await conn.fetchval(f"""
+                        SELECT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_schema = 'curated' AND table_name = '{table_name}' 
+                            AND column_name = 'created_at'
+                        )
                     """)
                     
+                    if created_at_exists:
+                        recent_count = await conn.fetchval(f"""
+                            SELECT COUNT(*) FROM curated.{table_name} 
+                            WHERE created_at > NOW() - INTERVAL '7 days'
+                        """)
+                    else:
+                        recent_count = "N/A (no created_at column)"
+                    
                     print(f"  📋 {table_name}")
-                    print(f"      Total: {total_count:,} | Recent (7d): {recent_count:,}")
+                    print(f"      Total: {total_count:,} | Recent (7d): {recent_count}")
                     
                 except Exception as e:
                     print(f"  ❌ {table_name}: Error - {e}")
@@ -166,10 +236,51 @@ async def assess_pipeline_data():
             
             for table_name, source_name in sources_to_check:
                 try:
+                    # First check if table exists
+                    table_exists = await conn.fetchval(f"""
+                        SELECT EXISTS (
+                            SELECT 1 FROM information_schema.tables 
+                            WHERE table_schema = 'raw_data' AND table_name = '{table_name}'
+                        )
+                    """)
+                    
+                    if not table_exists:
+                        print(f"   {source_name}: 🔴 Table does not exist (raw_data.{table_name})")
+                        continue
+                    
+                    # Check if created_at column exists
+                    created_at_exists = await conn.fetchval(f"""
+                        SELECT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_schema = 'raw_data' AND table_name = '{table_name}' 
+                            AND column_name = 'created_at'
+                        )
+                    """)
+                    
+                    # Check if collected_at column exists as fallback
+                    collected_at_exists = await conn.fetchval(f"""
+                        SELECT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_schema = 'raw_data' AND table_name = '{table_name}' 
+                            AND column_name = 'collected_at'
+                        )
+                    """)
+                    
+                    # Choose the appropriate timestamp column
+                    timestamp_col = None
+                    if created_at_exists:
+                        timestamp_col = 'created_at'
+                    elif collected_at_exists:
+                        timestamp_col = 'collected_at'
+                    
+                    if not timestamp_col:
+                        print(f"   {source_name}: 🟡 No timestamp column available")
+                        continue
+                    
                     latest_record = await conn.fetchrow(f"""
-                        SELECT MAX(created_at) as latest, COUNT(*) as count_24h
+                        SELECT MAX({timestamp_col}) as latest, COUNT(*) as count_24h
                         FROM raw_data.{table_name}
-                        WHERE created_at > NOW() - INTERVAL '24 hours'
+                        WHERE {timestamp_col} > NOW() - INTERVAL '24 hours'
                     """)
                     
                     if latest_record and latest_record['latest']:

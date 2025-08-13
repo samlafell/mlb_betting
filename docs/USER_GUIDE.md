@@ -2,7 +2,7 @@
 
 **Version**: 1.0  
 **Last Updated**: July 21, 2025  
-**System**: RAW → STAGING → CURATED Data Pipeline
+**System**: RAW → STAGING (Unified) → CURATED Data Pipeline
 
 ---
 
@@ -56,8 +56,9 @@ Before using the CLI system, ensure you have:
    # Initialize database schemas
    uv run -m src.interfaces.cli database setup-action-network --test-connection
    
-   # Create pipeline schemas
+   # Create pipeline schemas with unified staging table
    psql -f sql/migrations/004_create_pipeline_zones.sql
+   psql -f sql/migrations/035_create_unified_staging_table.sql
    ```
 
 5. **Verify installation:**

@@ -36,7 +36,7 @@ class SecurityConfig:
 class DatabaseSecurityConfig(BaseModel):
     """Database security configuration"""
 
-    host: str = os.getenv("DB_HOST", "localhost")
+    host: str = os.getenv("DB_HOST", "postgres")
     port: int = int(os.getenv("DB_PORT", "5432"))
     database: str = os.getenv("DB_NAME", "mlb_betting")
     username: str = os.getenv("DB_USER", "ml_user")

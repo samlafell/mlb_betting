@@ -19,7 +19,7 @@ from src.data.pipeline.pipeline_orchestrator import (
     DataPipelineOrchestrator,
 )
 from src.data.pipeline.raw_zone import RawDataRecord, RawZoneProcessor
-from src.data.pipeline.raw_zone_adapter import RawZoneAdapter
+from src.data.pipeline.raw_zone_consolidated import RawZoneConsolidatedProcessor
 from src.data.pipeline.staging_zone import StagingDataRecord, StagingZoneProcessor
 from src.data.pipeline.zone_interface import (
     DataRecord,
@@ -284,27 +284,22 @@ class TestStagingZoneProcessor:
         assert staging_processor._safe_decimal_convert("invalid") is None
 
 
-class TestRawZoneAdapter:
-    """Test RAW zone adapter functionality."""
+class TestRawZoneConsolidated:
+    """Test consolidated RAW zone processor functionality."""
 
     @pytest.fixture
-    def raw_adapter(self):
-        """Create RAW zone adapter for testing."""
-        with patch("src.data.pipeline.raw_zone_adapter.get_settings") as mock_settings:
-            mock_settings.return_value.schemas.raw = "raw_data"
-            return RawZoneAdapter()
+    def raw_processor(self):
+        """Create consolidated RAW zone processor for testing."""
+        from src.data.pipeline.zone_interface import create_zone_config, ZoneType
+        config = create_zone_config(ZoneType.RAW, "raw_data")
+        return RawZoneConsolidatedProcessor(config)
 
     @pytest.mark.asyncio
-    async def test_action_network_games_storage(self, raw_adapter):
-        """Test storing Action Network games through adapter."""
-        # Mock the raw processor
-        with patch.object(raw_adapter.raw_processor, "process_batch") as mock_process:
-            mock_process.return_value = ProcessingResult(
-                status=ProcessingStatus.COMPLETED,
-                records_processed=2,
-                records_successful=2,
-                records_failed=0,
-            )
+    async def test_action_network_games_storage(self, raw_processor):
+        """Test storing Action Network games through consolidated processor."""
+        # Mock the database operations
+        with patch.object(raw_processor, "store_records") as mock_store:
+            mock_store.return_value = None  # store_records doesn't return anything
 
             games_data = [
                 {
@@ -321,53 +316,44 @@ class TestRawZoneAdapter:
                 },
             ]
 
-            result = await raw_adapter.store_action_network_games(games_data)
+            result = await raw_processor.ingest_action_network_games(games_data)
 
             assert result.status == ProcessingStatus.COMPLETED
-            assert result.records_successful == 2
-            mock_process.assert_called_once()
+            mock_store.assert_called_once()
 
-            # Verify the records passed to processor
-            call_args = mock_process.call_args[0][0]
+            # Verify the store_records was called with the processed data
+            call_args = mock_store.call_args[0][0]
             assert len(call_args) == 2
             assert call_args[0].external_id == "game_123"
             assert call_args[0].source == "action_network"
-            assert call_args[0].data_type == "game"
 
     @pytest.mark.asyncio
-    async def test_betting_lines_storage(self, raw_adapter):
-        """Test storing generic betting lines through adapter."""
-        with patch.object(raw_adapter.raw_processor, "process_batch") as mock_process:
-            mock_process.return_value = ProcessingResult(
-                status=ProcessingStatus.COMPLETED,
-                records_processed=1,
-                records_successful=1,
-                records_failed=0,
-            )
+    async def test_action_network_odds_storage(self, raw_processor):
+        """Test storing Action Network odds through consolidated processor."""
+        with patch.object(raw_processor, "store_records") as mock_store:
+            mock_store.return_value = None
 
-            lines_data = [
+            odds_data = [
                 {
-                    "id": "line_123",
-                    "game_id": "game_456",
-                    "sportsbook": "DraftKings",
-                    "odds": -110,
-                    "line": -1.5,
-                    "game_date": "2025-07-21",
+                    "sportsbook_key": "draftkings",
+                    "moneyline": {"home": -110, "away": +105},
+                    "spread": {"home": -1.5, "away": +1.5},
+                    "total": {"over": 8.5, "under": 8.5},
                 }
             ]
 
-            result = await raw_adapter.store_betting_lines(
-                lines_data, "spread", "action_network"
+            result = await raw_processor.ingest_action_network_odds(
+                odds_data, game_id="game_456"
             )
 
             assert result.status == ProcessingStatus.COMPLETED
-            assert result.records_successful == 1
-            mock_process.assert_called_once()
+            mock_store.assert_called_once()
 
-            # Verify record structure
-            call_args = mock_process.call_args[0][0]
-            assert call_args[0].bet_type == "spread"
+            # Verify the store_records was called with processed odds data
+            call_args = mock_store.call_args[0][0]
+            assert len(call_args) == 1
             assert call_args[0].source == "action_network"
+            assert call_args[0].game_external_id == "game_456"
 
 
 class TestPipelineOrchestrator:

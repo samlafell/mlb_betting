@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 import polars as pl
+
 import numpy as np
 
 from .models import TemporalFeatures, BaseFeatureExtractor
@@ -53,7 +54,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         ]
 
     async def extract_features(
-        self, df: pl.DataFrame, game_id: int, cutoff_time: datetime
+        self, df, game_id: int, cutoff_time: datetime
     ) -> TemporalFeatures:
         """
         Extract temporal features with 60-minute cutoff enforcement

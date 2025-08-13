@@ -77,7 +77,7 @@ class DatabaseConnection:
         """Parse connection string and extract components."""
         try:
             parsed = urlparse(self.connection_string)
-            self.host = parsed.hostname or "localhost"
+            self.host = parsed.hostname or "postgres"
             self.port = parsed.port or 5432
             self.database = parsed.path.lstrip("/") if parsed.path else "postgres"
             self.username = parsed.username or "postgres"

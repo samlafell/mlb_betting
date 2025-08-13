@@ -5,9 +5,11 @@ Orchestrates LightGBM training pipeline with scheduling and monitoring
 
 import logging
 import asyncio
+import json
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from pathlib import Path
+import asyncpg
 
 from .lightgbm_trainer import LightGBMTrainer
 
@@ -17,6 +19,14 @@ try:
 except ImportError:
     # Fallback for environments where unified config is not available
     get_settings = None
+
+# Import MLflow for enhanced experiment tracking
+try:
+    import mlflow
+    import mlflow.tracking
+    MLFLOW_AVAILABLE = True
+except ImportError:
+    MLFLOW_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +68,16 @@ class MLTrainingService:
             "active_models": {},
             "training_in_progress": False,
             "service_health": "healthy",
+            "daily_predictions_generated": None,
+            "prediction_performance_tracking": {},
+        }
+        
+        # Enhanced MLflow tracking
+        self.experiment_tracking = {
+            "experiment_name": "mlb_betting_production",
+            "model_registry_enabled": True,
+            "auto_log_enabled": True,
+            "performance_tracking_enabled": True,
         }
 
     async def train_initial_models(
@@ -85,18 +105,38 @@ class MLTrainingService:
 
             # Use provided config or defaults
             config = training_config or self.default_training_config
+            
+            # Validate configuration
+            required_keys = ["training_window_days", "cross_validation_folds", "test_size", "use_cached_features"]
+            missing_keys = [key for key in required_keys if key not in config]
+            if missing_keys:
+                raise ValueError(f"Missing required configuration keys: {missing_keys}")
+            
+            # Validate prediction targets
+            prediction_targets = config.get("prediction_targets")
+            if prediction_targets is None:
+                logger.info("No prediction targets specified, using defaults")
+                prediction_targets = list(self.trainer.model_configs.keys())
+            elif not isinstance(prediction_targets, list) or not prediction_targets:
+                raise ValueError(f"prediction_targets must be a non-empty list, got: {prediction_targets}")
 
             # Calculate training period
             if end_date is None:
                 end_date = datetime.utcnow()
 
             start_date = end_date - timedelta(days=config["training_window_days"])
+            
+            logger.info(f"Training configuration: targets={prediction_targets}, "
+                       f"period={start_date.date()} to {end_date.date()}, "
+                       f"cv_folds={config['cross_validation_folds']}, "
+                       f"test_size={config['test_size']}, "
+                       f"use_cached_features={config['use_cached_features']}")
 
             # Train models
             training_results = await self.trainer.train_models(
                 start_date=start_date,
                 end_date=end_date,
-                prediction_targets=config["prediction_targets"],
+                prediction_targets=prediction_targets,
                 use_cached_features=config["use_cached_features"],
                 cross_validation_folds=config["cross_validation_folds"],
                 test_size=config["test_size"],
@@ -130,6 +170,9 @@ class MLTrainingService:
 
         except Exception as e:
             logger.error(f"Error in initial model training: {e}")
+            if "prediction_targets" in str(e):
+                logger.error("Training configuration issue. Please check that prediction_targets are properly specified.")
+                logger.error(f"Available targets: {list(self.trainer.model_configs.keys())}")
             self.service_state["service_health"] = "error"
             raise
         finally:
@@ -351,6 +394,148 @@ class MLTrainingService:
             logger.error(f"Error scheduling training job: {e}")
             raise
 
+    async def generate_daily_predictions(self, target_date: Optional[datetime] = None) -> Dict[str, Any]:
+        """
+        Generate predictions for today's games using trained models
+        
+        Args:
+            target_date: Date to generate predictions for (default: today)
+            
+        Returns:
+            Daily predictions with confidence scores and betting recommendations
+        """
+        try:
+            if target_date is None:
+                target_date = datetime.utcnow().date()
+                
+            logger.info(f"Generating daily predictions for {target_date}")
+            
+            # Load today's games
+            games_for_prediction = await self._load_games_for_prediction(target_date)
+            
+            if not games_for_prediction:
+                logger.warning(f"No games found for prediction on {target_date}")
+                return {"status": "no_games", "date": target_date, "predictions": []}
+            
+            # Generate predictions for each game using active models
+            daily_predictions = []
+            
+            for game in games_for_prediction:
+                game_id = game["id"]
+                game_predictions = {}
+                
+                # Calculate feature cutoff time (60 minutes before game)
+                cutoff_time = game["game_datetime"] - timedelta(minutes=60)
+                
+                # Extract features for this game
+                from ..features.feature_pipeline import FeaturePipeline
+                feature_pipeline = FeaturePipeline()
+                
+                feature_vector = await feature_pipeline.extract_features_for_game(
+                    game_id, cutoff_time
+                )
+                
+                if not feature_vector:
+                    logger.warning(f"No features available for game {game_id}")
+                    continue
+                
+                # Generate predictions using each active model
+                for model_name, model_info in self.service_state["active_models"].items():
+                    try:
+                        if not MLFLOW_AVAILABLE:
+                            logger.warning(f"MLflow not available, skipping model {model_name}")
+                            continue
+                            
+                        # Validate model configuration
+                        if model_name not in self.trainer.model_configs:
+                            logger.warning(f"Model {model_name} not found in trainer configurations, skipping")
+                            continue
+                        
+                        # Load model from MLflow
+                        model_uri = f"models:/{model_name}/latest"
+                        logger.debug(f"Loading model from URI: {model_uri}")
+                        
+                        try:
+                            model = mlflow.lightgbm.load_model(model_uri)
+                        except Exception as model_load_error:
+                            logger.warning(f"Failed to load model {model_name} from MLflow: {model_load_error}")
+                            continue
+                            
+                        # Convert feature vector to array
+                        feature_array = self.trainer._feature_vector_to_array(feature_vector)
+                        
+                        if feature_array is None:
+                            logger.warning(f"Failed to convert feature vector to array for game {game_id}")
+                            continue
+                            
+                        # Validate feature array shape
+                        if len(feature_array.shape) != 1 or feature_array.shape[0] == 0:
+                            logger.warning(f"Invalid feature array shape {feature_array.shape} for game {game_id}")
+                            continue
+                        
+                        # Generate prediction
+                        model_config = self.trainer.model_configs[model_name]
+                        
+                        if model_config["objective"] == "binary":
+                            prediction_prob = model.predict(feature_array.reshape(1, -1))[0]
+                            prediction_binary = int(prediction_prob > 0.5)
+                            confidence = max(prediction_prob, 1 - prediction_prob)
+                        else:
+                            prediction_value = model.predict(feature_array.reshape(1, -1))[0]
+                            prediction_prob = prediction_value
+                            prediction_binary = None
+                            confidence = 0.8  # Default confidence for regression
+                        
+                        # Validate prediction values
+                        if not (0 <= prediction_prob <= 1) and model_config["objective"] == "binary":
+                            logger.warning(f"Invalid prediction probability {prediction_prob} for binary model {model_name}")
+                            continue
+                        
+                        game_predictions[model_name] = {
+                            "probability": float(prediction_prob),
+                            "binary_prediction": prediction_binary,
+                            "confidence": float(confidence),
+                            "feature_completeness": float(feature_vector.feature_completeness_score),
+                            "model_objective": model_config["objective"],
+                        }
+                        
+                        logger.debug(f"Generated prediction for {model_name}: prob={prediction_prob:.3f}, confidence={confidence:.3f}")
+                                
+                    except Exception as e:
+                        logger.error(f"Error generating prediction for {model_name} on game {game_id}: {e}")
+                        logger.debug(f"Prediction error details:", exc_info=True)
+                        continue
+                
+                if game_predictions:
+                    daily_predictions.append({
+                        "game_id": game_id,
+                        "home_team": game["home_team"],
+                        "away_team": game["away_team"],
+                        "game_datetime": game["game_datetime"],
+                        "predictions": game_predictions,
+                        "prediction_timestamp": datetime.utcnow(),
+                    })
+            
+            # Save predictions to database
+            await self._save_daily_predictions(daily_predictions, target_date)
+            
+            # Update service state
+            self.service_state["daily_predictions_generated"] = datetime.utcnow()
+            
+            logger.info(f"Generated predictions for {len(daily_predictions)} games on {target_date}")
+            
+            return {
+                "status": "success",
+                "date": target_date,
+                "predictions": daily_predictions,
+                "games_processed": len(games_for_prediction),
+                "predictions_generated": len(daily_predictions),
+            }
+            
+        except Exception as e:
+            logger.error(f"Error generating daily predictions: {e}")
+            raise
+
     async def health_check(self) -> Dict[str, Any]:
         """
         Perform comprehensive health check of training service
@@ -365,6 +550,8 @@ class MLTrainingService:
                 "active_models_count": len(self.service_state["active_models"]),
                 "last_training_run": self.service_state["last_training_run"],
                 "last_retrain_check": self.service_state["last_retrain_check"],
+                "daily_predictions_generated": self.service_state["daily_predictions_generated"],
+                "mlflow_available": MLFLOW_AVAILABLE,
             }
 
             # Check trainer health
@@ -472,6 +659,102 @@ class MLTrainingService:
             raise ValueError(f"Unknown schedule type: {schedule_type}")
 
         return next_run
+
+    async def _load_games_for_prediction(self, target_date: datetime.date) -> List[Dict[str, Any]]:
+        """Load games scheduled for the target date"""
+        try:
+            conn = await asyncpg.connect(
+                host=self.settings.database.host,
+                port=self.settings.database.port,
+                database=self.settings.database.database,
+                user=self.settings.database.user,
+                password=self.settings.database.password,
+            )
+            
+            # Query for games on target date that haven't started yet
+            query = """
+                SELECT 
+                    eg.id,
+                    eg.home_team,
+                    eg.away_team, 
+                    eg.game_datetime,
+                    eg.game_status
+                FROM curated.enhanced_games eg
+                WHERE DATE(eg.game_datetime) = $1
+                    AND eg.game_status = 'scheduled'
+                    AND eg.game_datetime > NOW() + INTERVAL '60 minutes'
+                ORDER BY eg.game_datetime
+            """
+            
+            games = await conn.fetch(query, target_date)
+            await conn.close()
+            
+            return [dict(game) for game in games]
+            
+        except Exception as e:
+            logger.error(f"Error loading games for prediction: {e}")
+            return []
+    
+    async def _save_daily_predictions(self, predictions: List[Dict[str, Any]], target_date: datetime.date) -> bool:
+        """Save daily predictions to database"""
+        try:
+            conn = await asyncpg.connect(
+                host=self.settings.database.host,
+                port=self.settings.database.port,
+                database=self.settings.database.database,
+                user=self.settings.database.user,
+                password=self.settings.database.password,
+            )
+            
+            for game_prediction in predictions:
+                game_id = game_prediction["game_id"]
+                predictions_data = game_prediction["predictions"]
+                prediction_timestamp = game_prediction["prediction_timestamp"]
+                
+                # Save each model's prediction
+                for model_name, prediction_data in predictions_data.items():
+                    insert_query = """
+                        INSERT INTO curated.ml_predictions (
+                            game_id, model_name, model_version, prediction_timestamp,
+                            feature_version, prediction_explanation,
+                            confidence_threshold_met, created_at
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                        ON CONFLICT (game_id, model_name, model_version, prediction_timestamp)
+                        DO UPDATE SET
+                            confidence_threshold_met = EXCLUDED.confidence_threshold_met,
+                            prediction_explanation = EXCLUDED.prediction_explanation
+                    """
+                    
+                    # Set prediction fields based on model type
+                    model_type = model_name
+                    confidence_met = prediction_data["confidence"] > 0.7
+                    
+                    prediction_explanation = {
+                        "confidence": prediction_data["confidence"],
+                        "feature_completeness": prediction_data["feature_completeness"],
+                        "model_type": model_type,
+                        "prediction_date": target_date.isoformat(),
+                    }
+                    
+                    await conn.execute(
+                        insert_query,
+                        game_id,
+                        model_name,
+                        "v2.1",  # Current model version
+                        prediction_timestamp,
+                        "v2.1",  # Feature version 
+                        json.dumps(prediction_explanation),
+                        confidence_met,
+                        datetime.utcnow(),
+                    )
+            
+            await conn.close()
+            logger.info(f"Saved {len(predictions)} game predictions to database")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error saving daily predictions: {e}")
+            return False
 
     def get_service_state(self) -> Dict[str, Any]:
         """Get current service state"""

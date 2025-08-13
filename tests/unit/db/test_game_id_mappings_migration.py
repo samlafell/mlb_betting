@@ -195,8 +195,8 @@ class TestGameIDMappingsMigration:
             # Create test data in raw_data.action_network_games
             await conn.execute("""
                 INSERT INTO raw_data.action_network_games 
-                (external_game_id, home_team, away_team, start_time, created_at)
-                VALUES ('TEST_UNMAPPED_123', 'LAD', 'NYY', '2024-07-01 19:00:00', NOW())
+                (external_game_id, home_team, away_team, start_time, created_at, raw_response)
+                VALUES ('TEST_UNMAPPED_123', 'LAD', 'NYY', '2024-07-01 19:00:00', NOW(), '{"test": "data"}')
                 ON CONFLICT (external_game_id) DO UPDATE SET updated_at = NOW()
             """)
 

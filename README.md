@@ -30,6 +30,8 @@ uv run -m src.interfaces.cli action-network history --days 15                   
 uv run -m src.interfaces.cli batch-collection collect-range --start-date 2024-01-01 --end-date 2024-01-15  # Precise dates
 
 # Movement Analysis & Strategy Detection
+# First generate historical data (creates output/action_network_history.json automatically)
+uv run -m src.interfaces.cli action-network history --days 15                    
 uv run -m src.interfaces.cli movement analyze --input-file output/action_network_history.json
 uv run -m src.interfaces.cli movement rlm --input-file output/action_network_history.json --min-movements 50
 uv run -m src.interfaces.cli movement steam --input-file output/action_network_history.json --show-details
@@ -68,8 +70,8 @@ uv run -m src.interfaces.cli database setup-action-network
 uv run -m src.interfaces.cli data collect --source vsin --real
 uv run -m src.interfaces.cli data collect --source sbd --real
 
-# 3. Generate Action Network historical data
-uv run -m src.interfaces.cli action-network collect --date today
+# 3. Run Action Network pipeline for today's games
+uv run -m src.interfaces.cli action-network pipeline --date today
 uv run -m src.interfaces.cli action-network history --days 30
 
 # 4. Run movement analysis
@@ -182,6 +184,7 @@ All database settings, table names, and API configurations are centralized in `c
 [database]
 # PostgreSQL connection configured in settings
 
+
 [schema]
 name = "splits"
 
@@ -273,6 +276,15 @@ Game: Yankees @ Red Sox (7:05 PM ET)
 Here's a complete example workflow from setup to analysis:
 
 ### 1. Initial Setup
+
+**🚨 CRITICAL SECURITY STEP: Configure Environment Variables**
+```bash
+# Copy environment template and configure secure passwords
+cp .env.example .env
+# Edit .env and replace ALL default passwords with secure values
+# See SECURITY.md for password generation guidelines
+```
+
 ```bash
 # Install dependencies
 uv sync
@@ -280,6 +292,8 @@ uv sync
 # Setup database
 uv run -m src.interfaces.cli database setup-action-network --test-connection
 ```
+
+**⚠️ Security Note**: Never commit `.env` files to version control. See [`SECURITY.md`](SECURITY.md) for complete security guidelines.
 
 ### 2. Collect Current Data
 ```bash
@@ -294,7 +308,7 @@ uv run -m src.interfaces.cli data status --detailed
 ### 3. Generate Historical Data for Analysis
 ```bash
 # Run Action Network pipeline (creates games file)
-uv run -m src.interfaces.cli action-network collect --date today
+uv run -m src.interfaces.cli action-network pipeline --date today
 
 # Generate historical line movement data
 uv run -m src.interfaces.cli action-network history --days 30
@@ -532,3 +546,6 @@ uv run pytest tests/unit/
 uv run pytest tests/integration/
 uv run pytest tests/manual/
 ```
+
+## Postgres
+- Postgres uses Port 5433 with password postgres

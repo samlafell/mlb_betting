@@ -2,6 +2,9 @@
 
 This folder contains detailed documentation for major development tasks, implementations, and system designs.
 
+## Postgres
+- Postgres uses Port 5433 with password postgres
+
 ## 📋 Naming Convention
 
 ### File Naming Standard

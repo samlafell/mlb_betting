@@ -1,0 +1,3 @@
+# SSL Directory
+# This directory is for SSL certificates when HTTPS is configured
+# Currently using HTTP only - SSL setup will be added in future versions

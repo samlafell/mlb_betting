@@ -659,15 +659,22 @@ class ActionNetworkCollector(BaseCollector):
                 game_date = start_time.date() if start_time else now_est().date()
 
                 # Store raw game data with extracted readable fields
+                # Ensure we have valid JSON data before inserting
+                game_json = json.dumps(game) if game else None
+                if not game_json or game_json == 'null':
+                    logger.warning(f"Skipping game {game_id} due to empty game data")
+                    continue
+                    
                 await conn.execute(
                     """
                     INSERT INTO raw_data.action_network_games (
-                        external_game_id, raw_response, endpoint_url, response_status,
+                        external_game_id, raw_response, raw_game_data, endpoint_url, response_status,
                         game_date, home_team, away_team, home_team_abbr, away_team_abbr,
                         game_status, start_time, collected_at, created_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                     ON CONFLICT (external_game_id) DO UPDATE SET
                         raw_response = EXCLUDED.raw_response,
+                        raw_game_data = EXCLUDED.raw_game_data,
                         home_team = EXCLUDED.home_team,
                         away_team = EXCLUDED.away_team,
                         home_team_abbr = EXCLUDED.home_team_abbr,
@@ -677,7 +684,8 @@ class ActionNetworkCollector(BaseCollector):
                         collected_at = EXCLUDED.collected_at
                 """,
                     str(game_id),
-                    json.dumps(game),  # Full raw data still preserved
+                    game_json,  # raw_response: Full raw data as JSON string
+                    game,       # raw_game_data: Raw game data as JSONB
                     endpoint_url
                     or "https://api.actionnetwork.com/web/v2/scoreboard/publicbetting/mlb",
                     200,

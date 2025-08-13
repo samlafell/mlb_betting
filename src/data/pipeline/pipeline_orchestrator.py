@@ -30,6 +30,8 @@ from .zone_interface import (
 )
 
 # Import zone processors to trigger registration
+from .unified_staging_processor import UnifiedStagingProcessor  # Ensure unified processor is registered
+from .raw_zone_consolidated import RawZoneConsolidatedProcessor  # Ensure consolidated raw processor is registered
 
 logger = get_logger(__name__, LogComponent.CORE)
 
@@ -307,8 +309,44 @@ class DataPipelineOrchestrator:
             zone = self.zones[zone_type]
             logger.info(f"Processing {len(records)} records through {zone_type} zone")
 
-            # Process records through zone
-            result = await zone.process_batch(records)
+            # Enhanced processing for STAGING zone with multi-bet type support
+            if zone_type == ZoneType.STAGING and hasattr(zone, 'process_record_multi_bet_types'):
+                logger.info("Using enhanced multi-bet type processing for STAGING zone")
+                all_staging_records = []
+                
+                # Process each raw record into multiple staging records (one per bet type)
+                for raw_record in records:
+                    staging_records = await zone.process_record_multi_bet_types(raw_record)
+                    if staging_records:
+                        all_staging_records.extend(staging_records)
+                        logger.debug(f"Generated {len(staging_records)} staging records from raw record {getattr(raw_record, 'external_id', None) or 'unknown'}")
+                
+                logger.info(f"Generated {len(all_staging_records)} total staging records from {len(records)} raw records")
+                
+                # Store all staging records to appropriate tables
+                if all_staging_records:
+                    await zone.store_records(all_staging_records)
+                    logger.info(f"Successfully stored {len(all_staging_records)} staging records to database")
+                
+                # Create processing result
+                result = ProcessingResult(
+                    status=ProcessingStatus.COMPLETED,
+                    records_processed=len(records),
+                    records_successful=len(all_staging_records),
+                    records_failed=len(records) - len([r for r in records if any(
+                        getattr(sr, 'id', None) == getattr(r, 'id', None) 
+                        for sr in all_staging_records
+                    )]),
+                    processing_time=0.0,  # Would be calculated in real implementation
+                    metadata={
+                        "multi_bet_processing": True,
+                        "staging_records_generated": len(all_staging_records),
+                        "bet_types_processed": ["moneyline", "spread", "total"]
+                    }
+                )
+            else:
+                # Standard processing for other zones
+                result = await zone.process_batch(records)
 
             logger.info(
                 f"{zone_type} zone processing completed: "
@@ -387,17 +425,40 @@ class DataPipelineOrchestrator:
                         logger.warning(f"Query {i+1} failed for {current_zone} zone: {e}")
                         continue
 
-            # Convert rows to DataRecord objects (simplified)
+            # Convert rows to DataRecord objects with enhanced field handling
             records = []
             for row in rows:
+                # Handle both raw_data and raw_odds fields for Action Network compatibility
+                raw_data_field = row.get("raw_data") or row.get("raw_odds")
+                
+                # Parse JSON string to dictionary for multi-bet type processing
+                if raw_data_field and isinstance(raw_data_field, str):
+                    try:
+                        import json
+                        raw_data_field = json.loads(raw_data_field)
+                    except (json.JSONDecodeError, TypeError) as e:
+                        logger.warning(f"Failed to parse raw_data JSON for record {row.get('id')}: {e}")
+                        raw_data_field = None
+                
+                # Fix field mapping for unified staging processor compatibility
+                # Map database field names to DataRecord field names
+                external_id = row.get("external_id") or row.get("external_game_id")  # Support both field names
+                
+                # Store sportsbook_key in raw_data for processor access
+                if raw_data_field and isinstance(raw_data_field, dict):
+                    sportsbook_key = row.get("sportsbook_key")
+                    if sportsbook_key:
+                        raw_data_field['_sportsbook_key'] = sportsbook_key
+                
                 record = DataRecord(
                     id=row.get("id"),
-                    external_id=row.get("external_id"),
+                    external_id=external_id,
                     source=row.get("source", "unknown"),
-                    raw_data=row.get("raw_data"),
+                    raw_data=raw_data_field,
                     processed_at=row.get("processed_at"),
                     created_at=row.get("created_at"),
                 )
+                
                 records.append(record)
 
             logger.info(f"Retrieved {len(records)} records from {current_zone} zone for next zone processing")
@@ -509,25 +570,56 @@ class DataPipelineOrchestrator:
     ) -> None:
         """Log pipeline execution to database."""
         try:
+            # Use the correct schema for Docker PostgreSQL instance
             query = """
             INSERT INTO public.pipeline_execution_log 
-            (execution_id, pipeline_stage, start_time, end_time, status, 
-             records_processed, records_successful, records_failed, metadata)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            (execution_id, pipeline_name, zone, status, records_processed, 
+             records_successful, records_failed, processing_time_ms, metadata, 
+             started_at, completed_at, pipeline_stage, start_time, end_time)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             """
+
+            # Map pipeline mode to zone for the schema
+            zone_mapping = {
+                PipelineMode.RAW_ONLY: "raw",
+                PipelineMode.STAGING_ONLY: "staging", 
+                PipelineMode.CURATED_ONLY: "curated",
+                PipelineMode.FULL: "staging",  # Use staging as primary for full pipeline
+                PipelineMode.RAW_TO_STAGING: "staging",
+                PipelineMode.STAGING_TO_CURATED: "curated"
+            }
+            
+            # Map ProcessingStatus to database-compatible status values
+            status_mapping = {
+                ProcessingStatus.PENDING: "running",  # Map pending to running for constraint
+                ProcessingStatus.IN_PROGRESS: "running",
+                ProcessingStatus.COMPLETED: "completed",
+                ProcessingStatus.FAILED: "failed",
+                ProcessingStatus.SKIPPED: "skipped"
+            }
+            
+            zone_value = zone_mapping.get(execution.pipeline_mode, "staging")
+            pipeline_name = f"{execution.pipeline_mode.value}_pipeline"
+            status_value = status_mapping.get(execution.status, "running")
+            processing_time_ms = int(execution.metrics.processing_time_seconds * 1000) if execution.metrics.processing_time_seconds else None
 
             async with get_connection() as connection:
                 await connection.execute(
                     query,
-                    execution.execution_id,
-                    stage.value,
-                    execution.start_time,
-                    execution.end_time,
-                    execution.status.value,
-                    execution.metrics.total_records,
-                    execution.metrics.successful_records,
-                    execution.metrics.failed_records,
-                    json.dumps(execution.metadata) if execution.metadata else "{}",
+                    execution.execution_id,              # $1 execution_id
+                    pipeline_name,                       # $2 pipeline_name
+                    zone_value,                          # $3 zone  
+                    status_value,                        # $4 status (mapped to constraint values)
+                    execution.metrics.total_records,     # $5 records_processed
+                    execution.metrics.successful_records, # $6 records_successful
+                    execution.metrics.failed_records,    # $7 records_failed
+                    processing_time_ms,                  # $8 processing_time_ms
+                    json.dumps(execution.metadata) if execution.metadata else "{}",  # $9 metadata
+                    execution.start_time,                # $10 started_at
+                    execution.end_time,                  # $11 completed_at
+                    stage.value,                         # $12 pipeline_stage
+                    execution.start_time,                # $13 start_time
+                    execution.end_time,                  # $14 end_time
                 )
 
         except Exception as e:

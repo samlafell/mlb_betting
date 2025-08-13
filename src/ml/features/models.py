@@ -9,7 +9,14 @@ from decimal import Decimal
 from abc import ABC, abstractmethod
 
 from pydantic import BaseModel, Field, ConfigDict, validator, field_validator
-import polars as pl
+
+# Graceful fallback for polars dependency
+try:
+    import polars as pl
+    POLARS_AVAILABLE = True
+except ImportError:
+    POLARS_AVAILABLE = False
+    pl = None
 
 # Add src to path for imports
 # Removed sys.path.append() for proper import structure
@@ -682,13 +689,13 @@ class BaseFeatureExtractor(ABC):
 
     @abstractmethod
     async def extract_features(
-        self, df: pl.DataFrame, game_id: int, cutoff_time: datetime
+        self, df, game_id: int, cutoff_time: datetime
     ) -> Any:
         """
         Extract features from data DataFrame
 
         Args:
-            df: Polars DataFrame with source data
+            df: Polars DataFrame with source data (if polars available, otherwise dict)
             game_id: Game ID for feature extraction
             cutoff_time: Feature cutoff time (60min before game)
 
@@ -708,18 +715,28 @@ class BaseFeatureExtractor(ABC):
         pass
 
     def validate_data_quality(
-        self, df: pl.DataFrame, required_columns: List[str]
+        self, df, required_columns: List[str]
     ) -> Dict[str, Any]:
         """
         Validate data quality for feature extraction
 
         Args:
-            df: Source data DataFrame
+            df: Source data DataFrame (polars DataFrame if available, otherwise dict)
             required_columns: Required columns for extraction
 
         Returns:
             Data quality metrics
         """
+        # Check if polars is available and if df is a polars DataFrame
+        if not POLARS_AVAILABLE or pl is None:
+            return {
+                "is_valid": False,
+                "missing_columns": required_columns,
+                "completeness_score": 0.0,
+                "row_count": 0,
+                "error": "Polars not available"
+            }
+        
         if df.is_empty():
             return {
                 "is_valid": False,

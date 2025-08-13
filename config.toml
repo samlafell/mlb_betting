@@ -13,7 +13,7 @@ legacy = "splits"
 [pipeline]
 # Pipeline configuration
 enable_staging = true
-enable_curated = false  # Disabled until RAW/STAGING are stable
+enable_curated = true  # Enabled for full pipeline execution
 auto_promotion = true  # Re-enabled with zone-specific checks
 validation_enabled = true
 quality_threshold = 0.8  # Minimum quality score for promotion
@@ -21,7 +21,7 @@ quality_threshold = 0.8  # Minimum quality score for promotion
 [pipeline.zones]
 raw_enabled = true
 staging_enabled = true
-curated_enabled = false  # Disabled until RAW/STAGING are stable
+curated_enabled = true  # Enabled for full pipeline execution
 
 [tables]
 # Main table for MLB betting splits

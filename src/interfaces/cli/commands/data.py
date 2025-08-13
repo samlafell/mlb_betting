@@ -72,8 +72,8 @@ class DataCommands:
             "--test-mode",
             "-t",
             is_flag=True,
-            default=True,
-            help="Run in test mode (default: True)",
+            default=False,
+            help="Run in test mode (collect but don't store data)",
         )
         @click.option(
             "--mock-data",
