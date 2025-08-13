@@ -12,12 +12,6 @@ import pytest
 
 from src.data.collection.base import CollectorConfig, DataSource
 from src.data.collection.mlb_stats_api_collector import MLBStatsAPICollector
-from src.data.pipeline.staging_action_network_historical_processor import (
-    ActionNetworkHistoricalProcessor,
-)
-from src.data.pipeline.staging_action_network_history_processor import (
-    ActionNetworkHistoryProcessor,
-)
 from src.data.pipeline.staging_action_network_unified_processor import (
     ActionNetworkUnifiedStagingProcessor,
 )
@@ -52,24 +46,6 @@ class TestDatabaseConfigurationIntegration:
             "password": "test-password",
         }
 
-    @pytest.mark.asyncio
-    async def test_action_network_history_processor_uses_centralized_config(
-        self, mock_settings, expected_db_config
-    ):
-        """Test ActionNetworkHistoryProcessor uses centralized configuration."""
-        with patch(
-            "src.data.pipeline.staging_action_network_history_processor.get_settings",
-            return_value=mock_settings,
-        ):
-            processor = ActionNetworkHistoryProcessor()
-
-            # Verify processor uses centralized configuration
-            actual_config = processor._get_db_config()
-            assert actual_config == expected_db_config
-
-            # Verify no hardcoded values
-            assert actual_config["host"] != "localhost"
-            assert actual_config["user"] != "samlafell"
 
     @pytest.mark.asyncio
     async def test_action_network_unified_processor_uses_centralized_config(
@@ -90,24 +66,6 @@ class TestDatabaseConfigurationIntegration:
             assert actual_config["host"] != "localhost"
             assert actual_config["user"] != "samlafell"
 
-    @pytest.mark.asyncio
-    async def test_action_network_historical_processor_uses_centralized_config(
-        self, mock_settings, expected_db_config
-    ):
-        """Test ActionNetworkHistoricalProcessor uses centralized configuration."""
-        with patch(
-            "src.data.pipeline.staging_action_network_historical_processor.get_settings",
-            return_value=mock_settings,
-        ):
-            processor = ActionNetworkHistoricalProcessor()
-
-            # Verify processor uses centralized configuration
-            actual_config = processor._get_db_config()
-            assert actual_config == expected_db_config
-
-            # Verify no hardcoded values
-            assert actual_config["host"] != "localhost"
-            assert actual_config["user"] != "samlafell"
 
     @pytest.mark.asyncio
     async def test_mlb_stats_api_collector_uses_centralized_config(
@@ -181,37 +139,23 @@ class TestDatabaseConfigurationIntegration:
 
     @pytest.mark.asyncio
     async def test_all_processors_initialize_without_errors(self, mock_settings):
-        """Test that all processors can be initialized with centralized config."""
-        with (
-            patch(
-                "src.data.pipeline.staging_action_network_history_processor.get_settings",
-                return_value=mock_settings,
-            ),
-            patch(
-                "src.data.pipeline.staging_action_network_unified_processor.get_settings",
-                return_value=mock_settings,
-            ),
-            patch(
-                "src.data.pipeline.staging_action_network_historical_processor.get_settings",
-                return_value=mock_settings,
-            ),
+        """Test that the unified processor can be initialized with centralized config."""
+        with patch(
+            "src.data.pipeline.staging_action_network_unified_processor.get_settings",
+            return_value=mock_settings,
         ):
-            # Test all processors can be initialized
-            history_processor = ActionNetworkHistoryProcessor()
+            # Test unified processor can be initialized
             unified_processor = ActionNetworkUnifiedStagingProcessor()
-            historical_processor = ActionNetworkHistoricalProcessor()
 
-            # Verify they all have valid database configurations
-            assert history_processor._get_db_config()["host"] == "test-host"
+            # Verify it has valid database configuration
             assert unified_processor._get_db_config()["host"] == "test-host"
-            assert historical_processor._get_db_config()["host"] == "test-host"
 
     @pytest.mark.asyncio
     async def test_no_hardcoded_database_values_in_runtime(self, mock_settings):
         """Test that no components use hardcoded database values at runtime."""
         with (
             patch(
-                "src.data.pipeline.staging_action_network_history_processor.get_settings",
+                "src.data.pipeline.staging_action_network_unified_processor.get_settings",
                 return_value=mock_settings,
             ),
             patch(
@@ -221,7 +165,7 @@ class TestDatabaseConfigurationIntegration:
             patch("src.core.config.get_settings", return_value=mock_settings),
         ):
             # Initialize all components
-            processor = ActionNetworkHistoryProcessor()
+            processor = ActionNetworkUnifiedStagingProcessor()
             config = CollectorConfig(source=DataSource.MLB_STATS_API, enabled=True)
             collector = MLBStatsAPICollector(config)
             service = CrossSiteGameResolutionService()
@@ -283,10 +227,6 @@ class TestDatabaseConfigurationIntegration:
         """Test that all components get the same configuration from centralized settings."""
         with (
             patch(
-                "src.data.pipeline.staging_action_network_history_processor.get_settings",
-                return_value=mock_settings,
-            ),
-            patch(
                 "src.data.pipeline.staging_action_network_unified_processor.get_settings",
                 return_value=mock_settings,
             ),
@@ -296,14 +236,12 @@ class TestDatabaseConfigurationIntegration:
             ),
         ):
             # Initialize multiple components
-            history_processor = ActionNetworkHistoryProcessor()
             unified_processor = ActionNetworkUnifiedStagingProcessor()
             config = CollectorConfig(source=DataSource.MLB_STATS_API, enabled=True)
             collector = MLBStatsAPICollector(config)
 
             # Get configurations from all components
             configs = [
-                history_processor._get_db_config(),
                 unified_processor._get_db_config(),
                 collector.db_config,
             ]
