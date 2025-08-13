@@ -508,10 +508,9 @@ class MLBStatsAPIGameResolutionService:
                 with conn.cursor() as cur:
                     # Map source to database column
                     source_column_map = {
-                        DataSource.SPORTS_BOOK_REVIEW: "sportsbookreview_game_id",
                         DataSource.ACTION_NETWORK: "action_network_game_id",
                         DataSource.VSIN: "vsin_game_id",
-                        DataSource.SPORTS_BETTING_DIME: "sbd_game_id",
+                        DataSource.SBD: "sbd_game_id",
                         DataSource.MLB_STATS_API: "mlb_stats_api_game_id",
                     }
 
@@ -768,10 +767,9 @@ class MLBStatsAPIGameResolutionService:
                 with conn.cursor() as cur:
                     # Map source to database column
                     source_column_map = {
-                        DataSource.SPORTS_BOOK_REVIEW: "sportsbookreview_game_id",
                         DataSource.ACTION_NETWORK: "action_network_game_id",
                         DataSource.VSIN: "vsin_game_id",
-                        DataSource.SPORTS_BETTING_DIME: "sbd_game_id",
+                        DataSource.SBD: "sbd_game_id",
                     }
 
                     column = source_column_map.get(source)

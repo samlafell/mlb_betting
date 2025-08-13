@@ -19,7 +19,6 @@ from .collectors import (
     MLBStatsAPICollector,
     OddsAPICollector,
     SBDCollector,
-    SportsBettingReportCollector,  # DEPRECATED: Use SBRUnifiedCollector instead
     VSINCollector,
 )
 
@@ -54,7 +53,6 @@ __all__ = [
     # Source collectors
     "VSINCollector",
     "SBDCollector",
-    "SportsBettingReportCollector",  # DEPRECATED: Use SBRUnifiedCollector instead
     "ActionNetworkCollector",
     "MLBStatsAPICollector",
     "OddsAPICollector",

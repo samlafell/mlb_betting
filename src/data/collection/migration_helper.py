@@ -58,7 +58,7 @@ def create_collector_config(
     # Set default URLs for known sources
     default_urls = {
         DataSource.SBD: "https://www.sportsbettingdime.com",
-        DataSource.SPORTS_BETTING_DIME: "https://www.sportsbettingdime.com",
+        DataSource.SBD: "https://www.sportsbettingdime.com",
         DataSource.VSIN: "https://data.vsin.com",
         DataSource.ACTION_NETWORK: "https://api.actionnetwork.com",
     }
@@ -70,7 +70,7 @@ def create_collector_config(
             "timeout_seconds": 30,
             "params": {"api_path": "/wp-json/adpt/v1/mlb-odds"},
         },
-        DataSource.SPORTS_BETTING_DIME: {
+        DataSource.SBD: {
             "rate_limit_per_minute": 60,
             "timeout_seconds": 30,
             "params": {"api_path": "/wp-json/adpt/v1/mlb-odds"},

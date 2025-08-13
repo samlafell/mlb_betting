@@ -172,10 +172,9 @@ class MLBStatsAPIGameResolver:
                 with conn.cursor() as cur:
                     # Dynamic query based on source
                     source_column_map = {
-                        DataSource.SPORTS_BOOK_REVIEW: "sportsbookreview_game_id",
-                        DataSource.ACTION_NETWORK: "action_network_game_id",
+                                                DataSource.ACTION_NETWORK: "action_network_game_id",
                         DataSource.VSIN: "vsin_game_id",
-                        DataSource.SPORTS_BETTING_DIME: "sbd_game_id",
+                        DataSource.SBD: "sbd_game_id",
                     }
 
                     column = source_column_map.get(source)
@@ -248,10 +247,9 @@ class MLBStatsAPIGameResolver:
                     # Process each source group
                     for source, external_ids in source_groups.items():
                         source_column_map = {
-                            DataSource.SPORTS_BOOK_REVIEW: "sportsbookreview_game_id",
-                            DataSource.ACTION_NETWORK: "action_network_game_id",
+                                                        DataSource.ACTION_NETWORK: "action_network_game_id",
                             DataSource.VSIN: "vsin_game_id",
-                            DataSource.SPORTS_BETTING_DIME: "sbd_game_id",
+                            DataSource.SBD: "sbd_game_id",
                         }
 
                         column = source_column_map.get(source)
@@ -733,8 +731,8 @@ class UnifiedBettingLinesCollector(ABC):
             DataSource.MLB_STATS_API: 1.0,
             DataSource.ACTION_NETWORK: 0.95,
             DataSource.VSIN: 0.95,
-            DataSource.SPORTS_BOOK_REVIEW: 0.90,
-            DataSource.SPORTS_BETTING_DIME: 0.85,
+            DataSource.SBD: 0.90,
+            DataSource.SBD: 0.85,
             DataSource.ODDS_API: 0.80,
         }
 

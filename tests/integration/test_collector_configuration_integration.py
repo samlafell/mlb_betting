@@ -60,7 +60,7 @@ class TestCollectorConfigurationIntegration:
 
     def test_sbd_collector_accepts_collector_config(self):
         """Test SBD collector properly accepts CollectorConfig parameter."""
-        config = CollectorConfig(source=DataSource.SPORTS_BETTING_DIME, enabled=True)
+        config = CollectorConfig(source=DataSource.SBD, enabled=True)
 
         # Should not raise any errors
         collector = SBDUnifiedCollectorAPI(config)
@@ -68,7 +68,7 @@ class TestCollectorConfigurationIntegration:
         # Verify collector is properly configured
         assert collector.config == config
         assert (
-            collector.source == DataSource.SPORTS_BETTING_DIME.value
+            collector.source == DataSource.SBD.value
         )  # Config uses enum values
         assert hasattr(collector, "base_url")
         assert (
@@ -78,7 +78,7 @@ class TestCollectorConfigurationIntegration:
     def test_sbd_collector_with_custom_configuration(self):
         """Test SBD collector respects custom configuration parameters."""
         config = CollectorConfig(
-            source=DataSource.SPORTS_BETTING_DIME,
+            source=DataSource.SBD,
             enabled=True,
             base_url="https://custom-sbd.com",
             params={"api_path": "/custom/api/endpoint"},
@@ -144,7 +144,7 @@ class TestCollectorConfigurationIntegration:
 
     def test_sbd_collector_has_async_test_collection_method(self):
         """Test SBD collector has asynchronous test_collection method."""
-        config = CollectorConfig(source=DataSource.SPORTS_BETTING_DIME, enabled=True)
+        config = CollectorConfig(source=DataSource.SBD, enabled=True)
         collector = SBDUnifiedCollectorAPI(config)
 
         # Verify test_collection method exists and is async
@@ -174,7 +174,7 @@ class TestCollectorConfigurationIntegration:
     @pytest.mark.asyncio
     async def test_sbd_collector_test_collection_async_execution(self):
         """Test SBD collector test_collection executes asynchronously."""
-        config = CollectorConfig(source=DataSource.SPORTS_BETTING_DIME, enabled=True)
+        config = CollectorConfig(source=DataSource.SBD, enabled=True)
         collector = SBDUnifiedCollectorAPI(config)
 
         # Mock the internal collection method to avoid actual API calls
@@ -202,7 +202,7 @@ class TestCollectorConfigurationIntegration:
             ),
             (
                 SBDUnifiedCollectorAPI,
-                CollectorConfig(source=DataSource.SPORTS_BETTING_DIME, enabled=True),
+                CollectorConfig(source=DataSource.SBD, enabled=True),
             ),
             (
                 MLBStatsAPICollector,
@@ -235,7 +235,7 @@ class TestCollectorConfigurationIntegration:
 
         # Test with custom parameters
         custom_config = CollectorConfig(
-            source=DataSource.SPORTS_BETTING_DIME,
+            source=DataSource.SBD,
             enabled=True,
             base_url="https://custom.com",
             rate_limit_per_minute=30,
@@ -261,7 +261,7 @@ class TestCollectorConfigurationIntegration:
 
         # Simulate CLI handling for SBD (async)
         sbd_config = CollectorConfig(
-            source=DataSource.SPORTS_BETTING_DIME, enabled=True
+            source=DataSource.SBD, enabled=True
         )
         sbd_collector = SBDUnifiedCollectorAPI(sbd_config)
 
@@ -302,7 +302,7 @@ class TestCollectorConfigurationIntegration:
         # Verify all expected data sources exist
         expected_sources = [
             DataSource.VSIN,
-            DataSource.SPORTS_BETTING_DIME,
+            DataSource.SBD,
             DataSource.ACTION_NETWORK,
             DataSource.MLB_STATS_API,
         ]
@@ -313,7 +313,7 @@ class TestCollectorConfigurationIntegration:
             assert len(source.value) > 0
 
         # Test that alternate names work
-        assert DataSource.SBD == DataSource.SPORTS_BETTING_DIME or "sbd" in [
+        assert DataSource.SBD == DataSource.SBD or "sbd" in [
             s.value for s in DataSource
         ]
 
@@ -349,7 +349,7 @@ class TestCollectorConfigurationIntegration:
         assert hasattr(vsin_collector, "base_url")
 
         sbd_config = CollectorConfig(
-            source=DataSource.SPORTS_BETTING_DIME, enabled=True
+            source=DataSource.SBD, enabled=True
         )
         sbd_collector = SBDUnifiedCollectorAPI(sbd_config)
 
