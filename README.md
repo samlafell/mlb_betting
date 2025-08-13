@@ -276,6 +276,15 @@ Game: Yankees @ Red Sox (7:05 PM ET)
 Here's a complete example workflow from setup to analysis:
 
 ### 1. Initial Setup
+
+**🚨 CRITICAL SECURITY STEP: Configure Environment Variables**
+```bash
+# Copy environment template and configure secure passwords
+cp .env.example .env
+# Edit .env and replace ALL default passwords with secure values
+# See SECURITY.md for password generation guidelines
+```
+
 ```bash
 # Install dependencies
 uv sync
@@ -283,6 +292,8 @@ uv sync
 # Setup database
 uv run -m src.interfaces.cli database setup-action-network --test-connection
 ```
+
+**⚠️ Security Note**: Never commit `.env` files to version control. See [`SECURITY.md`](SECURITY.md) for complete security guidelines.
 
 ### 2. Collect Current Data
 ```bash
