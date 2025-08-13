@@ -23,6 +23,8 @@ from .zone_interface import (
     DataRecord,
     ProcessingResult,
     ZoneConfig,
+    ZoneFactory,
+    ZoneType,
 )
 
 logger = get_logger(__name__, LogComponent.CORE)
@@ -353,10 +355,16 @@ class RawZoneConsolidatedProcessor(BaseZoneProcessor):
         """
 
         for record in records:
+            # Ensure we have valid data to satisfy the constraint
+            raw_response = json.dumps(record.raw_data) if record.raw_data else None
+            if not raw_response:
+                logger.warning(f"Skipping record {record.external_id} due to missing raw_data")
+                continue
+                
             await connection.execute(
                 query,
                 record.external_id,
-                json.dumps(record.raw_data) if record.raw_data else None,
+                raw_response,
                 getattr(record, "endpoint_url", None),
                 getattr(record, "response_status", None),
                 record.processed_at or datetime.now(timezone.utc),
@@ -714,3 +722,7 @@ class RawZoneConsolidatedProcessor(BaseZoneProcessor):
                 "error": str(e),
                 "connection_status": "error",
             }
+
+
+# Register the consolidated raw zone processor
+ZoneFactory.register_zone(ZoneType.RAW, RawZoneConsolidatedProcessor)

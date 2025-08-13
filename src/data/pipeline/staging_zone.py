@@ -196,11 +196,11 @@ class StagingZoneProcessor(BaseZoneProcessor):
                                     if staging_record:
                                         staging_records.append(staging_record)
 
-            logger.debug(f"Generated {len(staging_records)} staging records from raw record {getattr(record, 'external_id', 'unknown')}")
+            logger.debug(f"Generated {len(staging_records)} staging records from raw record {getattr(record, 'external_id', None) or 'unknown'}")
             return staging_records
 
         except Exception as e:
-            logger.error(f"Error processing multi-bet record {getattr(record, 'external_id', 'unknown')}: {e}")
+            logger.error(f"Error processing multi-bet record {getattr(record, 'external_id', None) or 'unknown'}: {e}")
             return []
 
     async def _create_staging_record_from_bet(self, raw_record: DataRecord, bet_entry: dict, bet_type: str) -> StagingDataRecord | None:
@@ -828,4 +828,5 @@ class StagingZoneProcessor(BaseZoneProcessor):
 
 
 # Register the STAGING zone processor
-ZoneFactory.register_zone(ZoneType.STAGING, StagingZoneProcessor)
+# DEPRECATED: Replaced by UnifiedStagingProcessor
+# ZoneFactory.register_zone(ZoneType.STAGING, StagingZoneProcessor)

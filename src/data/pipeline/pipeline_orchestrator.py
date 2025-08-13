@@ -30,6 +30,8 @@ from .zone_interface import (
 )
 
 # Import zone processors to trigger registration
+from .unified_staging_processor import UnifiedStagingProcessor  # Ensure unified processor is registered
+from .raw_zone_consolidated import RawZoneConsolidatedProcessor  # Ensure consolidated raw processor is registered
 
 logger = get_logger(__name__, LogComponent.CORE)
 
@@ -317,7 +319,7 @@ class DataPipelineOrchestrator:
                     staging_records = await zone.process_record_multi_bet_types(raw_record)
                     if staging_records:
                         all_staging_records.extend(staging_records)
-                        logger.debug(f"Generated {len(staging_records)} staging records from raw record {getattr(raw_record, 'external_id', 'unknown')}")
+                        logger.debug(f"Generated {len(staging_records)} staging records from raw record {getattr(raw_record, 'external_id', None) or 'unknown'}")
                 
                 logger.info(f"Generated {len(all_staging_records)} total staging records from {len(records)} raw records")
                 
@@ -438,17 +440,24 @@ class DataPipelineOrchestrator:
                         logger.warning(f"Failed to parse raw_data JSON for record {row.get('id')}: {e}")
                         raw_data_field = None
                 
+                # Fix field mapping for unified staging processor compatibility
+                # Map database field names to DataRecord field names
+                external_id = row.get("external_id") or row.get("external_game_id")  # Support both field names
+                
+                # Store sportsbook_key in raw_data for processor access
+                if raw_data_field and isinstance(raw_data_field, dict):
+                    sportsbook_key = row.get("sportsbook_key")
+                    if sportsbook_key:
+                        raw_data_field['_sportsbook_key'] = sportsbook_key
+                
                 record = DataRecord(
                     id=row.get("id"),
-                    external_id=row.get("external_id"),
+                    external_id=external_id,
                     source=row.get("source", "unknown"),
                     raw_data=raw_data_field,
                     processed_at=row.get("processed_at"),
                     created_at=row.get("created_at"),
                 )
-                
-                # Note: raw_odds data is already handled in raw_data field above
-                # for Action Network compatibility - no need to set separate raw_odds attribute
                 
                 records.append(record)
 
