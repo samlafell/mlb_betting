@@ -6,7 +6,7 @@ This guide explains how to configure environment variables for different deploym
 
 1. **Copy the template**:
    ```bash
-   cp .env.template .env
+   cp .env.example .env
    ```
 
 2. **Update required variables** in `.env`:
@@ -147,7 +147,7 @@ If you were using the old template files:
 1. **`.env.production.template`** → Use production settings from this guide
 2. **`.env.staging.template`** → Use staging settings from this guide  
 3. **`.env.ml_template`** → Use Docker/ML settings from this guide
-4. **`.env.example`** → Replaced by `.env.template`
+4. **`.env.template`** → Now using comprehensive `.env.example`
 
 ## Troubleshooting
 
@@ -184,4 +184,4 @@ This guide replaces the following redundant template files:
 - `.env.ml_template` (removed)
 - `.env.example` (updated to comprehensive template)
 
-The single `.env.template` file now contains all configurations with clear environment-specific guidance.
+The single `.env.example` file now contains all configurations with clear environment-specific guidance.
