@@ -12,7 +12,7 @@ Advanced statistical analysis engine for MLB betting analytics including:
 """
 
 import numpy as np
-import pandas as pd
+import polars as pl
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timedelta
 from scipy import stats
@@ -41,7 +41,7 @@ class StatisticalAnalysisService:
     def __init__(self):
         self.scaler = StandardScaler()
         
-    def analyze_correlations(self, data: pd.DataFrame) -> Dict[str, Any]:
+    def analyze_correlations(self, data: pl.DataFrame) -> Dict[str, Any]:
         """
         Perform comprehensive correlation analysis.
         
@@ -53,9 +53,9 @@ class StatisticalAnalysisService:
         """
         try:
             # Select only numeric columns
-            numeric_data = data.select_dtypes(include=[np.number])
+            numeric_data = data.select([col for col in data.columns if data[col].dtype in [pl.Float64, pl.Float32, pl.Int64, pl.Int32, pl.Int16, pl.Int8]])
             
-            if numeric_data.empty or len(numeric_data.columns) < 2:
+            if numeric_data.is_empty() or len(numeric_data.columns) < 2:
                 return {
                     'error': 'Insufficient numeric data for correlation analysis',
                     'correlations': {},
@@ -70,16 +70,20 @@ class StatisticalAnalysisService:
             }
             
             # Pearson correlation
-            pearson_corr = numeric_data.corr(method='pearson')
-            results['correlations']['pearson'] = pearson_corr.to_dict()
+            pearson_corr = numeric_data.corr()
+            results['correlations']['pearson'] = pearson_corr.to_dict(as_series=False)
             
-            # Spearman correlation (rank-based, less sensitive to outliers)
-            spearman_corr = numeric_data.corr(method='spearman')
+            # For Spearman and Kendall, we need to convert to pandas temporarily
+            # as polars doesn't support these correlation methods directly
+            numeric_pandas = numeric_data.to_pandas()
+            spearman_corr = numeric_pandas.corr(method='spearman')
             results['correlations']['spearman'] = spearman_corr.to_dict()
             
-            # Kendall correlation (rank-based, smaller sample sizes)
-            kendall_corr = numeric_data.corr(method='kendall')
+            kendall_corr = numeric_pandas.corr(method='kendall')
             results['correlations']['kendall'] = kendall_corr.to_dict()
+            
+            # Convert back to polars for consistency
+            pearson_corr_pl = pl.from_pandas(pearson_corr.to_pandas())
             
             # Significance tests for key correlations
             significance_results = {}
@@ -87,16 +91,17 @@ class StatisticalAnalysisService:
             
             for i, col1 in enumerate(columns):
                 for j, col2 in enumerate(columns[i+1:], i+1):
-                    series1 = numeric_data[col1].dropna()
-                    series2 = numeric_data[col2].dropna()
+                    # Use polars to handle null values
+                    series1 = numeric_data[col1].drop_nulls()
+                    series2 = numeric_data[col2].drop_nulls()
                     
-                    # Align series (remove NaN pairs)
-                    aligned_data = pd.concat([series1, series2], axis=1).dropna()
+                    # Create aligned dataframe and drop nulls
+                    aligned_data = pl.DataFrame({col1: numeric_data[col1], col2: numeric_data[col2]}).drop_nulls()
                     if len(aligned_data) < 3:
                         continue
                         
-                    s1_aligned = aligned_data.iloc[:, 0]
-                    s2_aligned = aligned_data.iloc[:, 1]
+                    s1_aligned = aligned_data[col1].to_numpy()
+                    s2_aligned = aligned_data[col2].to_numpy()
                     
                     # Pearson correlation test
                     try:
@@ -113,10 +118,14 @@ class StatisticalAnalysisService:
             results['significance_tests'] = significance_results
             
             # Summary statistics
+            # Convert to numpy for upper triangle calculation
+            pearson_values = pearson_corr.to_numpy() if hasattr(pearson_corr, 'to_numpy') else pearson_corr.to_pandas().values
+            upper_triangle_values = pearson_values[np.triu_indices_from(pearson_values, k=1)]
+            
             results['summary_stats'] = {
                 'strongest_positive_correlation': self._find_strongest_correlation(pearson_corr, positive=True),
                 'strongest_negative_correlation': self._find_strongest_correlation(pearson_corr, positive=False),
-                'average_correlation_strength': float(np.abs(pearson_corr.values[np.triu_indices_from(pearson_corr.values, k=1)]).mean()),
+                'average_correlation_strength': float(np.abs(upper_triangle_values).mean()),
                 'variables_analyzed': len(numeric_data.columns)
             }
             
@@ -126,11 +135,14 @@ class StatisticalAnalysisService:
             logger.error(f"Error in correlation analysis: {e}")
             raise AnalyticsError(f"Correlation analysis failed: {str(e)}")
     
-    def _find_strongest_correlation(self, corr_matrix: pd.DataFrame, positive: bool = True) -> Dict[str, Any]:
+    def _find_strongest_correlation(self, corr_matrix: pl.DataFrame, positive: bool = True) -> Dict[str, Any]:
         """Find the strongest positive or negative correlation."""
+        # For polars, we need to convert to pandas temporarily for complex matrix operations
+        corr_pandas = corr_matrix.to_pandas() if hasattr(corr_matrix, 'to_pandas') else corr_matrix
+        
         # Get upper triangle (excluding diagonal)
-        mask = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
-        upper_triangle = corr_matrix.where(mask)
+        mask = np.triu(np.ones_like(corr_pandas, dtype=bool), k=1)
+        upper_triangle = corr_pandas.where(mask)
         
         # Stack and drop NaN values
         stacked = upper_triangle.stack()
@@ -152,7 +164,7 @@ class StatisticalAnalysisService:
             max_corr = min_corr
         
         # Handle NaN correlations (from constant variables)
-        if pd.isna(max_corr):
+        if np.isnan(max_corr):
             return {
                 'variables': [],
                 'correlation': 0.0,
@@ -178,7 +190,7 @@ class StatisticalAnalysisService:
         else:
             return 'very_weak'
     
-    def perform_regression_analysis(self, data: pd.DataFrame, target_column: str, feature_columns: List[str]) -> Dict[str, Any]:
+    def perform_regression_analysis(self, data: pl.DataFrame, target_column: str, feature_columns: List[str]) -> Dict[str, Any]:
         """
         Perform comprehensive regression analysis.
         
@@ -200,13 +212,13 @@ class StatisticalAnalysisService:
                 raise ValueError(f"Feature columns not found: {missing_features}")
             
             # Create clean dataset
-            analysis_data = data[[target_column] + feature_columns].dropna()
+            analysis_data = data.select([target_column] + feature_columns).drop_nulls()
             
             if len(analysis_data) < 10:
                 return {'error': 'Insufficient data for regression analysis (minimum 10 observations required)'}
             
-            X = analysis_data[feature_columns]
-            y = analysis_data[target_column]
+            X = analysis_data.select(feature_columns).to_pandas()  # Convert to pandas for sklearn
+            y = analysis_data[target_column].to_pandas()  # Convert to pandas for sklearn
             
             # Determine if this is a classification or regression problem
             is_binary = len(y.unique()) == 2 and set(y.unique()).issubset({0, 1})
@@ -232,7 +244,7 @@ class StatisticalAnalysisService:
             logger.error(f"Error in regression analysis: {e}")
             raise AnalyticsError(f"Regression analysis failed: {str(e)}")
     
-    def _perform_linear_regression(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
+    def _perform_linear_regression(self, X, y) -> Dict[str, Any]:  # Accept pandas types for sklearn compatibility
         """Perform linear regression analysis."""
         # Split data for validation
         if len(X) > 20:
@@ -277,7 +289,7 @@ class StatisticalAnalysisService:
             'overfitting_indicator': abs(r2_train - r2_test) > 0.1
         }
     
-    def _perform_logistic_regression(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
+    def _perform_logistic_regression(self, X, y) -> Dict[str, Any]:  # Accept pandas types for sklearn compatibility
         """Perform logistic regression analysis."""
         # Split data for validation
         if len(X) > 20:
@@ -317,7 +329,7 @@ class StatisticalAnalysisService:
             'overfitting_indicator': abs(train_accuracy - test_accuracy) > 0.1
         }
     
-    def _analyze_feature_importance(self, X: pd.DataFrame, y: pd.Series, is_binary: bool) -> Dict[str, Any]:
+    def _analyze_feature_importance(self, X, y, is_binary: bool) -> Dict[str, Any]:  # Accept pandas types for sklearn compatibility
         """Analyze feature importance and relationships."""
         feature_analysis = {}
         
@@ -339,7 +351,7 @@ class StatisticalAnalysisService:
         
         return feature_analysis
     
-    def calculate_confidence_intervals(self, data: pd.Series, confidence_level: float = 0.95) -> Dict[str, float]:
+    def calculate_confidence_intervals(self, data: pl.Series, confidence_level: float = 0.95) -> Dict[str, float]:
         """
         Calculate confidence intervals for a data series.
         
@@ -351,14 +363,15 @@ class StatisticalAnalysisService:
             Dictionary with confidence interval results
         """
         try:
-            clean_data = data.dropna()
+            clean_data = data.drop_nulls()
             n = len(clean_data)
             
             if n < 2:
                 return {'error': 'Insufficient data for confidence interval calculation'}
             
             mean = clean_data.mean()
-            std_err = stats.sem(clean_data)  # Standard error of mean
+            clean_data_numpy = clean_data.to_numpy()
+            std_err = stats.sem(clean_data_numpy)  # Standard error of mean
             
             # t-distribution for small samples, normal for large samples
             if n < 30:
@@ -386,7 +399,7 @@ class StatisticalAnalysisService:
             logger.error(f"Error calculating confidence intervals: {e}")
             return {'error': str(e)}
     
-    def analyze_distributions(self, data: pd.DataFrame) -> Dict[str, Any]:
+    def analyze_distributions(self, data: pl.DataFrame) -> Dict[str, Any]:
         """
         Analyze the distribution of numeric variables.
         
@@ -397,19 +410,23 @@ class StatisticalAnalysisService:
             Dictionary with distribution analysis results
         """
         try:
-            numeric_data = data.select_dtypes(include=[np.number])
+            # Select only numeric columns
+            numeric_data = data.select([col for col in data.columns if data[col].dtype in [pl.Float64, pl.Float32, pl.Int64, pl.Int32, pl.Int16, pl.Int8]])
             
-            if numeric_data.empty:
+            if numeric_data.is_empty():
                 return {'error': 'No numeric data found for distribution analysis'}
             
             results = {}
             
             for column in numeric_data.columns:
-                series = numeric_data[column].dropna()
+                series = numeric_data[column].drop_nulls()
                 
                 if len(series) < 3:
                     results[column] = {'error': 'Insufficient data for analysis'}
                     continue
+                
+                # Convert to numpy for statistical operations
+                series_numpy = series.to_numpy()
                 
                 # Descriptive statistics
                 column_results = {
@@ -417,11 +434,11 @@ class StatisticalAnalysisService:
                         'count': int(len(series)),
                         'mean': float(series.mean()),
                         'median': float(series.median()),
-                        'mode': float(series.mode().iloc[0]) if not series.mode().empty else None,
+                        'mode': float(series.mode()[0]) if len(series.mode()) > 0 else None,
                         'std': float(series.std()),
-                        'variance': float(series.var()),
-                        'skewness': float(stats.skew(series)),
-                        'kurtosis': float(stats.kurtosis(series)),
+                        'var': float(series.var()),
+                        'skewness': float(stats.skew(series_numpy)),
+                        'kurtosis': float(stats.kurtosis(series_numpy)),
                         'min': float(series.min()),
                         'max': float(series.max()),
                         'range': float(series.max() - series.min()),
@@ -435,7 +452,7 @@ class StatisticalAnalysisService:
                 try:
                     # Shapiro-Wilk test (good for small samples)
                     if len(series) <= 5000:
-                        shapiro_stat, shapiro_p = stats.shapiro(series)
+                        shapiro_stat, shapiro_p = stats.shapiro(series_numpy)
                         column_results['normality_tests'] = {
                             'shapiro_wilk': {
                                 'statistic': float(shapiro_stat),
@@ -445,7 +462,7 @@ class StatisticalAnalysisService:
                         }
                     
                     # Kolmogorov-Smirnov test against normal distribution
-                    ks_stat, ks_p = stats.kstest(stats.zscore(series), 'norm')
+                    ks_stat, ks_p = stats.kstest(stats.zscore(series_numpy), 'norm')
                     if 'normality_tests' not in column_results:
                         column_results['normality_tests'] = {}
                     column_results['normality_tests']['kolmogorov_smirnov'] = {
@@ -464,7 +481,8 @@ class StatisticalAnalysisService:
                 lower_bound = Q1 - 1.5 * IQR
                 upper_bound = Q3 + 1.5 * IQR
                 
-                outliers = series[(series < lower_bound) | (series > upper_bound)]
+                # Filter outliers using boolean mask
+                outliers = series.filter((series < lower_bound) | (series > upper_bound))
                 
                 column_results['outlier_analysis'] = {
                     'outlier_count': int(len(outliers)),
@@ -481,7 +499,7 @@ class StatisticalAnalysisService:
             logger.error(f"Error in distribution analysis: {e}")
             raise AnalyticsError(f"Distribution analysis failed: {str(e)}")
     
-    def perform_hypothesis_testing(self, data1: pd.Series, data2: pd.Series, test_type: str = 'ttest') -> Dict[str, Any]:
+    def perform_hypothesis_testing(self, data1: pl.Series, data2: pl.Series, test_type: str = 'ttest') -> Dict[str, Any]:
         """
         Perform hypothesis testing between two groups.
         
@@ -494,8 +512,8 @@ class StatisticalAnalysisService:
             Dictionary with test results
         """
         try:
-            clean_data1 = data1.dropna()
-            clean_data2 = data2.dropna()
+            clean_data1 = data1.drop_nulls().to_numpy()
+            clean_data2 = data2.drop_nulls().to_numpy()
             
             if len(clean_data1) < 3 or len(clean_data2) < 3:
                 return {'error': 'Insufficient data for hypothesis testing (minimum 3 observations per group)'}
@@ -504,10 +522,10 @@ class StatisticalAnalysisService:
                 'test_type': test_type,
                 'group1_size': len(clean_data1),
                 'group2_size': len(clean_data2),
-                'group1_mean': float(clean_data1.mean()),
-                'group2_mean': float(clean_data2.mean()),
-                'group1_std': float(clean_data1.std()),
-                'group2_std': float(clean_data2.std())
+                'group1_mean': float(np.mean(clean_data1)),
+                'group2_mean': float(np.mean(clean_data2)),
+                'group1_std': float(np.std(clean_data1)),
+                'group2_std': float(np.std(clean_data2))
             }
             
             if test_type == 'ttest':
@@ -549,7 +567,7 @@ class StatisticalAnalysisService:
             logger.error(f"Error in hypothesis testing: {e}")
             raise AnalyticsError(f"Hypothesis testing failed: {str(e)}")
     
-    def calculate_performance_attribution(self, performance_data: pd.DataFrame, factor_columns: List[str], return_column: str) -> Dict[str, Any]:
+    def calculate_performance_attribution(self, performance_data: pl.DataFrame, factor_columns: List[str], return_column: str) -> Dict[str, Any]:
         """
         Calculate performance attribution using factor analysis.
         
@@ -563,13 +581,13 @@ class StatisticalAnalysisService:
         """
         try:
             # Clean data
-            analysis_data = performance_data[[return_column] + factor_columns].dropna()
+            analysis_data = performance_data.select([return_column] + factor_columns).drop_nulls()
             
             if len(analysis_data) < 10:
                 return {'error': 'Insufficient data for performance attribution analysis'}
             
-            X = analysis_data[factor_columns]
-            y = analysis_data[return_column]
+            X = analysis_data.select(factor_columns).to_pandas()  # Convert for sklearn
+            y = analysis_data[return_column].to_pandas()  # Convert for sklearn
             
             # Perform regression
             model = LinearRegression()

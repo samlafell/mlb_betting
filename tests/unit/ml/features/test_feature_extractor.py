@@ -10,7 +10,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List
-import pandas as pd
+import polars as pl
 import numpy as np
 
 from src.ml.features.feature_extractor import (
@@ -403,7 +403,7 @@ class TestFeatureExtractor:
             """Test successful conversion of features to DataFrame"""
             df = feature_extractor.to_dataframe(sample_game_features)
             
-            assert isinstance(df, pd.DataFrame)
+            assert isinstance(df, pl.DataFrame)
             assert len(df) == 2
             assert "game_id" in df.columns
             assert "home_team" in df.columns
@@ -413,7 +413,7 @@ class TestFeatureExtractor:
             """Test DataFrame conversion with empty features list"""
             df = feature_extractor.to_dataframe([])
             
-            assert isinstance(df, pd.DataFrame)
+            assert isinstance(df, pl.DataFrame)
             assert len(df) == 0
 
         def test_to_dataframe_datetime_conversion(self, feature_extractor, sample_game_features):
@@ -421,9 +421,9 @@ class TestFeatureExtractor:
             df = feature_extractor.to_dataframe(sample_game_features)
             
             assert "game_date" in df.columns
-            assert pd.api.types.is_numeric_dtype(df["game_date"])
+            assert df["game_date"].dtype in [pl.Float64, pl.Float32, pl.Int64, pl.Int32]
             assert "extraction_timestamp" in df.columns
-            assert pd.api.types.is_numeric_dtype(df["extraction_timestamp"])
+            assert df["extraction_timestamp"].dtype in [pl.Float64, pl.Float32, pl.Int64, pl.Int32]
 
         def test_to_dataframe_sorting(self, feature_extractor):
             """Test DataFrame is sorted by game_date"""
@@ -468,7 +468,7 @@ class TestFeatureExtractor:
             df = feature_extractor.to_dataframe(large_features)
             
             assert len(df) == 1000
-            assert isinstance(df, pd.DataFrame)
+            assert isinstance(df, pl.DataFrame)
             
             # Clean up memory
             del df
@@ -497,7 +497,7 @@ class TestFeatureExtractor:
                 
                 mock_extractor = MagicMock()
                 mock_extractor.extract_features_for_date_range = AsyncMock(return_value=mock_features)
-                mock_extractor.to_dataframe = MagicMock(return_value=pd.DataFrame())
+                mock_extractor.to_dataframe = MagicMock(return_value=pl.DataFrame())
                 mock_extractor_class.return_value = mock_extractor
                 
                 result = await extract_features_for_training(start_date, end_date)
@@ -520,7 +520,7 @@ class TestFeatureExtractor:
                 
                 mock_extractor = MagicMock()
                 mock_extractor.extract_features_for_date_range = AsyncMock(return_value=[])
-                mock_extractor.to_dataframe = MagicMock(return_value=pd.DataFrame())
+                mock_extractor.to_dataframe = MagicMock(return_value=pl.DataFrame())
                 mock_extractor_class.return_value = mock_extractor
                 
                 result = await extract_features_for_training(
@@ -624,8 +624,8 @@ class TestFeatureExtractor:
             assert len(df) == 100
             
             # Check data types are appropriate for memory efficiency
-            assert pd.api.types.is_numeric_dtype(df["total_over_target"])
-            assert pd.api.types.is_integer_dtype(df["home_team_wins_l10"])
+            assert df["total_over_target"].dtype in [pl.Float64, pl.Float32, pl.Int64, pl.Int32]
+            assert df["home_team_wins_l10"].dtype in [pl.Int64, pl.Int32, pl.Int16, pl.Int8]
             
             # Clean up
             del df

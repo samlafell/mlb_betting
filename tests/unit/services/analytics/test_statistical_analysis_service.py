@@ -12,7 +12,7 @@ Tests all statistical analysis functionality including:
 """
 
 import pytest
-import pandas as pd
+import polars as pl
 import numpy as np
 from unittest.mock import Mock, patch, MagicMock
 from typing import Dict, Any, List
@@ -39,7 +39,7 @@ class TestStatisticalAnalysisService:
         np.random.seed(42)  # For reproducible results
         n = 100
         
-        return pd.DataFrame({
+        return pl.DataFrame({
             'feature1': np.random.normal(50, 10, n),
             'feature2': np.random.normal(100, 15, n),
             'feature3': np.random.uniform(0, 1, n),
@@ -62,7 +62,7 @@ class TestStatisticalAnalysisService:
         x3 = -0.7 * x1 + 0.3 * np.random.normal(0, 1, n)  # Strong negative correlation
         x4 = np.random.normal(0, 1, n)  # Independent
         
-        return pd.DataFrame({
+        return pl.DataFrame({
             'var1': x1,
             'var2': x2,
             'var3': x3,
@@ -72,7 +72,7 @@ class TestStatisticalAnalysisService:
     @pytest.fixture
     def small_dataset(self):
         """Small dataset for edge case testing"""
-        return pd.DataFrame({
+        return pl.DataFrame({
             'x': [1, 2, 3, 4, 5],
             'y': [2, 4, 6, 8, 10],
             'z': [1, 1, 1, 1, 1]  # Constant values
@@ -148,7 +148,7 @@ class TestStatisticalAnalysisService:
 
     def test_analyze_correlations_empty_data(self, service):
         """Test correlation analysis with empty data"""
-        empty_data = pd.DataFrame({'col1': [], 'col2': []})
+        empty_data = pl.DataFrame({'col1': [], 'col2': []})
         result = service.analyze_correlations(empty_data)
         
         assert 'error' in result
@@ -156,7 +156,7 @@ class TestStatisticalAnalysisService:
 
     def test_analyze_correlations_non_numeric_data(self, service):
         """Test correlation analysis with non-numeric data"""
-        text_data = pd.DataFrame({
+        text_data = pl.DataFrame({
             'text1': ['a', 'b', 'c'],
             'text2': ['x', 'y', 'z']
         })
@@ -168,7 +168,7 @@ class TestStatisticalAnalysisService:
     def test_find_strongest_correlation(self, service):
         """Test finding strongest correlations"""
         # Create test correlation matrix
-        corr_matrix = pd.DataFrame({
+        corr_matrix = pl.DataFrame({
             'A': [1.0, 0.8, -0.6],
             'B': [0.8, 1.0, -0.4],
             'C': [-0.6, -0.4, 1.0]
@@ -261,7 +261,7 @@ class TestStatisticalAnalysisService:
 
     def test_perform_regression_analysis_insufficient_data(self, service):
         """Test regression with insufficient data"""
-        tiny_data = pd.DataFrame({
+        tiny_data = pl.DataFrame({
             'x': [1, 2, 3],  # Only 3 observations
             'y': [1, 2, 3]
         })
@@ -278,7 +278,7 @@ class TestStatisticalAnalysisService:
     def test_perform_linear_regression_validation(self, service, sample_data):
         """Test linear regression with train/test split validation"""
         # Ensure we have enough data for proper train/test split
-        large_data = pd.concat([sample_data] * 3, ignore_index=True)  # 300 rows
+        large_data = pl.concat([sample_data] * 3)  # 300 rows
         
         X = large_data[['feature1', 'feature2', 'feature3']]
         y = large_data['target_continuous']
@@ -339,7 +339,7 @@ class TestStatisticalAnalysisService:
     def test_calculate_confidence_intervals_normal_sample(self, service):
         """Test confidence intervals for normal-sized sample"""
         # Large sample (>30) - should use normal distribution
-        large_sample = pd.Series(np.random.normal(50, 10, 100))
+        large_sample = pl.Series(np.random.normal(50, 10, 100))
         
         result = service.calculate_confidence_intervals(large_sample, confidence_level=0.95)
         
@@ -360,7 +360,7 @@ class TestStatisticalAnalysisService:
     def test_calculate_confidence_intervals_small_sample(self, service):
         """Test confidence intervals for small sample"""
         # Small sample (<30) - should use t-distribution
-        small_sample = pd.Series([45, 50, 55, 60, 65])
+        small_sample = pl.Series([45, 50, 55, 60, 65])
         
         result = service.calculate_confidence_intervals(small_sample, confidence_level=0.95)
         
@@ -370,7 +370,7 @@ class TestStatisticalAnalysisService:
 
     def test_calculate_confidence_intervals_insufficient_data(self, service):
         """Test confidence intervals with insufficient data"""
-        insufficient_data = pd.Series([50])  # Only 1 observation
+        insufficient_data = pl.Series([50])  # Only 1 observation
         
         result = service.calculate_confidence_intervals(insufficient_data)
         
@@ -379,7 +379,7 @@ class TestStatisticalAnalysisService:
 
     def test_calculate_confidence_intervals_with_missing(self, service):
         """Test confidence intervals with missing values"""
-        data_with_nan = pd.Series([45, 50, np.nan, 60, 65, np.nan, 70])
+        data_with_nan = pl.Series([45, 50, np.nan, 60, 65, np.nan, 70])
         
         result = service.calculate_confidence_intervals(data_with_nan)
         
@@ -389,7 +389,7 @@ class TestStatisticalAnalysisService:
 
     def test_calculate_confidence_intervals_different_levels(self, service):
         """Test different confidence levels"""
-        sample = pd.Series(np.random.normal(50, 10, 50))
+        sample = pl.Series(np.random.normal(50, 10, 50))
         
         ci_90 = service.calculate_confidence_intervals(sample, confidence_level=0.90)
         ci_95 = service.calculate_confidence_intervals(sample, confidence_level=0.95)
@@ -473,7 +473,7 @@ class TestStatisticalAnalysisService:
 
     def test_analyze_distributions_no_numeric_data(self, service):
         """Test distribution analysis with no numeric data"""
-        text_data = pd.DataFrame({
+        text_data = pl.DataFrame({
             'text1': ['a', 'b', 'c'],
             'text2': ['x', 'y', 'z']
         })
@@ -485,7 +485,7 @@ class TestStatisticalAnalysisService:
 
     def test_analyze_distributions_insufficient_data(self, service):
         """Test distribution analysis with insufficient data per column"""
-        sparse_data = pd.DataFrame({
+        sparse_data = pl.DataFrame({
             'col1': [1, 2],  # Only 2 observations
             'col2': [3, 4]
         })
@@ -501,8 +501,8 @@ class TestStatisticalAnalysisService:
     def test_perform_hypothesis_testing_ttest(self, service):
         """Test independent t-test hypothesis testing"""
         # Create two groups with different means
-        group1 = pd.Series(np.random.normal(50, 10, 30))
-        group2 = pd.Series(np.random.normal(60, 10, 30))  # Higher mean
+        group1 = pl.Series(np.random.normal(50, 10, 30))
+        group2 = pl.Series(np.random.normal(60, 10, 30))  # Higher mean
         
         result = service.perform_hypothesis_testing(group1, group2, test_type='ttest')
         
@@ -519,8 +519,8 @@ class TestStatisticalAnalysisService:
     def test_perform_hypothesis_testing_mannwhitney(self, service):
         """Test Mann-Whitney U test"""
         # Create two groups with different distributions
-        group1 = pd.Series(np.random.exponential(2, 30))
-        group2 = pd.Series(np.random.exponential(3, 30))
+        group1 = pl.Series(np.random.exponential(2, 30))
+        group2 = pl.Series(np.random.exponential(3, 30))
         
         result = service.perform_hypothesis_testing(group1, group2, test_type='mannwhitney')
         
@@ -533,8 +533,8 @@ class TestStatisticalAnalysisService:
     def test_perform_hypothesis_testing_kstest(self, service):
         """Test Kolmogorov-Smirnov test"""
         # Create two samples from different distributions
-        group1 = pd.Series(np.random.normal(0, 1, 50))
-        group2 = pd.Series(np.random.uniform(-2, 2, 50))
+        group1 = pl.Series(np.random.normal(0, 1, 50))
+        group2 = pl.Series(np.random.uniform(-2, 2, 50))
         
         result = service.perform_hypothesis_testing(group1, group2, test_type='kstest')
         
@@ -546,8 +546,8 @@ class TestStatisticalAnalysisService:
 
     def test_perform_hypothesis_testing_insufficient_data(self, service):
         """Test hypothesis testing with insufficient data"""
-        group1 = pd.Series([1, 2])  # Only 2 observations
-        group2 = pd.Series([3, 4])  # Only 2 observations
+        group1 = pl.Series([1, 2])  # Only 2 observations
+        group2 = pl.Series([3, 4])  # Only 2 observations
         
         result = service.perform_hypothesis_testing(group1, group2)
         
@@ -556,8 +556,8 @@ class TestStatisticalAnalysisService:
 
     def test_perform_hypothesis_testing_with_missing(self, service):
         """Test hypothesis testing with missing values"""
-        group1 = pd.Series([1, 2, np.nan, 4, 5, np.nan, 7])
-        group2 = pd.Series([8, np.nan, 10, 11, 12, np.nan, 14])
+        group1 = pl.Series([1, 2, np.nan, 4, 5, np.nan, 7])
+        group2 = pl.Series([8, np.nan, 10, 11, 12, np.nan, 14])
         
         result = service.perform_hypothesis_testing(group1, group2)
         
@@ -583,7 +583,7 @@ class TestStatisticalAnalysisService:
         # Create performance with known factor loadings
         performance = 0.01 + 0.8 * factor1 + 0.3 * factor2 + 0.1 * factor3 + np.random.normal(0, 0.01, n)
         
-        data = pd.DataFrame({
+        data = pl.DataFrame({
             'returns': performance,
             'market_factor': factor1,
             'size_factor': factor2,
@@ -615,7 +615,7 @@ class TestStatisticalAnalysisService:
     def test_calculate_performance_attribution_summary(self, service):
         """Test attribution summary statistics"""
         # Simple test data
-        data = pd.DataFrame({
+        data = pl.DataFrame({
             'returns': [0.01, 0.02, -0.01, 0.03, 0.00],
             'factor1': [0.02, 0.01, -0.02, 0.04, 0.01],
             'factor2': [0.00, 0.01, 0.01, -0.01, 0.02]
@@ -638,7 +638,7 @@ class TestStatisticalAnalysisService:
 
     def test_calculate_performance_attribution_insufficient_data(self, service):
         """Test performance attribution with insufficient data"""
-        small_data = pd.DataFrame({
+        small_data = pl.DataFrame({
             'returns': [0.01, 0.02],  # Only 2 observations
             'factor1': [0.01, 0.02]
         })
@@ -655,7 +655,7 @@ class TestStatisticalAnalysisService:
     def test_calculate_performance_attribution_zero_returns(self, service):
         """Test attribution with zero total returns"""
         # Need at least 10 rows for the service to work
-        data = pd.DataFrame({
+        data = pl.DataFrame({
             'returns': [0.01, -0.01, 0.0, 0.0, 0.0] * 2 + [0.0] * 5,  # Net zero returns, 15 rows
             'factor1': [0.02, 0.01, -0.02, 0.04, 0.01] * 2 + [0.0] * 5
         })
@@ -678,7 +678,7 @@ class TestStatisticalAnalysisService:
         """Test error handling in correlation analysis"""
         with patch('pandas.DataFrame.corr', side_effect=Exception("Test error")):
             with pytest.raises(AnalyticsError):
-                service.analyze_correlations(pd.DataFrame({'a': [1, 2, 3], 'b': [4, 5, 6]}))
+                service.analyze_correlations(pl.DataFrame({'a': [1, 2, 3], 'b': [4, 5, 6]}))
 
     def test_regression_analysis_error_handling(self, service, sample_data):
         """Test error handling in regression analysis"""
@@ -694,7 +694,7 @@ class TestStatisticalAnalysisService:
         """Test error handling in confidence interval calculation"""
         # Test with invalid data that causes scipy stats error
         with patch('scipy.stats.sem', side_effect=Exception("Test error")):
-            result = service.calculate_confidence_intervals(pd.Series([1, 2, 3]))
+            result = service.calculate_confidence_intervals(pl.Series([1, 2, 3]))
             assert 'error' in result
 
     def test_distribution_analysis_error_handling(self, service, sample_data):
@@ -708,13 +708,13 @@ class TestStatisticalAnalysisService:
         with patch('scipy.stats.ttest_ind', side_effect=Exception("Test error")):
             with pytest.raises(AnalyticsError):
                 service.perform_hypothesis_testing(
-                    pd.Series([1, 2, 3, 4, 5]),
-                    pd.Series([6, 7, 8, 9, 10])
+                    pl.Series([1, 2, 3, 4, 5]),
+                    pl.Series([6, 7, 8, 9, 10])
                 )
 
     def test_performance_attribution_error_handling(self, service):
         """Test error handling in performance attribution"""
-        data = pd.DataFrame({
+        data = pl.DataFrame({
             'returns': [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10],
             'factor1': [0.02, 0.01, -0.02, 0.04, 0.01, 0.03, -0.01, 0.02, 0.00, 0.01]
         })
@@ -732,7 +732,7 @@ class TestStatisticalAnalysisService:
     def test_constant_values_handling(self, service):
         """Test handling of constant values"""
         # Data with constant column
-        constant_data = pd.DataFrame({
+        constant_data = pl.DataFrame({
             'constant': [5] * 20,
             'variable': list(range(20))
         })
@@ -749,7 +749,7 @@ class TestStatisticalAnalysisService:
 
     def test_single_unique_value_regression(self, service):
         """Test regression with target having single unique value"""
-        single_value_data = pd.DataFrame({
+        single_value_data = pl.DataFrame({
             'x1': [1, 2, 3, 4, 5] * 4,  # 20 rows
             'x2': [2, 4, 6, 8, 10] * 4,
             'y': [5] * 20  # All same value
@@ -768,7 +768,7 @@ class TestStatisticalAnalysisService:
 
     def test_perfect_correlation_handling(self, service):
         """Test handling of perfect correlations"""
-        perfect_corr_data = pd.DataFrame({
+        perfect_corr_data = pl.DataFrame({
             'x': [1, 2, 3, 4, 5],
             'y': [2, 4, 6, 8, 10],  # y = 2*x (perfect correlation)
             'z': [10, 20, 30, 40, 50]  # z = 10*x (perfect correlation)
@@ -783,7 +783,7 @@ class TestStatisticalAnalysisService:
 
     def test_missing_values_comprehensive(self, service):
         """Test comprehensive handling of missing values"""
-        missing_data = pd.DataFrame({
+        missing_data = pl.DataFrame({
             'mostly_missing': [1, np.nan, np.nan, np.nan, np.nan] * 10,  # 80% missing
             'some_missing': [1, 2, np.nan, 4, 5] * 10,  # 20% missing
             'no_missing': list(range(50))  # No missing
@@ -808,7 +808,7 @@ class TestStatisticalAnalysisService:
 
     def test_extreme_values_handling(self, service):
         """Test handling of extreme values and outliers"""
-        extreme_data = pd.DataFrame({
+        extreme_data = pl.DataFrame({
             'normal': np.random.normal(0, 1, 100),
             'with_outliers': list(np.random.normal(0, 1, 98)) + [100, -100]  # Extreme outliers
         })
@@ -822,8 +822,8 @@ class TestStatisticalAnalysisService:
 
     def test_small_sample_statistical_tests(self, service):
         """Test statistical tests with very small samples"""
-        tiny_sample1 = pd.Series([1, 2, 3])
-        tiny_sample2 = pd.Series([4, 5, 6])
+        tiny_sample1 = pl.Series([1, 2, 3])
+        tiny_sample2 = pl.Series([4, 5, 6])
         
         # Hypothesis testing should work with minimum viable samples
         result = service.perform_hypothesis_testing(tiny_sample1, tiny_sample2)
@@ -861,7 +861,7 @@ class TestStatisticalAnalysisService:
         np.random.seed(42)
         n = 1000
         
-        large_data = pd.DataFrame({
+        large_data = pl.DataFrame({
             'target': np.random.normal(50, 10, n),
             'feature1': np.random.normal(0, 1, n),
             'feature2': np.random.normal(0, 1, n),

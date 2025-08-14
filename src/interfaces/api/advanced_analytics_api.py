@@ -21,7 +21,7 @@ import io
 from statistics import mean, stdev, median
 from scipy import stats
 import numpy as np
-import pandas as pd
+import polars as pl
 
 from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel, Field
@@ -339,7 +339,7 @@ async def perform_statistical_analysis(
                 )
             
             # Convert to DataFrame for analysis
-            df = pd.DataFrame([dict(row) for row in results])
+            df = pl.DataFrame([dict(row) for row in results])
             
             analysis_result = StatisticalAnalysis(
                 analysis_type=analysis_type,
@@ -560,7 +560,7 @@ async def get_performance_attribution(
 
 
 # Statistical analysis helper functions
-async def _perform_correlation_analysis(df: pd.DataFrame) -> Dict[str, float]:
+async def _perform_correlation_analysis(df: pl.DataFrame) -> Dict[str, float]:
     """Perform correlation analysis on the dataset."""
     try:
         correlation_results = stats_service.analyze_correlations(df)
@@ -583,7 +583,7 @@ async def _perform_correlation_analysis(df: pd.DataFrame) -> Dict[str, float]:
         return {}
 
 
-async def _perform_regression_analysis(df: pd.DataFrame) -> Dict[str, Any]:
+async def _perform_regression_analysis(df: pl.DataFrame) -> Dict[str, Any]:
     """Perform regression analysis."""
     try:
         # Try to perform regression if we have suitable columns
@@ -606,7 +606,7 @@ async def _perform_regression_analysis(df: pd.DataFrame) -> Dict[str, Any]:
     return {}
 
 
-async def _perform_distribution_analysis(df: pd.DataFrame) -> Dict[str, Any]:
+async def _perform_distribution_analysis(df: pl.DataFrame) -> Dict[str, Any]:
     """Perform distribution analysis."""
     try:
         distribution_results = stats_service.analyze_distributions(df)
@@ -617,7 +617,7 @@ async def _perform_distribution_analysis(df: pd.DataFrame) -> Dict[str, Any]:
         return {}
 
 
-async def _perform_performance_analysis(df: pd.DataFrame) -> Dict[str, Any]:
+async def _perform_performance_analysis(df: pl.DataFrame) -> Dict[str, Any]:
     """Perform performance analysis."""
     performance_data = {}
     
@@ -634,7 +634,7 @@ async def _perform_performance_analysis(df: pd.DataFrame) -> Dict[str, Any]:
     return performance_data
 
 
-async def _calculate_confidence_intervals(df: pd.DataFrame) -> Dict[str, Dict[str, float]]:
+async def _calculate_confidence_intervals(df: pl.DataFrame) -> Dict[str, Dict[str, float]]:
     """Calculate confidence intervals for key metrics."""
     confidence_intervals = {}
     
@@ -923,13 +923,14 @@ async def export_analytics_data(
                 # For Excel format, we'll return CSV with Excel-friendly formatting
                 output = io.StringIO()
                 if export_data and isinstance(export_data, list) and len(export_data) > 0:
-                    df = pd.DataFrame(export_data)
+                    df = pl.DataFrame(export_data)
                     # Format datetime columns
                     for col in df.columns:
-                        if df[col].dtype == 'datetime64[ns]' or 'timestamp' in col.lower():
-                            df[col] = pd.to_datetime(df[col]).dt.strftime('%Y-%m-%d %H:%M:%S')
+                        if df[col].dtype in [pl.Datetime, pl.Date] or 'timestamp' in col.lower():
+                            df = df.with_columns(pl.col(col).dt.strftime('%Y-%m-%d %H:%M:%S'))
                     
-                    df.to_csv(output, index=False, encoding='utf-8-sig')  # BOM for Excel
+                    # Convert to pandas for CSV export (polars doesn't support encoding parameter)
+                    df.to_pandas().to_csv(output, index=False, encoding='utf-8-sig')  # BOM for Excel
                 
                 return {
                     "content_type": "application/vnd.ms-excel",
