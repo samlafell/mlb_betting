@@ -25,7 +25,7 @@ import warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
 
 import numpy as np
-import pandas as pd
+import polars as pl
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import IsolationForest
@@ -36,7 +36,7 @@ from scipy.signal import find_peaks
 import joblib
 
 from src.analysis.models.unified_models import UnifiedBettingSignal, SignalType
-from src.core.logging import get_logger
+from src.core.logging import get_logger, LogComponent
 
 
 class PatternType(str, Enum):
@@ -108,7 +108,7 @@ class MLPatternRecognition:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the pattern recognition system"""
         self.config = config or {}
-        self.logger = get_logger(__name__)
+        self.logger = get_logger("ml.pattern_recognition", LogComponent.ANALYSIS)
         
         # ML models (will be trained/loaded)
         self.anomaly_detector = None
@@ -136,8 +136,8 @@ class MLPatternRecognition:
         self.pattern_history = []
         self.performance_tracking = {}
         
-        self.logger.info("MLPatternRecognition initialized with config: %s", 
-                        {k: v for k, v in self.config.items() if k != 'feature_weights'})
+        config_summary = {k: v for k, v in self.config.items() if k != 'feature_weights'}
+        self.logger.info(f"MLPatternRecognition initialized with config: {config_summary}")
     
     async def detect_patterns(self, 
                             signals: List[UnifiedBettingSignal],
@@ -419,7 +419,7 @@ class MLPatternRecognition:
     async def _detect_temporal_patterns(self, 
                                       signals: List[UnifiedBettingSignal],
                                       game_id: str) -> List[DetectedPattern]:
-        """Detect time-based patterns in signal sequence"""
+        """Detect time-based patterns in signal sequence using Polars for efficient time series analysis"""
         try:
             if len(signals) < 3:
                 return []
@@ -429,10 +429,20 @@ class MLPatternRecognition:
             
             patterns = []
             
-            # Extract time series of key metrics
-            time_points = [s.minutes_to_game for s in sorted_signals]
-            confidence_series = [s.confidence_score for s in sorted_signals]
-            strength_series = [s.signal_strength for s in sorted_signals]
+            # Create Polars DataFrame for efficient time series operations
+            signal_data = {
+                'time_to_game': [s.minutes_to_game for s in sorted_signals],
+                'confidence': [s.confidence_score for s in sorted_signals],
+                'strength': [s.signal_strength for s in sorted_signals],
+                'signal_id': [s.signal_id for s in sorted_signals]
+            }
+            
+            df = pl.DataFrame(signal_data)
+            
+            # Extract time series using Polars expressions for better performance
+            time_points = df.select(pl.col('time_to_game')).to_numpy().flatten()
+            confidence_series = df.select(pl.col('confidence')).to_numpy().flatten() 
+            strength_series = df.select(pl.col('strength')).to_numpy().flatten()
             
             # 1. Detect momentum patterns
             momentum_patterns = self._detect_momentum_patterns(
@@ -625,15 +635,28 @@ class MLPatternRecognition:
                                 strength_series: List[float],
                                 signals: List[UnifiedBettingSignal],
                                 game_id: str) -> List[DetectedPattern]:
-        """Detect momentum patterns in time series"""
+        """Detect momentum patterns in time series using Polars for efficient calculations"""
         patterns = []
         
         if len(confidence_series) < 3:
             return patterns
         
-        # Calculate momentum (rate of change)
-        conf_momentum = np.diff(confidence_series)
-        strength_momentum = np.diff(strength_series)
+        # Create Polars DataFrame for efficient time series calculations
+        momentum_df = pl.DataFrame({
+            'time_points': time_points,
+            'confidence': confidence_series,
+            'strength': strength_series
+        })
+        
+        # Calculate momentum using Polars diff() for better memory efficiency
+        momentum_data = momentum_df.with_columns([
+            pl.col('confidence').diff().alias('conf_momentum'),
+            pl.col('strength').diff().alias('strength_momentum')
+        ])
+        
+        # Extract momentum arrays (skip first NaN value from diff)
+        conf_momentum = momentum_data.select(pl.col('conf_momentum')).to_numpy().flatten()[1:]
+        strength_momentum = momentum_data.select(pl.col('strength_momentum')).to_numpy().flatten()[1:]
         
         # Detect sustained momentum (3+ consecutive increases)
         for i in range(len(conf_momentum) - 2):
@@ -670,16 +693,25 @@ class MLPatternRecognition:
                                 strength_series: List[float],
                                 signals: List[UnifiedBettingSignal],
                                 game_id: str) -> List[DetectedPattern]:
-        """Detect reversal patterns in time series"""
+        """Detect reversal patterns in time series using Polars rolling windows"""
         patterns = []
         
         if len(confidence_series) < 4:
             return patterns
         
+        # Create Polars DataFrame for efficient window operations
+        reversal_df = pl.DataFrame({
+            'time_points': time_points,
+            'confidence': confidence_series,
+            'strength': strength_series
+        })
+        
+        # Use Polars rolling operations for pattern detection
         # Look for V-shaped or inverted V-shaped patterns
         for i in range(1, len(confidence_series) - 2):
-            # Get 4-point window
-            window = confidence_series[i-1:i+3]
+            # Get 4-point window using Polars slice for memory efficiency
+            window_slice = reversal_df.slice(i-1, 4)
+            window = window_slice.select(pl.col('confidence')).to_numpy().flatten()
             
             # Check for V-pattern (down then up)
             if (window[0] > window[1] and window[1] < window[2] and window[2] < window[3]):
@@ -711,15 +743,28 @@ class MLPatternRecognition:
                                     strength_series: List[float],
                                     signals: List[UnifiedBettingSignal],
                                     game_id: str) -> List[DetectedPattern]:
-        """Detect acceleration patterns (increasing rate of change)"""
+        """Detect acceleration patterns using Polars for efficient derivative calculations"""
         patterns = []
         
         if len(confidence_series) < 4:
             return patterns
         
-        # Calculate first and second derivatives
-        first_diff = np.diff(confidence_series)
-        second_diff = np.diff(first_diff)
+        # Create Polars DataFrame for efficient derivative calculations
+        accel_df = pl.DataFrame({
+            'time_points': time_points,
+            'confidence': confidence_series,
+            'strength': strength_series
+        })
+        
+        # Calculate first and second derivatives using Polars expressions
+        derivatives = accel_df.with_columns([
+            pl.col('confidence').diff().alias('first_diff'),
+            pl.col('confidence').diff().diff().alias('second_diff')
+        ])
+        
+        # Extract derivative arrays for pattern analysis
+        first_diff = derivatives.select(pl.col('first_diff')).to_numpy().flatten()[1:]
+        second_diff = derivatives.select(pl.col('second_diff')).to_numpy().flatten()[2:]  # Skip first 2 NaN values
         
         # Look for acceleration (positive second derivative)
         for i in range(len(second_diff)):

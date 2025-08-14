@@ -16,7 +16,7 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Union, Tuple
 from decimal import Decimal
-import pandas as pd
+import polars as pl
 
 try:
     from feast import FeatureStore, Feature, Entity, FeatureView, Field
@@ -166,10 +166,10 @@ class FeastFeatureStore:
         """
         try:
             # Create entity DataFrame for historical retrieval
-            entity_df = pd.DataFrame({
+            entity_df = pl.DataFrame({
                 "game": game_ids,
                 "event_timestamp": [end_date] * len(game_ids)  # Use end_date as point-in-time
-            })
+            }).to_pandas()  # Convert to pandas for Feast compatibility
             
             # Get feature service or feature views
             feature_refs = await self._get_feature_references(feature_version)
