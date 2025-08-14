@@ -197,13 +197,39 @@ game_outcomes AS (
         NULL::INTEGER as away_score,
         NULL::VARCHAR as game_status,
         NULL::TIMESTAMP as completed_at
-    WHERE FALSE  -- Placeholder query that returns no results
+    WHERE FALSE  -- Placeholder for when no data sources are available
     
-    -- TODO: Add actual outcome source queries here, such as:
-    -- SELECT mlb_stats_api_game_id, 'mlb_stats_api' as outcome_source,
-    --        home_score, away_score, game_status, completed_at
-    -- FROM staging.mlb_game_outcomes
-    -- WHERE mlb_stats_api_game_id IS NOT NULL
+    -- MLB Stats API outcomes (when available)
+    UNION ALL
+    SELECT 
+        mlb_stats_api_game_id, 
+        'mlb_stats_api' as outcome_source,
+        home_score, 
+        away_score, 
+        game_status, 
+        completed_at
+    FROM staging.mlb_game_outcomes
+    WHERE mlb_stats_api_game_id IS NOT NULL
+    AND game_status IN ('completed', 'final')
+    AND EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'staging' AND table_name = 'mlb_game_outcomes'
+    )
+    
+    -- Enhanced games outcomes (fallback)
+    UNION ALL
+    SELECT 
+        mlb_stats_api_game_id,
+        'enhanced_games' as outcome_source,
+        home_score,
+        away_score,
+        game_status,
+        updated_at as completed_at
+    FROM curated.enhanced_games
+    WHERE mlb_stats_api_game_id IS NOT NULL
+    AND game_status IN ('completed', 'final')
+    AND home_score IS NOT NULL
+    AND away_score IS NOT NULL
 )
 
 -- Main view query
