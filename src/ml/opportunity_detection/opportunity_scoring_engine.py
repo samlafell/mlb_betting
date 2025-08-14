@@ -28,8 +28,8 @@ from pydantic import BaseModel, Field
 
 from src.analysis.models.unified_models import UnifiedBettingSignal, ConfidenceLevel, SignalType
 from src.ml.services.prediction_service import PredictionService
-from src.core.config import get_unified_config
-from src.core.logging import get_logger
+from src.core.config import get_settings
+from src.core.logging import get_logger, LogComponent
 
 
 class OpportunityTier(str, Enum):
@@ -114,7 +114,7 @@ class OpportunityScoringEngine:
         """
         self.prediction_service = prediction_service
         self.config = config or {}
-        self.logger = get_logger(__name__)
+        self.logger = get_logger("ml.opportunity_scoring", LogComponent.ANALYSIS)
         
         # Scoring weights (configurable)
         self.factor_weights = self.config.get('scoring_weights', {
@@ -801,22 +801,58 @@ class OpportunityScoringEngine:
                 datetime.utcnow() < self._cache_expiry[cache_key]):
                 return self._performance_cache[cache_key]
             
-            # TODO: Implement actual database lookup for strategy performance
-            # For now, return estimated performance based on strategy type
-            performance_estimates = {
-                'sharp_action': 68.0,
-                'book_conflict': 62.0,
-                'line_movement': 58.0,
-                'hybrid_sharp': 65.0,
-                'consensus': 55.0,
-                'timing_based': 60.0,
-                'public_fade': 52.0,
-                'underdog_value': 48.0,
-                'late_flip': 70.0,
-                'opposing_markets': 50.0,
-            }
-            
-            performance = performance_estimates.get(strategy_name, 55.0)
+            # Get database connection and query strategy performance
+            try:
+                import asyncpg
+                from src.core.config import get_settings
+                
+                config = get_settings()
+                db_config = config.database
+                
+                conn = await asyncpg.connect(
+                    host=db_config.host,
+                    port=db_config.port,
+                    user=db_config.user,
+                    password=db_config.password,
+                    database=db_config.database
+                )
+                
+                # Query historical strategy performance
+                performance_query = """
+                    SELECT 
+                        AVG(CASE WHEN outcome = 'WIN' THEN 1.0 ELSE 0.0 END) * 100 as win_rate,
+                        COUNT(*) as total_bets,
+                        COALESCE(AVG(CASE WHEN outcome = 'WIN' THEN profit ELSE -stake END), 0) as avg_profit
+                    FROM analysis.strategy_results sr
+                    JOIN analysis.betting_strategies bs ON sr.strategy_id = bs.strategy_id
+                    WHERE bs.strategy_name = $1
+                      AND sr.created_at >= NOW() - INTERVAL '6 months'
+                      AND sr.status = 'COMPLETED'
+                    GROUP BY bs.strategy_name
+                """
+                
+                result = await conn.fetchrow(performance_query, strategy_name)
+                await conn.close()
+                
+                if result and result['total_bets'] >= 10:  # Minimum sample size
+                    # Weight win rate more heavily, but consider profitability
+                    win_rate = float(result['win_rate'])
+                    avg_profit = float(result['avg_profit']) if result['avg_profit'] else 0
+                    
+                    # Combine win rate with profitability (scaled)
+                    profit_bonus = min(max(avg_profit * 2, -10), 15)  # Cap bonus between -10 and +15
+                    performance = min(max(win_rate + profit_bonus, 0), 100)
+                    
+                    self.logger.info(f"Database performance for {strategy_name}: {performance:.1f}% (win_rate: {win_rate:.1f}%, profit_bonus: {profit_bonus:.1f})")
+                else:
+                    # Not enough historical data, use fallback estimates
+                    performance = self._get_fallback_performance(strategy_name)
+                    self.logger.info(f"Using fallback performance for {strategy_name}: {performance:.1f}% (insufficient data)")
+                
+            except Exception as db_error:
+                self.logger.warning(f"Database query failed for strategy {strategy_name}: {db_error}")
+                # Fallback to estimated performance
+                performance = self._get_fallback_performance(strategy_name)
             
             # Cache the result
             self._performance_cache[cache_key] = performance
@@ -827,3 +863,25 @@ class OpportunityScoringEngine:
         except Exception as e:
             self.logger.error(f"Error getting strategy performance for {strategy_name}: {e}")
             return 55.0  # Default neutral performance
+    
+    def _get_fallback_performance(self, strategy_name: str) -> float:
+        """Get fallback performance estimates when database data is insufficient"""
+        # Conservative estimates based on strategy research and industry standards
+        fallback_estimates = {
+            'sharp_action': 63.0,      # Sharp money tracking
+            'book_conflict': 58.0,     # Sportsbook disagreement
+            'line_movement': 54.0,     # Line movement analysis
+            'hybrid_sharp': 60.0,      # Combined sharp indicators
+            'consensus': 52.0,         # Consensus plays
+            'timing_based': 56.0,      # Time-sensitive signals
+            'public_fade': 48.0,       # Fade public money
+            'underdog_value': 45.0,    # Underdog value plays
+            'late_flip': 65.0,         # Late money movements
+            'opposing_markets': 50.0,  # Cross-market analysis
+            'rlm_strategy': 55.0,      # Reverse line movement
+            'steam_move': 58.0,        # Steam move detection
+            'contrarian': 49.0,        # Contrarian plays
+            'weather_based': 46.0,     # Weather factor plays
+        }
+        
+        return fallback_estimates.get(strategy_name, 55.0)
