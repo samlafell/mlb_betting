@@ -5,9 +5,8 @@ Data Source Collectors
 This module contains the actual implementations of data collectors for each
 supported source. Collectors are organized by completion status:
 
-🟢 VSIN/SBD Collector (90% complete) - Ready for production testing
-🟢 SportsbookReview Collector (95% complete) - Playwright-based, production ready
-🟡 Sports Book Review (SBR) Collector (40% complete) - Partial implementation
+🟢 VSIN Collector (90% complete) - Ready for production testing
+🟢 SBD Collector (90% complete) - WordPress JSON API, production ready
 🟠 Action Network Collector (25% complete) - Basic structure
 🔴 MLB Stats API Collector (Needs work) - Placeholder
 🔴 Odds API Collector (Needs work) - Placeholder
@@ -245,86 +244,6 @@ class SBDCollector(BaseCollector):
         return normalized
 
 
-class SportsBettingReportCollector(BaseCollector):
-    """
-    Sports Book Review (SBR) Collector (DEPRECATED)
-
-    Status: 🔴 DEPRECATED - Use SBRUnifiedCollector instead
-    This collector is kept for backward compatibility only.
-
-    Use the new SBRUnifiedCollector from sbr_unified_collector.py
-    which provides Playwright-based collection with full functionality.
-    """
-
-    def __init__(self, config: CollectorConfig):
-        super().__init__(config)
-        self.base_url = config.base_url or "https://www.sportsbookreview.com"
-        self.logger.warning(
-            "SportsBettingReportCollector is deprecated. "
-            "Use SBRUnifiedCollector from sbr_unified_collector.py instead."
-        )
-
-    async def collect_data(self, request: CollectionRequest) -> list[dict[str, Any]]:
-        """Collect data from Sports Book Review (SBR)."""
-        self.metrics.status = CollectionStatus.IN_PROGRESS
-        self.logger.info("Starting SBR data collection")
-
-        try:
-            # Placeholder implementation - 40% complete
-            # Real implementation would handle SBR's specific API/scraping needs
-
-            # For now, return sample data
-            records = self._get_sample_sbr_data()
-
-            self.metrics.records_collected = len(records)
-            self.metrics.records_valid = len(records)
-            self.metrics.status = (
-                CollectionStatus.PARTIAL
-            )  # Indicating partial implementation
-            self.metrics.end_time = datetime.now()
-            self.metrics.warnings.append(
-                "Using sample data - full implementation pending"
-            )
-
-            self.logger.warning(
-                "SBR collection using sample data", records=len(records)
-            )
-
-            return [self.normalize_record(r) for r in records]
-
-        except Exception as e:
-            self.metrics.status = CollectionStatus.FAILED
-            self.metrics.errors.append(str(e))
-            self.metrics.end_time = datetime.now()
-            self.logger.error("SBR collection failed", error=str(e))
-            raise
-
-    def _get_sample_sbr_data(self) -> list[dict[str, Any]]:
-        """Generate sample SBR data for testing."""
-        return [
-            {
-                "event": "Sample Event",
-                "date": datetime.now().strftime("%Y-%m-%d"),
-                "consensus": {
-                    "spread": {"line": "-1.5", "home_pct": 58},
-                    "total": {"line": "8.5", "over_pct": 65},
-                },
-                "books": ["draftkings", "fanduel", "betmgm"],
-                "timestamp": datetime.now().isoformat(),
-            }
-        ]
-
-    def validate_record(self, record: dict[str, Any]) -> bool:
-        """Validate SBR record structure."""
-        required_fields = ["event", "timestamp"]
-        return all(field in record for field in required_fields)
-
-    def normalize_record(self, record: dict[str, Any]) -> dict[str, Any]:
-        """Normalize SBR record to standard format."""
-        normalized = record.copy()
-        normalized["source"] = DataSource.SPORTS_BOOK_REVIEW.value
-        normalized["collected_at"] = datetime.now().isoformat()
-        return normalized
 
 
 # Import the consolidated ActionNetworkCollector from consolidated_action_network_collector.py

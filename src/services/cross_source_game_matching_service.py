@@ -131,9 +131,9 @@ class CrossSourceGameMatchingService:
                     for game in games:
                         # Build source mappings
                         source_mappings = {}
-                        if game["sportsbookreview_game_id"]:
-                            source_mappings[DataSource.SPORTS_BOOK_REVIEW] = game[
-                                "sportsbookreview_game_id"
+                        if game["sbd_game_id"]:
+                            source_mappings[DataSource.SBD] = game[
+                                "sbd_game_id"
                             ]
                         if game["action_network_game_id"]:
                             source_mappings[DataSource.ACTION_NETWORK] = str(
@@ -142,7 +142,7 @@ class CrossSourceGameMatchingService:
                         if game["vsin_game_id"]:
                             source_mappings[DataSource.VSIN] = game["vsin_game_id"]
                         if game["sbd_game_id"]:
-                            source_mappings[DataSource.SPORTS_BETTING_DIME] = game[
+                            source_mappings[DataSource.SBD] = game[
                                 "sbd_game_id"
                             ]
 
@@ -240,9 +240,9 @@ class CrossSourceGameMatchingService:
                     # Collect from betting lines tables
                     sources_queries = [
                         (
-                            DataSource.SPORTS_BOOK_REVIEW,
+                            DataSource.SBD,
                             "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'",
-                            "sportsbookreview_game_id",
+                            "sbd_game_id",
                         ),
                         (
                             DataSource.ACTION_NETWORK,
@@ -255,7 +255,7 @@ class CrossSourceGameMatchingService:
                             "vsin_game_id",
                         ),
                         (
-                            DataSource.SPORTS_BETTING_DIME,
+                            DataSource.SBD,
                             "curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'moneyline'",
                             "sbd_game_id",
                         ),
@@ -601,13 +601,13 @@ class CrossSourceGameMatchingService:
                     values = []
 
                     for source, external_id in source_mappings.items():
-                        if source == DataSource.SPORTS_BOOK_REVIEW:
-                            update_fields.append("sportsbookreview_game_id = %s")
+                        if source == DataSource.SBD:
+                            update_fields.append("sbd_game_id = %s")
                         elif source == DataSource.ACTION_NETWORK:
                             update_fields.append("action_network_game_id = %s")
                         elif source == DataSource.VSIN:
                             update_fields.append("vsin_game_id = %s")
-                        elif source == DataSource.SPORTS_BETTING_DIME:
+                        elif source == DataSource.SBD:
                             update_fields.append("sbd_game_id = %s")
                         else:
                             continue
@@ -683,9 +683,9 @@ class CrossSourceGameMatchingService:
                         source = None
                         external_id = None
 
-                        if row["sportsbookreview_game_id"]:
-                            source = DataSource.SPORTS_BOOK_REVIEW
-                            external_id = row["sportsbookreview_game_id"]
+                        if row["sbd_game_id"]:
+                            source = DataSource.SBD
+                            external_id = row["sbd_game_id"]
                         elif row["action_network_game_id"]:
                             source = DataSource.ACTION_NETWORK
                             external_id = str(row["action_network_game_id"])
@@ -693,7 +693,7 @@ class CrossSourceGameMatchingService:
                             source = DataSource.VSIN
                             external_id = row["vsin_game_id"]
                         elif row["sbd_game_id"]:
-                            source = DataSource.SPORTS_BETTING_DIME
+                            source = DataSource.SBD
                             external_id = row["sbd_game_id"]
 
                         unmatched_games.append(

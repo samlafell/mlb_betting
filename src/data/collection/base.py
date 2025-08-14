@@ -28,14 +28,110 @@ from pydantic import BaseModel, Field
 logger = structlog.get_logger(__name__)
 
 
+class HTTPClientMixin:
+    """Mixin providing common HTTP client functionality for collectors."""
+    
+    async def make_request(
+        self, 
+        method: str, 
+        url: str, 
+        headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+        json_data: dict[str, Any] | None = None,
+        timeout: int | None = None
+    ) -> dict[str, Any] | list[Any] | str:
+        """Make HTTP request with standard error handling and retries."""
+        if not self.session:
+            raise RuntimeError("Session not initialized. Call initialize() first.")
+        
+        # Use instance timeout or default
+        request_timeout = timeout or self.config.timeout_seconds
+        
+        # Merge headers
+        request_headers = {**self.config.headers}
+        if headers:
+            request_headers.update(headers)
+        
+        try:
+            async with self.session.request(
+                method=method,
+                url=url,
+                headers=request_headers,
+                params=params,
+                json=json_data,
+                timeout=aiohttp.ClientTimeout(total=request_timeout)
+            ) as response:
+                response.raise_for_status()
+                
+                # Try to parse as JSON first
+                try:
+                    return await response.json()
+                except (aiohttp.ContentTypeError, ValueError):
+                    # Fallback to text for HTML/XML responses
+                    return await response.text()
+                    
+        except Exception as e:
+            self.logger.error(
+                "HTTP request failed",
+                method=method,
+                url=url,
+                error=str(e)
+            )
+            raise
+    
+    async def get_json(self, url: str, **kwargs) -> dict[str, Any] | list[Any]:
+        """Make GET request expecting JSON response."""
+        result = await self.make_request("GET", url, **kwargs)
+        if isinstance(result, str):
+            import json
+            return json.loads(result)
+        return result
+    
+    async def get_html(self, url: str, **kwargs) -> str:
+        """Make GET request expecting HTML response."""
+        result = await self.make_request("GET", url, **kwargs)
+        return result if isinstance(result, str) else str(result)
+
+
+class TeamNormalizationMixin:
+    """Mixin providing common team name normalization."""
+    
+    def normalize_team_name(self, team_name: str) -> str:
+        """Normalize team name using centralized utility."""
+        try:
+            from ...core.team_utils import normalize_team_name
+            return normalize_team_name(team_name)
+        except ImportError:
+            # Fallback normalization
+            return team_name.strip().title()
+
+
+class TimestampMixin:
+    """Mixin providing common timestamp handling."""
+    
+    def get_est_timestamp(self) -> datetime:
+        """Get current timestamp in EST."""
+        try:
+            from ...core.datetime_utils import now_est
+            return now_est()
+        except ImportError:
+            # Fallback to UTC
+            return datetime.now()
+    
+    def add_collection_metadata(self, record: dict[str, Any]) -> dict[str, Any]:
+        """Add standard collection metadata to a record."""
+        record = record.copy()
+        record["source"] = self.source.value
+        record["collected_at_est"] = self.get_est_timestamp().isoformat()
+        return record
+
+
 class DataSource(Enum):
     """Enumeration of supported data sources."""
 
     VSIN = "vsin"
     SBD = "sbd"  # Sports Betting Dime
-    SPORTS_BETTING_DIME = "sports_betting_dime"  # Alternative name for SBD
     ACTION_NETWORK = "action_network"
-    SPORTS_BOOK_REVIEW = "sports_book_review"  # SportsbookReview.com (primary)
     MLB_STATS_API = "mlb_stats_api"
     ODDS_API = "odds_api"
 
@@ -160,12 +256,14 @@ class CollectionRequest:
     additional_params: dict[str, Any] = field(default_factory=dict)
 
 
-class BaseCollector(ABC):
+class BaseCollector(ABC, HTTPClientMixin, TeamNormalizationMixin, TimestampMixin):
     """
     Abstract base class for all data collectors.
 
     Each data source implements this interface to provide consistent
     behavior across different collection systems.
+    
+    Includes common HTTP, team normalization, and timestamp functionality.
     """
 
     def __init__(self, config: CollectorConfig):
@@ -359,7 +457,6 @@ class MockCollector(BaseCollector):
             DataSource.VSIN: self._get_vsin_mock_data,
             DataSource.SBD: self._get_sbd_mock_data,
             DataSource.ACTION_NETWORK: self._get_action_network_mock_data,
-            DataSource.SPORTS_BOOK_REVIEW: self._get_sbr_mock_data,
             DataSource.MLB_STATS_API: self._get_mlb_api_mock_data,
             DataSource.ODDS_API: self._get_odds_api_mock_data,
         }
@@ -477,19 +574,6 @@ class MockCollector(BaseCollector):
             }
         ]
 
-    def _get_sbr_mock_data(self) -> list[dict[str, Any]]:
-        """Generate Sports Book Review (SBR)-style mock data."""
-        return [
-            {
-                "event": "Phillies vs Braves",
-                "date": "2025-01-10",
-                "consensus": {
-                    "spread": {"line": "-1.5", "home_pct": 58},
-                    "total": {"line": "8.5", "over_pct": 65},
-                },
-                "books": ["draftkings", "fanduel", "betmgm"],
-            }
-        ]
 
     def _get_mlb_api_mock_data(self) -> list[dict[str, Any]]:
         """Generate MLB Stats API-style mock data."""
@@ -539,7 +623,6 @@ class CollectorFactory:
         DataSource.VSIN: None,  # Will be implemented
         DataSource.SBD: None,  # Will be implemented
         DataSource.ACTION_NETWORK: None,  # Will be implemented
-        DataSource.SPORTS_BOOK_REVIEW: None,  # Will be implemented - SBRUnifiedCollector
         DataSource.MLB_STATS_API: None,  # Will be implemented
         DataSource.ODDS_API: None,  # Will be implemented
     }
