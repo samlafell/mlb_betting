@@ -569,8 +569,8 @@ class PredictionService:
             "prediction_timestamp": datetime.utcnow(),
             "feature_version": feature_vector.feature_version,
             "feature_cutoff_time": feature_vector.feature_cutoff_time,
-            "confidence_threshold_met": True,  # TODO: Implement threshold logic
-            "risk_level": "medium",  # TODO: Implement risk calculation
+            "confidence_threshold_met": self._check_confidence_threshold(feature_vector, predictions),
+            "risk_level": self._calculate_risk_level(feature_vector, predictions)
         }
 
         # Add predictions based on available models
@@ -609,8 +609,8 @@ class PredictionService:
         if "total_over_probability" in response and response["total_over_probability"]:
             response["betting_recommendations"] = {
                 "total_over": {
-                    "expected_value": 0.0,  # TODO: Calculate EV
-                    "kelly_fraction": 0.0,  # TODO: Implement Kelly Criterion
+                    "expected_value": self._calculate_expected_value(pred_data, feature_vector),
+                    "kelly_fraction": self._calculate_kelly_fraction(pred_data, feature_vector)
                     "recommended_bet_size": 0.0,
                     "confidence_required": 0.6,
                 }
@@ -689,7 +689,7 @@ class PredictionService:
                         await conn.execute(
                             query,
                             game_id,  # game_id
-                            None,  # feature_vector_id (TODO: implement)
+                            feature_vector.id if hasattr(feature_vector, 'id') else None,  # feature_vector_id
                             prediction_data.get("model_name", "unknown"),
                             prediction_data.get("model_version", "1.0"),
                             target_key,  # prediction_target
@@ -1405,6 +1405,99 @@ class PredictionService:
 
         return stats
     
+    def _check_confidence_threshold(self, feature_vector, predictions) -> bool:
+        """Check if predictions meet confidence threshold requirements."""
+        try:
+            min_confidence = 0.6  # Default threshold
+            
+            # Check all prediction confidences
+            for pred_data in predictions.values():
+                if isinstance(pred_data, dict) and "confidence" in pred_data:
+                    if pred_data["confidence"] < min_confidence:
+                        return False
+            
+            return True
+        except Exception:
+            return False
+
+    def _calculate_risk_level(self, feature_vector, predictions) -> str:
+        """Calculate risk level based on feature vector and prediction confidence."""
+        try:
+            # Calculate average confidence across predictions
+            confidences = []
+            for pred_data in predictions.values():
+                if isinstance(pred_data, dict) and "confidence" in pred_data:
+                    confidences.append(pred_data["confidence"])
+            
+            if not confidences:
+                return "high"
+            
+            avg_confidence = sum(confidences) / len(confidences)
+            
+            # Risk levels based on confidence
+            if avg_confidence >= 0.8:
+                return "low"
+            elif avg_confidence >= 0.6:
+                return "medium"
+            else:
+                return "high"
+                
+        except Exception:
+            return "high"
+
+    def _calculate_expected_value(self, pred_data, feature_vector) -> float:
+        """Calculate expected value for betting recommendation."""
+        try:
+            if not isinstance(pred_data, dict) or "probability" not in pred_data:
+                return 0.0
+            
+            probability = pred_data["probability"]
+            confidence = pred_data.get("confidence", 0.5)
+            
+            # Simple EV calculation: (probability * payout) - (1 - probability) * stake
+            # Assuming American odds of +100 for simplicity
+            implied_prob = 0.5  # Market efficiency assumption
+            stake = 1.0
+            payout = 1.0
+            
+            expected_value = (probability * payout) - ((1 - probability) * stake)
+            
+            # Adjust for confidence
+            adjusted_ev = expected_value * confidence
+            
+            return round(adjusted_ev, 4)
+            
+        except Exception:
+            return 0.0
+
+    def _calculate_kelly_fraction(self, pred_data, feature_vector) -> float:
+        """Calculate Kelly Criterion fraction for optimal bet sizing."""
+        try:
+            if not isinstance(pred_data, dict) or "probability" not in pred_data:
+                return 0.0
+            
+            probability = pred_data["probability"]
+            confidence = pred_data.get("confidence", 0.5)
+            
+            # Kelly formula: (bp - q) / b
+            # b = odds received (assuming +100 = 1.0)
+            # p = probability of winning
+            # q = probability of losing (1 - p)
+            
+            b = 1.0  # Even odds
+            p = probability
+            q = 1 - probability
+            
+            kelly_fraction = (b * p - q) / b
+            
+            # Cap Kelly at reasonable levels and adjust for confidence
+            kelly_fraction = max(0, min(kelly_fraction * confidence, 0.25))
+            
+            return round(kelly_fraction, 4)
+            
+        except Exception:
+            return 0.0
+
     async def generate_todays_predictions(
         self, model_name: Optional[str] = None, min_confidence: Optional[float] = None
     ) -> List[Dict[str, Any]]:

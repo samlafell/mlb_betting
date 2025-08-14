@@ -563,7 +563,7 @@ class FeatureDriftDetectionService:
                         # Store results
                         await self.store_drift_results(
                             model,
-                            "latest",  # TODO: Get actual version
+                            self._get_model_version(model),  # Get actual model version
                             drift_results,
                             start_time - timedelta(days=7),
                             start_time,
@@ -622,6 +622,26 @@ class FeatureDriftDetectionService:
         except Exception as e:
             logger.error(f"Error getting active models: {e}")
             return []
+
+    def _get_model_version(self, model_name: str) -> str:
+        """Get the current version of a model."""
+        try:
+            # Try to get version from MLflow if available
+            import mlflow
+            try:
+                client = mlflow.tracking.MlflowClient()
+                versions = client.get_latest_versions(model_name, stages=["Production", "Staging"])
+                if versions:
+                    return versions[0].version
+            except Exception:
+                pass
+            
+            # Fallback to timestamp-based version
+            from datetime import datetime
+            return datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+        except Exception:
+            return "latest"
 
 
 # Global drift detection service instance

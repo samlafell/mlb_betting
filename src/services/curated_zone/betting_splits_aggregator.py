@@ -289,15 +289,82 @@ class BettingSplitsAggregator:
         
         try:
             async with get_connection() as conn:
-                # Query VSIN data (would be from staging.vsin_data if available)
-                # For now, return placeholder structure
-                logger.info("VSIN splits processing - placeholder implementation")
+                # Query VSIN data from staging.vsin_betting_data
+                logger.info("Processing VSIN splits data")
                 
-                # TODO: Implement actual VSIN data processing when available
-                # This would query staging VSIN data and extract:
-                # - DraftKings money vs bet percentages
-                # - Circa sharp action indicators  
-                # - Reverse line movement signals
+                # Check if VSIN staging table exists
+                table_exists = await conn.fetchval("""
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.tables 
+                        WHERE table_schema = 'staging' AND table_name = 'vsin_betting_data'
+                    )
+                """)
+                
+                if not table_exists:
+                    logger.warning("VSIN staging table not available - skipping VSIN processing")
+                    return []
+                
+                # Query VSIN splits data
+                vsin_splits = await conn.fetch("""
+                    SELECT 
+                        external_matchup_id,
+                        mlb_stats_api_game_id,
+                        home_team_normalized,
+                        away_team_normalized,
+                        game_date,
+                        sportsbook_name,
+                        moneyline_home_handle_percent,
+                        moneyline_home_bets_percent,
+                        total_over_handle_percent,
+                        total_over_bets_percent,
+                        runline_home_handle_percent,
+                        runline_home_bets_percent,
+                        moneyline_sharp_side,
+                        total_sharp_side,
+                        runline_sharp_side,
+                        sharp_confidence,
+                        processed_at
+                    FROM staging.vsin_betting_data
+                    WHERE game_date >= CURRENT_DATE - INTERVAL '7 days'
+                    AND validation_status = 'valid'
+                    ORDER BY game_date DESC, processed_at DESC
+                """)
+                
+                # Process VSIN splits into standardized format
+                processed_splits = []
+                for row in vsin_splits:
+                    split_data = {
+                        "source": "vsin",
+                        "external_game_id": row["external_matchup_id"],
+                        "mlb_stats_api_game_id": row["mlb_stats_api_game_id"],
+                        "home_team": row["home_team_normalized"],
+                        "away_team": row["away_team_normalized"],
+                        "game_date": row["game_date"],
+                        "sportsbook": row["sportsbook_name"],
+                        "splits": {
+                            "moneyline": {
+                                "home_handle_pct": row["moneyline_home_handle_percent"],
+                                "home_bets_pct": row["moneyline_home_bets_percent"],
+                                "sharp_side": row["moneyline_sharp_side"]
+                            },
+                            "total": {
+                                "over_handle_pct": row["total_over_handle_percent"], 
+                                "over_bets_pct": row["total_over_bets_percent"],
+                                "sharp_side": row["total_sharp_side"]
+                            },
+                            "runline": {
+                                "home_handle_pct": row["runline_home_handle_percent"],
+                                "home_bets_pct": row["runline_home_bets_percent"],
+                                "sharp_side": row["runline_sharp_side"]
+                            }
+                        },
+                        "sharp_confidence": row["sharp_confidence"],
+                        "processed_at": row["processed_at"]
+                    }
+                    processed_splits.append(split_data)
+                
+                logger.info(f"Processed {len(processed_splits)} VSIN splits records")
+                return processed_splits
                 
         except Exception as e:
             logger.error(f"Error processing VSIN splits: {e}")
