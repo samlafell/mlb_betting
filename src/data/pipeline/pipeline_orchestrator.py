@@ -427,6 +427,14 @@ class DataPipelineOrchestrator:
 
             # Convert rows to DataRecord objects with enhanced field handling
             records = []
+            
+            # Determine source from the table being queried since tables don't have source column
+            inferred_source = "unknown"
+            if current_zone == ZoneType.RAW:
+                inferred_source = "action_network"  # We know we're querying action_network_odds
+            elif current_zone == ZoneType.STAGING:
+                inferred_source = "action_network"  # We know we're querying action_network_odds_historical
+            
             for row in rows:
                 # Handle both raw_data and raw_odds fields for Action Network compatibility
                 raw_data_field = row.get("raw_data") or row.get("raw_odds")
@@ -450,10 +458,16 @@ class DataPipelineOrchestrator:
                     if sportsbook_key:
                         raw_data_field['_sportsbook_key'] = sportsbook_key
                 
+                # Use inferred source since database tables don't have source column
+                source = row.get("source", inferred_source)
+                if not source or source == "unknown":
+                    source = inferred_source
+                    logger.debug(f"Using inferred source '{source}' for record {external_id}")
+                
                 record = DataRecord(
                     id=row.get("id"),
                     external_id=external_id,
-                    source=row.get("source", "unknown"),
+                    source=source,
                     raw_data=raw_data_field,
                     processed_at=row.get("processed_at"),
                     created_at=row.get("created_at"),

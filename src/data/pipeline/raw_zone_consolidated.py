@@ -144,6 +144,11 @@ class RawZoneConsolidatedProcessor(BaseZoneProcessor):
             if not record.raw_data or not isinstance(record.raw_data, dict):
                 return record
 
+            # Guard against None source values
+            if not record.source:
+                logger.warning(f"Record {record.external_id} has None source, skipping metadata extraction")
+                return record
+
             raw_data = record.raw_data
             source = record.source.lower()
 
@@ -294,6 +299,10 @@ class RawZoneConsolidatedProcessor(BaseZoneProcessor):
 
     def _determine_table_key(self, record: DataRecord) -> str:
         """Determine the appropriate table key based on record source and type."""
+        # Guard against None source values
+        if not record.source:
+            raise ValueError(f"Record {record.external_id} has None source - cannot determine table mapping")
+        
         source = record.source.lower()
         data_type = getattr(record, "data_type", None)
 
@@ -596,6 +605,11 @@ class RawZoneConsolidatedProcessor(BaseZoneProcessor):
 
     async def _validate_source_specific(self, record: DataRecord) -> bool:
         """Perform source-specific validation."""
+        # Guard against None source values
+        if not record.source:
+            logger.warning(f"Record {record.external_id} has None source, skipping source-specific validation")
+            return True  # Allow records with no source to pass basic validation
+        
         source = record.source.lower()
 
         try:
