@@ -17,7 +17,9 @@ Usage Examples:
 """
 
 import asyncio
+import os
 from datetime import datetime
+from pathlib import Path
 
 import click
 from rich.console import Console
@@ -30,6 +32,47 @@ from ....core.logging import get_logger, LogComponent
 
 console = Console()
 logger = get_logger(__name__, LogComponent.CLI)
+
+
+def _get_project_root() -> str:
+    """
+    Dynamically detect the project root directory.
+    
+    Looks for key project files to identify the root:
+    - pyproject.toml
+    - .git directory
+    - config.toml
+    - README.md
+    
+    Returns the absolute path to the project root.
+    """
+    # Start from the current file's directory and work upward
+    current_path = Path(__file__).resolve()
+    
+    # Look for project indicators
+    project_indicators = [
+        "pyproject.toml",
+        ".git", 
+        "config.toml",
+        "README.md",
+        "quick-start.sh"  # Our new script is also a good indicator
+    ]
+    
+    # Search up the directory tree
+    for parent in [current_path] + list(current_path.parents):
+        # Check if this directory contains project indicators
+        indicator_count = 0
+        for indicator in project_indicators:
+            if (parent / indicator).exists():
+                indicator_count += 1
+        
+        # If we find multiple indicators, this is likely the project root
+        if indicator_count >= 2:
+            return str(parent)
+    
+    # Fallback: use current working directory
+    logger.warning("Could not detect project root, using current working directory")
+    return os.getcwd()
 
 
 @click.group(name="quickstart")
@@ -159,8 +202,8 @@ def quick_predictions(confidence_threshold: float, format: str):
         if format != "detailed":
             cmd.extend(["--format", format])
         
-        result = subprocess.run(cmd, capture_output=True, text=True, 
-                              cwd="/Users/samlafell/Documents/programming_projects/mlb_betting_program")
+        project_root = _get_project_root()
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=project_root)
         
         if result.returncode == 0:
             # Display the output from the predictions command
@@ -381,10 +424,11 @@ def _check_required_tables() -> bool:
         import subprocess
         
         # Check if tables exist by running a simple database query via CLI
+        project_root = _get_project_root()
         result = subprocess.run([
             "uv", "run", "-m", "src.interfaces.cli", 
             "database", "status"
-        ], capture_output=True, text=True, cwd="/Users/samlafell/Documents/programming_projects/mlb_betting_program")
+        ], capture_output=True, text=True, cwd=project_root)
         
         # If database status command succeeds, assume tables exist
         # This is a simplified check to avoid async issues
@@ -406,10 +450,11 @@ def _run_database_setup():
         console.print("[blue]Running database setup...[/blue]")
         
         # Run the database setup command
+        project_root = _get_project_root()
         result = subprocess.run([
             "uv", "run", "-m", "src.interfaces.cli", 
             "database", "setup-action-network"
-        ], capture_output=True, text=True, cwd="/Users/samlafell/Documents/programming_projects/mlb_betting_program")
+        ], capture_output=True, text=True, cwd=project_root)
         
         if result.returncode == 0:
             console.print("[green]✅ Database setup completed[/green]")
@@ -466,10 +511,11 @@ def _run_initial_collection():
             
             console.print("[blue]Running data collection from Action Network...[/blue]")
             
+            project_root = _get_project_root()
             result = subprocess.run([
                 "uv", "run", "-m", "src.interfaces.cli", 
                 "data", "collect", "--source", "action_network", "--real"
-            ], capture_output=True, text=True, cwd="/Users/samlafell/Documents/programming_projects/mlb_betting_program")
+            ], capture_output=True, text=True, cwd=project_root)
             
             if result.returncode == 0:
                 console.print("[green]✅ Initial data collection completed[/green]")
@@ -500,10 +546,11 @@ def _generate_first_predictions():
         console.print("[blue]Generating predictions...[/blue]")
         
         # Run predictions command via subprocess to avoid event loop conflicts
+        project_root = _get_project_root()
         result = subprocess.run([
             "uv", "run", "-m", "src.interfaces.cli", 
             "predictions", "today", "--confidence-threshold", "0.6", "--format", "summary"
-        ], capture_output=True, text=True, cwd="/Users/samlafell/Documents/programming_projects/mlb_betting_program")
+        ], capture_output=True, text=True, cwd=project_root)
         
         if result.returncode == 0:
             console.print("[green]✅ Predictions generated successfully[/green]")

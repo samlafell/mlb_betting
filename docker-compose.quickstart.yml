@@ -4,6 +4,9 @@
 # docker-compose -f docker-compose.quickstart.yml up -d
 #
 # For production, use the full docker-compose.yml instead.
+#
+# SECURITY NOTE: This uses development-safe defaults. 
+# For production, set POSTGRES_PASSWORD environment variable.
 
 services:
   # PostgreSQL Database - Essential for all operations
@@ -16,7 +19,7 @@ services:
     environment:
       POSTGRES_DB: mlb_betting
       POSTGRES_USER: samlafell
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quickstart_dev_password_change_for_production}
     volumes:
       - quickstart_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -25,6 +28,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    networks:
+      - quickstart_network
 
   # Redis - For caching and rate limiting
   redis:
@@ -41,7 +46,16 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+    networks:
+      - quickstart_network
 
 volumes:
   quickstart_postgres_data:
   quickstart_redis_data:
+
+networks:
+  quickstart_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16

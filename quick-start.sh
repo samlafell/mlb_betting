@@ -223,22 +223,43 @@ start_containers() {
         docker-compose -f docker-compose.quickstart.yml up -d
     fi
     
-    # Wait for containers to be healthy
-    print_info "Waiting for database to be ready..."
+    # Wait for containers to be healthy with improved error handling
+    print_info "Waiting for database to be ready (may take up to 2 minutes)..."
     local attempts=0
-    local max_attempts=30
+    local max_attempts=60  # 2 minutes total
+    local check_interval=2
     
     while [ $attempts -lt $max_attempts ]; do
+        # Check if container is running first
+        if ! docker ps | grep -q mlb_quickstart_postgres; then
+            print_error "PostgreSQL container is not running"
+            print_info "Try running: docker-compose -f docker-compose.quickstart.yml logs postgres"
+            exit 1
+        fi
+        
+        # Check if database is ready
         if docker exec mlb_quickstart_postgres pg_isready -U samlafell -d mlb_betting >/dev/null 2>&1; then
             break
         fi
+        
         attempts=$((attempts + 1))
         echo -n "."
-        sleep 2
+        sleep $check_interval
+        
+        # Show progress every 30 seconds
+        if [ $((attempts % 15)) -eq 0 ]; then
+            echo ""
+            print_info "Still waiting... ($((attempts * check_interval)) seconds elapsed)"
+        fi
     done
     
     if [ $attempts -eq $max_attempts ]; then
-        print_error "Database failed to start within 60 seconds"
+        echo ""
+        print_error "Database failed to start within $((max_attempts * check_interval)) seconds"
+        print_info "Troubleshooting steps:"
+        print_info "  • Check container logs: docker-compose -f docker-compose.quickstart.yml logs postgres"
+        print_info "  • Check if port 5433 is available: lsof -i :5433"
+        print_info "  • Try restarting containers: docker-compose -f docker-compose.quickstart.yml restart"
         exit 1
     fi
     
@@ -315,7 +336,7 @@ setup_database() {
     fi
 }
 
-# Run initial data collection
+# Run initial data collection with retry logic
 run_data_collection() {
     if [ "$SKIP_DATA" = true ]; then
         print_warning "Skipping initial data collection"
@@ -324,14 +345,34 @@ run_data_collection() {
     
     print_step 6 "Running Initial Data Collection"
     
-    print_info "Collecting data from Action Network (this may take a few minutes)..."
-    if timeout 300 uv run -m src.interfaces.cli data collect --source action_network --real; then
-        print_success "Initial data collection completed!"
-    else
-        print_warning "Data collection had issues or timed out"
-        print_info "This is often normal for first run. Try running manually:"
-        print_info "  uv run -m src.interfaces.cli data collect --source action_network --real"
-    fi
+    local max_retries=2
+    local timeout_duration=600  # 10 minutes for slow networks
+    local retry_count=0
+    
+    while [ $retry_count -le $max_retries ]; do
+        if [ $retry_count -gt 0 ]; then
+            print_info "Retry attempt $retry_count of $max_retries..."
+            sleep 10  # Brief delay between retries
+        fi
+        
+        print_info "Collecting data from Action Network (may take up to 10 minutes for slow networks)..."
+        
+        if timeout $timeout_duration uv run -m src.interfaces.cli data collect --source action_network --real; then
+            print_success "Initial data collection completed!"
+            return 0
+        else
+            retry_count=$((retry_count + 1))
+            if [ $retry_count -le $max_retries ]; then
+                print_warning "Data collection attempt $((retry_count - 1)) failed, retrying..."
+            else
+                print_warning "Data collection failed after $max_retries attempts"
+                print_info "This is often normal for first run or slow networks. You can:"
+                print_info "  • Run manually: uv run -m src.interfaces.cli data collect --source action_network --real"
+                print_info "  • Try again later when network conditions improve"
+                print_info "  • Skip data collection with: ./quick-start.sh --skip-data"
+            fi
+        fi
+    done
 }
 
 # Generate first predictions
