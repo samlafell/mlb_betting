@@ -338,8 +338,9 @@ async def perform_statistical_analysis(
                     sample_size=0
                 )
             
-            # Convert to DataFrame for analysis
-            df = pl.DataFrame([dict(row) for row in results])
+            # Convert to DataFrame for analysis - memory optimized approach
+            # Use record batches to avoid creating intermediate dictionaries list
+            df = pl.from_records(results)
             
             analysis_result = StatisticalAnalysis(
                 analysis_type=analysis_type,
@@ -450,75 +451,64 @@ async def get_performance_attribution(
             # Track incomplete data for transparency
             opportunities_without_outcomes = len(results) - len(opportunities_with_outcomes)
             
-            # Analyze by strategy (primary signal) - only include opportunities with outcomes
+            # Optimized single-pass analysis for all performance metrics
             strategy_performance = {}
+            market_performance = {}
+            hourly_performance = {str(hour): {'total': 0, 'successful': 0, 'success_rate': 0.0} for hour in range(24)}
+            day_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+            daily_performance = {day_name: {'total': 0, 'successful': 0, 'success_rate': 0.0} for day_name in day_names}
+            
+            # Single pass through opportunities with outcomes for better performance
             for result in opportunities_with_outcomes:
+                # Strategy analysis
                 strategy = result['primary_signal'] or 'unknown'
                 if strategy not in strategy_performance:
                     strategy_performance[strategy] = {
-                        'total': 0, 
-                        'successful': 0, 
-                        'success_rate': 0.0,
-                        'avg_confidence': 0.0,
-                        'total_confidence': 0.0
+                        'total': 0, 'successful': 0, 'success_rate': 0.0,
+                        'avg_confidence': 0.0, 'total_confidence': 0.0
                     }
                 
                 strategy_performance[strategy]['total'] += 1
                 strategy_performance[strategy]['total_confidence'] += result['confidence_score']
+                
+                # Market analysis
+                market = result['market_type']
+                if market not in market_performance:
+                    market_performance[market] = {'total': 0, 'successful': 0, 'success_rate': 0.0}
+                market_performance[market]['total'] += 1
+                
+                # Hourly analysis
+                hour = str(result['analysis_hour'])
+                hourly_performance[hour]['total'] += 1
+                
+                # Daily analysis
+                day_name = day_names[result['day_of_week']]
+                daily_performance[day_name]['total'] += 1
+                
+                # Success tracking for all dimensions
                 if result['was_successful']:
                     strategy_performance[strategy]['successful'] += 1
+                    market_performance[market]['successful'] += 1
+                    hourly_performance[hour]['successful'] += 1
+                    daily_performance[day_name]['successful'] += 1
             
-            # Calculate final strategy metrics
+            # Calculate final metrics for all dimensions
             for strategy in strategy_performance:
                 perf = strategy_performance[strategy]
                 perf['success_rate'] = perf['successful'] / perf['total'] if perf['total'] > 0 else 0.0
                 perf['avg_confidence'] = perf['total_confidence'] / perf['total'] if perf['total'] > 0 else 0.0
                 del perf['total_confidence']  # Remove intermediate calculation
-            
-            # Analyze by time of day - only opportunities with outcomes
-            hourly_performance = {}
-            for hour in range(24):
-                hourly_performance[str(hour)] = {'total': 0, 'successful': 0, 'success_rate': 0.0}
                 
-            for result in opportunities_with_outcomes:
-                hour = str(result['analysis_hour'])
-                hourly_performance[hour]['total'] += 1
-                if result['was_successful']:
-                    hourly_performance[hour]['successful'] += 1
-                    
+            for market in market_performance:
+                perf = market_performance[market]
+                perf['success_rate'] = perf['successful'] / perf['total'] if perf['total'] > 0 else 0.0
+                
             for hour in hourly_performance:
                 perf = hourly_performance[hour]
                 perf['success_rate'] = perf['successful'] / perf['total'] if perf['total'] > 0 else 0.0
-            
-            # Analyze by day of week - only opportunities with outcomes
-            daily_performance = {}
-            day_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-            for i, day_name in enumerate(day_names):
-                daily_performance[day_name] = {'total': 0, 'successful': 0, 'success_rate': 0.0}
                 
-            for result in opportunities_with_outcomes:
-                day_name = day_names[result['day_of_week']]
-                daily_performance[day_name]['total'] += 1
-                if result['was_successful']:
-                    daily_performance[day_name]['successful'] += 1
-                    
             for day in daily_performance:
                 perf = daily_performance[day]
-                perf['success_rate'] = perf['successful'] / perf['total'] if perf['total'] > 0 else 0.0
-            
-            # Analyze by market type - only opportunities with outcomes
-            market_performance = {}
-            for result in opportunities_with_outcomes:
-                market = result['market_type']
-                if market not in market_performance:
-                    market_performance[market] = {'total': 0, 'successful': 0, 'success_rate': 0.0}
-                
-                market_performance[market]['total'] += 1
-                if result['was_successful']:
-                    market_performance[market]['successful'] += 1
-                    
-            for market in market_performance:
-                perf = market_performance[market]
                 perf['success_rate'] = perf['successful'] / perf['total'] if perf['total'] > 0 else 0.0
             
             # Calculate attribution factors (simplified)
@@ -751,11 +741,13 @@ async def get_filtered_analytics_data(
                     s.display_name as sportsbook_name
                 FROM curated.betting_analysis ba
                 JOIN curated.games_complete gc ON ba.game_id = gc.id
-                LEFT JOIN curated.line_movement_summary lms ON (
+                LEFT JOIN (
+                    curated.line_movement_summary lms
+                    LEFT JOIN curated.sportsbooks s ON lms.sportsbook_id = s.id
+                ) ON (
                     ba.game_id = lms.game_id AND 
                     ba.market_type = lms.bet_type
                 )
-                LEFT JOIN curated.sportsbooks s ON lms.sportsbook_id = s.id
                 WHERE 1=1
             """
             
@@ -777,8 +769,7 @@ async def get_filtered_analytics_data(
                 param_count += 1
                 base_query += f" AND (gc.home_team = ANY(${param_count}) OR gc.away_team = ANY(${param_count}))"
                 params.append(teams)
-                param_count += 1
-                params.append(teams)  # Add twice for home and away
+                # Fixed: Only need one parameter since it's used for both home and away team filtering
                 
             if market_types:
                 param_count += 1
@@ -810,10 +801,9 @@ async def get_filtered_analytics_data(
             
             results = await db.fetch(base_query, *params)
             
-            # Convert to list of dictionaries  
-            filtered_data = []
-            for row in results:
-                filtered_data.append({
+            # Convert to list of dictionaries - memory optimized with generator expression
+            filtered_data = [
+                {
                     'analysis_id': row['analysis_id'],
                     'game_id': row['game_id'], 
                     'analysis_timestamp': row['analysis_timestamp'],
@@ -830,7 +820,9 @@ async def get_filtered_analytics_data(
                     'line_movement': float(row['line_movement'] or 0),
                     'total_movements': int(row['total_movements'] or 0),
                     'sportsbook_name': row['sportsbook_name']
-                })
+                }
+                for row in results
+            ]
             
             return {
                 'data': filtered_data,
@@ -992,7 +984,7 @@ async def _export_analytics_data(db, start_date, end_date, teams, market_types, 
     if teams:
         params.append(teams)
         query += f" AND (gc.home_team = ANY(${len(params)}) OR gc.away_team = ANY(${len(params)}))"
-        params.append(teams)
+        # Fixed: Only need one parameter since it's used for both home and away team filtering
     if market_types:
         params.append(market_types)
         query += f" AND ba.market_type = ANY(${len(params)})"
@@ -1037,7 +1029,7 @@ async def _export_line_movements_data(db, start_date, end_date, teams, market_ty
     if teams:
         params.append(teams)
         query += f" AND (lmh.home_team = ANY(${len(params)}) OR lmh.away_team = ANY(${len(params)}))"
-        params.append(teams)
+        # Fixed: Only need one parameter since it's used for both home and away team filtering
     if market_types:
         params.append(market_types)
         query += f" AND lmh.bet_type = ANY(${len(params)})"
@@ -1153,7 +1145,7 @@ async def _export_statistical_report(db, start_date, end_date, teams, market_typ
     if teams:
         params.append(teams)
         query += f" AND (gc.home_team = ANY(${len(params)}) OR gc.away_team = ANY(${len(params)}))"
-        params.append(teams)
+        # Fixed: Only need one parameter since it's used for both home and away team filtering
     if market_types:
         params.append(market_types)
         query += f" AND ba.market_type = ANY(${len(params)})"
