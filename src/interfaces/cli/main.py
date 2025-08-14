@@ -22,6 +22,7 @@ from src.interfaces.cli.commands.pipeline import pipeline
 from src.interfaces.cli.commands.predictions import create_predictions_commands
 from src.interfaces.cli.commands.quickstart import quickstart
 from src.interfaces.cli.commands.setup_database import database
+from src.interfaces.cli.commands.opportunity_detection import opportunity_detection
 
 # Old staging commands removed - consolidated into historical approach
 
@@ -82,6 +83,7 @@ cli.add_command(curated)  # Add the CURATED zone management commands
 # Old staging commands removed - use historical approach via action-network pipeline
 cli.add_command(cleanup)  # Add the output folder cleanup command
 cli.add_command(ml)  # Add the ML experiment management commands
+cli.add_command(opportunity_detection)  # Add the AI-powered opportunity detection commands
 
 
 if __name__ == "__main__":
