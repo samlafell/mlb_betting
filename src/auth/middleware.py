@@ -26,6 +26,7 @@ from .exceptions import (
     InvalidTokenError, TokenExpiredError, InsufficientPermissionsError,
     SuspiciousActivityError, RateLimitExceededError
 )
+from .rate_limiter import get_rate_limiter, require_rate_limit
 
 logger = get_logger(__name__, LogComponent.AUTH)
 
@@ -35,6 +36,7 @@ jwt_manager = JWTManager()
 auth_service = AuthenticationService()
 authz_service = AuthorizationService()
 security_validator = SecurityValidator()
+rate_limiter = get_rate_limiter()
 
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):
@@ -202,9 +204,9 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
     async def _update_user_activity(self, user_id: int, request: Request) -> None:
         """Update user's last activity timestamp."""
         try:
-            from ..data.database.connection import get_database_connection
+            from ..data.database.connection import get_connection
             
-            async with get_database_connection() as conn:
+            async with get_connection() as conn:
                 await conn.execute(
                     "UPDATE auth.users SET last_activity = NOW() WHERE id = $1",
                     user_id
@@ -379,6 +381,137 @@ class AuthorizationMiddleware(BaseHTTPMiddleware):
             await self.authz_service.require_permission(user_id, required_permissions[0])
         else:
             await self.authz_service.require_any_permission(user_id, required_permissions)
+
+
+class RateLimitingMiddleware(BaseHTTPMiddleware):
+    """Middleware for API rate limiting."""
+    
+    def __init__(
+        self,
+        app: FastAPI,
+        default_rule: str = "api_general",
+        endpoint_rules: Optional[Dict[str, str]] = None
+    ):
+        """
+        Initialize rate limiting middleware.
+        
+        Args:
+            app: FastAPI application
+            default_rule: Default rate limit rule name
+            endpoint_rules: Mapping of endpoints to specific rate limit rules
+        """
+        super().__init__(app)
+        self.default_rule = default_rule
+        self.endpoint_rules = endpoint_rules or {
+            "/auth/login": "login",
+            "/auth/password-reset": "password_reset",
+            "/auth/register": "user_registration",
+            "/auth/mfa/verify": "mfa_verification",
+            "/auth/verify-email": "email_verification"
+        }
+        self.rate_limiter = get_rate_limiter()
+    
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        """Process request through rate limiting middleware."""
+        try:
+            # Skip rate limiting for certain paths
+            if self._should_skip_rate_limiting(request.url.path):
+                return await call_next(request)
+            
+            # Determine rate limit rule and identifier
+            rule_name = self._get_rate_limit_rule(request)
+            identifier = self._get_rate_limit_identifier(request)
+            
+            # Check rate limit
+            try:
+                status = await require_rate_limit(rule_name, identifier)
+                
+                # Add rate limit headers to response
+                response = await call_next(request)
+                self._add_rate_limit_headers(response, status)
+                
+                return response
+                
+            except RateLimitExceededError as e:
+                logger.warning(
+                    "Rate limit exceeded",
+                    extra={
+                        "rule": rule_name,
+                        "identifier": identifier,
+                        "path": request.url.path,
+                        "method": request.method,
+                        "retry_after": e.retry_after_seconds
+                    }
+                )
+                
+                return JSONResponse(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    content={
+                        "error": "rate_limit_exceeded",
+                        "message": str(e),
+                        "retry_after_seconds": e.retry_after_seconds,
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    },
+                    headers={
+                        "Retry-After": str(e.retry_after_seconds or 60),
+                        "X-RateLimit-Limit": str(e.limit),
+                        "X-RateLimit-Remaining": str(e.remaining),
+                        "X-RateLimit-Reset": str(int(e.reset_time.timestamp())) if e.reset_time else ""
+                    }
+                )
+                
+        except Exception as e:
+            logger.error("Rate limiting middleware error", error=e)
+            # Fail open - allow request if rate limiting fails
+            return await call_next(request)
+    
+    def _should_skip_rate_limiting(self, path: str) -> bool:
+        """Check if path should skip rate limiting."""
+        skip_paths = ["/health", "/metrics", "/docs", "/redoc", "/openapi.json"]
+        return any(path.startswith(skip_path) for skip_path in skip_paths)
+    
+    def _get_rate_limit_rule(self, request: Request) -> str:
+        """Get rate limit rule for request."""
+        endpoint_key = f"{request.method} {request.url.path}"
+        
+        # Check exact match first
+        if request.url.path in self.endpoint_rules:
+            return self.endpoint_rules[request.url.path]
+        
+        if endpoint_key in self.endpoint_rules:
+            return self.endpoint_rules[endpoint_key]
+        
+        # Check pattern matches
+        for pattern, rule in self.endpoint_rules.items():
+            if request.url.path.startswith(pattern.rstrip("*")):
+                return rule
+        
+        return self.default_rule
+    
+    def _get_rate_limit_identifier(self, request: Request) -> str:
+        """Get rate limit identifier for request."""
+        # Try to get user ID if authenticated
+        user = getattr(request.state, 'user', None)
+        if user:
+            return f"user:{user.id}"
+        
+        # Check for API key
+        api_key = request.headers.get("x-api-key")
+        if api_key:
+            return f"api_key:{api_key[:8]}..."  # Use prefix for privacy
+        
+        # Fall back to IP address
+        client_ip = request.client.host if request.client else "unknown"
+        return f"ip:{client_ip}"
+    
+    def _add_rate_limit_headers(self, response: Response, status) -> None:
+        """Add rate limit headers to response."""
+        response.headers.update({
+            "X-RateLimit-Limit": str(status.limit),
+            "X-RateLimit-Remaining": str(status.remaining),
+            "X-RateLimit-Reset": str(int(status.reset_time.timestamp())),
+            "X-RateLimit-Used": str(status.used)
+        })
 
 
 class AuditMiddleware(BaseHTTPMiddleware):

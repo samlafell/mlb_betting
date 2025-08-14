@@ -103,8 +103,9 @@ CREATE TABLE auth.users (
     -- Security settings
     require_password_change BOOLEAN DEFAULT false,
     mfa_enabled BOOLEAN DEFAULT false,
-    mfa_secret VARCHAR(32),
-    mfa_backup_codes TEXT[], -- Encrypted backup codes
+    mfa_secret_encrypted TEXT, -- Encrypted MFA secret (AES-256)
+    mfa_secret_iv VARCHAR(32), -- Initialization vector for MFA secret
+    mfa_backup_codes_encrypted TEXT[], -- Encrypted backup codes (AES-256)
     
     -- Timestamps
     last_login TIMESTAMPTZ,
@@ -534,6 +535,54 @@ BEGIN
     ) RETURNING correlation_id INTO v_audit_id;
     
     RETURN v_audit_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Create function for secure MFA secret encryption/decryption
+CREATE OR REPLACE FUNCTION auth.encrypt_mfa_secret(
+    p_secret TEXT,
+    p_key TEXT
+) RETURNS JSON AS $$
+DECLARE
+    v_iv TEXT;
+    v_encrypted TEXT;
+BEGIN
+    -- Generate random IV (16 bytes)
+    v_iv := encode(gen_random_bytes(16), 'hex');
+    
+    -- Encrypt secret with AES-256-CBC
+    v_encrypted := encode(
+        encrypt_iv(
+            p_secret::bytea,
+            p_key::bytea,
+            decode(v_iv, 'hex'),
+            'aes-cbc'
+        ),
+        'base64'
+    );
+    
+    RETURN json_build_object(
+        'encrypted', v_encrypted,
+        'iv', v_iv
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION auth.decrypt_mfa_secret(
+    p_encrypted TEXT,
+    p_iv TEXT,
+    p_key TEXT
+) RETURNS TEXT AS $$
+BEGIN
+    RETURN convert_from(
+        decrypt_iv(
+            decode(p_encrypted, 'base64'),
+            p_key::bytea,
+            decode(p_iv, 'hex'),
+            'aes-cbc'
+        ),
+        'utf8'
+    );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
