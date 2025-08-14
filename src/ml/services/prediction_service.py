@@ -610,7 +610,7 @@ class PredictionService:
             response["betting_recommendations"] = {
                 "total_over": {
                     "expected_value": self._calculate_expected_value(pred_data, feature_vector),
-                    "kelly_fraction": self._calculate_kelly_fraction(pred_data, feature_vector)
+                    "kelly_fraction": self._calculate_kelly_fraction(pred_data, feature_vector),
                     "recommended_bet_size": 0.0,
                     "confidence_required": 0.6,
                 }
