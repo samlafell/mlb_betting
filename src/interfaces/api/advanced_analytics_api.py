@@ -111,6 +111,9 @@ class PerformanceAttribution(BaseModel):
     
     # Attribution factors
     attribution_factors: Dict[str, float]
+    
+    # Data quality information
+    data_quality: Optional[Dict[str, Any]] = None
 
 
 class FilterOptions(BaseModel):
@@ -380,7 +383,7 @@ async def get_performance_attribution(
             if not end_date:
                 end_date = datetime.now(timezone.utc)
                 
-            # Get opportunity performance data
+            # Get opportunity performance data with proper outcome tracking
             perf_query = """
                 SELECT 
                     ba.analysis_id,
@@ -396,23 +399,60 @@ async def get_performance_attribution(
                     gc.away_team,
                     EXTRACT(HOUR FROM ba.analysis_timestamp) as analysis_hour,
                     EXTRACT(DOW FROM ba.analysis_timestamp) as day_of_week,
-                    -- Outcome tracking would need to be joined here
-                    CASE WHEN random() > 0.4 THEN true ELSE false END as was_successful
+                    -- Real outcome tracking using proper game outcomes and strategy results
+                    COALESCE(
+                        -- Check strategy results first (most accurate)
+                        CASE 
+                            WHEN sr.outcome = 'WIN' THEN true
+                            WHEN sr.outcome IN ('LOSS', 'PUSH', 'VOID') THEN false
+                            ELSE NULL
+                        END,
+                        -- Fallback to game outcome analysis based on recommendation
+                        CASE 
+                            -- Spread bets
+                            WHEN ba.market_type = 'spread' AND ba.recommendation LIKE '%home%' AND go.home_cover_spread = true THEN true
+                            WHEN ba.market_type = 'spread' AND ba.recommendation LIKE '%away%' AND go.home_cover_spread = false THEN true
+                            WHEN ba.market_type = 'spread' AND go.home_cover_spread IS NOT NULL THEN false
+                            -- Total bets
+                            WHEN ba.market_type = 'total' AND ba.recommendation LIKE '%over%' AND go.over = true THEN true
+                            WHEN ba.market_type = 'total' AND ba.recommendation LIKE '%under%' AND go.over = false THEN true
+                            WHEN ba.market_type = 'total' AND go.over IS NOT NULL THEN false
+                            -- Moneyline bets
+                            WHEN ba.market_type = 'moneyline' AND ba.recommendation LIKE '%home%' AND go.home_win = true THEN true
+                            WHEN ba.market_type = 'moneyline' AND ba.recommendation LIKE '%away%' AND go.home_win = false THEN true
+                            WHEN ba.market_type = 'moneyline' AND go.home_win IS NOT NULL THEN false
+                            -- No outcome data available
+                            ELSE NULL
+                        END
+                    ) as was_successful
                 FROM curated.betting_analysis ba
                 JOIN curated.games_complete gc ON ba.game_id = gc.id
+                LEFT JOIN curated.game_outcomes go ON ba.game_id = go.game_id
+                LEFT JOIN analysis.strategy_results sr ON (
+                    ba.game_id = sr.game_id::INTEGER AND
+                    ba.market_type = sr.bet_type AND
+                    ba.analysis_timestamp <= sr.bet_placed_at AND
+                    sr.status = 'COMPLETED'
+                )
                 WHERE ba.analysis_timestamp BETWEEN $1 AND $2
+                    AND gc.game_datetime < NOW() - INTERVAL '2 hours' -- Only include completed games
                 ORDER BY ba.analysis_timestamp ASC
             """
             
             results = await db.fetch(perf_query, start_date, end_date)
             
-            total_opportunities = len(results)
-            successful_opportunities = sum(1 for r in results if r['was_successful'])
+            # Calculate success metrics, excluding opportunities without outcome data
+            opportunities_with_outcomes = [r for r in results if r['was_successful'] is not None]
+            total_opportunities = len(opportunities_with_outcomes)
+            successful_opportunities = sum(1 for r in opportunities_with_outcomes if r['was_successful'])
             success_rate = successful_opportunities / total_opportunities if total_opportunities > 0 else 0.0
             
-            # Analyze by strategy (primary signal)
+            # Track incomplete data for transparency
+            opportunities_without_outcomes = len(results) - len(opportunities_with_outcomes)
+            
+            # Analyze by strategy (primary signal) - only include opportunities with outcomes
             strategy_performance = {}
-            for result in results:
+            for result in opportunities_with_outcomes:
                 strategy = result['primary_signal'] or 'unknown'
                 if strategy not in strategy_performance:
                     strategy_performance[strategy] = {
@@ -435,12 +475,12 @@ async def get_performance_attribution(
                 perf['avg_confidence'] = perf['total_confidence'] / perf['total'] if perf['total'] > 0 else 0.0
                 del perf['total_confidence']  # Remove intermediate calculation
             
-            # Analyze by time of day
+            # Analyze by time of day - only opportunities with outcomes
             hourly_performance = {}
             for hour in range(24):
                 hourly_performance[str(hour)] = {'total': 0, 'successful': 0, 'success_rate': 0.0}
                 
-            for result in results:
+            for result in opportunities_with_outcomes:
                 hour = str(result['analysis_hour'])
                 hourly_performance[hour]['total'] += 1
                 if result['was_successful']:
@@ -450,13 +490,13 @@ async def get_performance_attribution(
                 perf = hourly_performance[hour]
                 perf['success_rate'] = perf['successful'] / perf['total'] if perf['total'] > 0 else 0.0
             
-            # Analyze by day of week
+            # Analyze by day of week - only opportunities with outcomes
             daily_performance = {}
             day_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
             for i, day_name in enumerate(day_names):
                 daily_performance[day_name] = {'total': 0, 'successful': 0, 'success_rate': 0.0}
                 
-            for result in results:
+            for result in opportunities_with_outcomes:
                 day_name = day_names[result['day_of_week']]
                 daily_performance[day_name]['total'] += 1
                 if result['was_successful']:
@@ -466,9 +506,9 @@ async def get_performance_attribution(
                 perf = daily_performance[day]
                 perf['success_rate'] = perf['successful'] / perf['total'] if perf['total'] > 0 else 0.0
             
-            # Analyze by market type
+            # Analyze by market type - only opportunities with outcomes
             market_performance = {}
-            for result in results:
+            for result in opportunities_with_outcomes:
                 market = result['market_type']
                 if market not in market_performance:
                     market_performance[market] = {'total': 0, 'successful': 0, 'success_rate': 0.0}
@@ -498,7 +538,19 @@ async def get_performance_attribution(
                 hourly_performance=hourly_performance,
                 daily_performance=daily_performance,
                 market_performance=market_performance,
-                attribution_factors=attribution_factors
+                attribution_factors=attribution_factors,
+                data_quality={
+                    'total_raw_opportunities': len(results),
+                    'opportunities_with_outcomes': total_opportunities,
+                    'opportunities_without_outcomes': opportunities_without_outcomes,
+                    'data_completeness_rate': total_opportunities / len(results) if len(results) > 0 else 0.0,
+                    'outcome_sources': {
+                        'strategy_results_table': 'Primary source for tracked bet outcomes',
+                        'game_outcomes_analysis': 'Fallback based on recommendation vs actual game results',
+                        'filtering_criteria': 'Only completed games (>2 hours post-game) included'
+                    },
+                    'note': 'Success rates calculated only from opportunities with confirmed outcomes'
+                }
             )
             
     except Exception as e:
@@ -1011,11 +1063,48 @@ async def _export_performance_data(db, start_date, end_date, limit):
             gc.game_datetime,
             EXTRACT(HOUR FROM ba.analysis_timestamp) as analysis_hour,
             EXTRACT(DOW FROM ba.analysis_timestamp) as day_of_week,
-            -- Simulated success for demo (replace with actual outcome data)
-            CASE WHEN random() > (1 - ba.confidence_score) THEN true ELSE false END as was_successful
+            -- Real outcome tracking using proper game outcomes and strategy results
+            COALESCE(
+                -- Check strategy results first (most accurate)
+                CASE 
+                    WHEN sr.outcome = 'WIN' THEN true
+                    WHEN sr.outcome IN ('LOSS', 'PUSH', 'VOID') THEN false
+                    ELSE NULL
+                END,
+                -- Fallback to game outcome analysis based on recommendation
+                CASE 
+                    -- Spread bets
+                    WHEN ba.market_type = 'spread' AND ba.recommendation LIKE '%home%' AND go.home_cover_spread = true THEN true
+                    WHEN ba.market_type = 'spread' AND ba.recommendation LIKE '%away%' AND go.home_cover_spread = false THEN true
+                    WHEN ba.market_type = 'spread' AND go.home_cover_spread IS NOT NULL THEN false
+                    -- Total bets
+                    WHEN ba.market_type = 'total' AND ba.recommendation LIKE '%over%' AND go.over = true THEN true
+                    WHEN ba.market_type = 'total' AND ba.recommendation LIKE '%under%' AND go.over = false THEN true
+                    WHEN ba.market_type = 'total' AND go.over IS NOT NULL THEN false
+                    -- Moneyline bets
+                    WHEN ba.market_type = 'moneyline' AND ba.recommendation LIKE '%home%' AND go.home_win = true THEN true
+                    WHEN ba.market_type = 'moneyline' AND ba.recommendation LIKE '%away%' AND go.home_win = false THEN true
+                    WHEN ba.market_type = 'moneyline' AND go.home_win IS NOT NULL THEN false
+                    -- No outcome data available
+                    ELSE NULL
+                END
+            ) as was_successful,
+            -- Data quality information for export transparency
+            CASE
+                WHEN sr.outcome IS NOT NULL THEN 'strategy_result'
+                WHEN go.game_id IS NOT NULL THEN 'game_outcome'
+                ELSE 'no_outcome_data'
+            END as outcome_source
         FROM curated.betting_analysis ba
         JOIN curated.games_complete gc ON ba.game_id = gc.id
-        WHERE 1=1
+        LEFT JOIN curated.game_outcomes go ON ba.game_id = go.game_id
+        LEFT JOIN analysis.strategy_results sr ON (
+            ba.game_id = sr.game_id::INTEGER AND
+            ba.market_type = sr.bet_type AND
+            ba.analysis_timestamp <= sr.bet_placed_at AND
+            sr.status = 'COMPLETED'
+        )
+        WHERE gc.game_datetime < NOW() - INTERVAL '2 hours'  -- Only include completed games
     """
     
     params = []
@@ -1025,6 +1114,9 @@ async def _export_performance_data(db, start_date, end_date, limit):
     if end_date:
         params.append(end_date)
         query += f" AND ba.analysis_timestamp <= ${len(params)}"
+    
+    # Optional: Only include entries with confirmed outcomes for more reliable data
+    # query += " AND COALESCE(sr.outcome, CASE WHEN go.game_id IS NOT NULL THEN 'outcome_available' END) IS NOT NULL"
     
     query += f" ORDER BY ba.analysis_timestamp DESC LIMIT {limit}"
     
