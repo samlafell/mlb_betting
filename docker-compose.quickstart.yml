@@ -1,0 +1,47 @@
+# 🚀 Quick Start Docker Compose - Simplified MLB Betting System Setup
+# 
+# This provides an instant development environment in one command:
+# docker-compose -f docker-compose.quickstart.yml up -d
+#
+# For production, use the full docker-compose.yml instead.
+
+services:
+  # PostgreSQL Database - Essential for all operations
+  postgres:
+    image: postgres:15-alpine
+    container_name: mlb_quickstart_postgres
+    restart: unless-stopped
+    ports:
+      - "5433:5432"  # Port 5433 to match project defaults
+    environment:
+      POSTGRES_DB: mlb_betting
+      POSTGRES_USER: samlafell
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - quickstart_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U samlafell -d mlb_betting"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Redis - For caching and rate limiting
+  redis:
+    image: redis:7-alpine
+    container_name: mlb_quickstart_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - quickstart_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  quickstart_postgres_data:
+  quickstart_redis_data:
