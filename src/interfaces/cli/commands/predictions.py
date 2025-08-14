@@ -321,7 +321,7 @@ async def _get_todays_predictions(confidence_threshold: float) -> List[Dict[str,
                     ) as expected_value,
                     p.created_at
                 FROM curated.ml_predictions p
-                JOIN curated.enhanced_games g ON p.game_id = g.id
+                JOIN curated.enhanced_games g ON p.game_id = g.mlb_stats_api_game_id
                 WHERE DATE(g.game_date) = CURRENT_DATE
                     AND GREATEST(
                         COALESCE(p.home_ml_confidence, 0),
@@ -480,9 +480,9 @@ async def _get_game_prediction(game_id: str, all_models: bool) -> Dict[str, Any]
                     g.home_team,
                     g.away_team,
                     g.game_date,
-                    g.game_time
+                    g.game_datetime
                 FROM curated.ml_predictions p
-                JOIN curated.games g ON p.game_id = g.game_id
+                JOIN curated.enhanced_games g ON p.game_id = g.mlb_stats_api_game_id
                 WHERE p.game_id = $1
                 ORDER BY p.confidence_score DESC
                 LIMIT 1
