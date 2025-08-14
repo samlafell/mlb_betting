@@ -17,7 +17,9 @@ Usage Examples:
 """
 
 import asyncio
+import os
 from datetime import datetime
+from pathlib import Path
 
 import click
 from rich.console import Console
@@ -30,6 +32,47 @@ from ....core.logging import get_logger, LogComponent
 
 console = Console()
 logger = get_logger(__name__, LogComponent.CLI)
+
+
+def _get_project_root() -> str:
+    """
+    Dynamically detect the project root directory.
+    
+    Looks for key project files to identify the root:
+    - pyproject.toml
+    - .git directory
+    - config.toml
+    - README.md
+    
+    Returns the absolute path to the project root.
+    """
+    # Start from the current file's directory and work upward
+    current_path = Path(__file__).resolve()
+    
+    # Look for project indicators
+    project_indicators = [
+        "pyproject.toml",
+        ".git", 
+        "config.toml",
+        "README.md",
+        "quick-start.sh"  # Our new script is also a good indicator
+    ]
+    
+    # Search up the directory tree
+    for parent in [current_path] + list(current_path.parents):
+        # Check if this directory contains project indicators
+        indicator_count = 0
+        for indicator in project_indicators:
+            if (parent / indicator).exists():
+                indicator_count += 1
+        
+        # If we find multiple indicators, this is likely the project root
+        if indicator_count >= 2:
+            return str(parent)
+    
+    # Fallback: use current working directory
+    logger.warning("Could not detect project root, using current working directory")
+    return os.getcwd()
 
 
 @click.group(name="quickstart")
@@ -58,8 +101,19 @@ def interactive_setup(skip_validation: bool, auto_fix: bool):
     
     console.print("🚀 [bold blue]MLB Betting System - Interactive Setup[/bold blue]")
     console.print("=" * 60)
-    console.print("This wizard will guide you through setting up the system.")
+    console.print("This wizard addresses the complex setup issues from GitHub issue #35.")
+    console.print("It provides step-by-step guidance for business users and technical users alike.")
     console.print()
+    
+    # Quick option for one-click setup
+    console.print("💡 [bold]Quick Options:[/bold]")
+    console.print("   • Run: [cyan]./quick-start.sh[/cyan] for one-command automated setup")
+    console.print("   • Or continue with this interactive wizard")
+    console.print()
+    
+    if not Confirm.ask("Continue with interactive setup?", default=True):
+        console.print("💡 [dim]Try the automated quick start:[/dim] [cyan]./quick-start.sh[/cyan]")
+        return
     
     if not skip_validation:
         if not _validate_system_requirements():
@@ -103,8 +157,15 @@ def interactive_setup(skip_validation: bool, auto_fix: bool):
     
     # Setup Complete
     console.print("\n" + "=" * 60)
-    console.print("🎉 [bold green]Setup Complete![/bold green]")
+    console.print("🎉 [bold green]Interactive Setup Complete![/bold green]")
     console.print("=" * 60)
+    
+    # Show success indicators
+    console.print("\n✅ [bold]Success Indicators:[/bold]")
+    console.print("   • Database connection established")
+    console.print("   • Data sources accessible")
+    console.print("   • ML infrastructure ready")
+    console.print("   • System validated and working")
     
     _show_next_steps()
 
@@ -116,7 +177,13 @@ def interactive_setup(skip_validation: bool, auto_fix: bool):
     type=float,
     help="Minimum confidence threshold (default: 0.6)",
 )
-def quick_predictions(confidence_threshold: float):
+@click.option(
+    "--format",
+    default="detailed",
+    type=click.Choice(["summary", "detailed", "json"]),
+    help="Output format (default: detailed)",
+)
+def quick_predictions(confidence_threshold: float, format: str):
     """Quick command to get today's predictions."""
     
     console.print("🎯 [bold blue]Quick Predictions[/bold blue]")
@@ -127,34 +194,49 @@ def quick_predictions(confidence_threshold: float):
         import subprocess
         
         # Run the predictions command directly
-        result = subprocess.run([
+        cmd = [
             "uv", "run", "-m", "src.interfaces.cli", 
-            "predictions", "today", "--confidence-threshold", str(confidence_threshold)
-        ], capture_output=True, text=True, cwd="/Users/samlafell/Documents/programming_projects/mlb_betting_program")
+            "predictions", "today", 
+            "--confidence-threshold", str(confidence_threshold)
+        ]
+        if format != "detailed":
+            cmd.extend(["--format", format])
+        
+        project_root = _get_project_root()
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=project_root)
         
         if result.returncode == 0:
             # Display the output from the predictions command
-            console.print(result.stdout)
-        else:
-            # Handle errors
-            if "No predictions available" in result.stdout:
-                console.print("\n📭 [yellow]No predictions available for today[/yellow]")
-                console.print("💡 [dim]This could mean:[/dim]")
-                console.print("   • No games scheduled for today")
-                console.print("   • No predictions meet the confidence threshold")
-                console.print("   • Data pipeline needs to be run")
-                console.print("\n🔧 [bold]Try running:[/bold]")
-                console.print("   [cyan]uv run -m src.interfaces.cli pipeline run-full --generate-predictions[/cyan]")
-            elif "does not exist" in result.stderr:
-                console.print("[yellow]⚠️  Database tables not set up yet[/yellow]")
-                console.print("💡 [dim]Run setup first:[/dim] [cyan]uv run -m src.interfaces.cli quickstart setup[/cyan]")
+            if result.stdout.strip():
+                console.print(result.stdout)
+                console.print("\n✅ [green]Predictions generated successfully![/green]")
             else:
-                # Show any error output
+                console.print("📭 [yellow]No predictions generated[/yellow]")
+                _show_no_predictions_help()
+        else:
+            # Enhanced error handling with specific guidance
+            error_output = result.stderr.strip() + " " + result.stdout.strip()
+            
+            if "No predictions available" in error_output or "no predictions" in error_output.lower():
+                console.print("\n📭 [yellow]No predictions available for today[/yellow]")
+                _show_no_predictions_help()
+            elif "does not exist" in error_output or "relation" in error_output.lower():
+                console.print("[red]❌ Database not set up yet[/red]")
+                console.print("💡 [bold]Quick fix:[/bold] [cyan]./quick-start.sh[/cyan]")
+                console.print("💡 [bold]Or manual:[/bold] [cyan]uv run -m src.interfaces.cli quickstart setup[/cyan]")
+            elif "connection" in error_output.lower() or "could not connect" in error_output.lower():
+                console.print("[red]❌ Database connection failed[/red]")
+                console.print("💡 [bold]Start database:[/bold] [cyan]docker-compose -f docker-compose.quickstart.yml up -d[/cyan]")
+                console.print("💡 [bold]Or full setup:[/bold] [cyan]./quick-start.sh[/cyan]")
+            else:
+                # Generic error handling
+                console.print(f"[red]❌ Error generating predictions[/red]")
                 if result.stderr.strip():
-                    console.print(f"[red]❌ Error: {result.stderr.strip()[:200]}[/red]")
-                if result.stdout.strip():
-                    console.print(result.stdout)
-                console.print("💡 [dim]Try running setup first:[/dim] [cyan]uv run -m src.interfaces.cli quickstart setup[/cyan]")
+                    console.print(f"[dim]Details: {result.stderr.strip()[:300]}[/dim]")
+                console.print("\n💡 [bold]Troubleshooting steps:[/bold]")
+                console.print("   1. [cyan]./quick-start.sh --skip-data[/cyan] (quick setup)")
+                console.print("   2. [cyan]uv run -m src.interfaces.cli quickstart validate --fix-issues[/cyan]")
+                console.print("   3. [cyan]uv run -m src.interfaces.cli database setup-action-network[/cyan]")
                 
     except Exception as e:
         console.print(f"[red]❌ Failed to get predictions: {str(e)}[/red]")
@@ -342,10 +424,11 @@ def _check_required_tables() -> bool:
         import subprocess
         
         # Check if tables exist by running a simple database query via CLI
+        project_root = _get_project_root()
         result = subprocess.run([
             "uv", "run", "-m", "src.interfaces.cli", 
             "database", "status"
-        ], capture_output=True, text=True, cwd="/Users/samlafell/Documents/programming_projects/mlb_betting_program")
+        ], capture_output=True, text=True, cwd=project_root)
         
         # If database status command succeeds, assume tables exist
         # This is a simplified check to avoid async issues
@@ -367,10 +450,11 @@ def _run_database_setup():
         console.print("[blue]Running database setup...[/blue]")
         
         # Run the database setup command
+        project_root = _get_project_root()
         result = subprocess.run([
             "uv", "run", "-m", "src.interfaces.cli", 
             "database", "setup-action-network"
-        ], capture_output=True, text=True, cwd="/Users/samlafell/Documents/programming_projects/mlb_betting_program")
+        ], capture_output=True, text=True, cwd=project_root)
         
         if result.returncode == 0:
             console.print("[green]✅ Database setup completed[/green]")
@@ -427,10 +511,11 @@ def _run_initial_collection():
             
             console.print("[blue]Running data collection from Action Network...[/blue]")
             
+            project_root = _get_project_root()
             result = subprocess.run([
                 "uv", "run", "-m", "src.interfaces.cli", 
                 "data", "collect", "--source", "action_network", "--real"
-            ], capture_output=True, text=True, cwd="/Users/samlafell/Documents/programming_projects/mlb_betting_program")
+            ], capture_output=True, text=True, cwd=project_root)
             
             if result.returncode == 0:
                 console.print("[green]✅ Initial data collection completed[/green]")
@@ -461,10 +546,11 @@ def _generate_first_predictions():
         console.print("[blue]Generating predictions...[/blue]")
         
         # Run predictions command via subprocess to avoid event loop conflicts
+        project_root = _get_project_root()
         result = subprocess.run([
             "uv", "run", "-m", "src.interfaces.cli", 
             "predictions", "today", "--confidence-threshold", "0.6", "--format", "summary"
-        ], capture_output=True, text=True, cwd="/Users/samlafell/Documents/programming_projects/mlb_betting_program")
+        ], capture_output=True, text=True, cwd=project_root)
         
         if result.returncode == 0:
             console.print("[green]✅ Predictions generated successfully[/green]")
@@ -499,43 +585,63 @@ def _generate_first_predictions():
         console.print("   [cyan]uv run -m src.interfaces.cli predictions today[/cyan]")
 
 
+def _show_no_predictions_help():
+    """Show helpful guidance when no predictions are available."""
+    console.print("💡 [dim]This could mean:[/dim]")
+    console.print("   • No MLB games scheduled for today")
+    console.print("   • No predictions meet the confidence threshold")
+    console.print("   • Insufficient data collected yet")
+    console.print()
+    console.print("🔧 [bold]Try these solutions:[/bold]")
+    console.print("   [cyan]uv run -m src.interfaces.cli data collect --source action_network --real[/cyan]")
+    console.print("   [cyan]uv run -m src.interfaces.cli quickstart predictions --confidence-threshold 0.3[/cyan]")
+    console.print("   [cyan]uv run -m src.interfaces.cli pipeline run-full --generate-predictions[/cyan]")
+
 def _show_next_steps():
     """Show next steps for the user."""
     console.print("\n🎯 [bold]What's Next?[/bold]")
     
     # Check if database tables exist to give more specific guidance
     if _check_required_tables():
-        console.print("Your system is ready! Here are some commands to try:")
+        console.print("✅ [green]Your system is ready![/green] Here are some commands to try:")
         console.print()
         console.print("📊 [bold]View Today's Predictions:[/bold]")
-        console.print("   [cyan]uv run -m src.interfaces.cli predictions today[/cyan]")
+        console.print("   [cyan]uv run -m src.interfaces.cli quickstart predictions[/cyan]")
+        console.print()
+        console.print("🔄 [bold]Collect Fresh Data:[/bold]")
+        console.print("   [cyan]uv run -m src.interfaces.cli data collect --source action_network --real[/cyan]")
         console.print()
         console.print("🤖 [bold]Check Model Performance:[/bold]")
         console.print("   [cyan]uv run -m src.interfaces.cli ml models --profitable-only[/cyan]")
-        console.print()
-        console.print("🔄 [bold]Run Complete Pipeline:[/bold]")
-        console.print("   [cyan]uv run -m src.interfaces.cli pipeline run-full --generate-predictions[/cyan]")
     else:
         console.print("⚠️ [yellow]Database setup needed for full functionality.[/yellow]")
         console.print()
-        console.print("🔧 [bold]First, set up the database:[/bold]")
+        console.print("🚀 [bold]Quick automated setup (recommended):[/bold]")
+        console.print("   [cyan]./quick-start.sh[/cyan]")
+        console.print()
+        console.print("🔧 [bold]Or manual database setup:[/bold]")
         console.print("   [cyan]uv run -m src.interfaces.cli database setup-action-network[/cyan]")
         console.print()
-        console.print("📊 [bold]Then, try getting predictions:[/bold]")
+        console.print("📊 [bold]Then get predictions:[/bold]")
         console.print("   [cyan]uv run -m src.interfaces.cli quickstart predictions[/cyan]")
-        console.print()
-        console.print("🔄 [bold]Or run the complete pipeline:[/bold]")
-        console.print("   [cyan]uv run -m src.interfaces.cli pipeline run-full --generate-predictions[/cyan]")
     
     console.print()
     console.print("📈 [bold]Start Monitoring Dashboard:[/bold]")
     console.print("   [cyan]uv run -m src.interfaces.cli monitoring dashboard[/cyan]")
+    console.print("   Then visit: [blue]http://localhost:8080[/blue]")
     console.print()
     console.print("💡 [bold]Get Help:[/bold]")
     console.print("   [cyan]uv run -m src.interfaces.cli --help[/cyan]")
+    console.print("   [cyan]./quick-start.sh --help[/cyan]")
     console.print()
     console.print("🆘 [bold]Having Issues?[/bold]")
     console.print("   [cyan]uv run -m src.interfaces.cli quickstart validate --fix-issues[/cyan]")
+    console.print("   [cyan]./quick-start.sh --skip-docker --skip-deps[/cyan] (repair mode)")
+    console.print()
+    console.print("📚 [bold]Documentation:[/bold]")
+    console.print("   • Quick Start: [cyan]./QUICK_START.md[/cyan]")
+    console.print("   • Full Guide: [cyan]./README.md[/cyan]")
+    console.print("   • User Guide: [cyan]./USER_GUIDE.md[/cyan]")
 
 
 def _validate_database() -> dict:

@@ -65,7 +65,7 @@ class DataRecord(BaseModel):
 
     id: int | None = None
     external_id: str | None = None
-    source: str
+    source: str | None = None  # Allow None values, processors will handle fallbacks
     raw_data: dict[str, Any] | None = None
     quality_score: float | None = Field(default=None, ge=0.0, le=1.0)
     validation_status: ProcessingStatus = ProcessingStatus.PENDING

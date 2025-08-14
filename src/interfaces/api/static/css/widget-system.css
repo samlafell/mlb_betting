@@ -1,0 +1,698 @@
+/**
+ * Widget Management System Styles
+ * 
+ * Comprehensive styling for the customizable widget dashboard including:
+ * - Responsive grid layouts
+ * - Touch-optimized drag and drop
+ * - Widget size variations
+ * - Performance optimizations
+ * - Dark theme integration
+ */
+
+/* Widget Container Layouts */
+.dashboard-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+    padding: 1.5rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.dashboard-container.layout-list {
+    grid-template-columns: 1fr;
+    max-width: 800px;
+}
+
+.dashboard-container.layout-compact {
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+}
+
+/* Widget Card Styles */
+.widget-card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.widget-card:hover {
+    border-color: #60a5fa;
+    box-shadow: 0 8px 25px rgba(96, 165, 250, 0.15);
+}
+
+.widget-card.dragging-touch {
+    transform: scale(1.05);
+    box-shadow: 0 12px 35px rgba(96, 165, 250, 0.3);
+    z-index: 1000;
+}
+
+/* Widget Sizes */
+.widget-size-small {
+    grid-row: span 1;
+    min-height: 200px;
+}
+
+.widget-size-medium {
+    grid-row: span 2;
+    min-height: 300px;
+}
+
+.widget-size-large {
+    grid-row: span 3;
+    min-height: 400px;
+}
+
+.widget-size-extra-large {
+    grid-column: span 2;
+    grid-row: span 3;
+    min-height: 500px;
+}
+
+/* Widget Header */
+.widget-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #374151;
+    background: linear-gradient(135deg, #1e293b 0%, #2d3748 100%);
+}
+
+.widget-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    color: #e2e8f0;
+}
+
+.widget-icon {
+    font-size: 1.2em;
+}
+
+.widget-name {
+    font-size: 0.95rem;
+}
+
+.widget-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.widget-control-btn {
+    background: transparent;
+    border: none;
+    color: #9ca3af;
+    padding: 0.25rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.9rem;
+}
+
+.widget-control-btn:hover {
+    background: #374151;
+    color: #e2e8f0;
+}
+
+.widget-drag-handle {
+    color: #6b7280;
+    cursor: grab;
+    padding: 0.25rem;
+    font-size: 1rem;
+    line-height: 1;
+    user-select: none;
+}
+
+.widget-drag-handle:hover {
+    color: #9ca3af;
+}
+
+.widget-drag-handle:active {
+    cursor: grabbing;
+}
+
+/* Widget Content */
+.widget-content {
+    padding: 1.5rem;
+    height: calc(100% - 4rem);
+    overflow-y: auto;
+    position: relative;
+}
+
+.widget-content.refreshing::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #60a5fa, #3b82f6, #60a5fa);
+    background-size: 200% 100%;
+    animation: loading-bar 1s infinite;
+    z-index: 10;
+}
+
+@keyframes loading-bar {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.loading-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #6b7280;
+    font-style: italic;
+}
+
+/* Widget Type Specific Styles */
+.widget-metric-card .metric {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid #374151;
+}
+
+.widget-metric-card .metric:last-child {
+    border-bottom: none;
+}
+
+.widget-metric-card .metric-value {
+    font-weight: bold;
+    color: #10b981;
+}
+
+.widget-list-widget .list-item {
+    background: #374151;
+    border-radius: 4px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    transition: background 0.2s ease;
+}
+
+.widget-list-widget .list-item:hover {
+    background: #4b5563;
+}
+
+.widget-chart-widget canvas {
+    width: 100% !important;
+    height: 300px !important;
+}
+
+.widget-alert-widget .alert-item {
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    border-radius: 4px;
+    border-left: 4px solid #ef4444;
+    background: #7f1d1d;
+    color: #fecaca;
+}
+
+.widget-alert-widget .alert-item.warning {
+    border-left-color: #f59e0b;
+    background: #78350f;
+    color: #fed7aa;
+}
+
+.widget-alert-widget .alert-item.info {
+    border-left-color: #3b82f6;
+    background: #1e3a8a;
+    color: #bfdbfe;
+}
+
+/* Modal Styles */
+.widget-config-modal,
+.add-widget-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.widget-config-modal.show,
+.add-widget-modal.show {
+    opacity: 1;
+}
+
+.modal-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(4px);
+}
+
+.modal-content {
+    background: #1e293b;
+    border: 1px solid #374151;
+    border-radius: 8px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    position: relative;
+    z-index: 1;
+    transform: scale(0.95);
+    transition: transform 0.3s ease;
+}
+
+.widget-config-modal.show .modal-content,
+.add-widget-modal.show .modal-content {
+    transform: scale(1);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    border-bottom: 1px solid #374151;
+}
+
+.modal-header h3 {
+    color: #e2e8f0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.modal-close {
+    background: transparent;
+    border: none;
+    color: #9ca3af;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0.25rem;
+    line-height: 1;
+}
+
+.modal-close:hover {
+    color: #e2e8f0;
+}
+
+.modal-body {
+    padding: 1.5rem;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    padding: 1.5rem;
+    border-top: 1px solid #374151;
+}
+
+/* Configuration Forms */
+.config-section {
+    margin-bottom: 1.5rem;
+}
+
+.config-section label {
+    display: block;
+    color: #e2e8f0;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+
+.config-select,
+.config-input {
+    width: 100%;
+    padding: 0.75rem;
+    background: #374151;
+    border: 1px solid #4b5563;
+    border-radius: 4px;
+    color: #e2e8f0;
+    font-size: 0.875rem;
+}
+
+.config-select:focus,
+.config-input:focus {
+    outline: none;
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2);
+}
+
+.checkbox-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.5rem;
+}
+
+.checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: normal;
+    margin: 0;
+}
+
+/* Widget Preview Grid */
+.widget-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+}
+
+.widget-preview {
+    background: #374151;
+    border: 1px solid #4b5563;
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+
+.widget-preview:hover {
+    border-color: #60a5fa;
+    background: #475569;
+}
+
+.widget-preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.widget-preview-icon {
+    font-size: 1.5rem;
+}
+
+.widget-preview-title {
+    font-weight: 600;
+    color: #e2e8f0;
+}
+
+.widget-preview-description {
+    color: #9ca3af;
+    font-size: 0.875rem;
+    margin-bottom: 1rem;
+    line-height: 1.4;
+}
+
+/* Buttons */
+.btn-primary,
+.btn-secondary {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 4px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    display: inline-block;
+    text-align: center;
+}
+
+.btn-primary {
+    background: #3b82f6;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #2563eb;
+}
+
+.btn-secondary {
+    background: #6b7280;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #4b5563;
+}
+
+.add-widget-action {
+    width: 100%;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+}
+
+/* Dashboard Toolbar */
+.dashboard-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    background: #1e293b;
+    border-bottom: 1px solid #334155;
+    margin-bottom: 1.5rem;
+}
+
+.dashboard-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #e2e8f0;
+}
+
+.dashboard-actions {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.layout-preset-btn {
+    padding: 0.5rem 1rem;
+    background: #374151;
+    border: 1px solid #4b5563;
+    border-radius: 4px;
+    color: #e2e8f0;
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: all 0.2s ease;
+}
+
+.layout-preset-btn:hover,
+.layout-preset-btn.active {
+    background: #3b82f6;
+    border-color: #3b82f6;
+}
+
+/* Notifications */
+.notification-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 2000;
+    pointer-events: none;
+}
+
+.notification {
+    background: #374151;
+    border: 1px solid #4b5563;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 10px 15px rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-width: 300px;
+    pointer-events: auto;
+    transform: translateX(100%);
+    animation: slideIn 0.3s ease forwards;
+}
+
+.notification-success {
+    border-left: 4px solid #10b981;
+}
+
+.notification-warning {
+    border-left: 4px solid #f59e0b;
+}
+
+.notification-error {
+    border-left: 4px solid #ef4444;
+}
+
+.notification-info {
+    border-left: 4px solid #3b82f6;
+}
+
+.notification-message {
+    color: #e2e8f0;
+    font-size: 0.875rem;
+}
+
+.notification-close {
+    background: transparent;
+    border: none;
+    color: #9ca3af;
+    cursor: pointer;
+    font-size: 1.2rem;
+    padding: 0;
+    margin-left: 1rem;
+}
+
+@keyframes slideIn {
+    to { transform: translateX(0); }
+}
+
+/* Performance Mode Optimizations */
+.performance-mode * {
+    transition: none !important;
+    animation: none !important;
+}
+
+.performance-mode .widget-card:hover {
+    transform: none;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+    .dashboard-container {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+        padding: 1rem;
+    }
+    
+    .widget-size-extra-large {
+        grid-column: span 1;
+    }
+    
+    .widget-header {
+        padding: 0.75rem 1rem;
+    }
+    
+    .widget-content {
+        padding: 1rem;
+        height: calc(100% - 3rem);
+    }
+    
+    .widget-controls {
+        gap: 0.25rem;
+    }
+    
+    .widget-control-btn {
+        padding: 0.5rem;
+        font-size: 1rem;
+    }
+    
+    .dashboard-toolbar {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: stretch;
+    }
+    
+    .dashboard-actions {
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+    
+    .modal-content {
+        width: 95%;
+        max-height: 90vh;
+        margin: 2rem;
+    }
+    
+    .widget-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .notification {
+        min-width: auto;
+        width: calc(100vw - 2rem);
+        margin: 0 1rem 0.75rem 0;
+    }
+}
+
+@media (max-width: 480px) {
+    .dashboard-container {
+        padding: 0.5rem;
+    }
+    
+    .widget-card {
+        border-radius: 6px;
+    }
+    
+    .widget-header {
+        padding: 0.5rem 0.75rem;
+    }
+    
+    .widget-content {
+        padding: 0.75rem;
+    }
+    
+    .modal-content {
+        margin: 1rem;
+    }
+}
+
+/* Touch Optimizations */
+@media (hover: none) {
+    .widget-control-btn {
+        padding: 0.75rem;
+        font-size: 1.1rem;
+    }
+    
+    .widget-drag-handle {
+        padding: 0.75rem;
+        font-size: 1.2rem;
+    }
+    
+    .btn-primary,
+    .btn-secondary {
+        padding: 1rem 1.5rem;
+        font-size: 1rem;
+    }
+    
+    .layout-preset-btn {
+        padding: 0.75rem 1.25rem;
+        font-size: 1rem;
+    }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+    .widget-card {
+        border-width: 2px;
+    }
+    
+    .widget-card:hover {
+        border-width: 3px;
+    }
+    
+    .widget-control-btn:hover {
+        background: #4b5563;
+        outline: 2px solid #60a5fa;
+    }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* Print styles */
+@media print {
+    .widget-controls,
+    .dashboard-toolbar,
+    .notification-container {
+        display: none;
+    }
+    
+    .widget-card {
+        break-inside: avoid;
+        border: 1px solid #000;
+        background: white;
+        color: black;
+    }
+}

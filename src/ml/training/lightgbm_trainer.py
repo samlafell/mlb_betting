@@ -14,7 +14,7 @@ import mlflow
 import mlflow.lightgbm
 import mlflow.sklearn
 import numpy as np
-import pandas as pd
+import polars as pl
 from sklearn.metrics import (
     accuracy_score,
     f1_score,
@@ -562,7 +562,7 @@ class LightGBMTrainer:
                     if key not in ["feature_version", "last_updated"]:
                         if isinstance(value, Decimal):
                             feature_dict[f"temporal_{key}"] = float(value)
-                        elif isinstance(value, (int, float)) and not pd.isna(value):
+                        elif isinstance(value, (int, float)) and not pl.is_nan(value) if isinstance(value, float) else value is None:
                             feature_dict[f"temporal_{key}"] = float(value)
                         else:
                             feature_dict[f"temporal_{key}"] = 0.0
@@ -574,7 +574,7 @@ class LightGBMTrainer:
                     if key not in ["feature_version", "calculation_timestamp"]:
                         if isinstance(value, Decimal):
                             feature_dict[f"market_{key}"] = float(value)
-                        elif isinstance(value, (int, float)) and not pd.isna(value):
+                        elif isinstance(value, (int, float)) and not pl.is_nan(value) if isinstance(value, float) else value is None:
                             feature_dict[f"market_{key}"] = float(value)
                         elif isinstance(value, list) and len(value) > 0:
                             feature_dict[f"market_{key}_count"] = len(value)
@@ -588,7 +588,7 @@ class LightGBMTrainer:
                     if key not in ["feature_version", "mlb_api_last_updated"]:
                         if isinstance(value, Decimal):
                             feature_dict[f"team_{key}"] = float(value)
-                        elif isinstance(value, (int, float)) and not pd.isna(value):
+                        elif isinstance(value, (int, float)) and not pl.is_nan(value) if isinstance(value, float) else value is None:
                             feature_dict[f"team_{key}"] = float(value)
                         elif isinstance(value, str) and key.endswith("_record"):
                             # Parse win-loss records like "7-3"
@@ -613,7 +613,7 @@ class LightGBMTrainer:
                     ]:
                         if isinstance(value, Decimal):
                             feature_dict[f"splits_{key}"] = float(value)
-                        elif isinstance(value, (int, float)) and not pd.isna(value):
+                        elif isinstance(value, (int, float)) and not pl.is_nan(value) if isinstance(value, float) else value is None:
                             feature_dict[f"splits_{key}"] = float(value)
                         elif isinstance(value, list):
                             feature_dict[f"splits_{key}_count"] = len(value)
@@ -623,14 +623,14 @@ class LightGBMTrainer:
             # Add derived and interaction features
             if feature_vector.derived_features:
                 for key, value in feature_vector.derived_features.items():
-                    if isinstance(value, (int, float, Decimal)) and not pd.isna(value):
+                    if isinstance(value, (int, float, Decimal)) and not pl.is_nan(value) if isinstance(value, float) else value is None:
                         feature_dict[f"derived_{key}"] = float(value)
                     else:
                         feature_dict[f"derived_{key}"] = 0.0
 
             if feature_vector.interaction_features:
                 for key, value in feature_vector.interaction_features.items():
-                    if isinstance(value, (int, float, Decimal)) and not pd.isna(value):
+                    if isinstance(value, (int, float, Decimal)) and not pl.is_nan(value) if isinstance(value, float) else value is None:
                         feature_dict[f"interaction_{key}"] = float(value)
                     else:
                         feature_dict[f"interaction_{key}"] = 0.0

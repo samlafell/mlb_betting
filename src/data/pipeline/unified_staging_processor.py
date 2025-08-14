@@ -197,7 +197,12 @@ class UnifiedStagingProcessor(BaseZoneProcessor):
             source_data_source = kwargs.get('data_source')
             source_collector = kwargs.get('source_collector')
             
-            # Try to infer from record metadata first
+            # Try to infer from original record's source field (new logic to handle DataRecord.source)
+            if hasattr(record, 'source') and record.source:
+                source_data_source = source_data_source or record.source
+                source_collector = source_collector or record.source
+            
+            # Try to infer from record metadata
             if hasattr(record, 'raw_data') and isinstance(record.raw_data, dict):
                 metadata = record.raw_data.get('_metadata', {})
                 if metadata:
@@ -214,9 +219,13 @@ class UnifiedStagingProcessor(BaseZoneProcessor):
             
         except Exception as e:
             logger.warning(f"Failed to populate source attribution: {e}")
-            # Set defaults to ensure non-null values
-            record.data_source = record.data_source or 'unknown'
-            record.source_collector = record.source_collector or 'unknown'
+            # Set defaults to ensure non-null values but log warning about missing source
+            if not record.data_source:
+                logger.warning(f"Record {getattr(record, 'external_id', 'unknown')} missing data_source, setting to 'unknown'")
+                record.data_source = 'unknown'
+            if not record.source_collector:
+                logger.warning(f"Record {getattr(record, 'external_id', 'unknown')} missing source_collector, setting to 'unknown'")
+                record.source_collector = 'unknown'
     
     async def _resolve_sportsbook_info(self, record: UnifiedStagingRecord):
         """Resolve sportsbook information (FIXES ISSUE #2)."""
@@ -471,13 +480,20 @@ class UnifiedStagingProcessor(BaseZoneProcessor):
         try:
             # Determine raw data table based on source - NO HARDCODED TABLE NAMES
             source = getattr(record, 'data_source', getattr(source_record, 'source', 'unknown'))
+            
+            # Guard against None source values
+            if not source:
+                source = 'unknown'
+                logger.warning(f"Record {getattr(record, 'external_id', 'unknown')} has None source for data lineage, using 'unknown'")
+            
             table_mapping = {
                 'action_network': 'raw_data.action_network_odds',
                 'vsin': 'raw_data.vsin_data',
                 'sbd': 'raw_data.sbd_betting_splits',
                 'mlb_stats_api': 'raw_data.mlb_stats_api_games'
             }
-            record.raw_data_table = table_mapping.get(source.lower(), f'raw_data.{source.lower()}_data')
+            source_lower = source.lower() if source else 'unknown'
+            record.raw_data_table = table_mapping.get(source_lower, f'raw_data.{source_lower}_data')
             record.raw_data_id = getattr(source_record, 'id', None)
             
             # Create transformation metadata
@@ -681,12 +697,15 @@ class UnifiedStagingProcessor(BaseZoneProcessor):
                     
                     for record in records:
                         try:
+                            # Convert string date to date object for PostgreSQL
+                            game_date_obj = self._convert_date_string(record.game_date)
+                            
                             record_data = (
                                 record.data_source,
                                 record.source_collector,
                                 record.external_game_id,
                                 record.mlb_stats_api_game_id,
-                                record.game_date,
+                                game_date_obj,
                                 record.home_team,
                                 record.away_team,
                                 record.sportsbook_external_id,
@@ -731,6 +750,35 @@ class UnifiedStagingProcessor(BaseZoneProcessor):
             logger.error(f"Error storing unified records in batch: {e}")
             raise
     
+    def _convert_date_string(self, date_str: Optional[str]) -> Optional[datetime.date]:
+        """Convert string date to date object for PostgreSQL."""
+        if not date_str:
+            return None
+            
+        try:
+            # Handle various date string formats
+            if isinstance(date_str, str):
+                # Try ISO format (YYYY-MM-DD)
+                if len(date_str) == 10 and date_str.count('-') == 2:
+                    from datetime import date
+                    year, month, day = map(int, date_str.split('-'))
+                    return date(year, month, day)
+                    
+                # Try other common formats
+                for fmt in ['%Y-%m-%d', '%m/%d/%Y', '%Y%m%d']:
+                    try:
+                        parsed_date = datetime.strptime(date_str, fmt).date()
+                        return parsed_date
+                    except ValueError:
+                        continue
+                        
+            logger.warning(f"Could not parse date string: {date_str}")
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Error converting date string '{date_str}': {e}")
+            return None
+
     def _safe_int_convert(self, value: Any) -> Optional[int]:
         """Safely convert value to integer."""
         try:
@@ -766,7 +814,7 @@ class UnifiedStagingProcessor(BaseZoneProcessor):
             return None
     
     async def _query_game_data_by_source(self, external_game_id: str, source: str = 'action_network') -> Optional[Dict[str, Any]]:
-        """Query source-specific games table for team names and metadata."""
+        """Query source-specific games table for team names and metadata with schema validation."""
         try:
             from ...data.database.connection import get_connection
             
@@ -780,10 +828,21 @@ class UnifiedStagingProcessor(BaseZoneProcessor):
             
             games_table = games_table_mapping.get(source.lower(), 'raw_data.action_network_games')
             
+            # Validate table schema before querying
+            desired_columns = ['external_game_id', 'home_team', 'away_team', 'game_date', 'start_time', 'home_team_abbr', 'away_team_abbr']
+            column_validation = await self._validate_query_columns(games_table, desired_columns)
+            
+            # Build query with only available columns
+            available_columns = [col for col, exists in column_validation.items() if exists]
+            if 'external_game_id' not in available_columns:
+                logger.warning(f"Table {games_table} missing required column 'external_game_id'")
+                return None
+            
             async with get_connection() as connection:
+                # Build dynamic query with only validated columns
+                select_columns = ', '.join(available_columns)
                 query = f"""
-                SELECT external_game_id, home_team, away_team, game_date, start_time,
-                       home_team_abbr, away_team_abbr
+                SELECT {select_columns}
                 FROM {games_table}
                 WHERE external_game_id = $1
                 LIMIT 1
@@ -791,20 +850,20 @@ class UnifiedStagingProcessor(BaseZoneProcessor):
                 
                 row = await connection.fetchrow(query, external_game_id)
                 if row:
-                    # Extract game date from available sources
+                    # Extract game date from available sources with safe column access
                     game_date = None
-                    if row['game_date']:
+                    if 'game_date' in available_columns and row.get('game_date'):
                         game_date = str(row['game_date'])
-                    elif row['start_time']:
+                    elif 'start_time' in available_columns and row.get('start_time'):
                         # Extract date from start_time if game_date is null
                         game_date = str(row['start_time'].date())
                     
                     result = {
-                        'home_team': normalize_team_name(row['home_team']) if row['home_team'] else None,
-                        'away_team': normalize_team_name(row['away_team']) if row['away_team'] else None,
+                        'home_team': normalize_team_name(row['home_team']) if 'home_team' in available_columns and row.get('home_team') else None,
+                        'away_team': normalize_team_name(row['away_team']) if 'away_team' in available_columns and row.get('away_team') else None,
                         'game_date': game_date,
-                        'home_team_abbr': row['home_team_abbr'],
-                        'away_team_abbr': row['away_team_abbr']
+                        'home_team_abbr': row.get('home_team_abbr') if 'home_team_abbr' in available_columns else None,
+                        'away_team_abbr': row.get('away_team_abbr') if 'away_team_abbr' in available_columns else None
                     }
                     
                     logger.debug(f"✅ Found game data for {external_game_id}: {result['home_team']} vs {result['away_team']}")
@@ -815,7 +874,7 @@ class UnifiedStagingProcessor(BaseZoneProcessor):
                 return None
                 
         except Exception as e:
-            logger.warning(f"Failed to query Action Network game data for {external_game_id}: {e}")
+            logger.warning(f"Failed to query game data for {external_game_id} from {source}: {e}")
             return None
     
     async def _extract_team_ids_from_raw_data(self, record: UnifiedStagingRecord) -> Optional[Dict[str, int]]:
@@ -845,7 +904,7 @@ class UnifiedStagingProcessor(BaseZoneProcessor):
             return None
             
         except Exception as e:
-            logger.debug(f"Failed to extract team IDs from raw data: {e}")
+            logger.warning(f"Failed to extract team IDs from raw data: {e}")
             return None
     
     async def _resolve_team_ids_to_names(self, team_ids: Dict[str, int], source: str = 'action_network') -> Optional[Dict[str, str]]:
@@ -931,11 +990,93 @@ class UnifiedStagingProcessor(BaseZoneProcessor):
             return None
             
         except Exception as e:
-            logger.debug(f"Failed to resolve team IDs to names: {e}")
+            logger.warning(f"Failed to resolve team IDs to names: {e}")
             return None
     
+    async def _introspect_table_schema(self, table_name: str) -> Optional[Dict[str, str]]:
+        """
+        Introspect database table schema to get available columns and their types.
+        
+        Args:
+            table_name: Table name in format 'schema.table'
+            
+        Returns:
+            Dictionary mapping column names to their data types, or None if table doesn't exist
+        """
+        try:
+            from ...data.database.connection import get_connection
+            
+            # Parse schema and table name
+            if '.' in table_name:
+                schema_name, table_name_only = table_name.split('.', 1)
+            else:
+                schema_name, table_name_only = 'public', table_name
+            
+            async with get_connection() as connection:
+                query = """
+                SELECT column_name, data_type, is_nullable
+                FROM information_schema.columns
+                WHERE table_schema = $1 AND table_name = $2
+                ORDER BY ordinal_position
+                """
+                
+                rows = await connection.fetch(query, schema_name, table_name_only)
+                if not rows:
+                    logger.warning(f"Table {table_name} not found during schema introspection")
+                    return None
+                
+                schema_info = {}
+                for row in rows:
+                    schema_info[row['column_name']] = {
+                        'data_type': row['data_type'],
+                        'is_nullable': row['is_nullable']
+                    }
+                
+                logger.debug(f"Introspected schema for {table_name}: {len(schema_info)} columns")
+                return schema_info
+                
+        except Exception as e:
+            logger.warning(f"Failed to introspect table schema for {table_name}: {e}")
+            return None
+    
+    async def _validate_query_columns(self, table_name: str, columns: List[str]) -> Dict[str, bool]:
+        """
+        Validate that columns exist in the specified table.
+        
+        Args:
+            table_name: Table name to validate against
+            columns: List of column names to check
+            
+        Returns:
+            Dictionary mapping column names to existence (True/False)
+        """
+        try:
+            schema_info = await self._introspect_table_schema(table_name)
+            if not schema_info:
+                return {col: False for col in columns}
+            
+            available_columns = set(schema_info.keys())
+            validation_result = {}
+            
+            for column in columns:
+                validation_result[column] = column in available_columns
+                
+            # Log any missing columns as warnings
+            missing_columns = [col for col, exists in validation_result.items() if not exists]
+            if missing_columns:
+                logger.warning(
+                    f"Missing columns in {table_name}: {missing_columns}. "
+                    f"Available columns: {list(available_columns)}"
+                )
+            
+            return validation_result
+            
+        except Exception as e:
+            logger.warning(f"Failed to validate query columns for {table_name}: {e}")
+            return {col: False for col in columns}
+
     async def _lookup_mlb_stats_api_game_id(self, external_game_id: str, team_info: Dict[str, Any]) -> Optional[str]:
-        """Lookup MLB Stats API game ID based on game info."""
+        """Lookup MLB Stats API game ID based on game info with schema validation."""
         try:
             from ...data.database.connection import get_connection
             
@@ -951,25 +1092,53 @@ class UnifiedStagingProcessor(BaseZoneProcessor):
                 
                 tables = await connection.fetch(tables_query)
                 if tables:
-                    # Try to find matching game in MLB Stats data
-                    mlb_query = """
-                    SELECT mlb_game_id 
-                    FROM raw_data.mlb_stats_games 
-                    WHERE game_date = $1 
-                    AND (home_team_abbr = $2 OR away_team_abbr = $2)
-                    AND (home_team_abbr = $3 OR away_team_abbr = $3)
-                    LIMIT 1
-                    """
+                    # Validate the table exists and inspect its schema
+                    table_name = 'raw_data.mlb_stats_api_games'
+                    schema_info = await self._introspect_table_schema(table_name)
                     
-                    game_date = team_info.get('game_date')
-                    home_team = team_info.get('home_team_abbr') or team_info.get('home_team')
-                    away_team = team_info.get('away_team_abbr') or team_info.get('away_team')
+                    if not schema_info:
+                        logger.warning(f"Table {table_name} not found, skipping MLB Stats API lookup")
+                        return None
                     
-                    if game_date and home_team and away_team:
-                        row = await connection.fetchrow(mlb_query, game_date, home_team, away_team)
-                        if row:
-                            logger.debug(f"✅ Found MLB Stats API game ID via database: {row['mlb_game_id']}")
-                            return str(row['mlb_game_id'])
+                    # Check if required columns exist before building query
+                    required_columns = ['external_game_id', 'raw_response']
+                    column_validation = await self._validate_query_columns(table_name, required_columns)
+                    
+                    if not all(column_validation.values()):
+                        missing = [col for col, exists in column_validation.items() if not exists]
+                        logger.warning(f"Required columns missing in {table_name}: {missing}")
+                        return None
+                    
+                    try:
+                        # Build the query using only validated columns and JSONB paths
+                        mlb_query = """
+                        SELECT external_game_id as mlb_game_id 
+                        FROM raw_data.mlb_stats_api_games 
+                        WHERE raw_response->>'gameDate' = $1
+                        AND (
+                            raw_response->'teams'->'home'->'team'->>'abbreviation' = $2 
+                            OR raw_response->'teams'->'away'->'team'->>'abbreviation' = $2
+                        )
+                        AND (
+                            raw_response->'teams'->'home'->'team'->>'abbreviation' = $3 
+                            OR raw_response->'teams'->'away'->'team'->>'abbreviation' = $3
+                        )
+                        LIMIT 1
+                        """
+                        
+                        game_date = team_info.get('game_date')
+                        home_team = team_info.get('home_team_abbr') or team_info.get('home_team')
+                        away_team = team_info.get('away_team_abbr') or team_info.get('away_team')
+                        
+                        if game_date and home_team and away_team:
+                            row = await connection.fetchrow(mlb_query, game_date, home_team, away_team)
+                            if row:
+                                logger.debug(f"✅ Found MLB Stats API game ID via database: {row['mlb_game_id']}")
+                                return str(row['mlb_game_id'])
+                    except Exception as query_error:
+                        # Log as warning since this indicates a real schema/query issue
+                        logger.warning(f"MLB Stats API query failed (schema mismatch or query error): {query_error}")
+                        return None
             
             # For now, return None as we don't have direct MLB Stats API integration
             # In a production environment, this would:
@@ -982,7 +1151,7 @@ class UnifiedStagingProcessor(BaseZoneProcessor):
             return None
             
         except Exception as e:
-            logger.debug(f"Failed to lookup MLB Stats API game ID: {e}")
+            logger.warning(f"Failed to lookup MLB Stats API game ID: {e}")
             return None
 
 

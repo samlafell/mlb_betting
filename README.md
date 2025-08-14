@@ -2,7 +2,28 @@
 
 A comprehensive sports betting analysis platform focused on identifying profitable MLB betting opportunities through advanced analytics, sharp action detection, and automated backtesting.
 
-## 🚀 Quick Start - Unified CLI System (v3.0)
+## ⚡ New User? Start Here! (GitHub Issue #35 Solution)
+
+**🚀 One-Command Setup for Business Users:**
+
+```bash
+# Clone the project and run:
+./quick-start.sh
+```
+
+**That's it!** This addresses the complex setup barriers identified in [GitHub issue #35](https://github.com/samlafell/mlb_betting_program/issues/35). The script automatically:
+- ✅ Installs all requirements
+- ✅ Starts database containers
+- ✅ Collects initial data  
+- ✅ Generates first predictions
+
+**Time:** 5-10 minutes | **Expertise:** None required
+
+📖 **[→ Read the Complete Quick Start Guide](QUICK_START.md)** ← *Designed for business users*
+
+---
+
+## 🚀 Advanced Users - CLI System (v3.0)
 
 The project has been completely reorganized with a unified CLI structure providing comprehensive data collection, analysis, and betting intelligence capabilities:
 
@@ -364,38 +385,43 @@ All timestamps are automatically converted from UTC (API format) to Eastern Time
 - Last updated times show as "June 15, 2025 at 01:03 PM EDT"
 - Proper handling of EST/EDT based on daylight saving time
 
-## Quick Start
+## 🎯 Quick Reference for Daily Use
 
-1. **Install Dependencies**:
+### For Business Users (Simple)
+```bash
+# Get today's predictions (most important!)
+uv run -m src.interfaces.cli quickstart predictions
+
+# Start web dashboard
+uv run -m src.interfaces.cli monitoring dashboard
+# Then visit: http://localhost:8080
+```
+
+### For Technical Users (Advanced)
+
+1. **First-time Setup**:
    ```bash
-   uv sync
+   ./quick-start.sh  # Automated setup
+   # OR
+   uv sync && uv run -m src.interfaces.cli database setup-action-network
    ```
 
-2. **Setup Database** (one-time):
+2. **Daily Data Collection**:
    ```bash
-   uv run -m src.interfaces.cli database setup-action-network
-   ```
-
-3. **Collect Data from Sources**:
-   ```bash
+   uv run -m src.interfaces.cli data collect --source action_network --real
    uv run -m src.interfaces.cli data collect --source vsin --real
-   uv run -m src.interfaces.cli data collect --source sbd --real
    ```
 
-4. **Generate Historical Data for Analysis**:
+3. **Generate Analysis**:
    ```bash
-   uv run -m src.interfaces.cli action-network collect --date today
    uv run -m src.interfaces.cli action-network history --days 30
-   ```
-
-5. **Run Analysis & Find Opportunities**:
-   ```bash
    uv run -m src.interfaces.cli movement analyze --input-file output/action_network_history.json --show-details
    ```
 
-6. **View System Status**:
+4. **System Monitoring**:
    ```bash
    uv run -m src.interfaces.cli data status --detailed
+   uv run -m src.interfaces.cli quickstart validate
    ```
 
 ## Data Sources & Pipeline Architecture

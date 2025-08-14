@@ -16,7 +16,7 @@ import json
 import requests
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
-import pandas as pd
+import polars as pl
 
 
 class MLBBettingAPI:
@@ -460,8 +460,8 @@ def example_6_batch_predictions():
             
         # Display as formatted table
         if results:
-            df = pd.DataFrame(results)
-            print(df.to_string(index=False))
+            df = pl.DataFrame(results)
+            print(df.to_pandas().to_string(index=False))  # Convert to pandas for formatted output
             print()
             
             # Summary statistics

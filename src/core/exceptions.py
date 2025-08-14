@@ -350,6 +350,36 @@ class AnalysisError(UnifiedBettingError):
         )
 
 
+class AnalyticsError(UnifiedBettingError):
+    """Raised when statistical analytics operations fail."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        analytics_type: str | None = None,
+        method: str | None = None,
+        data_shape: tuple | None = None,
+        **kwargs,
+    ):
+        details = kwargs.get("details", {})
+
+        if analytics_type:
+            details["analytics_type"] = analytics_type
+        if method:
+            details["method"] = method
+        if data_shape:
+            details["data_shape"] = data_shape
+
+        super().__init__(
+            message,
+            component="analytics",
+            error_code="ANALYTICS_ERROR",
+            details=details,
+            **kwargs,
+        )
+
+
 class StrategyError(UnifiedBettingError):
     """Raised when betting strategy operations fail."""
 
