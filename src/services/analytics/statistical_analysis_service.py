@@ -27,7 +27,7 @@ warnings.filterwarnings('ignore')
 from ...core.enhanced_logging import get_contextual_logger, LogComponent
 from ...core.exceptions import AnalyticsError
 
-logger = get_contextual_logger(__name__, LogComponent.SERVICES)
+logger = get_contextual_logger(__name__, LogComponent.ANALYSIS)
 
 
 class StatisticalAnalysisService:
@@ -132,13 +132,32 @@ class StatisticalAnalysisService:
         mask = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
         upper_triangle = corr_matrix.where(mask)
         
+        # Stack and drop NaN values
+        stacked = upper_triangle.stack()
+        
+        if stacked.empty:
+            # Handle case where no correlations exist (e.g., single column or all constants)
+            return {
+                'variables': [],
+                'correlation': 0.0,
+                'strength': 'very_weak'
+            }
+        
         if positive:
             max_corr = upper_triangle.max().max()
-            max_idx = upper_triangle.stack().idxmax()
+            max_idx = stacked.idxmax()
         else:
             min_corr = upper_triangle.min().min()
-            max_idx = upper_triangle.stack().idxmin()
+            max_idx = stacked.idxmin()
             max_corr = min_corr
+        
+        # Handle NaN correlations (from constant variables)
+        if pd.isna(max_corr):
+            return {
+                'variables': [],
+                'correlation': 0.0,
+                'strength': 'very_weak'
+            }
         
         return {
             'variables': list(max_idx),
@@ -577,12 +596,15 @@ class StatisticalAnalysisService:
                 'explained_return': float(total_return - unexplained_return),
                 'unexplained_return': float(unexplained_return),
                 'r_squared': float(r2_score(y, model.predict(X))),
-                'factor_contributions': factor_contributions,
-                'attribution_summary': {
+                'factor_contributions': factor_contributions
+            }
+            
+            # Only add attribution summary if we have factors
+            if factor_contributions:
+                results['attribution_summary'] = {
                     'most_contributing_factor': max(factor_contributions.keys(), key=lambda x: abs(factor_contributions[x]['absolute_contribution'])),
                     'explained_percentage': float((total_return - unexplained_return) / total_return * 100) if total_return != 0 else 0.0
                 }
-            }
             
             return results
             
