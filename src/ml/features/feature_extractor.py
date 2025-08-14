@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 import numpy as np
 from pydantic import BaseModel, Field
 
@@ -490,10 +490,10 @@ class FeatureExtractor:
                 "runs_avg": total_runs / len(rows) if rows else 0.0
             }
     
-    def to_dataframe(self, features_list: List[GameFeatures]) -> pd.DataFrame:
-        """Convert list of GameFeatures to pandas DataFrame for ML training."""
+    def to_dataframe(self, features_list: List[GameFeatures]) -> pl.DataFrame:
+        """Convert list of GameFeatures to polars DataFrame for ML training."""
         if not features_list:
-            return pd.DataFrame()
+            return pl.DataFrame()
         
         # Convert to list of dictionaries
         data = []
@@ -504,10 +504,10 @@ class FeatureExtractor:
             feature_dict["extraction_timestamp"] = feature_dict["extraction_timestamp"].timestamp()
             data.append(feature_dict)
         
-        df = pd.DataFrame(data)
+        df = pl.DataFrame(data)
         
         # Sort by game_date for consistency
-        df = df.sort_values("game_date").reset_index(drop=True)
+        df = df.sort("game_date")
         
         logger.info(f"Created DataFrame with {len(df)} rows and {len(df.columns)} columns")
         return df
@@ -519,7 +519,7 @@ async def extract_features_for_training(
     end_date: datetime,
     prediction_targets: List[str] = None,
     config: Optional[FeatureExtractionConfig] = None
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     """
     Convenience function to extract features for ML training.
     
