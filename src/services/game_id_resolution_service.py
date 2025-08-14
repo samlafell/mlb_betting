@@ -236,7 +236,7 @@ class GameIDResolutionService:
                             "game_date": row["game_date"],
                             "game_datetime": row["game_datetime"],
                             "action_network_game_id": row["action_network_game_id"],
-                            "sportsbookreview_game_id": row["sportsbookreview_game_id"],
+                            "sbd_game_id": row["sbd_game_id"],
                             "vsin_game_id": row["vsin_game_id"],
                         }
                     )
@@ -259,8 +259,8 @@ class GameIDResolutionService:
         """
         if game_info.get("action_network_game_id"):
             return DataSource.ACTION_NETWORK
-        elif game_info.get("sportsbookreview_game_id"):
-            return DataSource.SPORTS_BOOK_REVIEW
+        elif game_info.get("sbd_game_id"):
+            return DataSource.SBD
         elif game_info.get("vsin_game_id"):
             return DataSource.VSIN
 
@@ -279,7 +279,7 @@ class GameIDResolutionService:
         """
         source_mapping = {
             DataSource.ACTION_NETWORK: "action_network_game_id",
-            DataSource.SPORTS_BOOK_REVIEW: "sportsbookreview_game_id",
+            DataSource.SBD: "sbd_game_id",
             DataSource.VSIN: "vsin_game_id",
         }
 

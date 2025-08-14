@@ -215,7 +215,7 @@ class BatchCollectionService:
             DataSource.ACTION_NETWORK,
             DataSource.VSIN, 
             DataSource.SBD,
-            DataSource.SPORTS_BOOK_REVIEW,
+            DataSource.SBD,
             DataSource.MLB_STATS_API
         ]
         

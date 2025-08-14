@@ -649,7 +649,7 @@ class GameIDMappingService:
             "action_network": DataSource.ACTION_NETWORK,
             "vsin": DataSource.VSIN,
             "sbd": DataSource.SBD,
-            "sbr": DataSource.SPORTS_BOOK_REVIEW,
+            "sbr": DataSource.SBD,
         }
         return source_map.get(source)
 

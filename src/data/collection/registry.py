@@ -106,10 +106,9 @@ class CollectorRegistry:
         """Setup source aliases for backward compatibility."""
         # Map alternative source names to primary sources
         alias_mappings = {
-            # SBD aliases
+            # SBD aliases (maintain backward compatibility)
             "sports_betting_dime": DataSource.SBD,
-            # SBR aliases (only map the alias, not the primary)
-            "sbr": DataSource.SPORTS_BOOK_REVIEW,
+            "sportsbook_dime": DataSource.SBD,
             # Other aliases can be added here
         }
 
@@ -236,19 +235,16 @@ class CollectorRegistry:
             from .consolidated_action_network_collector import ActionNetworkCollector
             from .mlb_stats_api_collector import MLBStatsAPICollector
             from .sbd_unified_collector_api import SBDUnifiedCollectorAPI
-            from .sbr_unified_collector import SBRUnifiedCollector
             from .vsin_unified_collector import VSINUnifiedCollector
 
             # Register primary collectors
             self.register_collector(DataSource.VSIN, VSINUnifiedCollector)
             self.register_collector(DataSource.SBD, SBDUnifiedCollectorAPI)
             self.register_collector(DataSource.ACTION_NETWORK, ActionNetworkCollector)
-            self.register_collector(DataSource.SPORTS_BOOK_REVIEW, SBRUnifiedCollector)
             self.register_collector(DataSource.MLB_STATS_API, MLBStatsAPICollector)
             self.register_collector(DataSource.ODDS_API, OddsAPICollector)
 
-            # Note: Deprecated SPORTS_BOOK_REVIEW_DEPRECATED enum removed
-            # All SBR functionality now consolidated under SPORTS_BOOK_REVIEW
+            # Note: Sports Book Review completely removed as no longer used
 
             logger.info(
                 "All collectors registered successfully",
