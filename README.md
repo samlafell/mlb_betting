@@ -34,7 +34,7 @@ The project has been completely reorganized with a unified CLI structure providi
 uv run -m src.interfaces.cli --help
 
 # Data Collection & Management
-uv run -m src.interfaces.cli data collect --source action_network --real  # NEW: Primary data source
+uv run -m src.interfaces.cli data collect --source action_network --real
 uv run -m src.interfaces.cli data collect --source vsin --real
 uv run -m src.interfaces.cli data collect --source sbd --real
 uv run -m src.interfaces.cli data collect --parallel --real
@@ -58,7 +58,7 @@ uv run -m src.interfaces.cli movement rlm --input-file output/action_network_his
 uv run -m src.interfaces.cli movement steam --input-file output/action_network_history.json --show-details
 
 # Backtesting & Performance
-uv run -m src.interfaces.cli backtest run --start-date 2025-06-01 --end-date 2025-07-30 --strategies sharp_action
+uv run -m src.interfaces.cli backtest run --start-date 2025-06-01 --end-date 2025-08-14 --strategies sharp_action
 uv run -m src.interfaces.cli backtest run --start-date 2025-06-01 --end-date 2025-06-30 --strategies sharp_action --initial-bankroll 10000 --bet-size 100
 
 # Database Management
@@ -99,7 +99,7 @@ uv run -m src.interfaces.cli action-network history --days 30
 uv run -m src.interfaces.cli movement analyze --input-file output/action_network_history.json --show-details
 
 # 5. Run backtesting on strategies
-uv run -m src.interfaces.cli backtest run --start-date 2024-06-01 --end-date 2024-06-30 --strategies sharp_action
+uv run -m src.interfaces.cli backtest run --start-date 2025-06-01 --end-date 2025-08-15 --strategies sharp_action
 
 # 6. Check system status
 uv run -m src.interfaces.cli data status
