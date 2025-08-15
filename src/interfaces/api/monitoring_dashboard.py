@@ -244,8 +244,17 @@ manager = ConnectionManager()
 # Initialize monitoring service
 monitoring_service = UnifiedMonitoringService(settings)
 
-# Templates
+# Templates and static files
 templates = Jinja2Templates(directory="src/interfaces/api/templates")
+
+# Import advanced analytics router
+from .advanced_analytics_api import analytics_router
+
+# Include advanced analytics routes
+app.include_router(analytics_router)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="src/interfaces/api/static"), name="static")
 
 
 @app.on_event("startup")
@@ -273,6 +282,12 @@ async def shutdown_event():
 async def dashboard_home(request: Request):
     """Serve the main dashboard HTML page."""
     return templates.TemplateResponse("dashboard.html", {"request": request})
+
+
+@app.get("/analytics", response_class=HTMLResponse)
+async def analytics_dashboard(request: Request):
+    """Serve the advanced analytics dashboard HTML page."""
+    return templates.TemplateResponse("advanced_analytics.html", {"request": request})
 
 
 @app.get("/api/health")

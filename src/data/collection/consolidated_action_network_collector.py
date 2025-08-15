@@ -81,13 +81,28 @@ class ActionNetworkClient:
 
         logger.info("Fetching games from Action Network", url=url, date=date)
 
-        async with session.get(url, params=params) as response:
-            if response.status == 200:
-                data = await response.json()
-                return data.get("games", [])
-            else:
-                logger.error("API request failed", status=response.status, url=url)
-                return []
+        try:
+            async with session.get(url, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    games = data.get("games", [])
+                    logger.info(f"Successfully fetched {len(games)} games", status=response.status)
+                    return games
+                elif response.status == 429:
+                    logger.warning("Rate limited by API", status=response.status, retry_after=response.headers.get('Retry-After'))
+                    return []
+                elif response.status >= 500:
+                    logger.error("Server error from API", status=response.status, url=url, recovery_suggestion="Retry after delay")
+                    return []
+                else:
+                    logger.error("API request failed", status=response.status, url=url, recovery_suggestion="Check API endpoint and parameters")
+                    return []
+        except aiohttp.ClientTimeout as e:
+            logger.warning("API request timeout", url=url, error=str(e), recovery_suggestion="Retry with longer timeout")
+            return []
+        except aiohttp.ClientError as e:
+            logger.error("Network error during API request", url=url, error=str(e), error_type=type(e).__name__)
+            return []
 
     async def fetch_game_history(self, game_id: int) -> dict[str, Any]:
         """Fetch game history data from Action Network API."""
@@ -112,17 +127,32 @@ class ActionNetworkClient:
             "Sec-Fetch-Site": "same-site",
         }
 
-        async with session.get(url, headers=headers) as response:
-            if response.status == 200:
-                return await response.json()
-            else:
-                logger.error(
-                    "History API request failed",
-                    status=response.status,
-                    game_id=game_id,
-                    headers=dict(response.headers),
-                )
-                return {}
+        try:
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    logger.debug(f"Successfully fetched history for game {game_id}", status=response.status)
+                    return data
+                elif response.status == 429:
+                    logger.warning("Rate limited on history API", game_id=game_id, retry_after=response.headers.get('Retry-After'))
+                    return {}
+                elif response.status >= 500:
+                    logger.warning("Server error on history API", game_id=game_id, status=response.status)
+                    return {}
+                else:
+                    logger.warning(
+                        "History API request failed",
+                        status=response.status,
+                        game_id=game_id,
+                        recovery_suggestion="History data not available for this game"
+                    )
+                    return {}
+        except aiohttp.ClientTimeout as e:
+            logger.warning("History API timeout", game_id=game_id, error=str(e))
+            return {}
+        except aiohttp.ClientError as e:
+            logger.warning("Network error during history request", game_id=game_id, error=str(e), error_type=type(e).__name__)
+            return {}
 
     async def close(self):
         """Close HTTP session."""
@@ -502,8 +532,34 @@ class ActionNetworkCollector(BaseCollector):
             else:  # COMPREHENSIVE
                 return await self._collect_comprehensive(date_str)
 
+        except aiohttp.ClientError as e:
+            logger.error(
+                "Network error during collection", 
+                error=str(e), 
+                mode=self.mode.value,
+                error_type=type(e).__name__,
+                recovery_suggestion="Check network connectivity and retry"
+            )
+            return []
+        except asyncpg.PostgresError as e:
+            logger.error(
+                "Database error during collection", 
+                error=str(e), 
+                mode=self.mode.value,
+                error_code=getattr(e, 'sqlstate', 'unknown'),
+                recovery_suggestion="Check database connectivity and schema"
+            )
+            return []
         except Exception as e:
-            logger.error("Collection failed", error=str(e), mode=self.mode.value)
+            logger.error(
+                "Unexpected error during collection", 
+                error=str(e), 
+                mode=self.mode.value,
+                error_type=type(e).__name__,
+                recovery_suggestion="Check configuration and system resources"
+            )
+            import traceback
+            logger.debug(f"Full traceback: {traceback.format_exc()}")
             return []
 
         finally:
@@ -685,7 +741,7 @@ class ActionNetworkCollector(BaseCollector):
                 """,
                     str(game_id),
                     game_json,  # raw_response: Full raw data as JSON string
-                    game,       # raw_game_data: Raw game data as JSONB
+                    game_json,  # raw_game_data: Also use JSON string for JSONB column (asyncpg will handle conversion)
                     endpoint_url
                     or "https://api.actionnetwork.com/web/v2/scoreboard/publicbetting/mlb",
                     200,
@@ -706,7 +762,15 @@ class ActionNetworkCollector(BaseCollector):
             )
 
         except Exception as e:
-            logger.error("Error storing raw game data", error=str(e))
+            logger.error(
+                "Error storing raw game data", 
+                error=str(e), 
+                games_attempted=len(games),
+                error_type=type(e).__name__,
+                recovery_suggestion="Check database connection and table schema"
+            )
+            # Continue processing - don't let one game failure stop the entire collection
+            pass
 
     async def _store_raw_odds_data(
         self, game_id: str, odds_data: dict[str, Any], sportsbook_key: str = None
@@ -754,13 +818,38 @@ class ActionNetworkCollector(BaseCollector):
                 f"✅ Successfully stored odds data for game {game_id}, sportsbook {sportsbook_key}"
             )
 
+        except asyncpg.ConnectionDoesNotExistError as e:
+            logger.warning(
+                f"⚠️ Database connection lost for game {game_id}, sportsbook {sportsbook_key}, retrying...",
+                error=str(e)
+            )
+            # Retry once for connection issues
+            try:
+                await asyncio.sleep(1)  # Brief delay before retry
+                await self._store_raw_odds_data(game_id, odds_data, sportsbook_key)
+            except Exception as retry_e:
+                logger.error(
+                    f"❌ Retry failed for game {game_id}, sportsbook {sportsbook_key}",
+                    original_error=str(e),
+                    retry_error=str(retry_e),
+                    recovery_suggestion="Check database connectivity and restart collection"
+                )
+        except asyncpg.PostgresError as e:
+            logger.error(
+                f"❌ Database error storing odds data for game {game_id}, sportsbook {sportsbook_key}",
+                error=str(e),
+                error_code=getattr(e, 'sqlstate', 'unknown'),
+                recovery_suggestion="Check database schema and constraints"
+            )
         except Exception as e:
             logger.error(
-                f"❌ Error storing raw odds data for game {game_id}, sportsbook {sportsbook_key}: {str(e)}"
+                f"❌ Unexpected error storing raw odds data for game {game_id}, sportsbook {sportsbook_key}",
+                error=str(e),
+                error_type=type(e).__name__,
+                recovery_suggestion="Check data format and database schema"
             )
             import traceback
-
-            logger.error(f"Full traceback: {traceback.format_exc()}")
+            logger.debug(f"Full traceback: {traceback.format_exc()}")
 
     async def _store_raw_current_odds(self, games: list[dict[str, Any]]) -> None:
         """Extract and store raw odds data from current games to raw_data.action_network_odds table."""
@@ -920,9 +1009,14 @@ class ActionNetworkCollector(BaseCollector):
         self, games: list[dict[str, Any]], game_mappings: dict[str, str]
     ) -> None:
         """Process comprehensive data - stores only to raw_data.action_network_odds."""
-        for game in games:
+        processed_count = 0
+        failed_count = 0
+        
+        for i, game in enumerate(games):
             try:
                 game_id = str(game.get("id"))
+                logger.debug(f"Processing game {i+1}/{len(games)}: {game_id}")
+                
                 if game_id not in game_mappings:
                     logger.debug(f"Skipping game {game_id} - no raw data mapping")
                     continue
@@ -930,6 +1024,7 @@ class ActionNetworkCollector(BaseCollector):
                 teams = game.get("teams", [])
 
                 if len(teams) < 2:
+                    logger.warning(f"Skipping game {game_id} - insufficient team data (found {len(teams)} teams)")
                     continue
 
                 away_team = normalize_team_name(teams[0].get("full_name", ""))
@@ -937,31 +1032,51 @@ class ActionNetworkCollector(BaseCollector):
                 game_datetime = safe_game_datetime_parse(game.get("start_time"))
 
                 markets = game.get("markets", {})
+                sportsbook_count = len(markets)
+                sportsbook_success = 0
 
                 # Process each sportsbook - store to RAW layer only
                 for book_id_str, book_data in markets.items():
-                    book_id = int(book_id_str)
+                    try:
+                        book_id = int(book_id_str)
+                        event_markets = book_data.get("event", {})
 
-                    event_markets = book_data.get("event", {})
+                        # Store all odds data to raw_data.action_network_odds
+                        await self._store_comprehensive_odds_data(
+                            game_id,
+                            book_id_str,
+                            event_markets,
+                            home_team,
+                            away_team,
+                            game_datetime,
+                        )
+                        sportsbook_success += 1
+                        
+                    except Exception as book_e:
+                        logger.warning(
+                            f"Failed to process sportsbook {book_id_str} for game {game_id}",
+                            error=str(book_e),
+                            error_type=type(book_e).__name__
+                        )
 
-                    # Store all odds data to raw_data.action_network_odds
-                    await self._store_comprehensive_odds_data(
-                        game_id,
-                        book_id_str,
-                        event_markets,
-                        home_team,
-                        away_team,
-                        game_datetime,
-                    )
-
+                logger.debug(f"Game {game_id}: processed {sportsbook_success}/{sportsbook_count} sportsbooks")
                 self.stats["games_processed"] += 1
+                processed_count += 1
 
             except Exception as e:
+                failed_count += 1
                 logger.error(
                     "Error processing comprehensive data",
                     game_id=game.get("id"),
+                    game_number=f"{i+1}/{len(games)}",
                     error=str(e),
+                    error_type=type(e).__name__,
+                    recovery_suggestion="Continue processing remaining games"
                 )
+                
+        logger.info(
+            f"Comprehensive data processing complete: {processed_count} successful, {failed_count} failed"
+        )
 
     async def _process_current_market(self, *args, **kwargs) -> None:
         """DEPRECATED: Use raw data storage methods instead."""
