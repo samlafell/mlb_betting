@@ -25,6 +25,7 @@ from sklearn.metrics import (
 from sklearn.model_selection import TimeSeriesSplit
 
 from ...core.config import get_settings
+from ...data.database.connection import initialize_connections
 from ..features.feature_pipeline import FeaturePipeline
 from ..features.models import FeatureVector
 from ..features.redis_feature_store import RedisFeatureStore
@@ -46,6 +47,12 @@ class LightGBMTrainer:
         self.settings = get_settings()
         self.model_version = model_version
         self.experiment_name = experiment_name
+        
+        # Initialize database connections if not already done
+        try:
+            initialize_connections(self.settings)
+        except Exception as e:
+            logger.debug(f"Database connections may already be initialized: {e}")
 
         # Initialize components
         self.feature_pipeline = FeaturePipeline()

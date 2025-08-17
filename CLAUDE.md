@@ -184,6 +184,16 @@ uv run -m src.interfaces.cli batch-collection retry-failed
 # Option 3: General data collection
 uv run -m src.interfaces.cli data collect --source action_network --real
 
+# 🚨 CRITICAL: ML Training Pipeline Game Outcome Sync (Fixed #67)
+# Sync all missing game outcomes to enhanced_games (RECOMMENDED for ML training)
+uv run -m src.interfaces.cli curated sync-outcomes --sync-type all
+
+# Sync recent game outcomes only (for ongoing operations)
+uv run -m src.interfaces.cli curated sync-outcomes --sync-type recent --days-back 7
+
+# Test sync with limited data
+uv run -m src.interfaces.cli curated sync-outcomes --sync-type all --limit 10 --dry-run
+
 # Movement analysis
 uv run -m src.interfaces.cli movement analyze --input-file output/action_network_history.json
 uv run -m src.interfaces.cli movement rlm --input-file output/action_network_history.json

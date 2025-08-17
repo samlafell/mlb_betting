@@ -75,6 +75,19 @@ except ImportError as e:
     ProcessingStatus = None
     StagingCuratedOrchestrator = None
 
+try:
+    from ....services.curated_zone.enhanced_games_outcome_sync_service import (
+        EnhancedGamesOutcomeSyncService,
+        sync_all_missing_outcomes,
+        sync_recent_outcomes,
+    )
+except ImportError as e:
+    SERVICES_AVAILABLE["enhanced_games_outcome_sync"] = False
+    SERVICE_IMPORT_ERRORS["enhanced_games_outcome_sync"] = str(e)
+    EnhancedGamesOutcomeSyncService = None
+    sync_all_missing_outcomes = None
+    sync_recent_outcomes = None
+
 logger = get_logger(__name__, LogComponent.CLI)
 console = Console()
 
@@ -522,6 +535,176 @@ def health_check(check_deps: bool):
     asyncio.run(_health_check_async(check_deps))
 
 
+@curated_group.command("sync-outcomes")
+@click.option(
+    "--sync-type",
+    type=click.Choice(["all", "recent"]),
+    default="all",
+    help="Sync type: 'all' syncs all missing outcomes, 'recent' syncs last 7 days",
+)
+@click.option(
+    "--days-back",
+    type=click.IntRange(1, 365),
+    default=7,
+    help="Days to look back for recent sync (1-365, default: 7)",
+)
+@click.option(
+    "--limit",
+    type=click.IntRange(1, 1000),
+    help="Limit number of outcomes to sync (1-1000, for testing)",
+)
+@click.option(
+    "--dry-run", 
+    is_flag=True, 
+    help="Show what would be synced without executing"
+)
+@click.option(
+    "--check-deps",
+    is_flag=True,
+    help="Validate service availability before sync",
+)
+def sync_outcomes_command(
+    sync_type: str, 
+    days_back: int, 
+    limit: int | None, 
+    dry_run: bool, 
+    check_deps: bool
+):
+    """
+    🚨 CRITICAL: Sync game outcomes to enhanced_games (Fixes ML Training Pipeline #67).
+    
+    This command fixes the critical ML Training Pipeline zero data issue by syncing
+    complete game outcomes from curated.game_outcomes to curated.enhanced_games.
+    
+    The ML training pipeline depends on enhanced_games having real game scores,
+    but there was no automated sync mechanism. This command provides the missing ETL.
+    
+    Examples:
+    \b
+        # Fix ML pipeline - sync all missing outcomes (RECOMMENDED)
+        uv run -m src.interfaces.cli curated sync-outcomes --sync-type all
+        
+        # Sync recent outcomes only  
+        uv run -m src.interfaces.cli curated sync-outcomes --sync-type recent --days-back 14
+        
+        # Test sync with limited data
+        uv run -m src.interfaces.cli curated sync-outcomes --sync-type all --limit 10 --dry-run
+        
+        # Full validation and sync
+        uv run -m src.interfaces.cli curated sync-outcomes --check-deps --sync-type all
+    """
+    asyncio.run(_sync_outcomes_async(sync_type, days_back, limit, dry_run, check_deps))
+
+
+async def _sync_outcomes_async(
+    sync_type: str, 
+    days_back: int, 
+    limit: int | None, 
+    dry_run: bool, 
+    check_deps: bool = False
+):
+    """
+    🚨 CRITICAL: Sync game outcomes to enhanced_games table.
+    
+    This is the core implementation that fixes the ML Training Pipeline zero data issue.
+    """
+    try:
+        # Validate dependencies if requested
+        if check_deps or not all(SERVICES_AVAILABLE.values()):
+            _validate_service_dependencies()
+
+        # Validate configuration
+        config = _validate_database_config()
+
+        if dry_run:
+            console.print("[yellow]🔍 DRY RUN MODE - No actual sync will occur[/yellow]")
+
+        console.print("[blue]🚨 CRITICAL: Fixing ML Training Pipeline Zero Data Issue[/blue]")
+        console.print(f"Sync type: {sync_type}, Database: {config.database.masked_connection_string}")
+        
+        if sync_type == "all":
+            console.print(f"Limit: {limit or 'None (all missing outcomes)'}")
+        else:
+            console.print(f"Days back: {days_back}, Limit: {limit or 'None'}")
+
+        # Check service availability with graceful degradation
+        if sync_all_missing_outcomes is None or sync_recent_outcomes is None:
+            console.print("[red]❌ EnhancedGamesOutcomeSyncService not available[/red]")
+            console.print("[yellow]This service is critical for fixing the ML pipeline issue[/yellow]")
+            console.print("[yellow]Please ensure the service is properly implemented[/yellow]")
+            return
+
+        # Show current status before sync
+        console.print("\n📊 Current Status Check...")
+        try:
+            service = EnhancedGamesOutcomeSyncService()
+            current_stats = await service.get_sync_stats()
+            
+            enhanced_with_scores = current_stats.get("enhanced_games_with_scores", 0)
+            total_outcomes = current_stats.get("total_game_outcomes", 0)
+            missing_enhanced = current_stats.get("missing_enhanced_games", 0)
+            
+            console.print(f"   Enhanced games with scores: {enhanced_with_scores}")
+            console.print(f"   Total game outcomes available: {total_outcomes}")
+            console.print(f"   Missing enhanced games: {missing_enhanced}")
+            console.print(f"   ML training ready: {current_stats.get('ml_training_ready', False)}")
+            
+            if missing_enhanced == 0:
+                console.print("\n✅ No sync needed - enhanced_games is already up to date!")
+                return
+                
+        except Exception as e:
+            console.print(f"[yellow]⚠️  Could not get current status: {e}[/yellow]")
+
+        # Execute sync with progress indicator
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            if sync_type == "all":
+                task = progress.add_task("Syncing all missing outcomes...", total=None)
+                result = await sync_all_missing_outcomes(dry_run=dry_run, limit=limit)
+            else:
+                task = progress.add_task("Syncing recent outcomes...", total=None)
+                result = await sync_recent_outcomes(days_back=days_back, dry_run=dry_run)
+
+            progress.update(task, completed=True)
+
+        # Display sync results
+        _display_outcome_sync_results(result, sync_type, dry_run)
+        
+        # Show final status after sync
+        if not dry_run:
+            console.print("\n📊 Final Status Check...")
+            try:
+                final_stats = await service.get_sync_stats()
+                enhanced_with_scores = final_stats.get("enhanced_games_with_scores", 0)
+                ml_ready = final_stats.get("ml_training_ready", False)
+                
+                console.print(f"   Enhanced games with scores: {enhanced_with_scores}")
+                console.print(f"   ML training ready: {ml_ready}")
+                
+                if ml_ready:
+                    console.print("\n🎉 SUCCESS: ML Training Pipeline now has sufficient real data!")
+                    console.print("   ✅ Enhanced games table populated with game scores")
+                    console.print("   ✅ ML trainer can now load real historical data")
+                    console.print("   ✅ Ready for model training and predictions")
+                else:
+                    console.print(f"\n⚠️  WARNING: ML Training Pipeline still needs more data")
+                    console.print(f"   Need at least 50 games, currently have {enhanced_with_scores}")
+                
+            except Exception as e:
+                console.print(f"[yellow]⚠️  Could not get final status: {e}[/yellow]")
+
+    except Exception as e:
+        console.print(f"[red]Enhanced games outcome sync failed: {e}[/red]")
+        logger.error(f"Enhanced games outcome sync error: {e}")
+        raise click.ClickException(str(e)) from e
+
+
 async def _health_check_async(check_deps: bool = False):
     """
     Comprehensive health check for STAGING → CURATED pipeline.
@@ -763,6 +946,71 @@ def _display_detailed_stats(stats: dict[str, Any]):
     last_run = stats.get("last_run")
     if last_run:
         console.print(f"Last Run: {last_run}")
+
+
+def _display_outcome_sync_results(result: Any, sync_type: str, dry_run: bool):
+    """Display outcome sync results in a formatted table."""
+
+    # Success/failure indicator
+    has_errors = len(result.errors) > 0
+    status_icon = "❌" if has_errors else "✅"
+    mode_text = "DRY RUN" if dry_run else "COMPLETED"
+    
+    console.print(f"\n{status_icon} Enhanced Games Outcome Sync {mode_text}")
+    console.print("=" * 70)
+
+    # Overview
+    console.print(f"Sync Type: {sync_type}")
+    console.print(f"Outcomes Found: {result.outcomes_found}")
+    console.print(f"Enhanced Games Created: {result.enhanced_games_created}")
+    console.print(f"Enhanced Games Updated: {result.enhanced_games_updated}")
+    console.print(f"Sync Failures: {result.sync_failures}")
+    console.print(f"Processing Time: {result.processing_time_seconds:.2f} seconds")
+
+    # Calculate total successful operations
+    total_successful = result.enhanced_games_created + result.enhanced_games_updated
+    
+    # Success rate
+    if result.outcomes_found > 0:
+        success_rate = (total_successful / result.outcomes_found) * 100
+        console.print(f"Success Rate: {success_rate:.1f}%")
+
+    # ML Training Pipeline Impact
+    if not dry_run and total_successful > 0:
+        console.print(f"\n[green]🎯 ML Training Pipeline Impact:[/green]")
+        console.print(f"   ✅ Added {total_successful} games with complete scores to enhanced_games")
+        console.print(f"   ✅ ML trainer can now access real historical data")
+        if total_successful >= 50:
+            console.print(f"   ✅ Sufficient data for reliable model training ({total_successful} ≥ 50)")
+        else:
+            console.print(f"   ⚠️  Still need more data for optimal training ({total_successful} < 50)")
+
+    # Metadata
+    metadata = result.metadata
+    if metadata:
+        console.print(f"\n[blue]Processing Details:[/blue]")
+        console.print(f"   Start Time: {metadata.get('start_time', 'Unknown')}")
+        console.print(f"   End Time: {metadata.get('end_time', 'Unknown')}")
+        if sync_type == "recent":
+            console.print(f"   Days Back: {metadata.get('days_back', 'Unknown')}")
+        if metadata.get('limit'):
+            console.print(f"   Limit Applied: {metadata.get('limit')}")
+
+    # Errors
+    if result.errors:
+        console.print(f"\n[red]Errors ({len(result.errors)}):[/red]")
+        for error in result.errors[:5]:  # Show first 5 errors
+            console.print(f"  • {error}")
+        if len(result.errors) > 5:
+            console.print(f"  ... and {len(result.errors) - 5} more errors")
+    
+    # Success message for critical fix
+    if not dry_run and not has_errors and total_successful > 0:
+        console.print(f"\n[bold green]🚨 CRITICAL ISSUE RESOLVED:[/bold green]")
+        console.print(f"   GitHub Issue #67 - ML Training Pipeline Has Zero Real Data")
+        console.print(f"   ✅ Enhanced games table now has {total_successful} games with scores")
+        console.print(f"   ✅ ML training pipeline can now function properly")
+        console.print(f"   ✅ Models can train on real historical data")
 
 
 # ============================================================================
