@@ -25,7 +25,7 @@ identifying situations where line movement confirms sharp action direction.
 Part of Phase 5C: Remaining Processor Migration
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
@@ -231,46 +231,180 @@ class UnifiedHybridSharpProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
             List of hybrid data with line movement and sharp action
         """
         try:
-            # This would query the unified repository for hybrid data
-            # For now, return enhanced mock data structure
             hybrid_data = []
 
-            for game in game_data:
-                # Enhanced mock hybrid data combining line movement and sharp action
-                mock_hybrid_data = {
-                    "game_id": game.get(
-                        "game_id", f"{game['home_team']}_vs_{game['away_team']}"
-                    ),
-                    "home_team": game["home_team"],
-                    "away_team": game["away_team"],
-                    "game_datetime": game["game_datetime"],
-                    "split_type": "moneyline",
-                    # Line movement data
-                    "opening_line": -120,
-                    "current_line": -135,
-                    "line_movement": 15,  # 15 cents toward home
-                    "line_direction": "home",
-                    # Sharp action data
-                    "money_pct": 68.0,  # Money percentage
-                    "bet_pct": 55.0,  # Bet percentage
-                    "sharp_differential": 13.0,  # 68% - 55% = 13% sharp action
-                    "sharp_direction": "home",
-                    # Public betting data
-                    "public_pct": 55.0,  # Public betting percentage
-                    "public_direction": "home",
-                    # Volume and timing
-                    "volume": 1000,
-                    "source": game.get("source", "VSIN"),
-                    "book": game.get("book", "DraftKings"),
-                    "last_updated": datetime.now(self.est) - timedelta(minutes=45),
-                    "book_consensus": 4,
-                    # Correlation indicators
-                    "line_sharp_correlation": 0.85,  # Strong correlation
-                    "confirmation_strength": "STRONG",
-                    "steam_move_detected": True,
-                    "reverse_line_movement": False,
-                }
-                hybrid_data.append(mock_hybrid_data)
+            # Import database connection for real data queries
+            from src.core.config import get_settings
+            from src.data.database.connection import DatabaseConnection
+
+            config = get_settings()
+            db_connection = DatabaseConnection(config.database.connection_string)
+
+            async with db_connection.get_async_connection() as conn:
+                for game in game_data:
+                    game_id = game.get("game_id")
+                    if not game_id:
+                        continue
+
+                    # Query hybrid data combining betting splits and line movement
+                    hybrid_query = """
+                        SELECT 
+                            -- Game info
+                            ubs.game_id,
+                            ubs.market_type,
+                            ubs.sportsbook_name,
+                            ubs.data_source,
+                            
+                            -- Betting splits (sharp action indicators)
+                            ubs.bet_percentage_home,
+                            ubs.bet_percentage_away,
+                            ubs.money_percentage_home,
+                            ubs.money_percentage_away,
+                            ubs.sharp_action_direction,
+                            ubs.sharp_action_strength,
+                            ubs.reverse_line_movement,
+                            
+                            -- Current lines
+                            ubs.current_home_ml,
+                            ubs.current_away_ml,
+                            ubs.current_spread_home,
+                            ubs.current_total_line,
+                            ubs.current_over_odds,
+                            ubs.current_under_odds,
+                            
+                            -- Timing data
+                            ubs.collected_at,
+                            ubs.minutes_before_game,
+                            
+                            -- Line movement data from betting_lines_unified
+                            blu.movement_amount,
+                            blu.movement_direction,
+                            COUNT(*) OVER (PARTITION BY ubs.game_id, ubs.market_type) as book_consensus
+                            
+                        FROM curated.unified_betting_splits ubs
+                        LEFT JOIN curated.betting_lines_unified blu ON (
+                            blu.game_id = ubs.game_id 
+                            AND blu.market_type = ubs.market_type
+                            AND blu.sportsbook_id = ubs.sportsbook_id
+                        )
+                        WHERE ubs.game_id = $1 
+                        AND ubs.minutes_before_game >= $2
+                        ORDER BY ubs.collected_at DESC, ubs.market_type, ubs.sportsbook_name
+                        LIMIT 100
+                    """
+
+                    rows = await conn.fetch(hybrid_query, game_id, minutes_ahead)
+
+                    for row in rows:
+                        row_dict = dict(row)
+
+                        # Calculate sharp differential for moneyline
+                        if (row_dict["market_type"] == "moneyline" and
+                            row_dict["money_percentage_home"] and row_dict["bet_percentage_home"]):
+
+                            money_pct = float(row_dict["money_percentage_home"])
+                            bet_pct = float(row_dict["bet_percentage_home"])
+                            sharp_differential = abs(money_pct - bet_pct)
+
+                            # Determine correlation between line movement and sharp action
+                            line_correlation = 0.0
+                            if row_dict["movement_amount"] and row_dict["sharp_action_direction"]:
+                                # Basic correlation logic - could be enhanced
+                                movement_dir = row_dict["movement_direction"]
+                                sharp_dir = row_dict["sharp_action_direction"]
+                                if movement_dir == sharp_dir:
+                                    line_correlation = 0.8
+                                elif movement_dir and sharp_dir and movement_dir != sharp_dir:
+                                    line_correlation = 0.2  # Reverse line movement scenario
+                                else:
+                                    line_correlation = 0.5
+
+                            # Determine confirmation strength
+                            confirmation_strength = "WEAK"
+                            if sharp_differential >= 15 and line_correlation >= 0.7:
+                                confirmation_strength = "STRONG"
+                            elif sharp_differential >= 10 and line_correlation >= 0.5:
+                                confirmation_strength = "MODERATE"
+
+                            # Detect steam moves
+                            steam_move_detected = (
+                                row_dict["movement_amount"] and
+                                abs(float(row_dict["movement_amount"])) >= 10 and
+                                row_dict["sharp_action_strength"] == "strong"
+                            )
+
+                            hybrid_data_point = {
+                                "game_id": game_id,
+                                "home_team": game["home_team"],
+                                "away_team": game["away_team"],
+                                "game_datetime": game["game_datetime"],
+                                "split_type": row_dict["market_type"],
+
+                                # Line movement data
+                                "current_line": row_dict["current_home_ml"],
+                                "line_movement": row_dict["movement_amount"],
+                                "line_direction": row_dict["movement_direction"],
+
+                                # Sharp action data
+                                "money_pct": money_pct,
+                                "bet_pct": bet_pct,
+                                "sharp_differential": sharp_differential,
+                                "sharp_direction": row_dict["sharp_action_direction"],
+
+                                # Public betting data (same as bet percentage for now)
+                                "public_pct": bet_pct,
+                                "public_direction": row_dict["sharp_action_direction"],
+
+                                # Volume and timing
+                                "source": row_dict["data_source"],
+                                "book": row_dict["sportsbook_name"],
+                                "last_updated": row_dict["collected_at"],
+                                "book_consensus": row_dict["book_consensus"],
+
+                                # Correlation indicators
+                                "line_sharp_correlation": line_correlation,
+                                "confirmation_strength": confirmation_strength,
+                                "steam_move_detected": steam_move_detected,
+                                "reverse_line_movement": row_dict["reverse_line_movement"] or False,
+                            }
+
+                            hybrid_data.append(hybrid_data_point)
+
+                        # Similar logic for spread data
+                        elif (row_dict["market_type"] == "spread" and
+                              row_dict["money_percentage_home"] and row_dict["bet_percentage_home"]):
+
+                            money_pct = float(row_dict["money_percentage_home"])
+                            bet_pct = float(row_dict["bet_percentage_home"])
+                            sharp_differential = abs(money_pct - bet_pct)
+
+                            hybrid_data_point = {
+                                "game_id": game_id,
+                                "home_team": game["home_team"],
+                                "away_team": game["away_team"],
+                                "game_datetime": game["game_datetime"],
+                                "split_type": "spread",
+                                "current_line": row_dict["current_spread_home"],
+                                "line_movement": row_dict["movement_amount"],
+                                "line_direction": row_dict["movement_direction"],
+                                "money_pct": money_pct,
+                                "bet_pct": bet_pct,
+                                "sharp_differential": sharp_differential,
+                                "sharp_direction": row_dict["sharp_action_direction"],
+                                "source": row_dict["data_source"],
+                                "book": row_dict["sportsbook_name"],
+                                "last_updated": row_dict["collected_at"],
+                                "reverse_line_movement": row_dict["reverse_line_movement"] or False,
+                            }
+
+                            hybrid_data.append(hybrid_data_point)
+
+            if not hybrid_data:
+                self.logger.warning(
+                    "No real hybrid sharp data found, this may indicate empty database tables",
+                    games_analyzed=len(game_data),
+                    minutes_ahead=minutes_ahead
+                )
 
             return hybrid_data
 
@@ -801,6 +935,69 @@ class UnifiedHybridSharpProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
 
     # Legacy compatibility methods
 
+    async def _get_real_game_data(self, minutes_ahead: int) -> list[dict[str, Any]]:
+        """
+        Get real game data from the database for processing.
+        
+        Args:
+            minutes_ahead: Time window in minutes
+            
+        Returns:
+            List of game data dictionaries
+        """
+        try:
+            from src.core.config import get_settings
+            from src.data.database.connection import DatabaseConnection
+
+            config = get_settings()
+            db_connection = DatabaseConnection(config.database.connection_string)
+
+            async with db_connection.get_async_connection() as conn:
+                # Get upcoming games that have betting data available
+                query = """
+                    SELECT DISTINCT
+                        eg.id as game_id,
+                        eg.home_team,
+                        eg.away_team,
+                        eg.game_datetime,
+                        eg.season,
+                        eg.game_status
+                    FROM curated.enhanced_games eg
+                    WHERE eg.game_datetime > NOW() 
+                    AND eg.game_datetime <= NOW() + interval '%s minutes'
+                    AND EXISTS (
+                        SELECT 1 FROM curated.unified_betting_splits ubs 
+                        WHERE ubs.game_id = eg.id
+                    )
+                    ORDER BY eg.game_datetime ASC
+                    LIMIT 20
+                """ % minutes_ahead
+
+                rows = await conn.fetch(query)
+
+                game_data = []
+                for row in rows:
+                    game_data.append({
+                        "game_id": row["game_id"],
+                        "home_team": row["home_team"],
+                        "away_team": row["away_team"],
+                        "game_datetime": row["game_datetime"],
+                        "season": row["season"],
+                        "game_status": row["game_status"]
+                    })
+
+                self.logger.info(
+                    f"Retrieved {len(game_data)} games with betting data for hybrid sharp analysis",
+                    minutes_ahead=minutes_ahead
+                )
+
+                return game_data
+
+        except Exception as e:
+            self.logger.error(f"Failed to get real game data: {e}")
+            # Return empty list instead of mock data
+            return []
+
     async def process(
         self, minutes_ahead: int, profitable_strategies: list[Any]
     ) -> list[Any]:
@@ -811,8 +1008,8 @@ class UnifiedHybridSharpProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
             "processing_time": datetime.now(self.est),
         }
 
-        # Mock game data for legacy compatibility
-        game_data = await self._get_game_data_for_legacy(minutes_ahead)
+        # Get real game data from database
+        game_data = await self._get_real_game_data(minutes_ahead)
 
         # Process using unified interface
         return await self.process_signals(game_data, context)
