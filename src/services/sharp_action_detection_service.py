@@ -132,10 +132,8 @@ class SharpActionDetectionService:
             Dict containing sharp action analysis results
         """
         try:
-            # For now, create mock sharp action indicators based on data patterns
-            # In a future iteration, this would integrate with the full strategy orchestrator
-
-            sharp_indicators = await self._detect_basic_sharp_patterns(conn, game_id)
+            # Use real sharp action analysis based on actual betting data
+            sharp_indicators = await self._detect_real_sharp_patterns(conn, game_id)
 
             return sharp_indicators
 
@@ -145,10 +143,10 @@ class SharpActionDetectionService:
             )
             return {}
 
-    async def _detect_basic_sharp_patterns(self, conn, game_id: int) -> dict[str, Any]:
+    async def _detect_real_sharp_patterns(self, conn, game_id: int) -> dict[str, Any]:
         """
-        Detect basic sharp action patterns from betting lines data.
-        This is a simplified implementation that can be enhanced later.
+        Detect real sharp action patterns from actual betting data.
+        Uses unified_betting_splits table for authentic sharp action indicators.
         """
         indicators = {
             "moneyline": {"detected": False, "confidence": 0.0, "patterns": []},
@@ -156,48 +154,181 @@ class SharpActionDetectionService:
             "total": {"detected": False, "confidence": 0.0, "patterns": []},
         }
 
-        # Check for line movement patterns in the betting lines data
-        for market_type in ["moneyline", "spread", "total"]:
-            table_name = f"betting_lines_{market_type if market_type != 'moneyline' else 'moneyline'}"
-
-            # Look for line movement patterns
-            query = f"""
-                SELECT COUNT(*) as line_count,
-                       COUNT(DISTINCT sportsbook_id) as book_count,
-                       AVG(data_completeness_score) as avg_completeness
-                FROM curated.{table_name}
+        try:
+            # Query real betting splits data that indicates sharp action
+            sharp_query = """
+                SELECT 
+                    market_type,
+                    sportsbook_name,
+                    bet_percentage_home,
+                    bet_percentage_away,
+                    money_percentage_home,
+                    money_percentage_away,
+                    bet_percentage_over,
+                    bet_percentage_under,
+                    money_percentage_over,
+                    money_percentage_under,
+                    sharp_action_direction,
+                    sharp_action_strength,
+                    reverse_line_movement,
+                    minutes_before_game,
+                    data_completeness_score
+                FROM curated.unified_betting_splits 
                 WHERE game_id = $1
-                AND sportsbook_id IS NOT NULL
+                AND (
+                    sharp_action_direction IS NOT NULL OR
+                    reverse_line_movement = true OR
+                    (money_percentage_home IS NOT NULL AND bet_percentage_home IS NOT NULL) OR
+                    (money_percentage_over IS NOT NULL AND bet_percentage_over IS NOT NULL)
+                )
+                ORDER BY collected_at DESC
+                LIMIT 50
             """
 
-            try:
-                result = await conn.fetchrow(query, game_id)
+            rows = await conn.fetch(sharp_query, game_id)
 
-                if result and result["line_count"] > 0:
-                    # Simple heuristic: multiple books with good data quality suggests activity
-                    if result["book_count"] >= 2 and result["avg_completeness"] > 0.6:
-                        indicators[market_type]["detected"] = True
-                        indicators[market_type]["confidence"] = min(
-                            result["avg_completeness"] * result["book_count"] / 5.0, 1.0
-                        )
-                        indicators[market_type]["patterns"].append(
-                            {
-                                "strategy": "basic_line_movement",
-                                "recommendation": "MONITOR",
-                                "confidence": indicators[market_type]["confidence"],
-                                "reasoning": f"Multiple books ({result['book_count']}) with good data quality",
-                            }
-                        )
+            # Group by market type for analysis
+            market_data = {"moneyline": [], "spread": [], "total": []}
 
-            except Exception as e:
-                self.logger.warning(
-                    "Failed to check sharp patterns for market",
-                    market_type=market_type,
-                    game_id=game_id,
-                    error=str(e),
-                )
+            for row in rows:
+                row_dict = dict(row)
+                market_type = row_dict["market_type"]
+
+                if market_type in market_data:
+                    market_data[market_type].append(row_dict)
+
+            # Analyze each market type
+            for market_type, data in market_data.items():
+                if not data:
+                    continue
+
+                detected_patterns = []
+                confidence_scores = []
+
+                for row in data:
+                    # Check for explicit sharp action indicators
+                    if row["sharp_action_direction"] and row["sharp_action_strength"]:
+                        detected_patterns.append({
+                            "strategy": "sharp_action_direction",
+                            "recommendation": "BET" if row["sharp_action_strength"] == "strong" else "MONITOR",
+                            "confidence": 0.9 if row["sharp_action_strength"] == "strong" else 0.6,
+                            "reasoning": f"Sharp action detected: {row['sharp_action_direction']} ({row['sharp_action_strength']})",
+                            "sportsbook": row["sportsbook_name"]
+                        })
+                        confidence_scores.append(0.9 if row["sharp_action_strength"] == "strong" else 0.6)
+
+                    # Check for reverse line movement
+                    if row["reverse_line_movement"]:
+                        detected_patterns.append({
+                            "strategy": "reverse_line_movement",
+                            "recommendation": "BET",
+                            "confidence": 0.8,
+                            "reasoning": "Reverse line movement detected - line moving against public money",
+                            "sportsbook": row["sportsbook_name"]
+                        })
+                        confidence_scores.append(0.8)
+
+                    # Calculate money vs bet percentage differential
+                    if market_type in ["moneyline", "spread"]:
+                        money_pct = row["money_percentage_home"]
+                        bet_pct = row["bet_percentage_home"]
+
+                        # Validate numeric inputs
+                        if (money_pct is not None and bet_pct is not None and 
+                            self._is_valid_percentage(money_pct) and self._is_valid_percentage(bet_pct)):
+                            try:
+                                differential = abs(float(money_pct) - float(bet_pct))
+                            except (ValueError, TypeError) as e:
+                                self.logger.warning(
+                                    f"Invalid percentage values for differential calculation: {e}",
+                                    money_pct=money_pct,
+                                    bet_pct=bet_pct,
+                                    game_id=game_id
+                                )
+                                continue
+
+                            if differential >= 15:  # 15% or greater differential indicates sharp action
+                                detected_patterns.append({
+                                    "strategy": "money_bet_differential",
+                                    "recommendation": "BET" if differential >= 20 else "MONITOR",
+                                    "confidence": min(differential / 25.0, 1.0),
+                                    "reasoning": f"Large differential: {differential:.1f}% between money ({money_pct}%) and bets ({bet_pct}%)",
+                                    "sportsbook": row["sportsbook_name"]
+                                })
+                                confidence_scores.append(min(differential / 25.0, 1.0))
+
+                    elif market_type == "total":
+                        money_pct = row["money_percentage_over"]
+                        bet_pct = row["bet_percentage_over"]
+
+                        # Validate numeric inputs
+                        if (money_pct is not None and bet_pct is not None and 
+                            self._is_valid_percentage(money_pct) and self._is_valid_percentage(bet_pct)):
+                            try:
+                                differential = abs(float(money_pct) - float(bet_pct))
+                            except (ValueError, TypeError) as e:
+                                self.logger.warning(
+                                    f"Invalid percentage values for total differential calculation: {e}",
+                                    money_pct=money_pct,
+                                    bet_pct=bet_pct,
+                                    game_id=game_id
+                                )
+                                continue
+
+                            if differential >= 15:
+                                detected_patterns.append({
+                                    "strategy": "money_bet_differential",
+                                    "recommendation": "BET" if differential >= 20 else "MONITOR",
+                                    "confidence": min(differential / 25.0, 1.0),
+                                    "reasoning": f"Large differential: {differential:.1f}% between money ({money_pct}%) and bets ({bet_pct}%) on over",
+                                    "sportsbook": row["sportsbook_name"]
+                                })
+                                confidence_scores.append(min(differential / 25.0, 1.0))
+
+                # Update indicators if patterns were found
+                if detected_patterns:
+                    indicators[market_type]["detected"] = True
+                    indicators[market_type]["patterns"] = detected_patterns
+                    indicators[market_type]["confidence"] = max(confidence_scores) if confidence_scores else 0.0
+
+                    self.logger.info(
+                        f"Sharp action detected for {market_type}",
+                        game_id=game_id,
+                        patterns_found=len(detected_patterns),
+                        confidence=indicators[market_type]["confidence"]
+                    )
+
+        except Exception as e:
+            self.logger.error(
+                "Failed to detect real sharp patterns",
+                game_id=game_id,
+                error=str(e)
+            )
 
         return indicators
+
+    def _is_valid_percentage(self, value) -> bool:
+        """
+        Validate that a value is a valid percentage (0-100).
+        
+        Args:
+            value: Value to validate
+            
+        Returns:
+            True if valid percentage, False otherwise
+        """
+        try:
+            if value is None:
+                return False
+            
+            # Convert to float for validation
+            float_value = float(value)
+            
+            # Check if it's a valid percentage range
+            return 0 <= float_value <= 100
+            
+        except (ValueError, TypeError):
+            return False
 
     def _extract_sharp_action_indicators(
         self, analysis_results: list[UnifiedBettingSignal]

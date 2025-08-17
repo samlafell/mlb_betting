@@ -52,6 +52,11 @@ class UnifiedSharpActionProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
         self.high_confidence_threshold = config.get("high_confidence_threshold", 20.0)
         self.volume_weight_factor = config.get("volume_weight_factor", 1.5)
         self.min_volume_threshold = config.get("min_volume_threshold", 100)
+        
+        # Performance configuration
+        self.max_records_per_game = config.get("max_records_per_game", 50)
+        self.max_games_limit = config.get("max_games_limit", 20)
+        self.batch_query_enabled = config.get("batch_query_enabled", True)
 
         # Book-specific weights (premium sharp books get higher weights)
         self.book_weights = config.get(
@@ -189,35 +194,192 @@ class UnifiedSharpActionProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
             List of betting splits data
         """
         try:
-            # This would query the unified repository for betting splits
-            # For now, return mock data structure to demonstrate the pattern
             splits_data = []
 
-            for game in game_data:
-                # Mock betting splits data structure
-                mock_splits = [
-                    {
-                        "game_id": game.get(
-                            "game_id", f"{game['home_team']}_vs_{game['away_team']}"
-                        ),
-                        "home_team": game["home_team"],
-                        "away_team": game["away_team"],
-                        "game_datetime": game["game_datetime"],
-                        "split_type": "moneyline",
-                        "split_value": game.get("moneyline_home", -110),
-                        "money_percentage": game.get("money_percentage", 65.0),
-                        "bet_percentage": game.get("bet_percentage", 45.0),
-                        "volume": game.get("volume", 500),
-                        "source": game.get("source", "VSIN"),
-                        "book": game.get("book", "DraftKings"),
-                        "last_updated": datetime.now(self.est),
-                        "differential": abs(
-                            game.get("money_percentage", 65.0)
-                            - game.get("bet_percentage", 45.0)
-                        ),
-                    }
-                ]
-                splits_data.extend(mock_splits)
+            # Import database connection for real data queries
+            from src.core.config import get_settings
+            from src.data.database.connection import DatabaseConnection
+
+            config = get_settings()
+            db_connection = DatabaseConnection(config.database.connection_string)
+
+            async with db_connection.get_async_connection() as conn:
+                # Extract valid game IDs
+                game_ids = [game.get("game_id") for game in game_data if game.get("game_id")]
+                
+                if not game_ids:
+                    return splits_data
+                    
+                # Use batch query for better performance
+                if self.batch_query_enabled and len(game_ids) > 1:
+                    # Batch query for multiple games
+                    batch_query = """
+                        SELECT 
+                            game_id,
+                            market_type,
+                            bet_percentage_home,
+                            bet_percentage_away,
+                            money_percentage_home,
+                            money_percentage_away,
+                            bet_percentage_over,
+                            bet_percentage_under,
+                            money_percentage_over,
+                            money_percentage_under,
+                            sportsbook_name,
+                            data_source,
+                            current_home_ml,
+                            current_away_ml,
+                            current_spread_home,
+                            current_total_line,
+                            collected_at,
+                            sharp_action_direction,
+                            sharp_action_strength,
+                            reverse_line_movement,
+                            ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY collected_at DESC) as rn
+                        FROM curated.unified_betting_splits 
+                        WHERE game_id = ANY($1) 
+                        AND minutes_before_game >= $2
+                    """
+                    
+                    # Execute batch query with row number filtering
+                    all_rows = await conn.fetch(batch_query, game_ids, minutes_ahead)
+                    
+                    # Filter to max records per game using Python (more efficient than subquery)
+                    rows = [row for row in all_rows if row['rn'] <= self.max_records_per_game]
+                else:
+                    # Fallback to individual queries for single game or when batch disabled
+                    rows = []
+                    for game_id in game_ids:
+                        single_query = """
+                            SELECT 
+                                game_id,
+                                market_type,
+                                bet_percentage_home,
+                                bet_percentage_away,
+                                money_percentage_home,
+                                money_percentage_away,
+                                bet_percentage_over,
+                                bet_percentage_under,
+                                money_percentage_over,
+                                money_percentage_under,
+                                sportsbook_name,
+                                data_source,
+                                current_home_ml,
+                                current_away_ml,
+                                current_spread_home,
+                                current_total_line,
+                                collected_at,
+                                sharp_action_direction,
+                                sharp_action_strength,
+                                reverse_line_movement
+                            FROM curated.unified_betting_splits 
+                            WHERE game_id = $1 
+                            AND minutes_before_game >= $2
+                            ORDER BY collected_at DESC
+                            LIMIT $3
+                        """
+                        
+                        game_rows = await conn.fetch(single_query, game_id, minutes_ahead, self.max_records_per_game)
+                        rows.extend(game_rows)
+                
+                # Create game lookup for processing
+                game_lookup = {game.get("game_id"): game for game in game_data if game.get("game_id")}
+
+                for row in rows:
+                    # Convert each row to the expected format
+                    row_dict = dict(row)
+                    game_id = row_dict["game_id"]
+                    game = game_lookup.get(game_id)
+                    
+                    if not game:
+                        continue
+
+                    # For moneyline splits
+                    if row_dict["market_type"] == "moneyline" and row_dict["money_percentage_home"]:
+                        split_data = {
+                            "game_id": game_id,
+                            "home_team": game["home_team"],
+                            "away_team": game["away_team"],
+                            "game_datetime": game["game_datetime"],
+                                "split_type": "moneyline",
+                                "split_value": row_dict["current_home_ml"],
+                                "money_percentage": float(row_dict["money_percentage_home"]) if row_dict["money_percentage_home"] else None,
+                                "bet_percentage": float(row_dict["bet_percentage_home"]) if row_dict["bet_percentage_home"] else None,
+                                "source": row_dict["data_source"],
+                                "book": row_dict["sportsbook_name"],
+                                "last_updated": row_dict["collected_at"],
+                                "sharp_action_direction": row_dict["sharp_action_direction"],
+                                "sharp_action_strength": row_dict["sharp_action_strength"],
+                                "reverse_line_movement": row_dict["reverse_line_movement"],
+                            }
+
+                        # Calculate differential if both percentages exist
+                        if split_data["money_percentage"] and split_data["bet_percentage"]:
+                            split_data["differential"] = abs(
+                                split_data["money_percentage"] - split_data["bet_percentage"]
+                            )
+
+                        splits_data.append(split_data)
+
+                    # For spread splits
+                    elif row_dict["market_type"] == "spread" and row_dict["money_percentage_home"]:
+                        split_data = {
+                            "game_id": game_id,
+                            "home_team": game["home_team"],
+                            "away_team": game["away_team"],
+                            "game_datetime": game["game_datetime"],
+                            "split_type": "spread",
+                            "split_value": row_dict["current_spread_home"],
+                            "money_percentage": float(row_dict["money_percentage_home"]) if row_dict["money_percentage_home"] else None,
+                            "bet_percentage": float(row_dict["bet_percentage_home"]) if row_dict["bet_percentage_home"] else None,
+                            "source": row_dict["data_source"],
+                            "book": row_dict["sportsbook_name"],
+                            "last_updated": row_dict["collected_at"],
+                            "sharp_action_direction": row_dict["sharp_action_direction"],
+                            "sharp_action_strength": row_dict["sharp_action_strength"],
+                            "reverse_line_movement": row_dict["reverse_line_movement"],
+                        }
+
+                        if split_data["money_percentage"] and split_data["bet_percentage"]:
+                            split_data["differential"] = abs(
+                                split_data["money_percentage"] - split_data["bet_percentage"]
+                            )
+
+                        splits_data.append(split_data)
+
+                    # For total (over/under) splits
+                    elif row_dict["market_type"] == "total" and row_dict["money_percentage_over"]:
+                        # Over split
+                        split_data = {
+                            "game_id": game_id,
+                            "home_team": game["home_team"],
+                            "away_team": game["away_team"],
+                            "game_datetime": game["game_datetime"],
+                            "split_type": "total_over",
+                            "split_value": row_dict["current_total_line"],
+                            "money_percentage": float(row_dict["money_percentage_over"]) if row_dict["money_percentage_over"] else None,
+                            "bet_percentage": float(row_dict["bet_percentage_over"]) if row_dict["bet_percentage_over"] else None,
+                            "source": row_dict["data_source"],
+                            "book": row_dict["sportsbook_name"],
+                            "last_updated": row_dict["collected_at"],
+                            "sharp_action_direction": row_dict["sharp_action_direction"],
+                            "sharp_action_strength": row_dict["sharp_action_strength"],
+                            "reverse_line_movement": row_dict["reverse_line_movement"],
+                        }
+
+                        if split_data["money_percentage"] and split_data["bet_percentage"]:
+                            split_data["differential"] = abs(
+                                split_data["money_percentage"] - split_data["bet_percentage"]
+                            )
+
+                        splits_data.append(split_data)
+
+            if not splits_data:
+                self.logger.warning(
+                    "No real betting splits data found, this may indicate empty database tables",
+                    games_analyzed=len(game_data),
+                    minutes_ahead=minutes_ahead
+                )
 
             return splits_data
 
@@ -265,9 +427,21 @@ class UnifiedSharpActionProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
                 current_time = datetime.now(self.est)
                 minutes_to_game = self._calculate_minutes_to_game(game_time, current_time)
                 timing_significance = self._calculate_timing_significance(minutes_to_game)
-            except Exception as tz_error:
-                self.logger.error(f"Timezone error in timing calculation: {tz_error}")
-                # Use fallback values
+            except (ValueError, TypeError) as dt_error:
+                self.logger.warning(f"Invalid datetime format in timing calculation: {dt_error}", 
+                                    game_datetime=split_data.get("game_datetime"))
+                # Use fallback values for invalid datetime
+                minutes_to_game = 120  # Default to 2 hours
+                timing_significance = 1.0
+            except (AttributeError, KeyError) as attr_error:
+                self.logger.warning(f"Missing datetime attributes in timing calculation: {attr_error}")
+                # Use fallback values for missing attributes
+                minutes_to_game = 120  # Default to 2 hours
+                timing_significance = 1.0
+            except Exception as unexpected_error:
+                self.logger.error(f"Unexpected error in timing calculation: {unexpected_error}", 
+                                  exc_info=True)
+                # Use fallback values for any other unexpected errors
                 minutes_to_game = 120  # Default to 2 hours
                 timing_significance = 1.0
 
@@ -407,7 +581,7 @@ class UnifiedSharpActionProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
                 self.logger.error(f"Error normalizing game date: {date_error}")
                 # Use processing_time as fallback
                 normalized_game_date = processing_time
-                
+
             signal = UnifiedBettingSignal(
                 signal_id=f"sharp_action_{self.strategy_id}_{split_data['game_id']}_{hash(str(split_data))}",
                 signal_type=SignalType.SHARP_ACTION,
@@ -513,6 +687,69 @@ class UnifiedSharpActionProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
 
     # Legacy compatibility methods
 
+    async def _get_real_game_data(self, minutes_ahead: int) -> list[dict[str, Any]]:
+        """
+        Get real game data from the database for processing.
+        
+        Args:
+            minutes_ahead: Time window in minutes
+            
+        Returns:
+            List of game data dictionaries
+        """
+        try:
+            from src.core.config import get_settings
+            from src.data.database.connection import DatabaseConnection
+
+            config = get_settings()
+            db_connection = DatabaseConnection(config.database.connection_string)
+
+            async with db_connection.get_async_connection() as conn:
+                # Get upcoming games that have betting data available
+                query = """
+                    SELECT DISTINCT
+                        eg.id as game_id,
+                        eg.home_team,
+                        eg.away_team,
+                        eg.game_datetime,
+                        eg.season,
+                        eg.game_status
+                    FROM curated.enhanced_games eg
+                    WHERE eg.game_datetime > NOW() 
+                    AND eg.game_datetime <= NOW() + $1 * interval '1 minute'
+                    AND EXISTS (
+                        SELECT 1 FROM curated.unified_betting_splits ubs 
+                        WHERE ubs.game_id = eg.id
+                    )
+                    ORDER BY eg.game_datetime ASC
+                    LIMIT $2
+                """
+
+                rows = await conn.fetch(query, minutes_ahead, self.max_games_limit)
+
+                game_data = []
+                for row in rows:
+                    game_data.append({
+                        "game_id": row["game_id"],
+                        "home_team": row["home_team"],
+                        "away_team": row["away_team"],
+                        "game_datetime": row["game_datetime"],
+                        "season": row["season"],
+                        "game_status": row["game_status"]
+                    })
+
+                self.logger.info(
+                    f"Retrieved {len(game_data)} games with betting data for sharp action analysis",
+                    minutes_ahead=minutes_ahead
+                )
+
+                return game_data
+
+        except Exception as e:
+            self.logger.error(f"Failed to get real game data: {e}")
+            # Return empty list instead of mock data
+            return []
+
     async def process(
         self, minutes_ahead: int, profitable_strategies: list[Any]
     ) -> list[Any]:
@@ -523,8 +760,8 @@ class UnifiedSharpActionProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
             "processing_time": datetime.now(self.est),
         }
 
-        # Mock game data for legacy compatibility
-        game_data = await self._get_game_data_for_legacy(minutes_ahead)
+        # Get real game data from database
+        game_data = await self._get_real_game_data(minutes_ahead)
 
         # Process using unified interface
         return await self.process_signals(game_data, context)
