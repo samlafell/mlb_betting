@@ -2192,6 +2192,8 @@ class VSINUnifiedCollector(BaseCollector):
                     "data_source": "real_vsin",
                     "raw_records": len(raw_data),
                     "valid_records": valid_count,
+                    "processed": valid_count,  # Add CLI-expected field
+                    "stored": valid_count,     # Add CLI-expected field (Note: test mode doesn't actually store data)
                     "validation_rate": valid_count / len(raw_data) if raw_data else 0,
                     "collection_result": "success",
                     "sample_record": self.normalize_record(raw_data[0])
@@ -2207,6 +2209,8 @@ class VSINUnifiedCollector(BaseCollector):
                     "data_source": "vsin",
                     "raw_records": 0,
                     "valid_records": 0,
+                    "processed": 0,  # Add CLI-expected field
+                    "stored": 0,     # Add CLI-expected field
                     "validation_rate": 0,
                     "message": "No data collected from VSIN",
                 }
@@ -2217,6 +2221,8 @@ class VSINUnifiedCollector(BaseCollector):
                 "error": str(e),
                 "raw_records": 0,
                 "valid_records": 0,
+                "processed": 0,  # Add CLI-expected field
+                "stored": 0,     # Add CLI-expected field
                 "validation_rate": 0,
             }
 

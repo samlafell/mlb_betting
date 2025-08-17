@@ -371,7 +371,7 @@ class UnifiedRateLimiter:
 
     def __init__(self) -> None:
         """Initialize unified rate limiter."""
-        self.logger = get_logger(__name__)
+        self.logger = get_logger(__name__, LogComponent.RATE_LIMITER)
 
         # Per-source configurations and state
         self.configs: dict[str, RateLimitConfig] = {}

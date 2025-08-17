@@ -79,6 +79,15 @@ uv run -m src.interfaces.cli monitoring dashboard  # Start real-time web dashboa
 uv run -m src.interfaces.cli monitoring status     # Check system health via API
 uv run -m src.interfaces.cli monitoring live       # Real-time terminal monitoring
 uv run -m src.interfaces.cli monitoring execute    # Manual break-glass pipeline execution
+
+# Collection Health Monitoring (NEW - Silent Failure Resolution)
+uv run -m src.interfaces.cli health status          # Collection health status
+uv run -m src.interfaces.cli health gaps            # Collection gap detection
+uv run -m src.interfaces.cli health dead-tuples     # Database health monitoring
+uv run -m src.interfaces.cli health circuit-breakers # Circuit breaker status
+uv run -m src.interfaces.cli health alerts          # Active alerts management
+uv run -m src.interfaces.cli health test-connection # Manual connection testing
+uv run -m src.interfaces.cli health reset-circuit-breaker # Manual recovery
 ```
 
 ### 📊 Complete Data Collection Process
@@ -573,5 +582,203 @@ uv run pytest tests/integration/
 uv run pytest tests/manual/
 ```
 
-## Postgres
-- Postgres uses Port 5433 with password postgres
+## Database Line Movement Investigation Guide 🔍
+
+### Primary Tables for Manual Line Movement Analysis
+
+When investigating line movements on games, focus on these key tables in **order of importance**:
+
+#### 1. **`raw_data.action_network_odds`** - Raw Line Data (Most Current: 4,992 records)
+```sql
+-- Example: Find all line movements for a specific game
+SELECT external_game_id, sportsbook_name, market_type, side, odds, line_value, 
+       updated_at, data_collection_time
+FROM raw_data.action_network_odds 
+WHERE external_game_id = 'YOUR_GAME_ID'
+ORDER BY market_type, side, updated_at;
+```
+
+#### 2. **`staging.action_network_odds_historical`** - Temporal Line Movement (Comprehensive)
+```sql
+-- Example: Track line movement progression over time
+SELECT external_game_id, sportsbook_name, market_type, side, 
+       odds, line_value, updated_at, is_current_odds
+FROM staging.action_network_odds_historical 
+WHERE external_game_id = 'YOUR_GAME_ID'
+  AND market_type = 'spread'  -- or 'moneyline', 'total'
+ORDER BY updated_at;
+```
+
+#### 3. **`curated.line_movements`** - Processed Movement Analysis
+```sql
+-- Example: Find significant line movements
+SELECT lm.*, gc.home_team, gc.away_team, gc.game_datetime
+FROM curated.line_movements lm
+JOIN curated.games_complete gc ON lm.game_id = gc.id
+WHERE lm.movement_size > 0.5  -- Significant movements
+ORDER BY lm.movement_timestamp DESC;
+```
+
+#### 4. **`curated.sharp_action_indicators`** - Professional Betting Signals
+```sql
+-- Example: Find sharp action on recent games
+SELECT sai.*, gc.home_team, gc.away_team, gc.game_datetime
+FROM curated.sharp_action_indicators sai
+JOIN curated.games_complete gc ON sai.game_id = gc.id
+WHERE sai.confidence > 0.7  -- High confidence signals
+ORDER BY sai.detected_at DESC;
+```
+
+### Quick Investigation Queries
+
+**Find Today's Games with Line Movement:**
+```sql
+SELECT gc.home_team, gc.away_team, gc.game_datetime,
+       COUNT(DISTINCT lm.id) as movement_count,
+       MAX(lm.movement_size) as max_movement
+FROM curated.games_complete gc
+LEFT JOIN curated.line_movements lm ON gc.id = lm.game_id
+WHERE gc.game_date = CURRENT_DATE
+GROUP BY gc.id, gc.home_team, gc.away_team, gc.game_datetime
+ORDER BY movement_count DESC;
+```
+
+**Find Games with Sharp Action:**
+```sql
+SELECT gc.home_team, gc.away_team, gc.game_datetime,
+       sai.indicator_type, sai.confidence, sai.detected_at
+FROM curated.games_complete gc
+JOIN curated.sharp_action_indicators sai ON gc.id = sai.game_id
+WHERE gc.game_date >= CURRENT_DATE - INTERVAL '7 days'
+ORDER BY sai.confidence DESC, sai.detected_at DESC;
+```
+
+## Complete Database Schema Documentation 📊
+
+### Raw Data Zone (`raw_data` schema) - Source-Specific Tables
+
+#### Action Network Data
+- **`raw_data.action_network_odds`** (4,992 records) - Live betting lines from Action Network API
+- **`raw_data.action_network_games`** (63 records) - Game metadata from Action Network  
+- **`raw_data.action_network_history`** (63 records) - Historical Action Network data
+
+#### Other Data Sources  
+- **`raw_data.vsin`** (409 records) - VSIN sharp action data and betting insights
+- **`raw_data.sbd_betting_splits`** - SportsBettingDime betting percentage data
+- **`raw_data.mlb_stats_api`** - Official MLB game data and statistics
+- **`raw_data.mlb_stats_api_games`** - MLB game metadata
+- **`raw_data.sbr_parsed_games`** - Sports Book Review parsed game data
+- **`raw_data.raw_mlb_betting_splits`** - Raw betting split data
+
+### Staging Zone (`staging` schema) - Processed & Unified Data
+
+#### Primary Staging Tables (Data Available)
+- **`staging.spreads`** (1,307 records) - Processed point spread data
+- **`staging.moneylines`** (884 records) - Processed moneyline data  
+- **`staging.totals`** (884 records) - Processed over/under totals
+- **`staging.betting_odds_unified`** (608 records) - Unified odds format
+- **`staging.betting_lines`** (416 records) - Unified betting lines
+
+#### Temporal Analysis Table (Ready for Data)
+- **`staging.action_network_odds_historical`** - **PRIMARY LINE MOVEMENT TABLE**
+  - Microsecond precision timestamps
+  - Complete line movement history
+  - Market types: moneyline, spread, total
+  - Sides: home, away, over, under
+  - **This is your main table for sophisticated line movement analysis**
+
+### Curated Zone (`curated` schema) - Analysis-Ready Data
+
+#### Game Management
+- **`curated.games_complete`** (94 records) - **Master games table with all external IDs**
+- **`curated.game_outcomes`** (94 records) - Final game results and outcomes
+- **`curated.enhanced_games`** (3 records) - Games with additional enrichment data
+
+#### Line Movement & Sharp Action Analysis
+- **`curated.line_movements`** - **Processed line movement analysis with direction and magnitude**
+- **`curated.sharp_action_indicators`** - **Professional betting pattern detection**
+- **`curated.steam_moves`** - Coordinated betting across multiple sportsbooks
+- **`curated.rlm_opportunities`** - Reverse Line Movement detection
+
+#### Advanced Analytics
+- **`curated.betting_lines_unified`** (7 records) - Unified betting line format
+- **`curated.arbitrage_opportunities`** (27 records) - Cross-sportsbook arbitrage opportunities
+- **`curated.unified_betting_splits`** - Unified betting percentage data
+
+### Analysis Zone (`analysis` schema) - Strategy & ML Models
+
+#### Strategy Analysis
+- **`analysis.betting_strategies`** (10 records) - Defined betting strategies and parameters
+- **`analysis.strategy_results`** - Strategy performance and backtesting results
+- **`analysis.ml_detected_patterns`** - Machine learning pattern detection
+- **`analysis.ml_opportunity_scores`** - ML-generated opportunity scoring
+
+#### Performance Tracking  
+- **`analysis.ml_model_performance`** - ML model accuracy and performance metrics
+- **`analysis.ml_performance_metrics`** - Detailed model performance analytics
+
+### Analytics Zone (`analytics` schema) - Business Intelligence
+
+#### Decision Support
+- **`analytics.betting_recommendations`** - Automated betting recommendations
+- **`analytics.confidence_scores`** - Confidence scoring for betting opportunities
+- **`analytics.strategy_signals`** - Strategy-based betting signals
+- **`analytics.cross_market_analysis`** - Cross-market betting analysis
+
+#### Performance & ROI
+- **`analytics.roi_calculations`** - Return on investment calculations
+- **`analytics.performance_metrics`** - Strategy and system performance metrics
+- **`analytics.timing_analysis_results`** - Optimal timing analysis for bets
+
+#### Machine Learning
+- **`analytics.ml_experiments`** (2 records) - ML experiment tracking
+- **`analytics.ml_predictions`** - ML model predictions and forecasts
+
+### Operational Tables
+
+#### Monitoring & Logging
+- **`public.pipeline_execution_log`** (53 records) - Pipeline execution history
+- **`public.experiments`** (2 records) - System experiments and A/B tests
+- **`monitoring.ml_model_alerts`** - ML model performance alerts
+- **`operational.alert_configurations`** - System alert configurations
+
+### Data Flow Architecture
+
+```
+RAW ZONE (Source-Specific)
+├── raw_data.action_network_odds (4,992 records) ✅
+├── raw_data.vsin (409 records) ✅
+└── raw_data.sbd_betting_splits
+          ↓
+STAGING ZONE (Unified & Temporal)
+├── staging.action_network_odds_historical ⭐ MAIN LINE MOVEMENT TABLE
+├── staging.spreads (1,307 records) ✅
+├── staging.moneylines (884 records) ✅
+└── staging.totals (884 records) ✅
+          ↓
+CURATED ZONE (Analysis-Ready)
+├── curated.line_movements ⭐ PROCESSED MOVEMENTS
+├── curated.sharp_action_indicators ⭐ SHARP ACTION
+├── curated.games_complete (94 records) ✅
+└── curated.steam_moves
+          ↓
+ANALYSIS & ANALYTICS (Business Intelligence)
+├── analysis.betting_strategies (10 records) ✅
+├── analytics.betting_recommendations
+└── analytics.roi_calculations
+```
+
+### Key Investigation Strategy
+
+1. **Start with `curated.games_complete`** to find your game
+2. **Use `staging.action_network_odds_historical`** for detailed line movements  
+3. **Check `curated.sharp_action_indicators`** for professional betting patterns
+4. **Review `curated.line_movements`** for processed movement analysis
+5. **Cross-reference with `raw_data.action_network_odds`** for latest data
+
+## Postgres Connection
+- **Host**: localhost
+- **Port**: 5433  
+- **Database**: mlb_betting
+- **User**: samlafell
+- **Password**: postgres
