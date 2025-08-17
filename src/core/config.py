@@ -135,6 +135,12 @@ class DatabaseSettings(BaseSettings):
         """Get connection string with masked password for logging."""
         masked_password = "*" * len(self.password) if self.password else ""
         return f"postgresql://{self.user}:{masked_password}@{self.host}:{self.port}/{self.database}"
+    
+    @computed_field
+    @property
+    def username(self) -> str:
+        """Backward compatibility alias for user field."""
+        return self.user
 
     def validate_connection_config(self) -> dict[str, bool]:
         """

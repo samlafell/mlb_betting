@@ -29,8 +29,8 @@ The MLB betting pipeline has **CRITICAL DATA INTEGRITY ISSUES** that render the 
   - Fake `volume: 500`
   - Placeholder sources: "VSIN", "DraftKings"
 
-### 🔴 Issue #3: Required Data Tables Don't Exist
-- **Missing Table**: `splits.raw_mlb_betting_splits` (required by strategies)
+### 🔴 Issue #3: Strategies are using decomissioned tables
+- **Decomissioned Table**: `splits.raw_mlb_betting_splits` (strategies using this table)
 - **Alternative Tables**: `curated.betting_splits` (0 records), `raw_data.raw_mlb_betting_splits` (0 records)
 - **Impact**: All betting split-based strategies fail back to mock data
 
@@ -55,6 +55,7 @@ The MLB betting pipeline has **CRITICAL DATA INTEGRITY ISSUES** that render the 
 - **Sharp Action Detection**: Uses mock data only
 - **Strategy Backtesting**: False positive results from fake data
 - **Games Complete Population**: Critical fields not populated
+- **Backtesting v ML Model Training**: Unclear what the differences are between backtesting commands and our ML Model Training. One would assume they're the same thing. If they should be different - we should make it clear why.
 
 ## Data Availability Analysis
 
