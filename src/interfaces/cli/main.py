@@ -11,6 +11,7 @@ from src.interfaces.cli.commands.action_network_pipeline import action_network
 from src.interfaces.cli.commands.backtesting import backtesting_group
 from src.interfaces.cli.commands.batch_collection import batch_collection
 from src.interfaces.cli.commands.cleanup import cleanup
+from src.interfaces.cli.commands.collection_health import health
 from src.interfaces.cli.commands.curated import curated
 from src.interfaces.cli.commands.data import DataCommands
 from src.interfaces.cli.commands.data_quality_improvement import data_quality_group
@@ -70,6 +71,7 @@ cli.add_command(data_commands.create_group(), name="data")
 cli.add_command(
     monitoring_commands.create_group(), name="monitoring"
 )  # Add monitoring commands
+cli.add_command(health)  # Add the collection health monitoring commands
 cli.add_command(batch_collection)  # Add the batch collection commands
 cli.add_command(movement)  # Add the new movement analysis commands
 cli.add_command(action_network)  # Add the complete Action Network pipeline

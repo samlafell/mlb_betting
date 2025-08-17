@@ -416,7 +416,7 @@ class DeduplicationService:
 
     def __init__(self) -> None:
         """Initialize deduplication service."""
-        self.logger = get_logger(__name__)
+        self.logger = get_logger(__name__, LogComponent.VALIDATOR)
         self.seen_hashes: set[str] = set()
         self.seen_items: dict[str, dict[str, Any]] = {}
         self.duplicate_groups: dict[str, list[dict[str, Any]]] = {}
@@ -651,7 +651,7 @@ class DataQualityValidator:
 
     def __init__(self) -> None:
         """Initialize data quality validator."""
-        self.logger = get_logger(__name__)
+        self.logger = get_logger(__name__, LogComponent.VALIDATOR)
         self.rules: list[ValidationRule] = []
         self.deduplication_service = DeduplicationService()
 
