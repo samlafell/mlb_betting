@@ -28,6 +28,10 @@ from ...core.logging import get_logger, LogComponent
 
 logger = get_logger(__name__, LogComponent.MONITORING)
 
+# Configurable constants for confidence score adjustments
+WARNING_PENALTY = 0.1  # Confidence reduction per warning
+ERROR_PENALTY = 0.3    # Confidence reduction per error
+
 
 class HealthStatus(Enum):
     """Health status levels for collection operations."""
@@ -183,6 +187,7 @@ class CollectionHealthResult:
             self.confidence_score < 0.7 or
             bool(self.detected_patterns) or
             (self.expected_record_count_range and 
+             len(self.expected_record_count_range) == 2 and
              not (self.expected_record_count_range[0] <= self.data_count <= self.expected_record_count_range[1]))
         )
     
@@ -194,7 +199,7 @@ class CollectionHealthResult:
         
         # Adjust confidence score based on warnings
         if len(self.warnings) > 0:
-            self.confidence_score = max(0.0, self.confidence_score - (len(self.warnings) * 0.1))
+            self.confidence_score = max(0.0, self.confidence_score - (len(self.warnings) * WARNING_PENALTY))
     
     def add_error(self, message: str, pattern: Optional[FailurePattern] = None, is_recoverable: bool = True) -> None:
         """Add an error to the result."""
@@ -206,7 +211,7 @@ class CollectionHealthResult:
             self.detected_patterns.append(pattern)
         
         # Significantly reduce confidence on errors
-        self.confidence_score = max(0.0, self.confidence_score - 0.3)
+        self.confidence_score = max(0.0, self.confidence_score - ERROR_PENALTY)
     
     def set_alert(self, severity: AlertSeverity, message: str) -> None:
         """Set alert information for this result."""

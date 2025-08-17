@@ -46,6 +46,15 @@ enable_metrics_sampling = true
 metrics_sample_rate = 0.1  # 10% sampling for high-volume operations
 max_unmapped_resolution_limit = 100  # Maximum unmapped IDs to resolve per batch
 
+[collection.circuit_breaker]
+# Circuit Breaker Configuration for Collection Health
+failure_threshold = 3                  # Number of failures before opening circuit
+timeout_duration_seconds = 300        # Time to wait before attempting recovery (5 minutes)
+enable_automatic_recovery = true      # Enable automatic recovery attempts
+enable_degraded_mode = true           # Enable degraded mode operation
+max_retry_attempts = 5                # Maximum recovery attempts before giving up
+recovery_strategy = "exponential_backoff"  # Recovery strategy: "immediate", "exponential_backoff", "scheduled"
+
 # Metric bucket configurations (in seconds)
 pipeline_duration_buckets = [1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
 pipeline_stage_duration_buckets = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0]

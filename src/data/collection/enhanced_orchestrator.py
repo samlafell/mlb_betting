@@ -132,16 +132,38 @@ class EnhancedCollectionOrchestrator(CollectionOrchestrator):
         
         self.logger.info("Enhanced collection orchestrator initialized")
     
+    async def initialize(self) -> None:
+        """Initialize async components that require database connections."""
+        try:
+            await self.alert_manager.initialize_db_connection()
+            self.logger.info("Enhanced orchestrator async initialization completed")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize async components: {e}")
+            raise
+    
     def _initialize_circuit_breakers(self) -> None:
         """Initialize circuit breakers for all data sources."""
+        # Load configuration from config.toml
+        settings = get_settings()
+        cb_config_data = getattr(settings, 'collection', {}).get('circuit_breaker', {})
+        
         for source_name, config in self.source_configs.items():
-            # Create circuit breaker configuration based on source
+            # Map recovery strategy from config string
+            strategy_mapping = {
+                'immediate': RecoveryStrategy.IMMEDIATE,
+                'exponential_backoff': RecoveryStrategy.EXPONENTIAL_BACKOFF,
+                'scheduled': RecoveryStrategy.SCHEDULED
+            }
+            recovery_strategy_str = cb_config_data.get('recovery_strategy', 'exponential_backoff')
+            recovery_strategy = strategy_mapping.get(recovery_strategy_str, RecoveryStrategy.EXPONENTIAL_BACKOFF)
+            
+            # Create circuit breaker configuration from config.toml with fallback defaults
             cb_config = CircuitBreakerConfig(
-                failure_threshold=3,
-                timeout_duration_seconds=300,
-                recovery_strategy=RecoveryStrategy.EXPONENTIAL_BACKOFF,
-                enable_automatic_recovery=True,
-                enable_degraded_mode=True
+                failure_threshold=cb_config_data.get('failure_threshold', 3),
+                timeout_duration_seconds=cb_config_data.get('timeout_duration_seconds', 300),
+                recovery_strategy=recovery_strategy,
+                enable_automatic_recovery=cb_config_data.get('enable_automatic_recovery', True),
+                enable_degraded_mode=cb_config_data.get('enable_degraded_mode', True)
             )
             
             # Create health checker for this source

@@ -384,7 +384,11 @@ class EnhancedCircuitBreaker:
     async def _start_recovery_process(self) -> None:
         """Start automatic recovery process."""
         if self.recovery_task and not self.recovery_task.done():
-            return  # Recovery already in progress
+            self.recovery_task.cancel()
+            try:
+                await self.recovery_task
+            except asyncio.CancelledError:
+                pass  # Expected when cancelling
         
         self.recovery_task = asyncio.create_task(self._recovery_loop())
         self.logger.info("Started automatic recovery process")
