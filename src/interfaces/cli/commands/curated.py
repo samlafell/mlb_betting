@@ -12,6 +12,7 @@ Reference: docs/STAGING_CURATED_GAP_ANALYSIS.md - CLI Integration Requirements
 
 import asyncio
 from typing import Any
+from unittest.mock import Mock
 
 import click
 from rich.console import Console
@@ -276,19 +277,14 @@ async def _process_games_async(
             console.print("[red]❌ EnhancedGamesService not available[/red]")
             console.print("[yellow]Using mock service for demonstration[/yellow]")
             # Return mock result instead of failing
-            mock_result = type(
-                "MockResult",
-                (),
-                {
-                    "games_processed": 0,
-                    "games_successful": 0,
-                    "games_failed": 0,
-                    "processing_time_seconds": 0.0,
-                    "errors": [
-                        "EnhancedGamesService not implemented - this is a mock response"
-                    ],
-                },
-            )()
+            mock_result = Mock()
+            mock_result.games_processed = 0
+            mock_result.games_successful = 0
+            mock_result.games_failed = 0
+            mock_result.processing_time_seconds = 0.0
+            mock_result.errors = [
+                "EnhancedGamesService not implemented - this is a mock response"
+            ]
             _display_processing_results(mock_result, "Enhanced Games Processing (Mock)")
             return
 
@@ -395,19 +391,14 @@ async def _run_pipeline_async(
             console.print("[red]❌ StagingCuratedOrchestrator not available[/red]")
             console.print("[yellow]Using mock orchestrator for demonstration[/yellow]")
             # Return mock result
-            mock_result = type(
-                "MockResult",
-                (),
-                {
-                    "total_processed": 0,
-                    "successful": 0,
-                    "failed": 0,
-                    "processing_time_seconds": 0.0,
-                    "errors": [
-                        "StagingCuratedOrchestrator not implemented - this is a mock response"
-                    ],
-                },
-            )()
+            mock_result = Mock()
+            mock_result.total_processed = 0
+            mock_result.successful = 0
+            mock_result.failed = 0
+            mock_result.processing_time_seconds = 0.0
+            mock_result.errors = [
+                "StagingCuratedOrchestrator not implemented - this is a mock response"
+            ]
             _display_orchestration_results(mock_result)
             return
 

@@ -25,6 +25,7 @@ import asyncio
 import json
 from datetime import datetime, timezone, date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
+from enum import Enum
 
 from pydantic import BaseModel, Field
 
@@ -35,6 +36,97 @@ from ...core.team_utils import normalize_team_name
 from ...data.database.connection import get_connection, initialize_connections
 
 logger = get_logger(__name__, LogComponent.CORE)
+
+
+class CircuitBreakerState(Enum):
+    """Circuit breaker states for error handling."""
+    CLOSED = "closed"      # Normal operation
+    OPEN = "open"         # Failing, reject requests
+    HALF_OPEN = "half_open"  # Testing if service recovered
+
+
+class CircuitBreaker:
+    """
+    Simple circuit breaker pattern for database operations.
+    
+    Protects against cascading failures by temporarily stopping
+    operations when error thresholds are exceeded.
+    """
+    
+    def __init__(
+        self, 
+        failure_threshold: int = 5,
+        recovery_timeout: int = 60,
+        success_threshold: int = 3
+    ):
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout  # seconds
+        self.success_threshold = success_threshold
+        
+        self.failure_count = 0
+        self.success_count = 0
+        self.last_failure_time = None
+        self.state = CircuitBreakerState.CLOSED
+    
+    async def call(self, func, *args, **kwargs):
+        """Execute function with circuit breaker protection."""
+        if self.state == CircuitBreakerState.OPEN:
+            if self._should_attempt_reset():
+                self.state = CircuitBreakerState.HALF_OPEN
+                logger.info("Circuit breaker transitioning to HALF_OPEN state")
+            else:
+                raise Exception(f"Circuit breaker is OPEN. Service unavailable until {self.last_failure_time + timedelta(seconds=self.recovery_timeout)}")
+        
+        try:
+            result = await func(*args, **kwargs)
+            self._on_success()
+            return result
+        except Exception as e:
+            self._on_failure()
+            raise e
+    
+    def _should_attempt_reset(self) -> bool:
+        """Check if enough time has passed to attempt reset."""
+        if self.last_failure_time is None:
+            return True
+        return datetime.now(timezone.utc) >= self.last_failure_time + timedelta(seconds=self.recovery_timeout)
+    
+    def _on_success(self):
+        """Handle successful operation."""
+        if self.state == CircuitBreakerState.HALF_OPEN:
+            self.success_count += 1
+            if self.success_count >= self.success_threshold:
+                self._reset()
+        elif self.state == CircuitBreakerState.CLOSED:
+            self.failure_count = 0  # Reset failure count on success
+    
+    def _on_failure(self):
+        """Handle failed operation."""
+        self.failure_count += 1
+        self.last_failure_time = datetime.now(timezone.utc)
+        
+        if self.failure_count >= self.failure_threshold:
+            self.state = CircuitBreakerState.OPEN
+            logger.warning(f"Circuit breaker opened after {self.failure_count} failures")
+    
+    def _reset(self):
+        """Reset circuit breaker to normal operation."""
+        self.state = CircuitBreakerState.CLOSED
+        self.failure_count = 0
+        self.success_count = 0
+        self.last_failure_time = None
+        logger.info("Circuit breaker reset to CLOSED state")
+    
+    def get_state(self) -> Dict[str, Any]:
+        """Get current circuit breaker state for monitoring."""
+        return {
+            "state": self.state.value,
+            "failure_count": self.failure_count,
+            "success_count": self.success_count,
+            "last_failure_time": self.last_failure_time.isoformat() if self.last_failure_time else None,
+            "next_retry_time": (self.last_failure_time + timedelta(seconds=self.recovery_timeout)).isoformat() 
+                              if self.last_failure_time and self.state == CircuitBreakerState.OPEN else None
+        }
 
 
 class GameOutcomeSyncResult(BaseModel):
@@ -103,11 +195,19 @@ class EnhancedGamesOutcomeSyncService:
             "total_updated": 0,
             "last_sync": None
         }
+        
+        # Initialize circuit breaker for database operations
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=5,    # Open after 5 failures
+            recovery_timeout=60,    # Try again after 60 seconds
+            success_threshold=3     # Close after 3 successes
+        )
     
     async def sync_all_missing_outcomes(
         self, 
         dry_run: bool = False,
-        limit: Optional[int] = None
+        limit: Optional[int] = None,
+        page_size: int = 1000
     ) -> GameOutcomeSyncResult:
         """
         CRITICAL: Sync all game outcomes that are missing from enhanced_games.
@@ -119,6 +219,7 @@ class EnhancedGamesOutcomeSyncService:
         Args:
             dry_run: If True, don't actually update data
             limit: Maximum number of games to sync (None for all)
+            page_size: Number of records to process per page (default: 1000)
             
         Returns:
             GameOutcomeSyncResult with sync details
@@ -129,39 +230,53 @@ class EnhancedGamesOutcomeSyncService:
         try:
             logger.info(f"Starting enhanced games outcome sync: dry_run={dry_run}, limit={limit}")
             
-            # Get all game outcomes missing from enhanced_games
-            missing_outcomes = await self._get_missing_enhanced_game_outcomes(limit)
-            result.outcomes_found = len(missing_outcomes)
+            # Use pagination to process large datasets efficiently
+            total_created = 0
+            total_updated = 0
+            total_processed = 0
+            offset = 0
             
-            if not missing_outcomes:
+            while True:
+                # Get a page of missing outcomes with circuit breaker protection
+                page_limit = min(page_size, limit - total_processed) if limit else page_size
+                missing_outcomes_page = await self.circuit_breaker.call(
+                    self._get_missing_enhanced_game_outcomes_paginated,
+                    page_limit, offset
+                )
+                
+                if not missing_outcomes_page:
+                    break  # No more data to process
+                
+                logger.info(f"Processing page {offset//page_size + 1}: {len(missing_outcomes_page)} outcomes")
+                
+                # Use batch processing for this page
+                page_created, page_updated = await self._batch_sync_outcomes(
+                    missing_outcomes_page, dry_run, result
+                )
+                
+                total_created += page_created
+                total_updated += page_updated
+                total_processed += len(missing_outcomes_page)
+                
+                # Check if we've reached our limit
+                if limit and total_processed >= limit:
+                    break
+                
+                # If we got fewer records than page_size, we're done
+                if len(missing_outcomes_page) < page_size:
+                    break
+                    
+                offset += page_size
+            
+            result.outcomes_found = total_processed
+            created_count, updated_count = total_created, total_updated
+            
+            if total_processed == 0:
                 logger.info("No missing game outcomes found - enhanced_games is up to date")
                 result.metadata["message"] = "No missing outcomes found"
                 return result
             
-            logger.info(f"Found {len(missing_outcomes)} game outcomes missing from enhanced_games")
-            
-            # Sync each missing outcome
-            created_count = 0
-            updated_count = 0
-            
-            for outcome_data in missing_outcomes:
-                try:
-                    enhanced_game_with_outcome = await self._create_enhanced_game_with_outcome(outcome_data)
-                    
-                    if not dry_run:
-                        was_created = await self._upsert_enhanced_game_with_outcome(enhanced_game_with_outcome)
-                        if was_created:
-                            created_count += 1
-                        else:
-                            updated_count += 1
-                    
-                    logger.debug(f"Synced game outcome {outcome_data.get('game_id')} to enhanced_games")
-                    
-                except Exception as e:
-                    error_msg = f"Failed to sync game outcome {outcome_data.get('game_id', 'unknown')}: {e}"
-                    logger.error(error_msg)
-                    result.errors.append(error_msg)
-                    result.sync_failures += 1
+            logger.info(f"Found and processed {total_processed} game outcomes missing from enhanced_games")
             
             result.enhanced_games_created = created_count
             result.enhanced_games_updated = updated_count
@@ -221,8 +336,10 @@ class EnhancedGamesOutcomeSyncService:
         try:
             logger.info(f"Starting recent enhanced games outcome sync: days_back={days_back}, dry_run={dry_run}")
             
-            # Get recent game outcomes that need syncing
-            recent_outcomes = await self._get_recent_outcomes_for_sync(days_back)
+            # Get recent game outcomes that need syncing with circuit breaker protection
+            recent_outcomes = await self.circuit_breaker.call(
+                self._get_recent_outcomes_for_sync, days_back
+            )
             result.outcomes_found = len(recent_outcomes)
             
             if not recent_outcomes:
@@ -232,28 +349,10 @@ class EnhancedGamesOutcomeSyncService:
             
             logger.info(f"Found {len(recent_outcomes)} recent game outcomes for sync")
             
-            # Sync each recent outcome
-            created_count = 0
-            updated_count = 0
-            
-            for outcome_data in recent_outcomes:
-                try:
-                    enhanced_game_with_outcome = await self._create_enhanced_game_with_outcome(outcome_data)
-                    
-                    if not dry_run:
-                        was_created = await self._upsert_enhanced_game_with_outcome(enhanced_game_with_outcome)
-                        if was_created:
-                            created_count += 1
-                        else:
-                            updated_count += 1
-                    
-                    logger.debug(f"Synced recent game outcome {outcome_data.get('game_id')} to enhanced_games")
-                    
-                except Exception as e:
-                    error_msg = f"Failed to sync recent game outcome {outcome_data.get('game_id', 'unknown')}: {e}"
-                    logger.error(error_msg)
-                    result.errors.append(error_msg)
-                    result.sync_failures += 1
+            # Use batch processing for better performance
+            created_count, updated_count = await self._batch_sync_outcomes(
+                recent_outcomes, dry_run, result
+            )
             
             result.enhanced_games_created = created_count
             result.enhanced_games_updated = updated_count
@@ -333,10 +432,81 @@ class EnhancedGamesOutcomeSyncService:
                 ORDER BY co.outcome_game_date DESC, co.game_id DESC
             """
             
+            # Validate and parameterize limit to prevent SQL injection
             if limit:
-                query += f" LIMIT {limit}"
+                if not isinstance(limit, int) or limit <= 0:
+                    raise ValueError(f"Invalid limit value: {limit}. Must be a positive integer.")
+                query += " LIMIT $1"
+                rows = await conn.fetch(query, limit)
+            else:
+                rows = await conn.fetch(query)
+            return [dict(row) for row in rows]
+    
+    async def _get_missing_enhanced_game_outcomes_paginated(
+        self, 
+        page_size: int, 
+        offset: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Get a page of game outcomes that are missing from enhanced_games.
+        
+        Uses LIMIT and OFFSET for efficient pagination of large datasets.
+        
+        Args:
+            page_size: Number of records to return
+            offset: Number of records to skip
+        """
+        
+        async with get_connection() as conn:
+            # Validate inputs to prevent SQL injection
+            if not isinstance(page_size, int) or page_size <= 0:
+                raise ValueError(f"Invalid page_size: {page_size}. Must be a positive integer.")
+            if not isinstance(offset, int) or offset < 0:
+                raise ValueError(f"Invalid offset: {offset}. Must be a non-negative integer.")
             
-            rows = await conn.fetch(query)
+            query = """
+                WITH complete_outcomes AS (
+                    SELECT DISTINCT
+                        go.game_id,
+                        go.home_team,
+                        go.away_team,
+                        go.home_score,
+                        go.away_score,
+                        go.home_win,
+                        go.over,
+                        go.home_cover_spread,
+                        go.total_line,
+                        go.home_spread_line,
+                        go.game_date as outcome_game_date,
+                        gc.mlb_stats_api_game_id,
+                        gc.action_network_game_id,
+                        gc.game_datetime,
+                        gc.game_date as game_date,
+                        gc.season,
+                        gc.venue_name,
+                        gc.game_status,
+                        -- Determine winning team
+                        CASE 
+                            WHEN go.home_win THEN go.home_team 
+                            ELSE go.away_team 
+                        END as winning_team
+                    FROM curated.game_outcomes go
+                    INNER JOIN curated.games_complete gc ON go.game_id = gc.id
+                    WHERE go.home_score IS NOT NULL 
+                        AND go.away_score IS NOT NULL
+                )
+                SELECT co.*
+                FROM complete_outcomes co
+                LEFT JOIN curated.enhanced_games eg 
+                    ON co.game_id = eg.id 
+                    OR (co.action_network_game_id IS NOT NULL AND co.action_network_game_id = eg.action_network_game_id)
+                    OR (co.mlb_stats_api_game_id IS NOT NULL AND co.mlb_stats_api_game_id = eg.mlb_stats_api_game_id)
+                WHERE (eg.id IS NULL OR eg.home_score IS NULL OR eg.away_score IS NULL)
+                ORDER BY co.outcome_game_date DESC, co.game_id DESC
+                LIMIT $1 OFFSET $2
+            """
+            
+            rows = await conn.fetch(query, page_size, offset)
             return [dict(row) for row in rows]
     
     async def _get_recent_outcomes_for_sync(self, days_back: int) -> List[Dict[str, Any]]:
@@ -372,11 +542,15 @@ class EnhancedGamesOutcomeSyncService:
                 INNER JOIN curated.games_complete gc ON go.game_id = gc.id
                 WHERE go.home_score IS NOT NULL 
                     AND go.away_score IS NOT NULL
-                    AND go.game_date > NOW() - INTERVAL '%s days'
+                    AND go.game_date > NOW() - INTERVAL '$1 days'
                 ORDER BY go.game_date DESC, go.game_id DESC
-            """ % days_back
+            """
             
-            rows = await conn.fetch(query)
+            # Validate days_back to prevent SQL injection
+            if not isinstance(days_back, int) or days_back <= 0:
+                raise ValueError(f"Invalid days_back value: {days_back}. Must be a positive integer.")
+            
+            rows = await conn.fetch(query, days_back)
             return [dict(row) for row in rows]
     
     async def _create_enhanced_game_with_outcome(self, outcome_data: Dict[str, Any]) -> EnhancedGameWithOutcome:
@@ -584,6 +758,84 @@ class EnhancedGamesOutcomeSyncService:
                 logger.debug(f"Created new enhanced_games record {new_id} with outcome data")
                 return True  # Created new record
     
+    async def _batch_sync_outcomes(
+        self, 
+        outcome_data_list: List[Dict[str, Any]], 
+        dry_run: bool,
+        result: GameOutcomeSyncResult
+    ) -> Tuple[int, int]:
+        """
+        Batch process multiple outcomes for better performance.
+        
+        Uses batch operations where possible and processes in smaller chunks
+        to prevent memory issues with large datasets.
+        
+        Returns:
+            Tuple of (created_count, updated_count)
+        """
+        created_count = 0
+        updated_count = 0
+        batch_size = 50  # Process in batches of 50 to prevent memory issues
+        
+        # Process outcomes in batches
+        for i in range(0, len(outcome_data_list), batch_size):
+            batch = outcome_data_list[i:i + batch_size]
+            logger.debug(f"Processing batch {i//batch_size + 1}/{(len(outcome_data_list)-1)//batch_size + 1} ({len(batch)} outcomes)")
+            
+            # Create enhanced games for this batch
+            enhanced_games_batch = []
+            for outcome_data in batch:
+                try:
+                    enhanced_game = await self._create_enhanced_game_with_outcome(outcome_data)
+                    enhanced_games_batch.append(enhanced_game)
+                except Exception as e:
+                    error_msg = f"Failed to create enhanced game for outcome {outcome_data.get('game_id', 'unknown')}: {e}"
+                    logger.error(error_msg)
+                    result.errors.append(error_msg)
+                    result.sync_failures += 1
+            
+            # Batch upsert if not dry run
+            if not dry_run and enhanced_games_batch:
+                batch_created, batch_updated = await self._batch_upsert_enhanced_games(enhanced_games_batch)
+                created_count += batch_created
+                updated_count += batch_updated
+            elif dry_run:
+                # For dry run, simulate the counts
+                created_count += len(enhanced_games_batch)
+            
+            logger.debug(f"Batch processed: {len(enhanced_games_batch)} games")
+        
+        return created_count, updated_count
+    
+    async def _batch_upsert_enhanced_games(
+        self, 
+        enhanced_games: List[EnhancedGameWithOutcome]
+    ) -> Tuple[int, int]:
+        """
+        Perform batch upsert operations for better database performance.
+        
+        Returns:
+            Tuple of (created_count, updated_count)
+        """
+        created_count = 0
+        updated_count = 0
+        
+        async with get_connection() as conn:
+            async with conn.transaction():
+                for enhanced_game in enhanced_games:
+                    try:
+                        was_created = await self._upsert_enhanced_game_with_outcome(enhanced_game)
+                        if was_created:
+                            created_count += 1
+                        else:
+                            updated_count += 1
+                    except Exception as e:
+                        logger.error(f"Failed to upsert enhanced game: {e}")
+                        # Continue with other games in the batch
+                        continue
+        
+        return created_count, updated_count
+    
     async def get_sync_stats(self) -> Dict[str, Any]:
         """Get sync statistics for monitoring."""
         
@@ -632,6 +884,9 @@ class EnhancedGamesOutcomeSyncService:
             logger.error(f"Error getting sync stats: {e}")
             stats["database_error"] = str(e)
         
+        # Add circuit breaker state
+        stats["circuit_breaker"] = self.circuit_breaker.get_state()
+        
         return stats
     
     async def health_check(self) -> Dict[str, Any]:
@@ -672,7 +927,8 @@ class EnhancedGamesOutcomeSyncService:
                     "missing_enhanced_games": missing_count,
                     "ml_training_ready": enhanced_count >= 50,
                     "sync_needed": missing_count > 0,
-                    "sync_stats": self.sync_stats
+                    "sync_stats": self.sync_stats,
+                    "circuit_breaker": self.circuit_breaker.get_state()
                 }
                 
         except Exception as e:
@@ -680,7 +936,8 @@ class EnhancedGamesOutcomeSyncService:
                 "status": "unhealthy",
                 "error": str(e),
                 "database_connection": "failed",
-                "sync_stats": self.sync_stats
+                "sync_stats": self.sync_stats,
+                "circuit_breaker": self.circuit_breaker.get_state()
             }
 
 
