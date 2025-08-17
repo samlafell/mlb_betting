@@ -233,8 +233,19 @@ class SharpActionDetectionService:
                         money_pct = row["money_percentage_home"]
                         bet_pct = row["bet_percentage_home"]
 
-                        if money_pct and bet_pct:
-                            differential = abs(float(money_pct) - float(bet_pct))
+                        # Validate numeric inputs
+                        if (money_pct is not None and bet_pct is not None and 
+                            self._is_valid_percentage(money_pct) and self._is_valid_percentage(bet_pct)):
+                            try:
+                                differential = abs(float(money_pct) - float(bet_pct))
+                            except (ValueError, TypeError) as e:
+                                self.logger.warning(
+                                    f"Invalid percentage values for differential calculation: {e}",
+                                    money_pct=money_pct,
+                                    bet_pct=bet_pct,
+                                    game_id=game_id
+                                )
+                                continue
 
                             if differential >= 15:  # 15% or greater differential indicates sharp action
                                 detected_patterns.append({
@@ -250,8 +261,19 @@ class SharpActionDetectionService:
                         money_pct = row["money_percentage_over"]
                         bet_pct = row["bet_percentage_over"]
 
-                        if money_pct and bet_pct:
-                            differential = abs(float(money_pct) - float(bet_pct))
+                        # Validate numeric inputs
+                        if (money_pct is not None and bet_pct is not None and 
+                            self._is_valid_percentage(money_pct) and self._is_valid_percentage(bet_pct)):
+                            try:
+                                differential = abs(float(money_pct) - float(bet_pct))
+                            except (ValueError, TypeError) as e:
+                                self.logger.warning(
+                                    f"Invalid percentage values for total differential calculation: {e}",
+                                    money_pct=money_pct,
+                                    bet_pct=bet_pct,
+                                    game_id=game_id
+                                )
+                                continue
 
                             if differential >= 15:
                                 detected_patterns.append({
@@ -284,6 +306,29 @@ class SharpActionDetectionService:
             )
 
         return indicators
+
+    def _is_valid_percentage(self, value) -> bool:
+        """
+        Validate that a value is a valid percentage (0-100).
+        
+        Args:
+            value: Value to validate
+            
+        Returns:
+            True if valid percentage, False otherwise
+        """
+        try:
+            if value is None:
+                return False
+            
+            # Convert to float for validation
+            float_value = float(value)
+            
+            # Check if it's a valid percentage range
+            return 0 <= float_value <= 100
+            
+        except (ValueError, TypeError):
+            return False
 
     def _extract_sharp_action_indicators(
         self, analysis_results: list[UnifiedBettingSignal]

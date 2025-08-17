@@ -91,6 +91,11 @@ class UnifiedHybridSharpProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
             "steam_play_threshold", 25.0
         )  # Steam play sharp action threshold
 
+        # Performance configuration
+        self.max_records_per_game = config.get("max_records_per_game", 100)
+        self.max_games_limit = config.get("max_games_limit", 20)
+        self.batch_query_enabled = config.get("batch_query_enabled", True)
+
         # Hybrid confidence modifiers
         self.hybrid_modifiers = config.get(
             "hybrid_modifiers",
@@ -290,10 +295,10 @@ class UnifiedHybridSharpProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
                         WHERE ubs.game_id = $1 
                         AND ubs.minutes_before_game >= $2
                         ORDER BY ubs.collected_at DESC, ubs.market_type, ubs.sportsbook_name
-                        LIMIT 100
+                        LIMIT $3
                     """
 
-                    rows = await conn.fetch(hybrid_query, game_id, minutes_ahead)
+                    rows = await conn.fetch(hybrid_query, game_id, minutes_ahead, self.max_records_per_game)
 
                     for row in rows:
                         row_dict = dict(row)
@@ -964,16 +969,16 @@ class UnifiedHybridSharpProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
                         eg.game_status
                     FROM curated.enhanced_games eg
                     WHERE eg.game_datetime > NOW() 
-                    AND eg.game_datetime <= NOW() + interval '%s minutes'
+                    AND eg.game_datetime <= NOW() + $1 * interval '1 minute'
                     AND EXISTS (
                         SELECT 1 FROM curated.unified_betting_splits ubs 
                         WHERE ubs.game_id = eg.id
                     )
                     ORDER BY eg.game_datetime ASC
-                    LIMIT 20
-                """ % minutes_ahead
+                    LIMIT $2
+                """
 
-                rows = await conn.fetch(query)
+                rows = await conn.fetch(query, minutes_ahead, self.max_games_limit)
 
                 game_data = []
                 for row in rows:
