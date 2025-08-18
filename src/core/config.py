@@ -252,12 +252,32 @@ class SchemaSettings(BaseSettings):
     # Table name mappings
     table_mappings: dict[str, str] = Field(
         default_factory=lambda: {
-            "games": "curated.games_complete",
-            "odds": "curated.odds",
+            # Strategy-related tables
+            "games": "curated.enhanced_games",
+            "raw_games": "curated.games_complete", 
+            "betting_splits": "curated.unified_betting_splits",
+            "raw_betting_splits": "raw_data.mlb_betting_splits",  # Updated from legacy splits.raw_mlb_betting_splits
+            "line_movements": "curated.line_movements",
+            "betting_lines": "curated.betting_lines_unified",
+            "sharp_action_indicators": "curated.sharp_action_indicators",
+            "game_outcomes": "curated.game_outcomes",
+            
+            # Analytics tables
             "betting_analysis": "analytics.betting_analysis",
             "sharp_signals": "analytics.sharp_signals",
+            "strategy_performance": "analytics.strategy_performance",
+            
+            # Raw data tables
             "raw_html": "raw_data.raw_html",
+            "raw_odds": "raw_data.odds",
+            
+            # Operational tables
             "system_logs": "operational.system_logs",
+            "pipeline_runs": "curated.pipeline_runs",
+            
+            # Legacy compatibility (deprecated)
+            "legacy_splits": "splits.raw_mlb_betting_splits",  # For backward compatibility only
+            "public_games": "public.games",  # Legacy reference
         },
         description="Logical table name to physical table mappings",
     )

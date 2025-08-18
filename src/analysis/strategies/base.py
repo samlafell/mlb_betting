@@ -29,6 +29,7 @@ from src.analysis.models.unified_models import (
     StrategyCategory,
     UnifiedBettingSignal,
 )
+from src.core.config import get_settings
 from src.core.logging import LogComponent, get_logger
 from src.data.database import UnifiedRepository
 
@@ -83,6 +84,10 @@ class BaseStrategyProcessor(ABC):
         self.config = config
         self.logger = get_logger(self.__class__.__name__, LogComponent.STRATEGY)
         self.est = pytz.timezone("US/Eastern")
+        
+        # Get application settings for table mappings
+        self.app_config = get_settings()
+        self.table_config = self.app_config.schemas
 
         # Processing state
         self.processing_id: str | None = None
@@ -476,6 +481,44 @@ class BaseStrategyProcessor(ABC):
             return ConfidenceLevel.MEDIUM
         else:
             return ConfidenceLevel.LOW
+
+    # Table configuration methods
+    
+    def get_table_name(self, logical_name: str) -> str:
+        """
+        Get physical table name from logical name using configuration.
+        
+        Args:
+            logical_name: Logical table name (e.g., 'betting_splits', 'games')
+            
+        Returns:
+            Physical table name with schema (e.g., 'curated.unified_betting_splits')
+        """
+        return self.table_config.get_table(logical_name)
+    
+    def get_required_table_names(self) -> list[str]:
+        """
+        Get physical table names for all required tables.
+        
+        Returns:
+            List of physical table names (with schemas) that this strategy requires
+        """
+        logical_names = self.get_required_tables()
+        return [self.get_table_name(logical_name) for logical_name in logical_names]
+    
+    def validate_table_access(self) -> dict[str, bool]:
+        """
+        Validate that all required tables are accessible.
+        
+        Returns:
+            Dictionary mapping logical table names to accessibility status
+        """
+        validation_results = {}
+        for logical_name in self.get_required_tables():
+            physical_name = self.get_table_name(logical_name)
+            # Basic validation - just check if we have a mapping
+            validation_results[logical_name] = bool(physical_name)
+        return validation_results
 
     # Utility methods
 
