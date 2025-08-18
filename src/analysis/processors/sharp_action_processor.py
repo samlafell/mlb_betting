@@ -102,8 +102,8 @@ class UnifiedSharpActionProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
         return StrategyCategory.SHARP_ACTION
 
     def get_required_tables(self) -> list[str]:
-        """Return database tables required for this strategy"""
-        return ["splits.raw_mlb_betting_splits", "public.games"]
+        """Return logical table names required for this strategy"""
+        return ["betting_splits", "games"]
 
     def get_strategy_description(self) -> str:
         """Return human-readable description of the strategy"""
@@ -212,8 +212,9 @@ class UnifiedSharpActionProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
                     
                 # Use batch query for better performance
                 if self.batch_query_enabled and len(game_ids) > 1:
-                    # Batch query for multiple games
-                    batch_query = """
+                    # Batch query for multiple games  
+                    betting_splits_table = self.get_table_name('betting_splits')
+                    batch_query = f"""
                         SELECT 
                             game_id,
                             market_type,
@@ -236,7 +237,7 @@ class UnifiedSharpActionProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
                             sharp_action_strength,
                             reverse_line_movement,
                             ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY collected_at DESC) as rn
-                        FROM curated.unified_betting_splits 
+                        FROM {betting_splits_table} 
                         WHERE game_id = ANY($1) 
                         AND minutes_before_game >= $2
                     """
@@ -249,8 +250,9 @@ class UnifiedSharpActionProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
                 else:
                     # Fallback to individual queries for single game or when batch disabled
                     rows = []
+                    betting_splits_table = self.get_table_name('betting_splits')
                     for game_id in game_ids:
-                        single_query = """
+                        single_query = f"""
                             SELECT 
                                 game_id,
                                 market_type,
@@ -272,7 +274,7 @@ class UnifiedSharpActionProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
                                 sharp_action_direction,
                                 sharp_action_strength,
                                 reverse_line_movement
-                            FROM curated.unified_betting_splits 
+                            FROM {betting_splits_table} 
                             WHERE game_id = $1 
                             AND minutes_before_game >= $2
                             ORDER BY collected_at DESC
@@ -706,7 +708,9 @@ class UnifiedSharpActionProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
 
             async with db_connection.get_async_connection() as conn:
                 # Get upcoming games that have betting data available
-                query = """
+                games_table = self.get_table_name('games')
+                betting_splits_table = self.get_table_name('betting_splits')
+                query = f"""
                     SELECT DISTINCT
                         eg.id as game_id,
                         eg.home_team,
@@ -714,11 +718,11 @@ class UnifiedSharpActionProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
                         eg.game_datetime,
                         eg.season,
                         eg.game_status
-                    FROM curated.enhanced_games eg
+                    FROM {games_table} eg
                     WHERE eg.game_datetime > NOW() 
                     AND eg.game_datetime <= NOW() + $1 * interval '1 minute'
                     AND EXISTS (
-                        SELECT 1 FROM curated.unified_betting_splits ubs 
+                        SELECT 1 FROM {betting_splits_table} ubs 
                         WHERE ubs.game_id = eg.id
                     )
                     ORDER BY eg.game_datetime ASC

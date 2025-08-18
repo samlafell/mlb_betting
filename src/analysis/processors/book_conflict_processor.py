@@ -135,8 +135,8 @@ class UnifiedBookConflictProcessor(BaseStrategyProcessor, StrategyProcessorMixin
         return StrategyCategory.MARKET_INEFFICIENCY
 
     def get_required_tables(self) -> list[str]:
-        """Return database tables required for this strategy"""
-        return ["odds.book_lines", "odds.line_movements", "public.games"]
+        """Return logical table names required for this strategy"""
+        return ["betting_lines", "line_movements", "games"]
 
     def get_strategy_description(self) -> str:
         """Return human-readable description of the strategy"""

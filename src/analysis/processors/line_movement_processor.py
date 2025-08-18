@@ -123,8 +123,8 @@ class UnifiedLineMovementProcessor(BaseStrategyProcessor, StrategyProcessorMixin
         return StrategyCategory.MARKET_INEFFICIENCY
 
     def get_required_tables(self) -> list[str]:
-        """Return database tables required for this strategy"""
-        return ["splits.raw_mlb_betting_splits", "public.games"]
+        """Return logical table names required for this strategy"""
+        return ["betting_splits", "games"]
 
     def get_strategy_description(self) -> str:
         """Return human-readable description of the strategy"""
