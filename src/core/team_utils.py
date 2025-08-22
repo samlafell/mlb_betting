@@ -264,6 +264,7 @@ MLB_TEAM_MAPPINGS = {
     "LA Angels": "LAA",
     "Athletics": "OAK",
     "Oakland Athletics": "OAK",
+    "ATH": "OAK",  # Common abbreviation for Athletics
     "Mariners": "SEA",
     "Seattle Mariners": "SEA",
     "Rangers": "TEX",

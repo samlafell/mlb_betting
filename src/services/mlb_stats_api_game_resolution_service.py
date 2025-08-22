@@ -158,7 +158,7 @@ class MLBStatsAPIGameResolutionService:
             "OAK": TeamMapping(
                 "Oakland Athletics",
                 "OAK",
-                ["Oakland", "Athletics", "A's"],
+                ["Oakland", "Athletics", "A's", "ATH"],
                 133,
                 "AL",
                 "WEST",
@@ -410,7 +410,25 @@ class MLBStatsAPIGameResolutionService:
             if keyword in clean_name.lower():
                 return abbr
 
-        self.logger.warning(f"Could not standardize team name: {team_name}")
+        self.logger.warning(
+            "Could not standardize team name", 
+            team_name=team_name,
+            attempted_mappings={
+                "direct_match": clean_name.upper() in self.team_mappings,
+                "alias_matches": [
+                    abbr for abbr, mapping in self.team_mappings.items() 
+                    if clean_name.lower() in [alias.lower() for alias in mapping.aliases]
+                ],
+                "partial_matches": [
+                    abbr for abbr, mapping in self.team_mappings.items()
+                    if any(alias.lower() in clean_name.lower() for alias in mapping.aliases)
+                ],
+                "fuzzy_candidates": [
+                    keyword for keyword in ["athletics", "yanks", "sox", "mets"] 
+                    if keyword in clean_name.lower()
+                ]
+            }
+        )
         return None
 
     def get_team_info(self, team_identifier: str) -> TeamMapping | None:

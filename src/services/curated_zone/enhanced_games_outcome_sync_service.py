@@ -512,8 +512,12 @@ class EnhancedGamesOutcomeSyncService:
     async def _get_recent_outcomes_for_sync(self, days_back: int) -> List[Dict[str, Any]]:
         """Get recent game outcomes that may need syncing to enhanced_games."""
         
+        # Validate days_back to prevent SQL injection
+        if not isinstance(days_back, int) or days_back <= 0:
+            raise ValueError(f"Invalid days_back value: {days_back}. Must be a positive integer.")
+        
         async with get_connection() as conn:
-            query = """
+            query = f"""
                 SELECT DISTINCT
                     go.game_id,
                     go.home_team,
@@ -542,15 +546,11 @@ class EnhancedGamesOutcomeSyncService:
                 INNER JOIN curated.games_complete gc ON go.game_id = gc.id
                 WHERE go.home_score IS NOT NULL 
                     AND go.away_score IS NOT NULL
-                    AND go.game_date > NOW() - INTERVAL '$1 days'
+                    AND go.game_date > NOW() - INTERVAL '{days_back} days'
                 ORDER BY go.game_date DESC, go.game_id DESC
             """
             
-            # Validate days_back to prevent SQL injection
-            if not isinstance(days_back, int) or days_back <= 0:
-                raise ValueError(f"Invalid days_back value: {days_back}. Must be a positive integer.")
-            
-            rows = await conn.fetch(query, days_back)
+            rows = await conn.fetch(query)
             return [dict(row) for row in rows]
     
     async def _create_enhanced_game_with_outcome(self, outcome_data: Dict[str, Any]) -> EnhancedGameWithOutcome:
