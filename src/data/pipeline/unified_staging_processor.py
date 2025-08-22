@@ -146,20 +146,24 @@ class UnifiedStagingProcessor(BaseZoneProcessor):
     
     async def process_batch_with_consolidation(self, records: List[DataRecord], **kwargs) -> List[DataRecord]:
         """
-        Process a batch of records with intelligent consolidation.
+        Process a batch of records with intelligent consolidation and optimized game resolution.
         
         This method addresses the excessive duplication issue by consolidating
-        multiple bet side records into unified records.
+        multiple bet side records into unified records, and implements batch game
+        resolution to eliminate redundant MLB Stats API calls.
         """
         try:
-            # Process individual records first
+            # Phase 1: Pre-resolve all unique games in batch to avoid redundant API calls
+            await self._batch_resolve_game_ids(records)
+            
+            # Phase 2: Process individual records (now with cached game IDs)
             processed_records = []
             for record in records:
                 processed = await self.process_record(record, **kwargs)
                 if processed:
                     processed_records.append(processed)
             
-            # Consolidate records by game/sportsbook/market
+            # Phase 3: Consolidate records by game/sportsbook/market
             consolidated_records = await self._consolidate_bet_records(processed_records)
             
             logger.info(f"Consolidated {len(processed_records)} records into {len(consolidated_records)} unified records")
@@ -1076,7 +1080,63 @@ class UnifiedStagingProcessor(BaseZoneProcessor):
             return {col: False for col in columns}
 
     async def _lookup_mlb_stats_api_game_id(self, external_game_id: str, team_info: Dict[str, Any]) -> Optional[str]:
-        """Lookup MLB Stats API game ID based on game info with schema validation."""
+        """Lookup MLB Stats API game ID using the optimized resolution service with caching."""
+        try:
+            from ...services.optimized_game_resolution_service import resolve_game_id_optimized
+            from ...data.collection.base import DataSource
+            from datetime import datetime, date
+            
+            # Extract team information and game date from team_info
+            home_team = team_info.get('home_team_abbr') or team_info.get('home_team')
+            away_team = team_info.get('away_team_abbr') or team_info.get('away_team')
+            game_date_str = team_info.get('game_date')
+            
+            # Convert game_date string to date object if needed
+            game_date_obj = None
+            if game_date_str:
+                if isinstance(game_date_str, str):
+                    try:
+                        # Handle various date formats
+                        if 'T' in game_date_str:
+                            # ISO datetime format
+                            game_date_obj = datetime.fromisoformat(game_date_str.replace('Z', '+00:00')).date()
+                        else:
+                            # Date only format
+                            game_date_obj = datetime.strptime(game_date_str[:10], '%Y-%m-%d').date()
+                    except ValueError:
+                        logger.warning(f"Could not parse game date: {game_date_str}")
+                elif isinstance(game_date_str, date):
+                    game_date_obj = game_date_str
+            
+            # Determine the data source based on context
+            source = DataSource.ACTION_NETWORK  # Default assumption
+            
+            # Use the optimized resolution service (singleton with caching)
+            mlb_game_id = await resolve_game_id_optimized(
+                external_game_id=external_game_id,
+                home_team=home_team,
+                away_team=away_team,
+                game_date=game_date_obj,
+                source=source
+            )
+            
+            if mlb_game_id:
+                logger.debug(f"✅ Found MLB Stats API game ID: {mlb_game_id} (optimized)")
+                return mlb_game_id
+            else:
+                logger.debug(f"❌ No MLB Stats API game ID found for {external_game_id} (optimized)")
+                return None
+            
+        except ImportError as e:
+            # Service not available, fall back to database lookup
+            logger.warning(f"Optimized MLB Stats API service not available, falling back to database lookup: {e}")
+            return await self._fallback_database_lookup(external_game_id, team_info)
+        except Exception as e:
+            logger.warning(f"Failed to lookup MLB Stats API game ID using optimized service: {e}")
+            return await self._fallback_database_lookup(external_game_id, team_info)
+    
+    async def _fallback_database_lookup(self, external_game_id: str, team_info: Dict[str, Any]) -> Optional[str]:
+        """Fallback database lookup for MLB Stats API game ID."""
         try:
             from ...data.database.connection import get_connection
             
@@ -1133,25 +1193,130 @@ class UnifiedStagingProcessor(BaseZoneProcessor):
                         if game_date and home_team and away_team:
                             row = await connection.fetchrow(mlb_query, game_date, home_team, away_team)
                             if row:
-                                logger.debug(f"✅ Found MLB Stats API game ID via database: {row['mlb_game_id']}")
+                                logger.debug(f"✅ Found MLB Stats API game ID via database fallback: {row['mlb_game_id']}")
                                 return str(row['mlb_game_id'])
                     except Exception as query_error:
                         # Log as warning since this indicates a real schema/query issue
                         logger.warning(f"MLB Stats API query failed (schema mismatch or query error): {query_error}")
                         return None
             
-            # For now, return None as we don't have direct MLB Stats API integration
-            # In a production environment, this would:
-            # 1. Call MLB Stats API with team names and game date
-            # 2. Parse the response to find the matching game
-            # 3. Cache the result to avoid repeated API calls
-            # 4. Handle rate limiting and authentication
-            
-            logger.debug(f"❌ MLB Stats API game ID lookup not implemented for {external_game_id}")
+            logger.debug(f"❌ MLB Stats API game ID lookup failed for {external_game_id}")
             return None
             
         except Exception as e:
-            logger.warning(f"Failed to lookup MLB Stats API game ID: {e}")
+            logger.warning(f"Failed to lookup MLB Stats API game ID via database fallback: {e}")
+            return None
+
+    async def _batch_resolve_game_ids(self, records: List[DataRecord]):
+        """
+        Pre-resolve all unique game IDs in batch to optimize MLB Stats API calls.
+        
+        This method identifies all unique games in the batch and resolves their
+        MLB Stats API game IDs in a single operation, eliminating redundant API calls.
+        """
+        try:
+            from ...services.optimized_game_resolution_service import batch_resolve_games_optimized, GameResolutionRequest
+            from ...data.collection.base import DataSource
+            from datetime import datetime, date
+            
+            # Phase 1: Extract unique games from records
+            unique_games = {}
+            for record in records:
+                external_game_id = getattr(record, 'external_game_id', None)
+                if not external_game_id:
+                    continue
+                
+                if external_game_id not in unique_games:
+                    # Get team info for this game
+                    team_info = await self._get_team_info_from_record(record)
+                    if team_info:
+                        home_team = team_info.get('home_team_abbr') or team_info.get('home_team')
+                        away_team = team_info.get('away_team_abbr') or team_info.get('away_team')
+                        game_date_str = team_info.get('game_date')
+                        
+                        # Convert game_date string to date object if needed
+                        game_date_obj = None
+                        if game_date_str:
+                            if isinstance(game_date_str, str):
+                                try:
+                                    if 'T' in game_date_str:
+                                        game_date_obj = datetime.fromisoformat(game_date_str.replace('Z', '+00:00')).date()
+                                    else:
+                                        game_date_obj = datetime.strptime(game_date_str[:10], '%Y-%m-%d').date()
+                                except ValueError:
+                                    logger.warning(f"Could not parse game date: {game_date_str}")
+                            elif isinstance(game_date_str, date):
+                                game_date_obj = game_date_str
+                        
+                        unique_games[external_game_id] = GameResolutionRequest(
+                            external_game_id=external_game_id,
+                            home_team=home_team,
+                            away_team=away_team,
+                            game_date=game_date_obj,
+                            source=DataSource.ACTION_NETWORK
+                        )
+            
+            if unique_games:
+                logger.info(f"Batch resolving {len(unique_games)} unique games to optimize MLB Stats API calls")
+                
+                # Phase 2: Batch resolve all unique games
+                resolution_requests = list(unique_games.values())
+                game_id_mapping = await batch_resolve_games_optimized(resolution_requests)
+                
+                # Phase 3: Log the optimization results
+                total_records = len(records)
+                unique_count = len(unique_games)
+                api_calls_saved = total_records - unique_count
+                
+                logger.info(f"Batch resolution completed: {total_records} records, {unique_count} unique games, {api_calls_saved} API calls saved")
+                
+                # The results are now cached in the optimized service and will be used
+                # by individual _lookup_mlb_stats_api_game_id calls
+            else:
+                logger.debug("No games found for batch resolution")
+                
+        except ImportError as e:
+            logger.warning(f"Optimized game resolution service not available: {e}")
+        except Exception as e:
+            logger.error(f"Error in batch game ID resolution: {e}")
+
+    async def _get_team_info_from_record(self, record: DataRecord) -> Optional[Dict[str, Any]]:
+        """Extract team information from a record for game resolution."""
+        try:
+            external_game_id = getattr(record, 'external_game_id', None)
+            if not external_game_id:
+                return None
+            
+            # Try to get team info from the record's raw data
+            raw_data = getattr(record, 'raw_data', {}) or {}
+            if isinstance(raw_data, dict):
+                # Check various formats that might contain team info
+                team_info = raw_data.get('teams') or raw_data.get('event', {}).get('teams')
+                if team_info:
+                    # Extract team abbreviations if available
+                    home_team = None
+                    away_team = None
+                    
+                    if isinstance(team_info, dict):
+                        home_team = team_info.get('home', {}).get('abbreviation') or team_info.get('home', {}).get('name')
+                        away_team = team_info.get('away', {}).get('abbreviation') or team_info.get('away', {}).get('name')
+                    
+                    # Also check for game date
+                    game_date = raw_data.get('game_date') or raw_data.get('event', {}).get('date')
+                    
+                    return {
+                        'home_team': home_team,
+                        'away_team': away_team,
+                        'home_team_abbr': home_team,
+                        'away_team_abbr': away_team,
+                        'game_date': game_date
+                    }
+            
+            # Fallback: try to get from database if we have the external game ID
+            return await self._get_game_info_from_database(external_game_id)
+            
+        except Exception as e:
+            logger.warning(f"Failed to extract team info from record: {e}")
             return None
 
 

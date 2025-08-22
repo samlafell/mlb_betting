@@ -1713,130 +1713,201 @@ class DataCommands:
         console = Console()
         
         try:
-            # Initialize the population service
             async with GamesPopulationService() as service:
-                # Get current status before population
-                console.print("\n🔍 [bold blue]Analyzing current games_complete table state...[/bold blue]")
+                # Step 1: Analyze current state
+                current_status = await self._analyze_current_status(console, service)
                 
-                current_status = await service.get_population_status()
+                # Step 2: Display operation mode
+                self._display_operation_mode(console, dry_run, scores_only, max_games)
                 
-                # Display current status
-                status_table = Table(title="Current Games Complete Status")
-                status_table.add_column("Metric", style="cyan")
-                status_table.add_column("Count", style="green")
-                status_table.add_column("Percentage", style="yellow")
-                
-                total_games = current_status.get('total_games', 0)
-                games_with_scores = current_status.get('games_with_scores', 0)
-                games_with_external_ids = current_status.get('games_with_external_ids', 0)
-                games_with_venue = current_status.get('games_with_venue', 0)
-                games_with_weather = current_status.get('games_with_weather', 0)
-                high_quality_games = current_status.get('high_quality_games', 0)
-                
-                if total_games > 0:
-                    status_table.add_row("Total Games", str(total_games), "100%")
-                    status_table.add_row("Games with Scores", str(games_with_scores), f"{(games_with_scores/total_games)*100:.1f}%")
-                    status_table.add_row("Games with External IDs", str(games_with_external_ids), f"{(games_with_external_ids/total_games)*100:.1f}%")
-                    status_table.add_row("Games with Venue Data", str(games_with_venue), f"{(games_with_venue/total_games)*100:.1f}%")
-                    status_table.add_row("Games with Weather Data", str(games_with_weather), f"{(games_with_weather/total_games)*100:.1f}%")
-                    status_table.add_row("High Quality Games", str(high_quality_games), f"{(high_quality_games/total_games)*100:.1f}%")
-                else:
-                    status_table.add_row("No games found", "0", "0%")
-                
-                console.print(status_table)
-                
-                if dry_run:
-                    console.print("\n🧪 [bold yellow]DRY RUN MODE - No changes will be made[/bold yellow]")
-                
-                if scores_only:
-                    console.print("\n📊 [bold magenta]SCORES ONLY MODE - Will only populate game scores[/bold magenta]")
-                
-                if max_games:
-                    console.print(f"\n🎯 [bold cyan]LIMITED MODE - Processing maximum {max_games} games[/bold cyan]")
-                
-                # Check if there's data to populate
-                missing_scores = total_games - games_with_scores
-                missing_external_ids = total_games - games_with_external_ids
-                
-                if missing_scores == 0 and not force:
-                    console.print("\n✅ [bold green]All games already have scores! Use --force to repopulate.[/bold green]")
+                # Step 3: Check if population is needed
+                if not self._check_population_needed(console, current_status, force):
                     return
                 
-                if missing_scores == 0 and missing_external_ids == 0 and not force:
-                    console.print("\n✅ [bold green]All critical data is already populated! Use --force to repopulate.[/bold green]")
-                    return
+                # Step 4: Execute population
+                results = await self._execute_population(
+                    console, service, dry_run, scores_only, max_games, current_status
+                )
                 
-                # Perform population
-                console.print(f"\n🚀 [bold blue]Starting population process...[/bold blue]")
-                
-                with Progress(
-                    SpinnerColumn(),
-                    TextColumn("[progress.description]{task.description}"),
-                    BarColumn(),
-                    TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                    TimeElapsedColumn(),
-                    console=console,
-                    transient=True
-                ) as progress:
-                    
-                    if scores_only:
-                        # Only populate scores
-                        task = progress.add_task("Populating game scores...", total=1)
-                        
-                        if dry_run:
-                            console.print("\n💭 [bold yellow]Would populate game scores from curated.game_outcomes[/bold yellow]")
-                            updated_count = missing_scores  # Simulate what would be updated
-                        else:
-                            updated_count = await service.populate_game_scores_only(max_games)
-                        
-                        progress.update(task, completed=1)
-                        
-                        # Show results
-                        console.print(f"\n📊 [bold green]Scores Population Complete![/bold green]")
-                        console.print(f"   Games updated: {updated_count}")
-                        
-                    else:
-                        # Full population
-                        task = progress.add_task("Populating all missing data...", total=1)
-                        
-                        stats: PopulationStats = await service.populate_all_missing_data(
-                            dry_run=dry_run, 
-                            max_games=max_games
-                        )
-                        
-                        progress.update(task, completed=1)
-                        
-                        # Show detailed results
-                        results_table = Table(title="Population Results")
-                        results_table.add_column("Data Type", style="cyan")
-                        results_table.add_column("Games Updated", style="green")
-                        results_table.add_column("Status", style="yellow")
-                        
-                        results_table.add_row("Game Scores", str(stats.scores_populated), "✅" if stats.scores_populated > 0 else "⚠️")
-                        results_table.add_row("External IDs", str(stats.external_ids_populated), "✅" if stats.external_ids_populated > 0 else "⚠️")
-                        results_table.add_row("Venue Data", str(stats.venue_populated), "✅" if stats.venue_populated > 0 else "⚠️")
-                        results_table.add_row("Weather Data", str(stats.weather_populated), "✅" if stats.weather_populated > 0 else "⚠️")
-                        results_table.add_row("High Quality", str(stats.high_quality_games), "✅" if stats.high_quality_games > 0 else "⚠️")
-                        
-                        console.print(f"\n🎉 [bold green]Population Complete![/bold green]")
-                        console.print(results_table)
-                        
-                        # Performance summary
-                        console.print(f"\n⏱️  Operation completed in {stats.operation_duration_seconds:.2f} seconds")
-                        console.print(f"📈 Total games processed: {stats.total_games}")
-                        console.print(f"🔄 Games updated: {stats.games_updated}")
-                
-                # Show next steps
-                if not dry_run:
-                    console.print("\n📋 [bold blue]Next Steps:[/bold blue]")
-                    console.print("   • Run integration tests to verify data quality")
-                    console.print("   • Check the analytics.games_complete_data_quality view")
-                    console.print("   • Consider running ML pipeline sync if needed")
-                    console.print("\n💡 [bold cyan]Suggested commands:[/bold cyan]")
-                    console.print("   uv run pytest tests/integration/ -v")
-                    console.print("   uv run -m src.interfaces.cli curated sync-outcomes --sync-type recent")
+                # Step 5: Display results and next steps
+                self._display_results_and_next_steps(console, results, dry_run, scores_only)
                 
         except Exception as e:
             console.print(f"\n❌ [bold red]Population failed: {str(e)}[/bold red]")
             self.logger.error(f"Games population failed: {e}", exc_info=True)
             raise
+    
+    async def _analyze_current_status(self, console: Console, service) -> dict:
+        """Analyze and display current games_complete table status"""
+        console.print("\n🔍 [bold blue]Analyzing current games_complete table state...[/bold blue]")
+        
+        current_status = await service.get_population_status()
+        
+        # Build and display status table
+        status_table = Table(title="Current Games Complete Status")
+        status_table.add_column("Metric", style="cyan")
+        status_table.add_column("Count", style="green")
+        status_table.add_column("Percentage", style="yellow")
+        
+        total_games = current_status.get('total_games', 0)
+        
+        if total_games > 0:
+            metrics = [
+                ("Total Games", current_status.get('total_games', 0), 100),
+                ("Games with Scores", current_status.get('games_with_scores', 0), total_games),
+                ("Games with External IDs", current_status.get('games_with_external_ids', 0), total_games),
+                ("Games with Venue Data", current_status.get('games_with_venue', 0), total_games),
+                ("Games with Weather Data", current_status.get('games_with_weather', 0), total_games),
+                ("High Quality Games", current_status.get('high_quality_games', 0), total_games)
+            ]
+            
+            for name, count, base in metrics:
+                percentage = (count / base * 100) if base > 0 else 0
+                status_table.add_row(name, str(count), f"{percentage:.1f}%")
+        else:
+            status_table.add_row("No games found", "0", "0%")
+        
+        console.print(status_table)
+        return current_status
+    
+    def _display_operation_mode(self, console: Console, dry_run: bool, scores_only: bool, max_games: Optional[int]):
+        """Display the current operation mode to the user"""
+        if dry_run:
+            console.print("\n🧪 [bold yellow]DRY RUN MODE - No changes will be made[/bold yellow]")
+        
+        if scores_only:
+            console.print("\n📊 [bold magenta]SCORES ONLY MODE - Will only populate game scores[/bold magenta]")
+        
+        if max_games:
+            console.print(f"\n🎯 [bold cyan]LIMITED MODE - Processing maximum {max_games} games[/bold cyan]")
+    
+    def _check_population_needed(self, console: Console, current_status: dict, force: bool) -> bool:
+        """Check if population is needed or if we should skip"""
+        total_games = current_status.get('total_games', 0)
+        games_with_scores = current_status.get('games_with_scores', 0)
+        games_with_external_ids = current_status.get('games_with_external_ids', 0)
+        
+        missing_scores = total_games - games_with_scores
+        missing_external_ids = total_games - games_with_external_ids
+        
+        if missing_scores == 0 and not force:
+            console.print("\n✅ [bold green]All games already have scores! Use --force to repopulate.[/bold green]")
+            return False
+        
+        if missing_scores == 0 and missing_external_ids == 0 and not force:
+            console.print("\n✅ [bold green]All critical data is already populated! Use --force to repopulate.[/bold green]")
+            return False
+        
+        return True
+    
+    async def _execute_population(self, console: Console, service, dry_run: bool, 
+                                scores_only: bool, max_games: Optional[int], 
+                                current_status: dict) -> dict:
+        """Execute the actual population process with progress tracking"""
+        console.print(f"\n🚀 [bold blue]Starting population process...[/bold blue]")
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True
+        ) as progress:
+            
+            if scores_only:
+                return await self._execute_scores_only_population(
+                    console, service, progress, dry_run, max_games, current_status
+                )
+            else:
+                return await self._execute_full_population(
+                    console, service, progress, dry_run, max_games
+                )
+    
+    async def _execute_scores_only_population(self, console: Console, service, progress, 
+                                            dry_run: bool, max_games: Optional[int], 
+                                            current_status: dict) -> dict:
+        """Execute scores-only population"""
+        task = progress.add_task("Populating game scores...", total=1)
+        
+        if dry_run:
+            console.print("\n💭 [bold yellow]Would populate game scores from curated.game_outcomes[/bold yellow]")
+            total_games = current_status.get('total_games', 0)
+            games_with_scores = current_status.get('games_with_scores', 0)
+            updated_count = total_games - games_with_scores  # Simulate what would be updated
+        else:
+            updated_count = await service.populate_game_scores_only(max_games)
+        
+        progress.update(task, completed=1)
+        
+        return {
+            'type': 'scores_only',
+            'updated_count': updated_count
+        }
+    
+    async def _execute_full_population(self, console: Console, service, progress, 
+                                      dry_run: bool, max_games: Optional[int]) -> dict:
+        """Execute full population of all data types"""
+        task = progress.add_task("Populating all missing data...", total=1)
+        
+        stats = await service.populate_all_missing_data(
+            dry_run=dry_run, 
+            max_games=max_games
+        )
+        
+        progress.update(task, completed=1)
+        
+        return {
+            'type': 'full',
+            'stats': stats
+        }
+    
+    def _display_results_and_next_steps(self, console: Console, results: dict, 
+                                       dry_run: bool, scores_only: bool):
+        """Display population results and suggest next steps"""
+        if results['type'] == 'scores_only':
+            console.print(f"\n📊 [bold green]Scores Population Complete![/bold green]")
+            console.print(f"   Games updated: {results['updated_count']}")
+        else:
+            stats = results['stats']
+            
+            # Build results table
+            results_table = Table(title="Population Results")
+            results_table.add_column("Data Type", style="cyan")
+            results_table.add_column("Games Updated", style="green")
+            results_table.add_column("Status", style="yellow")
+            
+            result_rows = [
+                ("Game Scores", stats.scores_populated),
+                ("External IDs", stats.external_ids_populated),
+                ("Venue Data", stats.venue_populated),
+                ("Weather Data", stats.weather_populated),
+                ("High Quality", stats.high_quality_games)
+            ]
+            
+            for name, count in result_rows:
+                status = "✅" if count > 0 else "⚠️"
+                results_table.add_row(name, str(count), status)
+            
+            console.print(f"\n🎉 [bold green]Population Complete![/bold green]")
+            console.print(results_table)
+            
+            # Performance summary
+            console.print(f"\n⏱️  Operation completed in {stats.operation_duration_seconds:.2f} seconds")
+            console.print(f"📈 Total games processed: {stats.total_games}")
+            console.print(f"🔄 Games updated: {stats.games_updated}")
+        
+        # Show next steps for non-dry runs
+        if not dry_run:
+            self._display_next_steps(console)
+    
+    def _display_next_steps(self, console: Console):
+        """Display suggested next steps after successful population"""
+        console.print("\n📋 [bold blue]Next Steps:[/bold blue]")
+        console.print("   • Run integration tests to verify data quality")
+        console.print("   • Check the analytics.games_complete_data_quality view")
+        console.print("   • Consider running ML pipeline sync if needed")
+        console.print("\n💡 [bold cyan]Suggested commands:[/bold cyan]")
+        console.print("   uv run pytest tests/integration/ -v")
+        console.print("   uv run -m src.interfaces.cli curated sync-outcomes --sync-type recent")

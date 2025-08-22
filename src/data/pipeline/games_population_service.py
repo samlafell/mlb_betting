@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 import asyncpg
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from src.core.config import get_settings
 from src.core.exceptions import DatabaseError, UnifiedBettingError
@@ -24,14 +24,21 @@ from src.core.logging import UnifiedLogger, LogComponent
 class PopulationStats(BaseModel):
     """Statistics for games population operation"""
     
-    total_games: int = Field(description="Total games in table")
-    games_updated: int = Field(description="Number of games updated")
-    scores_populated: int = Field(description="Games with scores populated")
-    external_ids_populated: int = Field(description="Games with external IDs populated")
-    venue_populated: int = Field(description="Games with venue data populated")
-    weather_populated: int = Field(description="Games with weather data populated")
-    high_quality_games: int = Field(description="Games marked as high quality")
-    operation_duration_seconds: float = Field(description="Operation duration in seconds")
+    total_games: int = Field(description="Total games in table", ge=0)
+    games_updated: int = Field(description="Number of games updated", ge=0)
+    scores_populated: int = Field(description="Games with scores populated", ge=0)
+    external_ids_populated: int = Field(description="Games with external IDs populated", ge=0)
+    venue_populated: int = Field(description="Games with venue data populated", ge=0)
+    weather_populated: int = Field(description="Games with weather data populated", ge=0)
+    high_quality_games: int = Field(description="Games marked as high quality", ge=0)
+    operation_duration_seconds: float = Field(description="Operation duration in seconds", ge=0.0)
+    
+    @field_validator('*')
+    @classmethod
+    def validate_non_negative(cls, v):
+        if isinstance(v, (int, float)) and v < 0:
+            raise ValueError('Values must be non-negative')
+        return v
 
 
 class GamesPopulationService:
@@ -69,8 +76,8 @@ class GamesPopulationService:
                 password=self.config.database.password,
                 database=self.config.database.database,
                 min_size=2,
-                max_size=10,
-                command_timeout=300  # 5 minutes for long-running operations
+                max_size=20,  # Increased for production workloads
+                command_timeout=180  # 3 minutes - balanced timeout
             )
             self.logger.info("Initialized games population service", 
                            host=self.config.database.host,
@@ -88,17 +95,31 @@ class GamesPopulationService:
     
     async def populate_all_missing_data(self, 
                                       dry_run: bool = False,
-                                      max_games: Optional[int] = None) -> PopulationStats:
+                                      max_games: Optional[int] = None,
+                                      batch_size: Optional[int] = None) -> PopulationStats:
         """
         Populate all missing data in games_complete table from available sources.
         
         Args:
             dry_run: If True, only analyze what would be updated without making changes
-            max_games: Limit number of games to process (for testing)
+            max_games: Limit number of games to process (for testing, must be positive integer)
+            batch_size: Number of records to process per batch (for large datasets)
             
         Returns:
             PopulationStats with operation results
+            
+        Raises:
+            ValueError: If max_games or batch_size are not positive integers
+            UnifiedBettingError: For database or processing errors
         """
+        # Input validation
+        if max_games is not None:
+            if not isinstance(max_games, int) or max_games <= 0:
+                raise ValueError(f"max_games must be a positive integer, got: {max_games}")
+        
+        if batch_size is not None:
+            if not isinstance(batch_size, int) or batch_size <= 0 or batch_size > 5000:
+                raise ValueError(f"batch_size must be a positive integer between 1 and 5000, got: {batch_size}")
         start_time = datetime.now()
         
         self.logger.info("Starting complete games population", 
@@ -111,26 +132,32 @@ class GamesPopulationService:
             if dry_run:
                 # In dry run, analyze what would be updated
                 stats = await self._analyze_population_potential(max_games)
-                self.logger.info("Dry run analysis completed", stats=stats.dict())
+                self.logger.info("Dry run analysis completed", stats=stats.model_dump())
                 return stats
             
-            # Execute actual population
-            async with self.connection_pool.acquire() as conn:
-                async with conn.transaction():
-                    # Phase 1: Populate game scores
-                    scores_updated = await self._populate_game_scores(conn, max_games)
-                    
-                    # Phase 2: Populate Action Network IDs
-                    ids_updated = await self._populate_action_network_ids(conn, max_games)
-                    
-                    # Phase 3: Populate venue data
-                    venue_updated = await self._populate_venue_data(conn, max_games)
-                    
-                    # Phase 4: Populate weather data
-                    weather_updated = await self._populate_weather_data(conn, max_games)
-                    
-                    # Phase 5: Update data quality indicators
-                    quality_updated = await self._update_data_quality(conn, max_games)
+            # Execute actual population with batch processing for large datasets
+            if batch_size and max_games and max_games > batch_size:
+                # Use batch processing for large datasets
+                scores_updated, ids_updated, venue_updated, weather_updated, quality_updated = \
+                    await self._batch_populate_all_data(max_games, batch_size)
+            else:
+                # Single transaction for smaller datasets
+                async with self.connection_pool.acquire() as conn:
+                    async with conn.transaction():
+                        # Phase 1: Populate game scores
+                        scores_updated = await self._populate_game_scores(conn, max_games)
+                        
+                        # Phase 2: Populate Action Network IDs
+                        ids_updated = await self._populate_action_network_ids(conn, max_games)
+                        
+                        # Phase 3: Populate venue data
+                        venue_updated = await self._populate_venue_data(conn, max_games)
+                        
+                        # Phase 4: Populate weather data
+                        weather_updated = await self._populate_weather_data(conn, max_games)
+                        
+                        # Phase 5: Update data quality indicators
+                        quality_updated = await self._update_data_quality(conn, max_games)
             
             # Get final stats
             final_stats = await self._get_current_stats()
@@ -150,14 +177,21 @@ class GamesPopulationService:
             )
             
             self.logger.info("Games population completed successfully", 
-                           stats=stats.dict())
+                           stats=stats.model_dump())
             
             return stats
             
+        except asyncpg.PostgresError as e:
+            self.logger.error("Database error during games population", error=str(e), code=e.sqlstate)
+            raise DatabaseError(f"Database error during games population: {e}", 
+                              component="games_population", operation="populate_all")
+        except ValueError as e:
+            self.logger.error("Validation error during games population", error=str(e))
+            raise
         except Exception as e:
-            self.logger.error("Games population failed", error=str(e))
+            self.logger.error("Unexpected error during games population", error=str(e))
             raise UnifiedBettingError(f"Games population failed: {e}", 
-                                              component="games_population", operation="populate_all")
+                                    component="games_population", operation="populate_all")
     
     async def populate_game_scores_only(self, max_games: Optional[int] = None) -> int:
         """
@@ -174,15 +208,39 @@ class GamesPopulationService:
         try:
             async with self.connection_pool.acquire() as conn:
                 return await self._populate_game_scores(conn, max_games)
+        except asyncpg.PostgresError as e:
+            self.logger.error("Database error during game scores population", error=str(e), code=e.sqlstate)
+            raise DatabaseError(f"Database error during game scores population: {e}", 
+                              component="games_population", operation="populate_scores")
+        except ValueError as e:
+            self.logger.error("Validation error during game scores population", error=str(e))
+            raise
         except Exception as e:
-            self.logger.error("Game scores population failed", error=str(e))
+            self.logger.error("Unexpected error during game scores population", error=str(e))
             raise UnifiedBettingError(f"Game scores population failed: {e}", 
-                                              component="games_population", operation="populate_scores")
+                                    component="games_population", operation="populate_scores")
     
     async def _populate_game_scores(self, conn: asyncpg.Connection, 
                                   max_games: Optional[int] = None) -> int:
-        """Populate game scores from curated.game_outcomes"""
-        query = """
+        """Populate game scores from curated.game_outcomes
+        
+        Args:
+            conn: Database connection
+            max_games: Limit number of games to process (validated)
+            
+        Returns:
+            Number of games updated
+            
+        Raises:
+            ValueError: If max_games is invalid
+            asyncpg.PostgresError: For database errors
+        """
+        # Input validation to prevent SQL injection
+        if max_games is not None:
+            if not isinstance(max_games, int) or max_games <= 0:
+                raise ValueError(f"max_games must be a positive integer, got: {max_games}")
+        
+        base_query = """
         UPDATE curated.games_complete gc
         SET 
             home_score = go.home_score,
@@ -199,19 +257,50 @@ class GamesPopulationService:
           AND gc.home_score IS NULL
         """
         
-        if max_games:
-            query += f" AND gc.id <= {max_games}"
-        
-        result = await conn.execute(query)
-        updated_count = int(result.split()[-1])
-        
-        self.logger.info("Populated game scores", updated_count=updated_count)
-        return updated_count
+        try:
+            if max_games:
+                query = base_query + " AND gc.id <= $1"
+                result = await conn.execute(query, max_games)
+            else:
+                result = await conn.execute(base_query)
+            
+            updated_count = int(result.split()[-1])
+            
+            self.logger.info("Populated game scores", updated_count=updated_count, max_games=max_games)
+            return updated_count
+            
+        except asyncpg.PostgresError as e:
+            self.logger.error("Database error populating game scores", error=str(e), max_games=max_games)
+            raise
+        except ValueError as e:
+            self.logger.error("Validation error populating game scores", error=str(e), max_games=max_games)
+            raise
+        except Exception as e:
+            self.logger.error("Unexpected error populating game scores", error=str(e), max_games=max_games)
+            raise UnifiedBettingError(f"Failed to populate game scores: {e}", 
+                                    component="games_population", operation="populate_scores")
     
     async def _populate_action_network_ids(self, conn: asyncpg.Connection,
                                          max_games: Optional[int] = None) -> int:
-        """Populate Action Network IDs from raw_data.action_network_games"""
-        query = """
+        """Populate Action Network IDs from raw_data.action_network_games
+        
+        Args:
+            conn: Database connection
+            max_games: Limit number of games to process (validated)
+            
+        Returns:
+            Number of games updated
+            
+        Raises:
+            ValueError: If max_games is invalid
+            asyncpg.PostgresError: For database errors
+        """
+        # Input validation to prevent SQL injection
+        if max_games is not None:
+            if not isinstance(max_games, int) or max_games <= 0:
+                raise ValueError(f"max_games must be a positive integer, got: {max_games}")
+        
+        base_query = """
         UPDATE curated.games_complete gc
         SET 
             action_network_game_id = ang.external_game_id::integer,
@@ -222,22 +311,54 @@ class GamesPopulationService:
           AND gc.game_date = ang.game_date
           AND ang.external_game_id IS NOT NULL
           AND ang.external_game_id != ''
+          AND ang.external_game_id ~ '^[0-9]+$'
           AND gc.action_network_game_id IS NULL
         """
         
-        if max_games:
-            query += f" AND gc.id <= {max_games}"
-        
-        result = await conn.execute(query)
-        updated_count = int(result.split()[-1])
-        
-        self.logger.info("Populated Action Network IDs", updated_count=updated_count)
-        return updated_count
+        try:
+            if max_games:
+                query = base_query + " AND gc.id <= $1"
+                result = await conn.execute(query, max_games)
+            else:
+                result = await conn.execute(base_query)
+            
+            updated_count = int(result.split()[-1])
+            
+            self.logger.info("Populated Action Network IDs", updated_count=updated_count, max_games=max_games)
+            return updated_count
+            
+        except asyncpg.PostgresError as e:
+            self.logger.error("Database error populating Action Network IDs", error=str(e), max_games=max_games)
+            raise
+        except ValueError as e:
+            self.logger.error("Validation error populating Action Network IDs", error=str(e), max_games=max_games)
+            raise
+        except Exception as e:
+            self.logger.error("Unexpected error populating Action Network IDs", error=str(e), max_games=max_games)
+            raise UnifiedBettingError(f"Failed to populate Action Network IDs: {e}", 
+                                    component="games_population", operation="populate_ids")
     
     async def _populate_venue_data(self, conn: asyncpg.Connection,
                                  max_games: Optional[int] = None) -> int:
-        """Populate venue data from Action Network raw JSON"""
-        query = """
+        """Populate venue data from Action Network raw JSON
+        
+        Args:
+            conn: Database connection
+            max_games: Limit number of games to process (validated)
+            
+        Returns:
+            Number of games updated
+            
+        Raises:
+            ValueError: If max_games is invalid
+            asyncpg.PostgresError: For database errors
+        """
+        # Input validation to prevent SQL injection
+        if max_games is not None:
+            if not isinstance(max_games, int) or max_games <= 0:
+                raise ValueError(f"max_games must be a positive integer, got: {max_games}")
+        
+        base_query = """
         UPDATE curated.games_complete gc
         SET 
             venue_name = (ang.raw_game_data->>'venue_name'),
@@ -254,35 +375,66 @@ class GamesPopulationService:
           AND gc.venue_name IS NULL
         """
         
-        if max_games:
-            query += f" AND gc.id <= {max_games}"
-        
-        result = await conn.execute(query)
-        updated_count = int(result.split()[-1])
-        
-        self.logger.info("Populated venue data", updated_count=updated_count)
-        return updated_count
+        try:
+            if max_games:
+                query = base_query + " AND gc.id <= $1"
+                result = await conn.execute(query, max_games)
+            else:
+                result = await conn.execute(base_query)
+            
+            updated_count = int(result.split()[-1])
+            
+            self.logger.info("Populated venue data", updated_count=updated_count, max_games=max_games)
+            return updated_count
+            
+        except asyncpg.PostgresError as e:
+            self.logger.error("Database error populating venue data", error=str(e), max_games=max_games)
+            raise
+        except ValueError as e:
+            self.logger.error("Validation error populating venue data", error=str(e), max_games=max_games)
+            raise
+        except Exception as e:
+            self.logger.error("Unexpected error populating venue data", error=str(e), max_games=max_games)
+            raise UnifiedBettingError(f"Failed to populate venue data: {e}", 
+                                    component="games_population", operation="populate_venue")
     
     async def _populate_weather_data(self, conn: asyncpg.Connection,
                                    max_games: Optional[int] = None) -> int:
-        """Populate weather data from Action Network raw JSON"""
-        query = """
+        """Populate weather data from Action Network raw JSON
+        
+        Args:
+            conn: Database connection
+            max_games: Limit number of games to process (validated)
+            
+        Returns:
+            Number of games updated
+            
+        Raises:
+            ValueError: If max_games is invalid
+            asyncpg.PostgresError: For database errors
+        """
+        # Input validation to prevent SQL injection
+        if max_games is not None:
+            if not isinstance(max_games, int) or max_games <= 0:
+                raise ValueError(f"max_games must be a positive integer, got: {max_games}")
+        
+        base_query = """
         UPDATE curated.games_complete gc
         SET 
             weather_condition = (ang.raw_game_data->'weather'->>'condition'),
             temperature = CASE 
-                WHEN (ang.raw_game_data->'weather'->>'temperature') ~ '^[0-9]+$' 
+                WHEN (ang.raw_game_data->'weather'->>'temperature') ~ '^-?[0-9]+(\\.[0-9]+)?$' 
                 THEN (ang.raw_game_data->'weather'->>'temperature')::integer
                 ELSE NULL
             END,
             wind_speed = CASE 
-                WHEN (ang.raw_game_data->'weather'->>'wind_speed') ~ '^[0-9]+$' 
+                WHEN (ang.raw_game_data->'weather'->>'wind_speed') ~ '^[0-9]+(\\.[0-9]+)?$' 
                 THEN (ang.raw_game_data->'weather'->>'wind_speed')::integer
                 ELSE NULL
             END,
             wind_direction = (ang.raw_game_data->'weather'->>'wind_direction'),
             humidity = CASE 
-                WHEN (ang.raw_game_data->'weather'->>'humidity') ~ '^[0-9]+$' 
+                WHEN (ang.raw_game_data->'weather'->>'humidity') ~ '^[0-9]+(\\.[0-9]+)?$' 
                 THEN (ang.raw_game_data->'weather'->>'humidity')::integer
                 ELSE NULL
             END,
@@ -294,19 +446,56 @@ class GamesPopulationService:
           AND gc.weather_condition IS NULL
         """
         
-        if max_games:
-            query += f" AND gc.id <= {max_games}"
-        
-        result = await conn.execute(query)
-        updated_count = int(result.split()[-1])
-        
-        self.logger.info("Populated weather data", updated_count=updated_count)
-        return updated_count
+        try:
+            if max_games:
+                query = base_query + " AND gc.id <= $1"
+                result = await conn.execute(query, max_games)
+            else:
+                result = await conn.execute(base_query)
+            
+            updated_count = int(result.split()[-1])
+            
+            self.logger.info("Populated weather data", updated_count=updated_count, max_games=max_games)
+            return updated_count
+            
+        except asyncpg.PostgresError as e:
+            self.logger.error("Database error populating weather data", error=str(e), max_games=max_games)
+            raise
+        except ValueError as e:
+            self.logger.error("Validation error populating weather data", error=str(e), max_games=max_games)
+            raise
+        except Exception as e:
+            self.logger.error("Unexpected error populating weather data", error=str(e), max_games=max_games)
+            raise UnifiedBettingError(f"Failed to populate weather data: {e}", 
+                                    component="games_population", operation="populate_weather")
     
     async def _update_data_quality(self, conn: asyncpg.Connection,
                                  max_games: Optional[int] = None) -> int:
-        """Update data quality indicators based on populated data"""
-        query = """
+        """Update data quality indicators based on populated data
+        
+        Args:
+            conn: Database connection
+            max_games: Limit number of games to process (validated)
+            
+        Returns:
+            Number of games updated
+            
+        Raises:
+            ValueError: If max_games is invalid
+            asyncpg.PostgresError: For database errors
+        """
+        # Input validation to prevent SQL injection
+        if max_games is not None:
+            if not isinstance(max_games, int) or max_games <= 0:
+                raise ValueError(f"max_games must be a positive integer, got: {max_games}")
+        
+        # Get configurable confidence scores from settings
+        settings = get_settings()
+        high_confidence = getattr(settings, 'high_confidence_score', 0.9500)
+        medium_confidence = getattr(settings, 'medium_confidence_score', 0.8000)
+        low_confidence = getattr(settings, 'low_confidence_score', 0.5000)
+        
+        base_query = """
         UPDATE curated.games_complete
         SET 
             data_quality = CASE 
@@ -332,24 +521,43 @@ class GamesPopulationService:
                 WHEN home_score IS NOT NULL 
                  AND away_score IS NOT NULL 
                  AND action_network_game_id IS NOT NULL 
-                THEN 0.9500
+                THEN $1
                 WHEN home_score IS NOT NULL 
                  AND away_score IS NOT NULL 
-                THEN 0.8000
-                ELSE 0.5000
+                THEN $2
+                ELSE $3
             END,
             updated_at = NOW()
         WHERE updated_at >= (NOW() - INTERVAL '1 hour')
         """
         
-        if max_games:
-            query += f" AND id <= {max_games}"
-        
-        result = await conn.execute(query)
-        updated_count = int(result.split()[-1])
-        
-        self.logger.info("Updated data quality indicators", updated_count=updated_count)
-        return updated_count
+        try:
+            if max_games:
+                query = base_query + " AND id <= $4"
+                result = await conn.execute(query, high_confidence, medium_confidence, low_confidence, max_games)
+            else:
+                result = await conn.execute(base_query, high_confidence, medium_confidence, low_confidence)
+            
+            updated_count = int(result.split()[-1])
+            
+            self.logger.info("Updated data quality indicators", 
+                           updated_count=updated_count, 
+                           max_games=max_games,
+                           high_confidence=high_confidence,
+                           medium_confidence=medium_confidence,
+                           low_confidence=low_confidence)
+            return updated_count
+            
+        except asyncpg.PostgresError as e:
+            self.logger.error("Database error updating data quality", error=str(e), max_games=max_games)
+            raise
+        except ValueError as e:
+            self.logger.error("Validation error updating data quality", error=str(e), max_games=max_games)
+            raise
+        except Exception as e:
+            self.logger.error("Unexpected error updating data quality", error=str(e), max_games=max_games)
+            raise UnifiedBettingError(f"Failed to update data quality: {e}", 
+                                    component="games_population", operation="update_quality")
     
     async def _get_current_stats(self) -> Dict[str, Any]:
         """Get current statistics about games_complete table"""
@@ -413,3 +621,66 @@ class GamesPopulationService:
             self.logger.error("Failed to get population status", error=str(e))
             raise UnifiedBettingError(f"Failed to get population status: {e}", 
                                               component="games_population", operation="get_status")
+    
+    async def _batch_populate_all_data(self, max_games: int, batch_size: int) -> Tuple[int, int, int, int, int]:
+        """
+        Batch process population for large datasets to prevent memory issues and timeouts.
+        
+        Args:
+            max_games: Maximum number of games to process
+            batch_size: Number of records per batch
+            
+        Returns:
+            Tuple of (scores_updated, ids_updated, venue_updated, weather_updated, quality_updated)
+        """
+        self.logger.info(f"Starting batch population: {max_games} games in batches of {batch_size}")
+        
+        total_scores = total_ids = total_venue = total_weather = total_quality = 0
+        current_offset = 0
+        batch_num = 1
+        
+        while current_offset < max_games:
+            # Calculate current batch size (don't exceed max_games)
+            current_batch_size = min(batch_size, max_games - current_offset)
+            batch_max = current_offset + current_batch_size
+            
+            self.logger.info(f"Processing batch {batch_num}: records {current_offset+1} to {batch_max}")
+            
+            try:
+                async with self.connection_pool.acquire() as conn:
+                    async with conn.transaction():
+                        # Process current batch with limited range
+                        scores_batch = await self._populate_game_scores_batch(conn, current_offset, current_batch_size)
+                        ids_batch = await self._populate_action_network_ids_batch(conn, current_offset, current_batch_size)
+                        venue_batch = await self._populate_venue_data_batch(conn, current_offset, current_batch_size)
+                        weather_batch = await self._populate_weather_data_batch(conn, current_offset, current_batch_size)
+                        quality_batch = await self._update_data_quality_batch(conn, current_offset, current_batch_size)
+                        
+                        # Accumulate totals
+                        total_scores += scores_batch
+                        total_ids += ids_batch
+                        total_venue += venue_batch
+                        total_weather += weather_batch
+                        total_quality += quality_batch
+                        
+                        self.logger.info(f"Batch {batch_num} completed: "
+                                       f"scores={scores_batch}, ids={ids_batch}, "
+                                       f"venue={venue_batch}, weather={weather_batch}, quality={quality_batch}")
+                
+                # Update for next iteration
+                current_offset += current_batch_size
+                batch_num += 1
+                
+                # Brief pause between batches to prevent overwhelming the database
+                await asyncio.sleep(0.1)
+                
+            except Exception as e:
+                self.logger.error(f"Batch {batch_num} failed", error=str(e), 
+                                offset=current_offset, batch_size=current_batch_size)
+                # Continue with next batch instead of failing completely
+                current_offset += current_batch_size
+                batch_num += 1
+                continue
+        
+        self.logger.info(f"Batch population completed: {batch_num-1} batches processed")
+        return total_scores, total_ids, total_venue, total_weather, total_quality
