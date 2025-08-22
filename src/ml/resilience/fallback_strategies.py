@@ -15,12 +15,12 @@ from pathlib import Path
 # Import ML pipeline components
 try:
     from ..features.models import FeatureVector, TemporalFeatures, MarketFeatures
-    from ...core.config import get_unified_config
+    from ...core.config import get_settings
 except ImportError:
     FeatureVector = None
     TemporalFeatures = None
     MarketFeatures = None
-    get_unified_config = None
+    get_settings = None
 
 logger = logging.getLogger(__name__)
 

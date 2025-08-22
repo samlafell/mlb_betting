@@ -247,8 +247,8 @@ class FeaturePipeline:
 
         # Get ML pipeline configuration
         try:
-            from ...core.config import get_unified_config
-            config = get_unified_config()
+            from ...core.config import get_settings
+            config = get_settings()
             ml_config = config.ml_pipeline
         except ImportError:
             # Fallback configuration for environments without unified config

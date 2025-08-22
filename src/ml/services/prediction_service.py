@@ -25,10 +25,10 @@ from ..training.lightgbm_trainer import LightGBMTrainer
 from ..database.connection_pool import get_db_transaction
 
 try:
-    from ...core.config import get_unified_config
+    from ...core.config import get_settings
 except ImportError:
     # Fallback for testing environments
-    get_unified_config = None
+    get_settings = None
 
 # Import resource monitoring
 try:
@@ -104,8 +104,8 @@ class PredictionService:
                 await self._initialize_allocation_integration()
 
             # Load configuration
-            if get_unified_config:
-                self.config = get_unified_config()
+            if get_settings:
+                self.config = get_settings()
             else:
                 # Fallback configuration for testing
                 self.config = type(

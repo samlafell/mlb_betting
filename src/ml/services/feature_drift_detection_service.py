@@ -14,7 +14,7 @@ from scipy import stats
 from collections import defaultdict
 
 from ...core.config import get_settings
-from ..database.connection_pool import get_db_connection, get_db_transaction
+from ..database.connection_pool import get_database_connection, get_db_transaction
 from .mlflow_integration import mlflow_service
 
 logger = logging.getLogger(__name__)
@@ -151,7 +151,7 @@ class FeatureDriftDetectionService:
             ):
                 return self._baseline_cache[cache_key]
 
-            async with get_db_connection() as conn:
+            async with get_database_connection() as conn:
                 # Get baseline feature importance from successful predictions
                 # Look at the last 30 days of stable performance
                 version_clause = "AND mp.model_version = $2" if model_version else ""
@@ -249,7 +249,7 @@ class FeatureDriftDetectionService:
     ) -> Dict[str, DriftBaseline]:
         """Get current feature importance from recent data"""
         try:
-            async with get_db_connection() as conn:
+            async with get_database_connection() as conn:
                 version_clause = "AND mp.model_version = $3" if model_version else ""
                 params = [model_name, lookback_days]
                 if model_version:
@@ -608,7 +608,7 @@ class FeatureDriftDetectionService:
     async def _get_active_models(self) -> List[str]:
         """Get list of active models to monitor"""
         try:
-            async with get_db_connection() as conn:
+            async with get_database_connection() as conn:
                 query = """
                     SELECT DISTINCT model_name
                     FROM curated.ml_predictions
