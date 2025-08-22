@@ -204,15 +204,40 @@ class ProductionDeploymentValidator:
             check.message = "Check not implemented"
     
     async def _check_database_connectivity(self, check: ValidationCheck):
-        """Validate database connectivity."""
+        """Validate database connectivity with proper configuration validation."""
         try:
-            conn = await asyncpg.connect(
-                host=self.settings.database.host,
-                port=self.settings.database.port,
-                user=self.settings.database.user,
-                password=self.settings.database.password,
-                database=self.settings.database.database
-            )
+            # Validate database configuration structure exists
+            if not hasattr(self.settings, 'database'):
+                check.result = ValidationResult.FAIL
+                check.message = "Database configuration section missing from settings"
+                return
+            
+            # Validate required database configuration fields
+            required_fields = ['host', 'port', 'user', 'password', 'database']
+            missing_fields = []
+            for field in required_fields:
+                if not hasattr(self.settings.database, field):
+                    missing_fields.append(field)
+            
+            if missing_fields:
+                check.result = ValidationResult.FAIL
+                check.message = f"Missing database configuration fields: {', '.join(missing_fields)}"
+                return
+            
+            # Use connection pool infrastructure instead of direct connection
+            from src.data.database.connection import get_connection
+            
+            try:
+                conn = await get_connection()
+            except Exception as pool_error:
+                # Fallback to direct connection if pool unavailable
+                conn = await asyncpg.connect(
+                    host=self.settings.database.host,
+                    port=self.settings.database.port,
+                    user=self.settings.database.user,
+                    password=self.settings.database.password,
+                    database=self.settings.database.database
+                )
             
             # Test basic query
             result = await conn.fetchval("SELECT 1")
@@ -225,10 +250,47 @@ class ProductionDeploymentValidator:
             check.result = ValidationResult.PASS
             check.message = f"Connected successfully. PostgreSQL {version.split(',')[0] if version else 'Unknown'}"
             
+        except asyncio.TimeoutError as e:
+            check.result = ValidationResult.FAIL
+            check.message = f"Database connection timeout: {str(e)}"
+            check.error = e
+            check.metadata = {
+                "error_type": "TimeoutError",
+                "recovery_suggestion": "Check database server availability and network connectivity",
+                "retry_recommended": True,
+            }
+            
+        except (ConnectionRefusedError, OSError) as e:
+            check.result = ValidationResult.FAIL
+            check.message = f"Database network connection failed: {str(e)}"
+            check.error = e
+            check.metadata = {
+                "error_type": type(e).__name__,
+                "error_category": "network",
+                "recovery_suggestion": "Verify database server is running and network configuration",
+                "check_database_status": True,
+            }
+            
+        except ImportError as e:
+            check.result = ValidationResult.FAIL
+            check.message = f"Database connection module import failed: {str(e)}"
+            check.error = e
+            check.metadata = {
+                "error_type": "ImportError",
+                "error_category": "dependency",
+                "recovery_suggestion": "Install required database dependencies (asyncpg)",
+                "install_command": "uv add asyncpg",
+            }
+            
         except Exception as e:
             check.result = ValidationResult.FAIL
             check.message = f"Database connection failed: {str(e)}"
             check.error = e
+            check.metadata = {
+                "error_type": type(e).__name__,
+                "error_category": "unexpected",
+                "recovery_suggestion": "Review logs for detailed error analysis",
+            }
     
     async def _check_database_schema(self, check: ValidationCheck):
         """Validate database schema."""

@@ -242,7 +242,7 @@ class TestHealthCheckService:
         """Test proper handling of import errors in collection health check."""
 
         with patch(
-            "src.services.monitoring.health_check_service.get_collector_instance"
+            "src.data.collection.registry.get_collector_instance"
         ) as mock_import:
             mock_import.side_effect = ImportError("Registry not available")
 

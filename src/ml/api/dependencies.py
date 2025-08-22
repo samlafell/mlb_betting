@@ -75,24 +75,42 @@ async def get_ml_service():
 
 
 async def get_database_connection():
-    """Get database connection for ML operations"""
+    """Get database connection for ML operations using connection pool"""
     try:
-        import asyncpg
-
-        # Get database configuration from environment variables
-        host = os.getenv("POSTGRES_HOST", "postgres")
-        port = os.getenv("POSTGRES_PORT", "5432")
-        database = os.getenv("POSTGRES_DB", "mlb_betting")
-        user = os.getenv("POSTGRES_USER", "samlafell")
-        password = os.getenv("POSTGRES_PASSWORD", "")
-
-        dsn = f"postgresql://{user}:{password}@{host}:{port}/{database}"
-
-        conn = await asyncpg.connect(dsn)
+        # Use connection pool infrastructure instead of direct connections
+        from ...data.database.connection import get_connection
+        
         try:
-            yield conn
-        finally:
-            await conn.close()
+            conn = await get_connection()
+            try:
+                yield conn
+            finally:
+                # Connection pool handles cleanup automatically
+                pass
+        except Exception as pool_error:
+            logger.warning(f"Connection pool unavailable, falling back to direct connection: {pool_error}")
+            
+            # Fallback to direct connection with proper configuration
+            import asyncpg
+            
+            # Get database configuration from environment variables with validation
+            host = os.getenv("POSTGRES_HOST", "postgres")
+            port = int(os.getenv("POSTGRES_PORT", "5432"))
+            database = os.getenv("POSTGRES_DB", "mlb_betting")
+            user = os.getenv("POSTGRES_USER", "samlafell")
+            password = os.getenv("POSTGRES_PASSWORD", "")
+            
+            if not password:
+                logger.error("Database password not configured")
+                raise HTTPException(status_code=503, detail="Database configuration incomplete")
+
+            dsn = f"postgresql://{user}:{password}@{host}:{port}/{database}"
+
+            conn = await asyncpg.connect(dsn)
+            try:
+                yield conn
+            finally:
+                await conn.close()
 
     except Exception as e:
         logger.error(f"Database connection error: {e}")

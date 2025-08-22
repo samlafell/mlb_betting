@@ -228,24 +228,40 @@ async def _check_redis_health(redis_client: redis.Redis) -> Dict[str, Any]:
 
 
 async def _check_database_health() -> Dict[str, Any]:
-    """Comprehensive database connection health check"""
+    """Comprehensive database connection health check using connection pool"""
     check_start = datetime.utcnow()
     
     try:
-        # Get database configuration
-        host = os.getenv("POSTGRES_HOST", "postgres")
-        port = os.getenv("POSTGRES_PORT", "5432")
-        database = os.getenv("POSTGRES_DB", "mlb_betting")
-        user = os.getenv("POSTGRES_USER", "samlafell")
-        password = os.getenv("POSTGRES_PASSWORD", "")
-        
-        dsn = f"postgresql://{user}:{password}@{host}:{port}/{database}"
-        
-        # Test connection with timeout
-        conn = await asyncio.wait_for(
-            asyncpg.connect(dsn), 
-            timeout=10.0
-        )
+        # Try to use connection pool infrastructure first
+        try:
+            from ....data.database.connection import get_connection
+            conn = await asyncio.wait_for(get_connection(), timeout=10.0)
+            using_pool = True
+        except Exception as pool_error:
+            logger.warning(f"Connection pool unavailable, falling back to direct connection: {pool_error}")
+            
+            # Fallback to direct connection with proper configuration validation
+            host = os.getenv("POSTGRES_HOST", "postgres")
+            port = os.getenv("POSTGRES_PORT", "5432")
+            database = os.getenv("POSTGRES_DB", "mlb_betting")
+            user = os.getenv("POSTGRES_USER", "samlafell")
+            password = os.getenv("POSTGRES_PASSWORD", "")
+            
+            if not password:
+                return {
+                    "status": "unhealthy",
+                    "message": "Database password not configured",
+                    "response_time_ms": 0
+                }
+            
+            dsn = f"postgresql://{user}:{password}@{host}:{port}/{database}"
+            
+            # Test connection with timeout
+            conn = await asyncio.wait_for(
+                asyncpg.connect(dsn), 
+                timeout=10.0
+            )
+            using_pool = False
         
         try:
             # Test basic query
@@ -279,14 +295,14 @@ async def _check_database_health() -> Dict[str, Any]:
                 "query_time_ms": round(query_time_ms, 2),
                 "tables_accessible": tables_accessible,
                 "table_count": table_count,
-                "connection_host": host,
-                "connection_port": port,
-                "connection_database": database,
-                "message": "Database connection successful"
+                "connection_pool_used": using_pool,
+                "message": f"Database connection successful ({'pool' if using_pool else 'direct'})"
             }
             
         finally:
-            await conn.close()
+            # Only close connection if not using pool (pool handles cleanup)
+            if not using_pool and conn and not conn.is_closed():
+                await conn.close()
             
     except asyncio.TimeoutError:
         return {
