@@ -32,7 +32,7 @@ from src.ml.opportunity_detection.explanation_engine import (
 )
 from src.ml.services.prediction_service import PredictionService
 from src.analysis.models.unified_models import UnifiedBettingSignal, SignalType
-from src.core.config import get_unified_config
+from src.core.config import get_settings
 from src.core.logging import get_logger
 
 

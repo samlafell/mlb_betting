@@ -14,9 +14,9 @@ from datetime import datetime, timedelta
 from .circuit_breaker import CircuitBreaker, CircuitBreakerState, circuit_breaker_manager
 
 try:
-    from ...core.config import get_unified_config
+    from ...core.config import get_settings
 except ImportError:
-    get_unified_config = None
+    get_settings = None
 
 logger = logging.getLogger(__name__)
 

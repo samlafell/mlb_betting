@@ -85,8 +85,8 @@ class RedisFeatureStore:
 
         # Get ML pipeline configuration
         try:
-            from ...core.config import get_unified_config
-            config = get_unified_config()
+            from ...core.config import get_settings
+            config = get_settings()
             ml_config = config.ml_pipeline
             configured_ttl = ml_config.feature_cache_ttl_seconds
             configured_socket_timeout = ml_config.redis_socket_timeout

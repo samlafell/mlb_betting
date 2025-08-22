@@ -257,7 +257,7 @@ async def fetch_value(query: str, *args) -> Any:
 
 
 @asynccontextmanager
-async def get_db_connection() -> AsyncContextManager[Connection]:
+async def get_database_connection() -> AsyncContextManager[Connection]:
     """Get a database connection with automatic cleanup"""
     pool = await get_connection_pool()
     async with pool.get_connection() as conn:

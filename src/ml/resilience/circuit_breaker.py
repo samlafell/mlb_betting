@@ -12,9 +12,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 try:
-    from ...core.config import get_unified_config
+    from ...core.config import get_settings
 except ImportError:
-    get_unified_config = None
+    get_settings = None
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +42,9 @@ class CircuitBreakerConfig:
     @classmethod
     def from_unified_config(cls, service_name: str) -> 'CircuitBreakerConfig':
         """Load configuration from unified config if available"""
-        if get_unified_config:
+        if get_settings:
             try:
-                config = get_unified_config()
+                config = get_settings()
                 ml_config = config.ml_pipeline
                 
                 return cls(
