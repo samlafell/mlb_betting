@@ -18,6 +18,7 @@ import asyncpg
 import structlog
 
 from ...core.config import get_settings
+from ..database.connection import get_connection
 from ...core.datetime_utils import (
     now_est,
     safe_game_datetime_parse,
@@ -84,18 +85,18 @@ class ActionNetworkClient:
         try:
             async with session.get(url, params=params) as response:
                 if response.status == 200:
-                    data = await response.json()
+                data = await response.json()
                     games = data.get("games", [])
-                    logger.info(f"Successfully fetched {len(games)} games", status=response.status)
+                logger.info(f"Successfully fetched {len(games)} games", status=response.status)
                     return games
                 elif response.status == 429:
-                    logger.warning("Rate limited by API", status=response.status, retry_after=response.headers.get('Retry-After'))
+                logger.warning("Rate limited by API", status=response.status, retry_after=response.headers.get('Retry-After'))
                     return []
                 elif response.status >= 500:
-                    logger.error("Server error from API", status=response.status, url=url, recovery_suggestion="Retry after delay")
+                logger.error("Server error from API", status=response.status, url=url, recovery_suggestion="Retry after delay")
                     return []
                 else:
-                    logger.error("API request failed", status=response.status, url=url, recovery_suggestion="Check API endpoint and parameters")
+                logger.error("API request failed", status=response.status, url=url, recovery_suggestion="Check API endpoint and parameters")
                     return []
         except aiohttp.ClientTimeout as e:
             logger.warning("API request timeout", url=url, error=str(e), recovery_suggestion="Retry with longer timeout")
@@ -130,21 +131,21 @@ class ActionNetworkClient:
         try:
             async with session.get(url, headers=headers) as response:
                 if response.status == 200:
-                    data = await response.json()
-                    logger.debug(f"Successfully fetched history for game {game_id}", status=response.status)
+                data = await response.json()
+                logger.debug(f"Successfully fetched history for game {game_id}", status=response.status)
                     return data
                 elif response.status == 429:
-                    logger.warning("Rate limited on history API", game_id=game_id, retry_after=response.headers.get('Retry-After'))
+                logger.warning("Rate limited on history API", game_id=game_id, retry_after=response.headers.get('Retry-After'))
                     return {}
                 elif response.status >= 500:
-                    logger.warning("Server error on history API", game_id=game_id, status=response.status)
+                logger.warning("Server error on history API", game_id=game_id, status=response.status)
                     return {}
                 else:
-                    logger.warning(
+                logger.warning(
                         "History API request failed",
                         status=response.status,
                         game_id=game_id,
-                        recovery_suggestion="History data not available for this game"
+                recovery_suggestion="History data not available for this game"
                     )
                     return {}
         except aiohttp.ClientTimeout as e:
@@ -221,15 +222,15 @@ class ActionNetworkHistoryParser:
                 else:
                     # Check if the dict has numeric keys (sportsbook IDs)
                     # This is the new format where keys are sportsbook IDs
-                    if all(key.isdigit() for key in response_data.keys()):
-                        self.logger.info(
+                if all(key.isdigit() for key in response_data.keys()):
+                self.logger.info(
                             "Detected sportsbook ID format",
                             sportsbook_ids=list(response_data.keys()),
                         )
                         # Extract historical data from each sportsbook
                         historical_entries = []
-                        for _sportsbook_id, sportsbook_data in response_data.items():
-                            if (
+                for _sportsbook_id, sportsbook_data in response_data.items():
+                if (
                                 isinstance(sportsbook_data, dict)
                                 and "event" in sportsbook_data
                             ):
@@ -258,7 +259,7 @@ class ActionNetworkHistoryParser:
             # Process each entry in the response
             for i, entry_data in enumerate(response_data):
                 if not isinstance(entry_data, dict):
-                    self.logger.warning(
+                self.logger.warning(
                         f"Skipping invalid entry at index {i}",
                         entry_type=type(entry_data),
                     )
@@ -267,13 +268,13 @@ class ActionNetworkHistoryParser:
                 # Extract event data
                 event_data = entry_data.get("event", {})
                 if not event_data:
-                    self.logger.warning(f"No event data in entry {i}")
+                self.logger.warning(f"No event data in entry {i}")
                     continue
 
                 # Determine if this is pregame or live data
                 # Based on your description: indices 0-1 are pregame, 2+ are live
                 period = (
-                    LineMovementPeriod.PREGAME if i < 2 else LineMovementPeriod.LIVE
+                LineMovementPeriod.PREGAME if i < 2 else LineMovementPeriod.LIVE
                 )
 
                 # Extract market data
@@ -352,14 +353,14 @@ class ActionNetworkHistoryParser:
                 away_line = None
 
                 for line in market_data:
-                    if line.get("side") == "home":
+                if line.get("side") == "home":
                         home_line = line
-                    elif line.get("side") == "away":
+                elif line.get("side") == "away":
                         away_line = line
-                    elif line.get("side") == "over" and market_type == "total":
-                        home_line = line  # Treat "over" as home for totals
-                    elif line.get("side") == "under" and market_type == "total":
-                        away_line = line  # Treat "under" as away for totals
+                elif line.get("side") == "over" and market_type == "total":
+                home_line = line  # Treat "over" as home for totals
+                elif line.get("side") == "under" and market_type == "total":
+                away_line = line  # Treat "under" as away for totals
 
                 # Extract pricing data
                 home_price = None
@@ -373,12 +374,12 @@ class ActionNetworkHistoryParser:
                         decimal=None,  # Not provided in this format
                         american=home_line.get("odds"),
                     )
-                    if market_type in ["spread", "total"]:
+                if market_type in ["spread", "total"]:
                         line_value = home_line.get("value")
 
                     # Extract betting info for home/over side
                     bet_info_data = home_line.get("bet_info", {})
-                    if bet_info_data:
+                if bet_info_data:
                         home_bet_info = ActionNetworkBettingInfo(
                             tickets=bet_info_data.get("tickets"),
                             money=bet_info_data.get("money"),
@@ -389,12 +390,12 @@ class ActionNetworkHistoryParser:
                         decimal=None,  # Not provided in this format
                         american=away_line.get("odds"),
                     )
-                    if market_type in ["spread", "total"] and not line_value:
+                if market_type in ["spread", "total"] and not line_value:
                         line_value = away_line.get("value")
 
                     # Extract betting info for away/under side
                     bet_info_data = away_line.get("bet_info", {})
-                    if bet_info_data:
+                if bet_info_data:
                         away_bet_info = ActionNetworkBettingInfo(
                             tickets=bet_info_data.get("tickets"),
                             money=bet_info_data.get("money"),
@@ -413,13 +414,13 @@ class ActionNetworkHistoryParser:
                     home_odds = market_data.get("home", {})
                     away_odds = market_data.get("away", {})
 
-                    if home_odds:
+                if home_odds:
                         home_price = ActionNetworkPrice(
                             decimal=home_odds.get("decimal"),
                             american=home_odds.get("american"),
                         )
 
-                    if away_odds:
+                if away_odds:
                         away_price = ActionNetworkPrice(
                             decimal=away_odds.get("decimal"),
                             american=away_odds.get("american"),
@@ -437,13 +438,13 @@ class ActionNetworkHistoryParser:
                         "under", {}
                     )
 
-                    if home_odds:
+                if home_odds:
                         home_price = ActionNetworkPrice(
                             decimal=home_odds.get("decimal"),
                             american=home_odds.get("american"),
                         )
 
-                    if away_odds:
+                if away_odds:
                         away_price = ActionNetworkPrice(
                             decimal=away_odds.get("decimal"),
                             american=away_odds.get("american"),
@@ -637,26 +638,23 @@ class ActionNetworkCollector(BaseCollector):
         game_mappings = {}
 
         try:
-            conn = await asyncpg.connect(**self.db_config)
-
-            for game in games:
-                game_id = game.get("id")
+            async with get_connection() as conn:
+                for game in games:
+                    game_id = game.get("id")
                 if not game_id:
-                    continue
+                        continue
 
-                # Check if raw game data exists
+                    # Check if raw game data exists
                 existing_raw = await conn.fetchval(
-                    """
-                    SELECT id FROM raw_data.action_network_games WHERE external_game_id = $1
-                """,
-                    str(game_id),
-                )
+                        """
+                        SELECT id FROM raw_data.action_network_games WHERE external_game_id = $1
+                    """,
+                        str(game_id),
+                    )
 
                 if existing_raw:
-                    game_mappings[str(game_id)] = str(game_id)
-                    logger.debug(f"Found existing raw game data for game {game_id}")
-
-            await conn.close()
+                        game_mappings[str(game_id)] = str(game_id)
+                logger.debug(f"Found existing raw game data for game {game_id}")
 
         except Exception as e:
             logger.error("Error getting game mappings", error=str(e))
@@ -671,25 +669,18 @@ class ActionNetworkCollector(BaseCollector):
             return
 
         try:
-            conn = await asyncpg.connect(
-                host=self.db_config["host"],
-                port=self.db_config["port"],
-                database=self.db_config["database"],
-                user=self.db_config["user"],
-                password=self.db_config["password"],
-            )
-
-            for game in games:
-                game_id = game.get("id")
+            async with get_connection() as conn:
+                for game in games:
+                    game_id = game.get("id")
                 if not game_id:
                     continue
 
-                # Extract readable game information
-                teams = game.get("teams", [])
-                home_team = None
-                away_team = None
-                home_team_abbr = None
-                away_team_abbr = None
+                    # Extract readable game information
+                    teams = game.get("teams", [])
+                    home_team = None
+                    away_team = None
+                    home_team_abbr = None
+                    away_team_abbr = None
 
                 if len(teams) >= 2:
                     # Use home_team_id and away_team_id to correctly map teams
@@ -697,28 +688,28 @@ class ActionNetworkCollector(BaseCollector):
                     away_team_id = game.get("away_team_id")
 
                     # Find home and away teams by matching IDs
-                    for team in teams:
+                for team in teams:
                         team_id = team.get("id")
-                        if team_id == home_team_id:
+                if team_id == home_team_id:
                             home_team = team.get(
                                 "full_name", team.get("display_name", "Unknown")
                             )
                             home_team_abbr = team.get("abbr", team.get("abbreviation"))
-                        elif team_id == away_team_id:
+                elif team_id == away_team_id:
                             away_team = team.get(
                                 "full_name", team.get("display_name", "Unknown")
                             )
                             away_team_abbr = team.get("abbr", team.get("abbreviation"))
 
-                game_status = game.get("status", "unknown")
-                start_time = safe_game_datetime_parse(game.get("start_time"))
+                    game_status = game.get("status", "unknown")
+                    start_time = safe_game_datetime_parse(game.get("start_time"))
                 game_date = start_time.date() if start_time else now_est().date()
 
-                # Store raw game data with extracted readable fields
-                # Ensure we have valid JSON data before inserting
+                    # Store raw game data with extracted readable fields
+                    # Ensure we have valid JSON data before inserting
                 game_json = json.dumps(game) if game else None
                 if not game_json or game_json == 'null':
-                    logger.warning(f"Skipping game {game_id} due to empty game data")
+                logger.warning(f"Skipping game {game_id} due to empty game data")
                     continue
                     
                 await conn.execute(
@@ -738,10 +729,10 @@ class ActionNetworkCollector(BaseCollector):
                         game_status = EXCLUDED.game_status,
                         start_time = EXCLUDED.start_time,
                         collected_at = EXCLUDED.collected_at
-                """,
+                    """,
                     str(game_id),
                     game_json,  # raw_response: Full raw data as JSON string
-                    game_json,  # raw_game_data: Also use JSON string for JSONB column (asyncpg will handle conversion)
+                game_json,  # raw_game_data: Also use JSON string for JSONB column (asyncpg will handle conversion)
                     endpoint_url
                     or "https://api.actionnetwork.com/web/v2/scoreboard/publicbetting/mlb",
                     200,
@@ -754,12 +745,11 @@ class ActionNetworkCollector(BaseCollector):
                     start_time,
                     now_est(),
                     now_est(),
-                )
+                    )
 
-            await conn.close()
-            logger.info(
-                f"Stored {len(games)} games to raw_data.action_network_games with readable info"
-            )
+                logger.info(
+                    f"Stored {len(games)} games to raw_data.action_network_games with readable info"
+                    )
 
         except Exception as e:
             logger.error(
@@ -781,42 +771,34 @@ class ActionNetworkCollector(BaseCollector):
                 f"Attempting to store odds data for game {game_id}, sportsbook {sportsbook_key}"
             )
 
-            conn = await asyncpg.connect(
-                host=self.db_config["host"],
-                port=self.db_config["port"],
-                database=self.db_config["database"],
-                user=self.db_config["user"],
-                password=self.db_config["password"],
-            )
+            async with get_connection() as conn:
+                logger.info(f"Database connection established for game {game_id}")
 
-            logger.info(f"Database connection established for game {game_id}")
+                    # Prepare data for insertion
+                    collected_at = now_est()
+                    created_at = now_est()
+                    json_data = json.dumps(odds_data)
 
-            # Prepare data for insertion
-            collected_at = now_est()
-            created_at = now_est()
-            json_data = json.dumps(odds_data)
+                logger.info(
+                    f"Prepared data: game_id={game_id}, sportsbook_key={sportsbook_key}, collected_at={collected_at}"
+                    )
 
-            logger.info(
-                f"Prepared data: game_id={game_id}, sportsbook_key={sportsbook_key}, collected_at={collected_at}"
-            )
-
-            await conn.execute(
-                """
-                INSERT INTO raw_data.action_network_odds (
+                await conn.execute(
+                    """
+                    INSERT INTO raw_data.action_network_odds (
                     external_game_id, sportsbook_key, raw_odds, collected_at, created_at
-                ) VALUES ($1, $2, $3, $4, $5)
-            """,
-                str(game_id),
-                sportsbook_key or "unknown",
+                    ) VALUES ($1, $2, $3, $4, $5)
+                    """,
+                    str(game_id),
+                    sportsbook_key or "unknown",
                 json_data,  # Convert dict to JSON string for JSONB storage
-                collected_at,
-                created_at,
-            )
+                    collected_at,
+                    created_at,
+                    )
 
-            await conn.close()
-            logger.info(
+                logger.info(
                 f"✅ Successfully stored odds data for game {game_id}, sportsbook {sportsbook_key}"
-            )
+                    )
 
         except asyncpg.ConnectionDoesNotExistError as e:
             logger.warning(
@@ -829,7 +811,7 @@ class ActionNetworkCollector(BaseCollector):
                 await self._store_raw_odds_data(game_id, odds_data, sportsbook_key)
             except Exception as retry_e:
                 logger.error(
-                    f"❌ Retry failed for game {game_id}, sportsbook {sportsbook_key}",
+                f"❌ Retry failed for game {game_id}, sportsbook {sportsbook_key}",
                     original_error=str(e),
                     retry_error=str(retry_e),
                     recovery_suggestion="Check database connectivity and restart collection"
@@ -862,8 +844,8 @@ class ActionNetworkCollector(BaseCollector):
                 markets = game.get("markets", {})
                 for book_id_str, book_data in markets.items():
                     event_markets = book_data.get("event", {})
-                    if event_markets:
-                        await self._store_raw_odds_data(
+                if event_markets:
+                await self._store_raw_odds_data(
                             str(game_id), event_markets, book_id_str
                         )
 
@@ -887,7 +869,7 @@ class ActionNetworkCollector(BaseCollector):
 
                 if history_data:
                     # Store raw historical data
-                    await self._store_raw_historical_data(str(game_id), history_data)
+                await self._store_raw_historical_data(str(game_id), history_data)
                     self.stats["history_points"] += len(history_data)
 
             logger.info(f"Fetched historical data for {len(games)} games")
@@ -900,17 +882,10 @@ class ActionNetworkCollector(BaseCollector):
     ) -> None:
         """Store raw historical data to raw_data.action_network_history table."""
         try:
-            conn = await asyncpg.connect(
-                host=self.db_config["host"],
-                port=self.db_config["port"],
-                database=self.db_config["database"],
-                user=self.db_config["user"],
-                password=self.db_config["password"],
-            )
-
-            # Create table if it doesn't exist
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS raw_data.action_network_history (
+            async with get_connection() as conn:
+                    # Create table if it doesn't exist
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS raw_data.action_network_history (
                     id BIGSERIAL PRIMARY KEY,
                     external_game_id VARCHAR(255),
                     raw_history JSONB NOT NULL,
@@ -918,27 +893,26 @@ class ActionNetworkCollector(BaseCollector):
                     collected_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     UNIQUE(external_game_id)
-                )
-            """)
+                    )
+                    """)
 
-            await conn.execute(
-                """
-                INSERT INTO raw_data.action_network_history (
+                await conn.execute(
+                    """
+                    INSERT INTO raw_data.action_network_history (
                     external_game_id, raw_history, endpoint_url, collected_at, created_at
-                ) VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (external_game_id) DO UPDATE SET
+                    ) VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (external_game_id) DO UPDATE SET
                     raw_history = EXCLUDED.raw_history,
                     collected_at = EXCLUDED.collected_at
-            """,
-                str(game_id),
-                json.dumps(history_data),
-                f"https://api.actionnetwork.com/web/v2/markets/event/{game_id}/history",
-                now_est(),
-                now_est(),
-            )
+                    """,
+                    str(game_id),
+                    json.dumps(history_data),
+                    f"https://api.actionnetwork.com/web/v2/markets/event/{game_id}/history",
+                    now_est(),
+                    now_est(),
+                    )
 
-            await conn.close()
-            logger.debug(f"Stored historical data for game {game_id}")
+                logger.debug(f"Stored historical data for game {game_id}")
 
         except Exception as e:
             logger.error(
@@ -956,19 +930,19 @@ class ActionNetworkCollector(BaseCollector):
                     event_markets = book_data.get("event", {})
 
                     # Store raw odds data to RAW layer only
-                    await self._store_raw_odds_data(
+                await self._store_raw_odds_data(
                         str(game_id), event_markets, book_id_str
                     )
 
                     # Update statistics
-                    for market_type in ["moneyline", "spread", "total"]:
+                for market_type in ["moneyline", "spread", "total"]:
                         market_data = event_markets.get(market_type, [])
-                        if market_data:
-                            if market_type == "moneyline":
+                if market_data:
+                if market_type == "moneyline":
                                 self.stats["moneyline_inserted"] += len(market_data)
-                            elif market_type == "spread":
+                elif market_type == "spread":
                                 self.stats["spread_inserted"] += len(market_data)
-                            elif market_type == "total":
+                elif market_type == "total":
                                 self.stats["totals_inserted"] += len(market_data)
                             self.stats["total_inserted"] += len(market_data)
                             self.stats["current_lines"] += 1
@@ -994,7 +968,7 @@ class ActionNetworkCollector(BaseCollector):
                 history_data = await self.client.fetch_game_history(int(game_id))
 
                 if history_data:
-                    await self._process_game_history(game, history_data)
+                await self._process_game_history(game, history_data)
 
                 self.stats["games_processed"] += 1
 
@@ -1018,13 +992,13 @@ class ActionNetworkCollector(BaseCollector):
                 logger.debug(f"Processing game {i+1}/{len(games)}: {game_id}")
                 
                 if game_id not in game_mappings:
-                    logger.debug(f"Skipping game {game_id} - no raw data mapping")
+                logger.debug(f"Skipping game {game_id} - no raw data mapping")
                     continue
 
                 teams = game.get("teams", [])
 
                 if len(teams) < 2:
-                    logger.warning(f"Skipping game {game_id} - insufficient team data (found {len(teams)} teams)")
+                logger.warning(f"Skipping game {game_id} - insufficient team data (found {len(teams)} teams)")
                     continue
 
                 away_team = normalize_team_name(teams[0].get("full_name", ""))
@@ -1037,12 +1011,12 @@ class ActionNetworkCollector(BaseCollector):
 
                 # Process each sportsbook - store to RAW layer only
                 for book_id_str, book_data in markets.items():
-                    try:
+                try:
                         book_id = int(book_id_str)
                         event_markets = book_data.get("event", {})
 
                         # Store all odds data to raw_data.action_network_odds
-                        await self._store_comprehensive_odds_data(
+                await self._store_comprehensive_odds_data(
                             game_id,
                             book_id_str,
                             event_markets,
@@ -1052,9 +1026,9 @@ class ActionNetworkCollector(BaseCollector):
                         )
                         sportsbook_success += 1
                         
-                    except Exception as book_e:
-                        logger.warning(
-                            f"Failed to process sportsbook {book_id_str} for game {game_id}",
+                except Exception as book_e:
+                logger.warning(
+                f"Failed to process sportsbook {book_id_str} for game {game_id}",
                             error=str(book_e),
                             error_type=type(book_e).__name__
                         )
@@ -1132,11 +1106,11 @@ class ActionNetworkCollector(BaseCollector):
             for market_type in ["moneyline", "spread", "total"]:
                 market_data = event_markets.get(market_type, [])
                 if market_data:
-                    if market_type == "moneyline":
+                if market_type == "moneyline":
                         self.stats["moneyline_inserted"] += len(market_data)
-                    elif market_type == "spread":
+                elif market_type == "spread":
                         self.stats["spread_inserted"] += len(market_data)
-                    elif market_type == "total":
+                elif market_type == "total":
                         self.stats["totals_inserted"] += len(market_data)
                     self.stats["total_inserted"] += len(market_data)
 

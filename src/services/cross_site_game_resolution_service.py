@@ -23,6 +23,7 @@ from ..core.datetime_utils import (
     now_est,
 )
 from ..core.team_utils import normalize_team_name
+from ..data.database.connection import get_connection
 
 logger = structlog.get_logger(__name__)
 
@@ -86,7 +87,7 @@ class CrossSiteGameResolutionService:
     ) -> GameResolutionResult:
         """Resolve game using MLB Stats API game ID (authoritative source)."""
         try:
-            conn = await asyncpg.connect(**self.db_config)
+            async with get_connection() as conn:
 
             # First check if we already have this game mapped
             existing = await conn.fetchrow(
@@ -114,8 +115,7 @@ class CrossSiteGameResolutionService:
                     confidence_score=1.0,  # Perfect match via authoritative source
                 )
 
-                await conn.close()
-                return GameResolutionResult(
+                    return GameResolutionResult(
                     success=True,
                     staging_game_id=existing["id"],
                     mapping=mapping,
@@ -133,8 +133,7 @@ class CrossSiteGameResolutionService:
             )
 
             if not mlb_raw_data:
-                await conn.close()
-                return GameResolutionResult(
+                    return GameResolutionResult(
                     success=False,
                     error_message=f"MLB Stats API game {mlb_game_id} not found in raw data",
                 )
@@ -157,7 +156,6 @@ class CrossSiteGameResolutionService:
                 confidence_score=1.0,
             )
 
-            await conn.close()
             return GameResolutionResult(
                 success=True,
                 staging_game_id=new_game_id,
@@ -182,7 +180,7 @@ class CrossSiteGameResolutionService:
     ) -> GameResolutionResult:
         """Resolve game using Action Network game ID with fallback team/datetime matching."""
         try:
-            conn = await asyncpg.connect(**self.db_config)
+            async with get_connection() as conn:
 
             # First check direct ID match
             existing = await conn.fetchrow(
@@ -198,8 +196,7 @@ class CrossSiteGameResolutionService:
 
             if existing:
                 mapping = self._build_mapping_from_row(existing)
-                await conn.close()
-                return GameResolutionResult(
+                    return GameResolutionResult(
                     success=True,
                     staging_game_id=existing["id"],
                     mapping=mapping,
@@ -244,8 +241,7 @@ class CrossSiteGameResolutionService:
                     mapping.action_network_game_id = action_network_game_id
                     mapping.confidence_score = 0.8  # High confidence team/date match
 
-                    await conn.close()
-                    return GameResolutionResult(
+                            return GameResolutionResult(
                         success=True,
                         staging_game_id=existing_by_teams["id"],
                         mapping=mapping,
@@ -270,15 +266,13 @@ class CrossSiteGameResolutionService:
                     confidence_score=0.6,  # Moderate confidence for new game
                 )
 
-                await conn.close()
-                return GameResolutionResult(
+                    return GameResolutionResult(
                     success=True,
                     staging_game_id=new_game_id,
                     mapping=mapping,
                     created_new=True,
                 )
 
-            await conn.close()
             return GameResolutionResult(
                 success=False,
                 error_message=f"Action Network game {action_network_game_id} not found and insufficient data for team matching",
@@ -302,7 +296,7 @@ class CrossSiteGameResolutionService:
     ) -> GameResolutionResult:
         """Resolve game by team names and date, optionally adding source ID."""
         try:
-            conn = await asyncpg.connect(**self.db_config)
+            async with get_connection() as conn:
 
             home_normalized = normalize_team_name(home_team)
             away_normalized = normalize_team_name(away_team)
@@ -334,8 +328,7 @@ class CrossSiteGameResolutionService:
                 mapping = self._build_mapping_from_row(existing)
                 mapping.confidence_score = 0.9  # High confidence for team/date match
 
-                await conn.close()
-                return GameResolutionResult(
+                    return GameResolutionResult(
                     success=True,
                     staging_game_id=existing["id"],
                     mapping=mapping,
@@ -366,7 +359,6 @@ class CrossSiteGameResolutionService:
             if source_id and source_type:
                 setattr(mapping, f"{source_type}_game_id", source_id)
 
-            await conn.close()
             return GameResolutionResult(
                 success=True,
                 staging_game_id=new_game_id,
@@ -386,7 +378,7 @@ class CrossSiteGameResolutionService:
     async def update_game_mapping(self, staging_game_id: int, **source_ids) -> bool:
         """Update an existing game mapping with additional source IDs."""
         try:
-            conn = await asyncpg.connect(**self.db_config)
+            async with get_connection() as conn:
 
             # Build dynamic update query
             updates = []
@@ -400,8 +392,7 @@ class CrossSiteGameResolutionService:
                     param_count += 1
 
             if not updates:
-                await conn.close()
-                return False
+                    return False
 
             # Add updated_at
             updates.append(f"updated_at = ${param_count}")
@@ -419,7 +410,6 @@ class CrossSiteGameResolutionService:
 
             result = await conn.execute(query, *params)
 
-            await conn.close()
 
             success = "UPDATE 1" in str(result)
             if success:
@@ -442,7 +432,7 @@ class CrossSiteGameResolutionService:
     async def get_games_for_date(self, target_date: date) -> list[GameMapping]:
         """Get all games for a specific date."""
         try:
-            conn = await asyncpg.connect(**self.db_config)
+            async with get_connection() as conn:
 
             rows = await conn.fetch(
                 """
@@ -456,7 +446,6 @@ class CrossSiteGameResolutionService:
                 target_date,
             )
 
-            await conn.close()
 
             return [self._build_mapping_from_row(row) for row in rows]
 

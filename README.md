@@ -58,8 +58,8 @@ uv run -m src.interfaces.cli movement rlm --input-file output/action_network_his
 uv run -m src.interfaces.cli movement steam --input-file output/action_network_history.json --show-details
 
 # Backtesting & Performance
-uv run -m src.interfaces.cli backtest run --start-date 2025-06-01 --end-date 2025-08-14 --strategies sharp_action
-uv run -m src.interfaces.cli backtest run --start-date 2025-06-01 --end-date 2025-06-30 --strategies sharp_action --initial-bankroll 10000 --bet-size 100
+uv run -m src.interfaces.cli backtest run --start-date 2025-06-01 --end-date 2025-08-22 --strategies sharp_action
+uv run -m src.interfaces.cli backtest run --start-date 2025-06-01 --end-date 2025-06-22 --strategies sharp_action --initial-bankroll 10000 --bet-size 100
 
 # Database Management
 uv run -m src.interfaces.cli database setup-action-network
