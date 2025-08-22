@@ -14,6 +14,20 @@ from rich.console import Console
 
 from ....core.config import get_settings
 
+# Validation service import guard
+VALIDATION_AVAILABLE = True
+VALIDATION_ERROR = None
+
+try:
+    from ....ml.validation.model_validation_service import ModelValidationService
+    from ....ml.validation.quality_gates import ModelQualityGates, ValidationStatus
+except ImportError as e:
+    VALIDATION_AVAILABLE = False
+    VALIDATION_ERROR = str(e)
+    ModelValidationService = None
+    ModelQualityGates = None
+    ValidationStatus = None
+
 console = Console()
 
 # Import guards for ML training module - addresses critical code review issue
@@ -619,6 +633,182 @@ else:
         console.print("• [bold cyan]uv run -m src.interfaces.cli ml setup[/bold cyan]")
         console.print("• [bold cyan]uv run -m src.interfaces.cli ml test-connection[/bold cyan]")
         console.print("• Check ML module implementations in src/ml/")
+        raise click.Abort()
+
+
+# Add validation commands if available
+if VALIDATION_AVAILABLE:
+    @ml.command("validate")
+    @click.option(
+        "--model-name",
+        required=True,
+        help="Name of model to validate"
+    )
+    @click.option(
+        "--model-version",
+        help="Specific model version (default: latest)"
+    )
+    @click.option(
+        "--test-data-days",
+        default=30,
+        help="Days of test data to use (default: 30)"
+    )
+    @click.option(
+        "--save-report",
+        is_flag=True,
+        help="Save validation report to file"
+    )
+    def validate_model(model_name: str, model_version: str, test_data_days: int, save_report: bool):
+        """Validate model performance against quality gates."""
+        
+        async def _validate_model():
+            try:
+                console.print(f"🤖 [bold blue]Validating Model: {model_name}[/bold blue]")
+                
+                # Initialize validation service
+                validator = ModelValidationService()
+                
+                # Load test data (simplified for now)
+                import pandas as pd
+                import numpy as np
+                
+                # Generate mock test data for demonstration
+                # In production, this would load real test data from the database
+                n_samples = 100
+                n_features = 10
+                
+                # Generate realistic test data
+                np.random.seed(42)
+                X_mock = np.random.rand(n_samples, n_features)
+                y_mock = np.random.choice([0, 1], size=n_samples, p=[0.45, 0.55])
+                
+                test_data = pd.DataFrame(
+                    np.column_stack([X_mock, y_mock]),
+                    columns=[f"feature_{i}" for i in range(n_features)] + ["target"]
+                )
+                
+                console.print(f"📊 Using {len(test_data)} test samples from last {test_data_days} days")
+                
+                # Run validation
+                validation_results = await validator.validate_model_performance(
+                    model_name=model_name,
+                    test_data=test_data,
+                    model_version=model_version
+                )
+                
+                # Display results
+                console.print("\n" + "="*60)
+                console.print(f"🎯 [bold]Validation Results for {model_name}[/bold]")
+                console.print("="*60)
+                
+                status = validation_results.get('overall_status', 'UNKNOWN')
+                approved = validation_results.get('deployment_approved', False)
+                
+                if status == 'PASS':
+                    console.print(f"Status: [green]✅ {status}[/green]")
+                elif status == 'WARNING':
+                    console.print(f"Status: [yellow]⚠️ {status}[/yellow]")
+                else:
+                    console.print(f"Status: [red]❌ {status}[/red]")
+                
+                console.print(f"Deployment Approved: [{'green' if approved else 'red'}]{approved}[/{'green' if approved else 'red'}]")
+                
+                # Show key metrics
+                performance = validation_results.get('performance_metrics', {})
+                business = validation_results.get('business_metrics', {})
+                
+                console.print("\n📈 [bold]Performance Metrics:[/bold]")
+                for metric, value in performance.items():
+                    console.print(f"  {metric}: {value:.4f}")
+                
+                console.print("\n💰 [bold]Business Metrics:[/bold]")
+                for metric, value in business.items():
+                    console.print(f"  {metric}: {value:.4f}")
+                
+                # Show validation details
+                console.print("\n🔍 [bold]Validation Details:[/bold]")
+                validation_details = validation_results.get('validation_results', {})
+                
+                for metric_name, details in validation_details.items():
+                    status_symbol = "✅" if details['status'] == "PASS" else "❌" if details['status'] == "FAIL" else "⚠️"
+                    console.print(f"  {status_symbol} {metric_name}: {details['actual_value']:.4f} "
+                                f"(min: {details['expected_min']:.4f}) - {details['message']}")
+                
+                # Save report if requested
+                if save_report:
+                    from pathlib import Path
+                    report_dir = Path("reports/ml_validation")
+                    report_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    timestamp = validation_results.get('validation_timestamp', '').replace(':', '-')
+                    report_file = report_dir / f"validation_{model_name}_{timestamp}.md"
+                    
+                    report_content = await validator.generate_validation_report(
+                        validation_results, report_file
+                    )
+                    
+                    console.print(f"\n📄 Validation report saved to: [cyan]{report_file}[/cyan]")
+                
+                # Show recommendation
+                console.print("\n🚀 [bold]Recommendation:[/bold]")
+                if approved:
+                    console.print("[green]✅ APPROVED FOR DEPLOYMENT[/green]")
+                elif status == 'WARNING':
+                    console.print("[yellow]⚠️ DEPLOYMENT WITH CAUTION[/yellow]")
+                else:
+                    console.print("[red]🚫 DEPLOYMENT BLOCKED[/red]")
+                
+            except Exception as e:
+                console.print(f"[red]❌ Validation failed: {str(e)}[/red]")
+                raise click.Abort()
+        
+        import asyncio
+        asyncio.run(_validate_model())
+
+    @ml.command("quality-gates")
+    def show_quality_gates():
+        """Show current model quality gates and thresholds."""
+        console.print("🚪 [bold blue]Model Quality Gates[/bold blue]")
+        
+        gates = ModelQualityGates()
+        all_thresholds = gates.get_all_thresholds()
+        
+        # Group thresholds by category
+        categories = {
+            "Accuracy Metrics": gates.accuracy_thresholds,
+            "Business Metrics": gates.business_metric_thresholds,
+            "Stability Metrics": gates.stability_thresholds,
+            "Performance Metrics": gates.performance_thresholds
+        }
+        
+        for category_name, thresholds in categories.items():
+            console.print(f"\n📊 [bold]{category_name}:[/bold]")
+            
+            for name, threshold in thresholds.items():
+                critical_marker = "🔴" if threshold.critical else "🟡"
+                min_val = f"{threshold.minimum_value:.3f}"
+                max_val = f" - {threshold.maximum_value:.3f}" if threshold.maximum_value else ""
+                
+                console.print(f"  {critical_marker} {name}: ≥{min_val}{max_val}")
+                console.print(f"     {threshold.description}")
+        
+        console.print("\n🔴 Critical (deployment blocking) | 🟡 Warning only")
+
+else:
+    @ml.command("validate")
+    def validate_unavailable():
+        """Model validation (currently unavailable)."""
+        console.print(f"[red]❌ Model validation not available: {VALIDATION_ERROR}[/red]")
+        console.print("\n[yellow]This may be because:[/yellow]")
+        console.print("• Validation service dependencies not installed")
+        console.print("• Missing ML validation modules")
+        console.print("• Import path issues")
+        raise click.Abort()
+
+    @ml.command("quality-gates")
+    def quality_gates_unavailable():
+        """Model quality gates (currently unavailable)."""
+        console.print(f"[red]❌ Quality gates not available: {VALIDATION_ERROR}[/red]")
         raise click.Abort()
 
 

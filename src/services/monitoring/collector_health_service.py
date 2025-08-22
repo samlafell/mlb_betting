@@ -143,13 +143,13 @@ class CollectorHealthMonitor:
         if self.circuit_breaker.is_open():
             logger.warning(
                 "Circuit breaker is open, skipping health checks",
-                collector=self.collector.source.value,
+                collector=self.collector.source,
                 failure_count=self.circuit_breaker.failure_count,
                 state=self.circuit_breaker.state,
             )
 
             return CollectorHealthStatus(
-                collector_name=self.collector.source.value,
+                collector_name=self.collector.source,
                 overall_status=HealthStatus.CRITICAL,
                 checks=[
                     HealthCheckResult(
@@ -166,7 +166,7 @@ class CollectorHealthMonitor:
 
         logger.info(
             "Running health checks for collector",
-            collector=self.collector.source.value,
+            collector=self.collector.source,
             checks=["connectivity", "parsing", "schema", "performance"],
         )
 
@@ -194,7 +194,7 @@ class CollectorHealthMonitor:
                     if isinstance(result, Exception):
                         logger.error(
                             "Parallel health check failed",
-                            collector=self.collector.source.value,
+                            collector=self.collector.source,
                             error=str(result),
                         )
                         checks.append(
@@ -214,7 +214,7 @@ class CollectorHealthMonitor:
         except Exception as e:
             logger.error(
                 "Health check execution failed",
-                collector=self.collector.source.value,
+                collector=self.collector.source,
                 error=str(e),
             )
             checks.append(
@@ -247,7 +247,7 @@ class CollectorHealthMonitor:
             self.check_history = self.check_history[excess_count:]
             logger.debug(
                 "Trimmed health check history",
-                collector=self.collector.source.value,
+                collector=self.collector.source,
                 removed_entries=excess_count,
                 remaining_entries=len(self.check_history),
             )
@@ -257,7 +257,7 @@ class CollectorHealthMonitor:
         performance_score = self._calculate_performance_score(checks)
 
         return CollectorHealthStatus(
-            collector_name=self.collector.source.value,
+            collector_name=self.collector.source,
             overall_status=overall_status,
             checks=checks,
             last_updated=datetime.now(),
@@ -358,7 +358,7 @@ class CollectorHealthMonitor:
                     ):
                         logger.warning(
                             "Parsing check failed, retrying",
-                            collector=self.collector.source.value,
+                            collector=self.collector.source,
                             attempt=attempt + 1,
                             error=error_msg,
                         )
@@ -405,7 +405,7 @@ class CollectorHealthMonitor:
                 if attempt < max_retries - 1 and self._is_retryable_error(error_msg):
                     logger.warning(
                         "Parsing check exception, retrying",
-                        collector=self.collector.source.value,
+                        collector=self.collector.source,
                         attempt=attempt + 1,
                         error=error_msg,
                     )
@@ -673,11 +673,11 @@ class HealthMonitoringOrchestrator:
         }
 
         monitor = CollectorHealthMonitor(collector, monitor_config)
-        self.monitors[collector.source.value] = monitor
+        self.monitors[collector.source] = monitor
 
         logger.info(
             "Registered collector for health monitoring",
-            collector=collector.source.value,
+            collector=collector.source,
             config=monitor_config,
         )
 
