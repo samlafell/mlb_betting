@@ -717,6 +717,36 @@ class PipelineError(UnifiedBettingError):
         )
 
 
+class SchedulingError(UnifiedBettingError):
+    """Raised when scheduling operations fail."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        scheduler_id: str | None = None,
+        job_id: str | None = None,
+        schedule_type: str | None = None,
+        **kwargs,
+    ):
+        details = kwargs.get("details", {})
+
+        if scheduler_id:
+            details["scheduler_id"] = scheduler_id
+        if job_id:
+            details["job_id"] = job_id
+        if schedule_type:
+            details["schedule_type"] = schedule_type
+
+        super().__init__(
+            message,
+            component="scheduling",
+            error_code="SCHEDULING_ERROR",
+            details=details,
+            **kwargs,
+        )
+
+
 # Legacy exception aliases for backward compatibility
 # MLBSharpBettingError removed - mlb_sharp_betting directory cleanup
 SportsbookReviewError = UnifiedBettingError  # For sportsbookreview module compatibility

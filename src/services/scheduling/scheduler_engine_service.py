@@ -35,9 +35,9 @@ from apscheduler.triggers.date import DateTrigger
 
 from ...core.config import get_settings
 from ...core.exceptions import SchedulingError
-from ...core.logging import get_logger
+import structlog
 
-logger = get_logger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class SchedulerJobType(str, Enum):
@@ -217,10 +217,11 @@ class SchedulerEngineService:
             timezone="UTC",
         )
 
-        # Add job event listeners
+        # Add job event listeners (APScheduler 3.x compatible)
+        from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
         self.scheduler.add_listener(
             self._job_executed_listener,
-            events=["EVENT_JOB_EXECUTED", "EVENT_JOB_ERROR"],
+            EVENT_JOB_EXECUTED | EVENT_JOB_ERROR
         )
 
     def _setup_signal_handlers(self):
@@ -552,18 +553,61 @@ class SchedulerEngineService:
         self.logger.info("Starting hourly data collection")
 
         try:
-            # This would integrate with the unified data collection service
-            # For now, we'll use a placeholder
-            await asyncio.sleep(1)  # Simulate work
+            # Use subprocess to run the CLI command that we know works
+            import subprocess
+            import os
+            
+            # Set environment for database password
+            env = os.environ.copy()
+            env["DB_PASSWORD"] = "postgres"
+            env["PYTHONPATH"] = "/Users/samlafell/Documents/programming_projects/mlb_betting_program"
+            
+            # Run the data collection CLI command
+            result = subprocess.run([
+                "uv", "run", "-m", "src.interfaces.cli", 
+                "data", "collect", 
+                "--source", "action_network", 
+                "--real"
+            ], 
+                cwd="/Users/samlafell/Documents/programming_projects/mlb_betting_program",
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout
+            )
+            
+            # Check result
+            if result.returncode == 0:
+                # Parse success from stdout (look for game count)
+                games_collected = 0
+                if "games" in result.stdout.lower():
+                    # Try to extract number from output
+                    import re
+                    matches = re.findall(r'(\d+)\s+games', result.stdout.lower())
+                    if matches:
+                        games_collected = int(matches[-1])
+                
+                self.logger.info(
+                    "Automated hourly collection completed successfully", 
+                    games_collected=games_collected,
+                    stdout_preview=result.stdout[:200] + "..." if len(result.stdout) > 200 else result.stdout
+                )
+            else:
+                raise Exception(f"CLI collection failed: {result.stderr[:200]}")
 
             self.metrics.increment("hourly_runs")
             self.metrics.update("last_hourly_run", datetime.now(timezone.utc))
 
-            self.logger.info("Hourly collection completed successfully")
-
         except Exception as e:
-            self.logger.error(f"Hourly handler error: {e}")
-            raise
+            self.logger.error(f"Hourly data collection failed: {e}")
+            self.metrics.increment("errors")
+            
+            # Send error notification
+            if self.config.notifications_enabled:
+                await self._send_error_notification("hourly_data_collection", str(e))
+            
+            # Don't re-raise to prevent scheduler failure
+            # Log and continue with next scheduled run
 
     async def _daily_setup_handler(self) -> None:
         """Handle daily game setup and scheduling."""
