@@ -22,12 +22,12 @@ from ..dependencies import get_redis_client, get_database_connection
 try:
     from ...features.redis_feature_store import RedisFeatureStore
     from ...monitoring.comprehensive_monitoring import get_monitoring_system
-    from ...core.config import get_unified_config
+    from ...core.config import get_settings
 except ImportError:
     # Fallback for environments without these components
     RedisFeatureStore = None
     get_monitoring_system = None
-    get_unified_config = None
+    get_settings = None
 
 logger = logging.getLogger(__name__)
 
@@ -580,7 +580,7 @@ async def detailed_health_check() -> Dict[str, Any]:
         "database_configured": bool(os.getenv("POSTGRES_HOST")),
         "mlflow_configured": bool(os.getenv("MLFLOW_TRACKING_URI")),
         "monitoring_configured": get_monitoring_system is not None,
-        "unified_config_available": get_unified_config is not None
+        "unified_config_available": get_settings is not None
     }
     
     # Calculate overall status

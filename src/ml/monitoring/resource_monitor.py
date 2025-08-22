@@ -18,9 +18,9 @@ from pathlib import Path
 import psutil
 
 try:
-    from ...core.config import get_unified_config
+    from ...core.config import get_settings
 except ImportError:
-    get_unified_config = None
+    get_settings = None
 
 logger = logging.getLogger(__name__)
 
@@ -143,9 +143,9 @@ class ResourceMonitorConfig:
     
     def __init__(self):
         # Load from unified config if available
-        if get_unified_config:
+        if get_settings:
             try:
-                config = get_unified_config()
+                config = get_settings()
                 ml_config = config.ml_pipeline
                 
                 # CPU Thresholds

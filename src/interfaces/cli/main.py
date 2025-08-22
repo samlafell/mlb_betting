@@ -17,10 +17,12 @@ from src.interfaces.cli.commands.data import DataCommands
 from src.interfaces.cli.commands.data_quality_improvement import data_quality_group
 from src.interfaces.cli.commands.game_outcomes import outcomes
 from src.interfaces.cli.commands.ml_commands import ml
+from src.interfaces.cli.commands.ml_pipeline import ml_pipeline
 from src.interfaces.cli.commands.monitoring import MonitoringCommands
 from src.interfaces.cli.commands.movement_analysis import movement
 from src.interfaces.cli.commands.pipeline import pipeline
 from src.interfaces.cli.commands.predictions import create_predictions_commands
+from src.interfaces.cli.commands.production_readiness import production
 from src.interfaces.cli.commands.quickstart import quickstart
 from src.interfaces.cli.commands.setup_database import database
 
@@ -84,6 +86,8 @@ cli.add_command(curated)  # Add the CURATED zone management commands
 # Old staging commands removed - use historical approach via action-network pipeline
 cli.add_command(cleanup)  # Add the output folder cleanup command
 cli.add_command(ml)  # Add the ML experiment management commands
+cli.add_command(ml_pipeline)  # Add the ML pipeline management commands
+cli.add_command(production)  # Add the production readiness and deployment validation commands
 
 
 if __name__ == "__main__":

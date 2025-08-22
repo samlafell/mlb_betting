@@ -25,9 +25,9 @@ except ImportError:
 
 # Import configuration
 try:
-    from ...core.config import get_unified_config
+    from ...core.config import get_settings
 except ImportError:
-    get_unified_config = None
+    get_settings = None
 
 logger = logging.getLogger(__name__)
 
@@ -119,9 +119,9 @@ class AdaptiveResourceManager:
         
         # Get configuration
         self.config = None
-        if get_unified_config:
+        if get_settings:
             try:
-                self.config = get_unified_config()
+                self.config = get_settings()
                 self.ml_config = self.config.ml_pipeline
             except Exception as e:
                 logger.warning(f"Failed to load unified config: {e}")

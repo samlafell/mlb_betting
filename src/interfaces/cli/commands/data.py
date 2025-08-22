@@ -1061,7 +1061,24 @@ class DataCommands:
             return {"status": "error", "error": str(e)}
 
     async def _show_status(self, detailed: bool):
-        """Show unified data source status and completion levels."""
+        """Show unified data source status with actual system health validation."""
+        
+        # Import enhanced error handling
+        from ..enhanced_error_handling import EnhancedCLIValidator
+        
+        # Run actual system health check
+        validator = EnhancedCLIValidator()
+        
+        # Show real system health first
+        console.print("🔍 [bold]Running Real System Health Check...[/bold]")
+        health_report = await validator.validate_system_health(
+            include_database=True,
+            include_collectors=detailed
+        )
+        
+        validator.display_health_report(health_report, detailed)
+        
+        # Show unified architecture status
         console.print(
             Panel.fit(
                 "[bold blue]📊 Unified Data Source Status[/bold blue]",
@@ -1070,7 +1087,7 @@ class DataCommands:
         )
 
         # Create status table
-        table = Table(title="📊 Unified Data Source Status", show_header=True)
+        table = Table(title="📊 Data Source Integration Status", show_header=True)
         table.add_column("Source", style="cyan", no_wrap=True)
         table.add_column("Status", style="green")
         table.add_column("Architecture", justify="center")
@@ -1114,6 +1131,13 @@ class DataCommands:
         console.print("  • Unified rate limiting and error handling")
         console.print("  • Consistent data validation and storage")
         console.print("  • Single entry point for all data operations")
+        
+        # Production readiness advice
+        if health_report["overall_status"].value != "healthy":
+            console.print("\n⚠️ [bold yellow]Production Readiness Notes:[/bold yellow]")
+            console.print("  • System health issues detected - see recommendations above")
+            console.print("  • Use --dry-run flags for safe testing")
+            console.print("  • Address critical issues before production deployment")
 
     def _get_source_completion_status(self, source: DataSource) -> str:
         """Get completion status description for a source in unified architecture."""

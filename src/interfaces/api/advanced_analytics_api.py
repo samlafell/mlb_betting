@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 from ...core.config import get_settings
 from ...core.enhanced_logging import get_contextual_logger, LogComponent
 from ...core.exceptions import handle_exception, DatabaseError, AnalyticsError
-from ...data.database.connection import get_db_connection
+from ...data.database.connection import get_database_connection
 from ...data.models.unified.betting_analysis import BettingAnalysis, BettingSignalType
 from ...data.models.unified.movement_analysis import GameMovementAnalysis, LineMovementDetail
 from ...services.monitoring.prometheus_metrics_service import get_metrics_service
@@ -145,7 +145,7 @@ async def get_line_movement_chart_data(
 ):
     """Get interactive line movement chart data for a specific game."""
     try:
-        async with get_db_connection() as db:
+        async with get_database_connection() as db:
             # Get game information
             game_query = """
                 SELECT id, home_team, away_team, game_datetime
@@ -282,7 +282,7 @@ async def perform_statistical_analysis(
 ):
     """Perform advanced statistical analysis on betting data."""
     try:
-        async with get_db_connection() as db:
+        async with get_database_connection() as db:
             # Build query based on filters
             base_query = """
                 SELECT 
@@ -377,7 +377,7 @@ async def get_performance_attribution(
 ):
     """Get detailed performance attribution analysis."""
     try:
-        async with get_db_connection() as db:
+        async with get_database_connection() as db:
             # Default to last 30 days if no dates provided
             if not start_date:
                 start_date = datetime.now(timezone.utc) - timedelta(days=30)
@@ -645,7 +645,7 @@ async def _calculate_confidence_intervals(df: pl.DataFrame) -> Dict[str, Dict[st
 async def get_filter_options():
     """Get available filter options for the analytics dashboard."""
     try:
-        async with get_db_connection() as db:
+        async with get_database_connection() as db:
             # Get available teams
             teams_query = """
                 SELECT DISTINCT home_team as team FROM curated.games_complete 
@@ -719,7 +719,7 @@ async def get_filtered_analytics_data(
 ):
     """Get filtered analytics data based on multiple criteria."""
     try:
-        async with get_db_connection() as db:
+        async with get_database_connection() as db:
             # Build dynamic query based on filters
             base_query = """
                 SELECT 
@@ -859,7 +859,7 @@ async def export_analytics_data(
 ):
     """Export analytics data in various formats with comprehensive filtering."""
     try:
-        async with get_db_connection() as db:
+        async with get_database_connection() as db:
             export_data = None
             filename_base = f"{export_type}_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             

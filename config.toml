@@ -40,11 +40,82 @@ vsin = "VSIN"  # VSIN
 sbd_url = "https://srfeeds.sportsbettingdime.com/v2/matchups/mlb/betting-splits"
 sbd_books = ["betmgm", "bet365", "fanatics", "draftkings", "caesars", "fanduel"]
 
+[logging]
+# Comprehensive Logging Standards for Production
+log_level = "INFO"                          # Default log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+log_format = "json"                         # Log format: "json" or "text"
+enable_console_output = true                # Enable console logging output
+enable_file_output = true                   # Enable file logging output
+log_file_path = "logs/mlb_betting.log"     # Path to main log file
+enable_log_rotation = true                  # Enable log file rotation
+max_log_file_size_mb = 100                 # Maximum log file size before rotation (MB)
+max_backup_files = 10                      # Number of backup log files to keep
+enable_structured_logging = true           # Enable structured logging with JSON
+enable_correlation_tracking = true         # Enable correlation ID tracking across requests
+enable_performance_logging = true          # Log operation durations and performance metrics
+enable_sensitive_data_masking = true       # Mask sensitive data in logs (passwords, API keys)
+
+# Component-specific log levels
+[logging.components]
+database = "INFO"                          # Database operations logging
+api_client = "INFO"                        # External API client logging
+scraper = "DEBUG"                          # Web scraping operations (verbose for debugging)
+parser = "INFO"                            # Data parsing operations
+validator = "INFO"                         # Data validation logging
+analysis = "INFO"                          # Analysis and strategy logging
+backtesting = "INFO"                       # Backtesting operations
+security = "WARNING"                       # Security events (only warnings and above)
+monitoring = "INFO"                        # System monitoring logging
+cli = "INFO"                               # CLI operations logging
+rate_limiter = "WARNING"                   # Rate limiting events
+circuit_breaker = "WARNING"                # Circuit breaker state changes
+
+# Production logging configurations
+[logging.production]
+enable_audit_logging = true               # Enable audit trail for sensitive operations
+audit_log_file = "logs/audit.log"         # Separate audit log file
+enable_error_aggregation = true           # Aggregate similar errors to reduce noise
+error_aggregation_window_minutes = 5      # Time window for error aggregation
+enable_log_sampling = true                # Enable log sampling for high-volume operations
+log_sampling_rate = 0.1                   # Sample 10% of high-volume logs
+high_volume_operations = ["data_collection", "database_query", "api_request"]
+
+# Security logging
+[logging.security]
+log_authentication_events = true          # Log all authentication attempts
+log_authorization_failures = true         # Log authorization failures
+log_api_key_usage = true                  # Log API key usage (without exposing keys)
+log_database_access = true                # Log database access patterns
+sensitive_fields = ["password", "api_key", "token", "secret", "credential"]
+
 [monitoring]
-# Prometheus metrics configuration
+# Prometheus metrics configuration  
 enable_metrics_sampling = true
 metrics_sample_rate = 0.1  # 10% sampling for high-volume operations
 max_unmapped_resolution_limit = 100  # Maximum unmapped IDs to resolve per batch
+
+# Health check configuration
+[monitoring.health_checks]
+enable_health_endpoints = true            # Enable /health and /status endpoints
+health_check_interval_seconds = 30        # Interval between automated health checks
+cache_health_results_seconds = 30         # Cache health check results for performance
+include_detailed_health = false           # Include detailed diagnostics by default
+enable_database_health_check = true       # Check database connectivity and performance
+enable_service_health_check = true        # Check individual service health
+enable_dependency_health_check = true     # Check external dependency health
+
+# System monitoring thresholds
+[monitoring.thresholds]
+database_response_warning_ms = 500        # Database response time warning threshold
+database_response_critical_ms = 1000      # Database response time critical threshold
+api_response_warning_ms = 2000            # API response time warning threshold
+api_response_critical_ms = 5000           # API response time critical threshold
+error_rate_warning_percent = 1.0          # Error rate warning threshold (%)
+error_rate_critical_percent = 5.0         # Error rate critical threshold (%)
+disk_usage_warning_percent = 80.0         # Disk usage warning threshold (%)
+disk_usage_critical_percent = 90.0        # Disk usage critical threshold (%)
+memory_usage_warning_percent = 75.0       # Memory usage warning threshold (%)
+memory_usage_critical_percent = 85.0      # Memory usage critical threshold (%)
 
 [collection.circuit_breaker]
 # Circuit Breaker Configuration for Collection Health

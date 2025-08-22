@@ -12,7 +12,7 @@ from enum import Enum
 import json
 
 from ...core.config import get_settings
-from ..database.connection_pool import get_db_connection
+from ..database.connection_pool import get_database_connection
 from .mlflow_integration import mlflow_service
 
 logger = logging.getLogger(__name__)
@@ -142,7 +142,7 @@ class ModelMonitoringService:
     ) -> List[PerformanceMetrics]:
         """Get recent performance metrics from database"""
         try:
-            async with get_db_connection() as conn:
+            async with get_database_connection() as conn:
                 where_clause = ""
                 params = [hours_lookback]
 
@@ -213,7 +213,7 @@ class ModelMonitoringService:
             ):
                 return self._baseline_cache
 
-            async with get_db_connection() as conn:
+            async with get_database_connection() as conn:
                 where_clause = ""
                 params = []
 
@@ -481,7 +481,7 @@ class ModelMonitoringService:
             return True
 
         try:
-            async with get_db_connection() as conn:
+            async with get_database_connection() as conn:
                 query = """
                     INSERT INTO curated.ml_performance_alerts (
                         alert_id, model_name, model_version, prediction_type,
