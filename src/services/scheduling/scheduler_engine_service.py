@@ -559,8 +559,8 @@ class SchedulerEngineService:
             
             # Set environment for database password
             env = os.environ.copy()
-            env["DB_PASSWORD"] = "postgres"
-            env["PYTHONPATH"] = "/Users/samlafell/Documents/programming_projects/mlb_betting_program"
+            env["DB_PASSWORD"] = self.settings.database.password
+            env["PYTHONPATH"] = os.getcwd()
             
             # Run the data collection CLI command
             result = subprocess.run([
