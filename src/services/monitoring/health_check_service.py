@@ -92,6 +92,7 @@ class HealthStatus(str, Enum):
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"
+    CRITICAL = "critical"
     UNKNOWN = "unknown"
 
 
@@ -274,19 +275,57 @@ class HealthCheckService:
 
         conn = None
         try:
-            # Use connection pool with timeout for health checks
-            conn = await asyncio.wait_for(
-                asyncpg.connect(
-                    host=self.settings.database.host,
-                    port=self.settings.database.port,
-                    user=self.settings.database.user,
-                    password=self.settings.database.password,
-                    database=self.settings.database.database,
-                    command_timeout=self.config.query_timeout_seconds,
-                    server_settings={"application_name": "health_check"},
-                ),
-                timeout=self.config.connection_timeout_seconds,
-            )
+            # Validate database configuration structure exists
+            if not hasattr(self.settings, 'database'):
+                return ServiceHealth(
+                    name=service_name,
+                    status=HealthStatus.CRITICAL,
+                    message="Database configuration section missing from settings",
+                    response_time_ms=0.0,
+                    last_check=datetime.now(),
+                    error_count=1,
+                    metadata={"error_type": "ConfigurationError", "missing_section": "database"},
+                )
+            
+            # Validate required database configuration fields
+            required_fields = ['host', 'port', 'user', 'password', 'database']
+            missing_fields = []
+            for field in required_fields:
+                if not hasattr(self.settings.database, field):
+                    missing_fields.append(field)
+            
+            if missing_fields:
+                return ServiceHealth(
+                    name=service_name,
+                    status=HealthStatus.CRITICAL,
+                    message=f"Missing database configuration fields: {', '.join(missing_fields)}",
+                    response_time_ms=0.0,
+                    last_check=datetime.now(),
+                    error_count=1,
+                    metadata={"error_type": "ConfigurationError", "missing_fields": missing_fields},
+                )
+            
+            # Try to use connection pool infrastructure first
+            try:
+                from ...data.database.connection import get_connection
+                conn = await asyncio.wait_for(
+                    get_connection(),
+                    timeout=self.config.connection_timeout_seconds,
+                )
+            except Exception as pool_error:
+                # Fallback to direct connection if pool unavailable
+                conn = await asyncio.wait_for(
+                    asyncpg.connect(
+                        host=self.settings.database.host,
+                        port=self.settings.database.port,
+                        user=self.settings.database.user,
+                        password=self.settings.database.password,
+                        database=self.settings.database.database,
+                        command_timeout=self.config.query_timeout_seconds,
+                        server_settings={"application_name": "health_check"},
+                    ),
+                    timeout=self.config.connection_timeout_seconds,
+                )
 
             # Test basic connectivity with timeout
             await asyncio.wait_for(
@@ -374,6 +413,15 @@ class HealthCheckService:
             self._db_circuit_breaker.record_failure()
             response_time = (time.time() - start_time) * 1000
 
+            self.logger.error(
+                "Database health check timeout",
+                operation="database_health_check",
+                timeout_seconds=self.config.connection_timeout_seconds,
+                response_time_ms=response_time,
+                circuit_breaker_state=self._db_circuit_breaker.state,
+                retry_suggested=True,
+            )
+
             return ServiceHealth(
                 name=service_name,
                 status=HealthStatus.CRITICAL,
@@ -385,6 +433,67 @@ class HealthCheckService:
                     "error_type": "TimeoutError",
                     "circuit_breaker_state": self._db_circuit_breaker.state,
                     "timeout_threshold": self.config.connection_timeout_seconds,
+                    "recovery_suggestion": "Check database server availability and network connectivity",
+                    "retry_recommended": True,
+                },
+            )
+
+        except (ConnectionRefusedError, OSError) as e:
+            # Network-related errors - specific handling
+            self._db_circuit_breaker.record_failure()
+            response_time = (time.time() - start_time) * 1000
+
+            self.logger.error(
+                "Database connection network error",
+                operation="database_health_check",
+                error_type=type(e).__name__,
+                error_message=str(e),
+                response_time_ms=response_time,
+                circuit_breaker_state=self._db_circuit_breaker.state,
+            )
+
+            return ServiceHealth(
+                name=service_name,
+                status=HealthStatus.CRITICAL,
+                message=f"Database network error: {str(e)}",
+                response_time_ms=response_time,
+                last_check=datetime.now(),
+                error_count=1,
+                metadata={
+                    "error_type": type(e).__name__,
+                    "error_category": "network",
+                    "circuit_breaker_state": self._db_circuit_breaker.state,
+                    "recovery_suggestion": "Verify database server is running and network configuration",
+                    "check_database_status": True,
+                },
+            )
+
+        except (asyncpg.InvalidAuthorizationSpecificationError, asyncpg.InvalidPasswordError) as e:
+            # Authentication errors - specific handling
+            self._db_circuit_breaker.record_failure()
+            response_time = (time.time() - start_time) * 1000
+
+            self.logger.error(
+                "Database authentication error",
+                operation="database_health_check",
+                error_type=type(e).__name__,
+                response_time_ms=response_time,
+                circuit_breaker_state=self._db_circuit_breaker.state,
+            )
+
+            return ServiceHealth(
+                name=service_name,
+                status=HealthStatus.CRITICAL,
+                message="Database authentication failed",
+                response_time_ms=response_time,
+                last_check=datetime.now(),
+                error_count=1,
+                metadata={
+                    "error_type": type(e).__name__,
+                    "error_category": "authentication",
+                    "circuit_breaker_state": self._db_circuit_breaker.state,
+                    "recovery_suggestion": "Verify database credentials and user permissions",
+                    "check_credentials": True,
                 },
             )
 
@@ -392,6 +501,15 @@ class HealthCheckService:
             # Record failure in circuit breaker
             self._db_circuit_breaker.record_failure()
             response_time = (time.time() - start_time) * 1000
+
+            self.logger.error(
+                "Database health check unexpected error",
+                operation="database_health_check",
+                error_type=type(e).__name__,
+                error_message=str(e),
+                response_time_ms=response_time,
+                circuit_breaker_state=self._db_circuit_breaker.state,
+            )
 
             return ServiceHealth(
                 name=service_name,
@@ -403,7 +521,9 @@ class HealthCheckService:
                 metadata={
                     "error_type": type(e).__name__,
                     "error_message": str(e),
+                    "error_category": "unexpected",
                     "circuit_breaker_state": self._db_circuit_breaker.state,
+                    "recovery_suggestion": "Review logs for detailed error analysis",
                 },
             )
         finally:
@@ -445,6 +565,24 @@ class HealthCheckService:
                 try:
                     collector = get_collector_instance(collector_name)
                     collectors_status[collector_name] = "available"
+                except ImportError as e:
+                    # Import errors are system-level failures
+                    self._collection_circuit_breaker.record_failure()
+                    response_time = (time.time() - start_time) * 1000
+                    
+                    return ServiceHealth(
+                        name=service_name,
+                        status=HealthStatus.UNHEALTHY,
+                        message=f"Collector registry import failed: {str(e)}",
+                        response_time_ms=response_time,
+                        last_check=datetime.now(),
+                        error_count=1,
+                        metadata={
+                            "error_type": "ImportError",
+                            "circuit_breaker_state": self._collection_circuit_breaker.state,
+                            "recovery_action": "check_collector_registry_availability",
+                        },
+                    )
                 except Exception as e:
                     collectors_status[collector_name] = f"error: {str(e)}"
 
@@ -655,9 +793,14 @@ class HealthCheckService:
         service_name = "cli"
 
         try:
-            # Test CLI module imports
-            from ...interfaces.cli.main import main
-            from ...interfaces.cli.enhanced_error_handling import EnhancedCLIValidator
+            # Test CLI module imports - just import the module, don't need specific functions
+            import src.interfaces.cli.main
+            # Check if enhanced error handling is available (it might not exist)
+            try:
+                from ...interfaces.cli.enhanced_error_handling import EnhancedCLIValidator
+                enhanced_error_handling = True
+            except ImportError:
+                enhanced_error_handling = False
 
             response_time = (time.time() - start_time) * 1000
 
@@ -669,7 +812,7 @@ class HealthCheckService:
                 last_check=datetime.now(),
                 metadata={
                     "main_module_imported": True,
-                    "enhanced_error_handling": True,
+                    "enhanced_error_handling": enhanced_error_handling,
                 },
             )
 
@@ -726,13 +869,18 @@ class HealthCheckService:
         if not services:
             return HealthStatus.UNKNOWN
 
+        critical_count = sum(1 for s in services if s.status == HealthStatus.CRITICAL)
         unhealthy_count = sum(1 for s in services if s.status == HealthStatus.UNHEALTHY)
         degraded_count = sum(1 for s in services if s.status == HealthStatus.DEGRADED)
 
+        # If any service is critical, system is critical
+        if critical_count > 0:
+            return HealthStatus.CRITICAL
+        
         # If any critical service is unhealthy, system is unhealthy
         critical_services = ["database", "configuration"]
         critical_unhealthy = any(
-            s.status == HealthStatus.UNHEALTHY
+            s.status in [HealthStatus.UNHEALTHY, HealthStatus.CRITICAL]
             for s in services
             if s.name in critical_services
         )
