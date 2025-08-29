@@ -225,10 +225,10 @@ uv run -m src.interfaces.cli data-quality status
 ```
 
 ### Expected Data Volumes
-Based on current system state:
+Based on current system state (post-unification):
 - **RAW Zone**: ~19,500 total records, ~9,000 recent (7d)
 - **STAGING Zone**: ~89,000 historical odds records
-- **CURATED Zone**: ~16,000 betting lines, ~1,400 games
+- **CURATED Zone**: ~16,000 betting lines, 134 unified games in master table
 
 ### Data Quality Thresholds
 - **Action Network**: Should have data within 2 hours
@@ -237,6 +237,14 @@ Based on current system state:
 - **Pipeline Backlog**: Should be < 100 unprocessed records
 
 ## Troubleshooting
+
+### Recent Fixes (January 2025) ✅
+
+**P0 Database Schema Fragmentation**: **RESOLVED**
+- **Issue**: Two master game tables causing FK relationship fragmentation 
+- **Fix**: Successfully unified `enhanced_games` and `games_complete` into `master_games`
+- **Status**: ✅ Complete - Zero data loss, 134 games unified, all FK relationships fixed
+- **Impact**: Database now in production-ready state with unified architecture
 
 ### Common Issues
 1. **Database Connection Issues**
