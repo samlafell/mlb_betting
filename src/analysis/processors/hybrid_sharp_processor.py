@@ -239,13 +239,9 @@ class UnifiedHybridSharpProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
             hybrid_data = []
 
             # Import database connection for real data queries
-            from src.core.config import get_settings
-            from src.data.database.connection import DatabaseConnection
+            from src.data.database.connection import get_connection
 
-            config = get_settings()
-            db_connection = DatabaseConnection(config.database.connection_string)
-
-            async with db_connection.get_async_connection() as conn:
+            async with get_connection() as conn:
                 for game in game_data:
                     game_id = game.get("game_id")
                     if not game_id:
@@ -951,13 +947,9 @@ class UnifiedHybridSharpProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
             List of game data dictionaries
         """
         try:
-            from src.core.config import get_settings
-            from src.data.database.connection import DatabaseConnection
+            from src.data.database.connection import get_connection
 
-            config = get_settings()
-            db_connection = DatabaseConnection(config.database.connection_string)
-
-            async with db_connection.get_async_connection() as conn:
+            async with get_connection() as conn:
                 # Get upcoming games that have betting data available
                 query = """
                     SELECT DISTINCT
