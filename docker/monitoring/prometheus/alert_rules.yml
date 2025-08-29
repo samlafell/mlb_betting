@@ -1,0 +1,395 @@
+# Prometheus Alert Rules for MLB Betting System
+# Production-ready alerting with comprehensive coverage
+
+groups:
+  # ============================================================================
+  # SYSTEM HEALTH ALERTS
+  # ============================================================================
+  
+  - name: system_health
+    rules:
+      # Service down alerts
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "Service {{ $labels.job }} on {{ $labels.instance }} is down"
+          description: "Service {{ $labels.job }} on {{ $labels.instance }} has been down for more than 1 minute."
+          runbook_url: "https://wiki.example.com/runbooks/service-down"
+          dashboard_url: "https://grafana.example.com/d/mlb-betting-prod"
+
+      # High CPU usage
+      - alert: HighCPUUsage
+        expr: 100 - (avg(irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is above 80% for more than 5 minutes on {{ $labels.instance }}."
+          resource_usage: "{{ $value }}%"
+          autoscaling_status: "{{ if $labels.autoscaling_enabled }}enabled{{ else }}disabled{{ end }}"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is above 85% for more than 5 minutes on {{ $labels.instance }}."
+          resource_usage: "{{ $value }}%"
+
+      # Disk space usage
+      - alert: DiskSpaceUsage
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100 > 85
+        for: 2m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}"
+          description: "Disk space usage is above 85% on {{ $labels.instance }} mount {{ $labels.mountpoint }}."
+          resource_usage: "{{ $value }}%"
+
+  # ============================================================================
+  # API PERFORMANCE ALERTS
+  # ============================================================================
+  
+  - name: api_performance
+    rules:
+      # High API response time
+      - alert: APISlowResponse
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="mlb-betting-system"}[5m])) * 1000 > 500
+        for: 3m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "API response time is slow"
+          description: "95th percentile response time is above 500ms for more than 3 minutes."
+          dashboard_url: "https://grafana.example.com/d/mlb-betting-prod"
+
+      # High API error rate
+      - alert: APIHighErrorRate
+        expr: rate(http_requests_total{job="mlb-betting-system",status=~"5.."}[5m]) / rate(http_requests_total{job="mlb-betting-system"}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "High API error rate"
+          description: "API error rate is above 5% for more than 2 minutes."
+          business_impact: "User experience degraded, potential revenue loss"
+
+      # Low API request rate (might indicate issues)
+      - alert: APILowRequestRate
+        expr: rate(http_requests_total{job="mlb-betting-system"}[5m]) < 1
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "API request rate is unusually low"
+          description: "API request rate is below 1 req/sec for more than 5 minutes during expected active hours."
+
+  # ============================================================================
+  # DATABASE ALERTS
+  # ============================================================================
+  
+  - name: database
+    rules:
+      # Database connection issues
+      - alert: DatabaseDown
+        expr: pg_up == 0
+        for: 30s
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "PostgreSQL database is down"
+          description: "PostgreSQL database {{ $labels.database }} on {{ $labels.instance }} is unreachable."
+          query_impact: "All database operations affected"
+          runbook_url: "https://wiki.example.com/runbooks/database-down"
+
+      # Slow database queries
+      - alert: DatabaseSlowQueries
+        expr: rate(postgresql_query_duration_seconds_sum[5m]) / rate(postgresql_query_duration_seconds_count[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Database queries are slow"
+          description: "Average query time is above 500ms for more than 5 minutes."
+          query_impact: "Performance degraded, potential timeout issues"
+
+      # High database connections
+      - alert: DatabaseHighConnections
+        expr: postgresql_connections > 80
+        for: 2m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "High number of database connections"
+          description: "Number of database connections is above 80 for {{ $labels.database }}."
+
+      # Database lock waits
+      - alert: DatabaseLockWaits
+        expr: postgresql_lock_waits_total > 10
+        for: 1m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Database has lock waits"
+          description: "Database {{ $labels.database }} has more than 10 lock waits."
+          query_impact: "Query performance may be affected"
+
+  # ============================================================================
+  # BUSINESS LOGIC ALERTS
+  # ============================================================================
+  
+  - name: betting_business
+    rules:
+      # Low betting opportunity detection
+      - alert: LowBettingOpportunities
+        expr: rate(betting_opportunities_detected_total[1h]) < 5
+        for: 10m
+        labels:
+          severity: warning
+          component: betting
+        annotations:
+          summary: "Low betting opportunity detection rate"
+          description: "Betting opportunities detected per hour is below 5 for more than 10 minutes."
+          business_impact: "Potential revenue opportunities missed"
+          revenue_impact: "Estimated ${{ $value * 100 }} per hour"
+
+      # Data collection failures
+      - alert: DataCollectionFailures
+        expr: rate(data_collection_errors_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: critical
+          component: data_pipeline
+          pipeline: data_collection
+        annotations:
+          summary: "High data collection failure rate"
+          description: "Data collection error rate is above 0.1 errors/minute for more than 3 minutes."
+          records_affected: "{{ $value }} records/minute"
+          data_quality_score: "Likely degraded"
+
+      # Poor prediction accuracy
+      - alert: LowPredictionAccuracy
+        expr: betting_prediction_accuracy < 0.6
+        for: 15m
+        labels:
+          severity: warning
+          component: betting
+        annotations:
+          summary: "Betting prediction accuracy is low"
+          description: "Prediction accuracy has been below 60% for more than 15 minutes."
+          business_impact: "Reduced betting confidence, potential losses"
+
+      # ROI dropping below threshold
+      - alert: LowROI
+        expr: betting_roi_percentage < 5
+        for: 30m
+        labels:
+          severity: warning
+          component: betting
+        annotations:
+          summary: "Return on Investment is low"
+          description: "ROI has been below 5% for more than 30 minutes."
+          business_impact: "Profitability at risk"
+          revenue_impact: "Below target profitability"
+
+  # ============================================================================
+  # DATA PIPELINE ALERTS
+  # ============================================================================
+  
+  - name: data_pipeline
+    rules:
+      # Pipeline execution failures
+      - alert: PipelineExecutionFailure
+        expr: increase(pipeline_executions_failed_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          component: data_pipeline
+        annotations:
+          summary: "Data pipeline execution failed"
+          description: "Pipeline {{ $labels.pipeline }} has failed execution."
+          records_affected: "Pipeline specific data"
+          
+      # Long pipeline execution time
+      - alert: PipelineLongExecution
+        expr: histogram_quantile(0.95, rate(pipeline_execution_duration_seconds_bucket[5m])) > 300
+        for: 5m
+        labels:
+          severity: warning
+          component: data_pipeline
+        annotations:
+          summary: "Pipeline execution time is high"
+          description: "95th percentile pipeline execution time is above 5 minutes."
+
+      # Data quality score drop
+      - alert: DataQualityDegraded
+        expr: data_quality_score < 0.8
+        for: 10m
+        labels:
+          severity: warning
+          component: data_pipeline
+        annotations:
+          summary: "Data quality score has degraded"
+          description: "Data quality score has been below 0.8 for more than 10 minutes."
+          data_quality_score: "{{ $value }}"
+
+      # Missing data from sources
+      - alert: DataSourceMissing
+        expr: increase(data_collection_games_collected_total[1h]) == 0 and ON() hour() > 10 and ON() hour() < 23
+        for: 30m
+        labels:
+          severity: critical
+          component: data_pipeline
+          data_source: "{{ $labels.source }}"
+        annotations:
+          summary: "No data collected from {{ $labels.source }}"
+          description: "No games have been collected from {{ $labels.source }} in the last hour during active betting hours."
+          business_impact: "Potential betting opportunities missed"
+
+  # ============================================================================
+  # ML MODEL ALERTS
+  # ============================================================================
+  
+  - name: ml_models
+    rules:
+      # Model prediction failures
+      - alert: ModelPredictionFailures
+        expr: rate(ml_prediction_errors_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          component: ml_models
+        annotations:
+          summary: "High ML model prediction failure rate"
+          description: "ML model prediction error rate is above 0.05 errors/minute."
+
+      # Model drift detected
+      - alert: ModelDriftDetected
+        expr: ml_model_drift_score > 0.3
+        for: 15m
+        labels:
+          severity: warning
+          component: ml_models
+        annotations:
+          summary: "ML model drift detected"
+          description: "Model drift score has been above 0.3 for more than 15 minutes."
+          business_impact: "Model accuracy may be degraded"
+
+      # Feature store issues
+      - alert: FeatureStoreDown
+        expr: redis_up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: ml_models
+        annotations:
+          summary: "Feature store (Redis) is down"
+          description: "Redis feature store is unreachable."
+          business_impact: "ML predictions may fail or use stale features"
+
+  # ============================================================================
+  # SECURITY ALERTS
+  # ============================================================================
+  
+  - name: security
+    rules:
+      # Unusual API access patterns
+      - alert: UnusualAPIAccessPattern
+        expr: rate(http_requests_total[5m]) > 100
+        for: 2m
+        labels:
+          severity: warning
+          component: security
+        annotations:
+          summary: "Unusual API access pattern detected"
+          description: "API request rate is unusually high (>100 req/sec) for more than 2 minutes."
+
+      # Failed authentication attempts
+      - alert: HighFailedAuthentications
+        expr: rate(authentication_failures_total[5m]) > 5
+        for: 1m
+        labels:
+          severity: warning
+          component: security
+        annotations:
+          summary: "High authentication failure rate"
+          description: "Authentication failure rate is above 5 failures/minute."
+
+  # ============================================================================
+  # COST & RESOURCE ALERTS
+  # ============================================================================
+  
+  - name: cost_management
+    rules:
+      # High infrastructure costs
+      - alert: HighInfrastructureCosts
+        expr: roi_infrastructure_costs > 3000
+        for: 5m
+        labels:
+          severity: warning
+          component: cost_management
+        annotations:
+          summary: "Infrastructure costs are high"
+          description: "Infrastructure costs have exceeded $3000."
+          business_impact: "Budget threshold exceeded"
+
+      # Low cost efficiency
+      - alert: LowCostEfficiency
+        expr: roi_cost_per_opportunity > 10
+        for: 15m
+        labels:
+          severity: warning
+          component: cost_management
+        annotations:
+          summary: "Cost per betting opportunity is high"
+          description: "Cost per betting opportunity has been above $10 for more than 15 minutes."
+          business_impact: "ROI efficiency degraded"
+
+  # ============================================================================
+  # BACKUP & DISASTER RECOVERY ALERTS
+  # ============================================================================
+  
+  - name: backup_recovery
+    rules:
+      # Backup failures
+      - alert: BackupFailure
+        expr: increase(backup_failures_total[24h]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          component: backup
+        annotations:
+          summary: "Backup operation failed"
+          description: "A backup operation has failed in the last 24 hours."
+          business_impact: "Data recovery capability at risk"
+
+      # Missing recent backups
+      - alert: MissingRecentBackup
+        expr: time() - backup_last_success_timestamp > 86400
+        for: 1h
+        labels:
+          severity: critical
+          component: backup
+        annotations:
+          summary: "No successful backup in 24 hours"
+          description: "No successful backup has completed in the last 24 hours."
+          business_impact: "Data loss risk increased"

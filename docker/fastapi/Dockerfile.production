@@ -1,0 +1,141 @@
+# Production FastAPI MLB ML Prediction Service
+# Multi-stage build with security hardening and performance optimization
+
+# =============================================================================
+# Builder Stage - Dependencies and optimization
+# =============================================================================
+FROM python:3.11-slim as builder
+
+# Build arguments
+ARG BUILDKIT_INLINE_CACHE=1
+ARG BUILD_DATE
+ARG VCS_REF
+ARG VERSION=1.0.0
+
+# Metadata labels
+LABEL maintainer="MLB DevOps Team" \
+      version="${VERSION}" \
+      description="MLB Betting System - Production FastAPI Service" \
+      build-date="${BUILD_DATE}" \
+      vcs-ref="${VCS_REF}"
+
+# Create non-root user early for security
+RUN groupadd -r mlbuser && useradd -r -g mlbuser mlbuser
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies for building with minimal footprint
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    gcc \
+    g++ \
+    git \
+    pkg-config \
+    libssl-dev \
+    libffi-dev \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Copy requirements and install UV
+COPY --chown=mlbuser:mlbuser pyproject.toml uv.lock ./
+RUN pip install --no-cache-dir uv==0.4.4
+
+# Install dependencies with production optimizations
+RUN uv sync --frozen --no-dev --compile-bytecode && \
+    echo "Production dependencies installed successfully" && \
+    # Clean up any unnecessary files
+    find /app/.venv -name "*.pyc" -delete && \
+    find /app/.venv -name "__pycache__" -type d -exec rm -rf {} + || true
+
+# =============================================================================
+# Production Stage - Optimized runtime
+# =============================================================================
+FROM python:3.11-slim as production
+
+# Build arguments
+ARG BUILD_DATE
+ARG VCS_REF
+ARG VERSION=1.0.0
+
+# Metadata labels
+LABEL maintainer="MLB DevOps Team" \
+      version="${VERSION}" \
+      description="MLB Betting System - Production FastAPI Service" \
+      build-date="${BUILD_DATE}" \
+      vcs-ref="${VCS_REF}"
+
+# Security: Create non-root user
+RUN groupadd -r mlbuser && useradd -r -g mlbuser -m mlbuser
+
+# Set working directory
+WORKDIR /app
+
+# Install only essential runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    libgomp1 \
+    libglib2.0-0 \
+    libpq5 \
+    procps \
+    htop \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Install UV for runtime
+RUN pip install --no-cache-dir uv==0.4.4
+
+# Copy Python environment from builder
+COPY --from=builder --chown=mlbuser:mlbuser /app/.venv /app/.venv
+
+# Copy application code with proper ownership
+COPY --chown=mlbuser:mlbuser src/ ./src/
+COPY --chown=mlbuser:mlbuser config.toml ./
+
+# Create necessary directories with proper permissions
+RUN mkdir -p models logs /home/mlbuser/.cache/uv /app/backups /app/metrics && \
+    chown -R mlbuser:mlbuser models logs /home/mlbuser/.cache /app/backups /app/metrics && \
+    chmod 755 models logs /app/backups /app/metrics && \
+    chmod 750 /home/mlbuser/.cache
+
+# Verify critical dependencies
+RUN uv run --frozen python -c "import polars as pl; print(f'Polars version: {pl.__version__}')" && \
+    uv run --frozen python -c "import fastapi; print(f'FastAPI version: {fastapi.__version__}')" && \
+    uv run --frozen python -c "import asyncpg; print('Database connectivity OK')" || echo "Database driver check failed"
+
+# Set production environment variables
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONHASHSEED=random \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    LOG_LEVEL=INFO \
+    USER=mlbuser \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
+    ENVIRONMENT=production \
+    # Performance optimizations
+    MALLOC_ARENA_MAX=2 \
+    MALLOC_MMAP_THRESHOLD_=131072 \
+    MALLOC_TRIM_THRESHOLD_=131072 \
+    MALLOC_TOP_PAD_=131072 \
+    MALLOC_MMAP_MAX_=65536
+
+# Switch to non-root user for security
+USER mlbuser
+
+# Create startup script for production
+COPY --chown=mlbuser:mlbuser docker/fastapi/startup.sh /app/startup.sh
+RUN chmod +x /app/startup.sh
+
+# Health check with improved robustness and timeout
+HEALTHCHECK --interval=15s --timeout=10s --start-period=90s --retries=5 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Expose port
+EXPOSE 8000
+
+# Production-ready startup with Gunicorn
+CMD ["/app/startup.sh"]
