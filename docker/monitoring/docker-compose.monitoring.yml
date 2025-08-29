@@ -1,0 +1,295 @@
+# 📊 MLB Betting System - Monitoring Stack
+# Comprehensive monitoring and observability for Docker-based production deployment
+# Includes Prometheus, Grafana, Alertmanager, and custom monitoring services
+
+services:
+  # Prometheus - Metrics collection and alerting
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: mlb_prometheus_monitor
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--storage.tsdb.retention.size=10GB'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+      - '--web.enable-remote-write-receiver'
+      - '--enable-feature=exemplar-storage'
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - ./prometheus/alerts:/etc/prometheus/alerts:ro
+      - prometheus_data:/prometheus
+      - ../logs/prometheus:/var/log/prometheus
+    networks:
+      - monitoring
+    labels:
+      - "com.mlb.service=prometheus"
+      - "com.mlb.monitoring=core"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Grafana - Visualization and dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: mlb_grafana_monitor
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_USERS_ALLOW_ORG_CREATE=false
+      - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource,grafana-piechart-panel,grafana-worldmap-panel
+      - GF_FEATURE_TOGGLES_ENABLE=ngalert
+      - GF_ALERTING_ENABLED=true
+      - GF_UNIFIED_ALERTING_ENABLED=true
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ../logs/grafana:/var/log/grafana
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+    labels:
+      - "com.mlb.service=grafana"
+      - "com.mlb.monitoring=visualization"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Alertmanager - Alert routing and notification
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: mlb_alertmanager
+    restart: unless-stopped
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+      - '--cluster.listen-address=0.0.0.0:9094'
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./alertmanager/templates:/etc/alertmanager/templates:ro
+      - alertmanager_data:/alertmanager
+      - ../logs/alertmanager:/var/log/alertmanager
+    networks:
+      - monitoring
+    labels:
+      - "com.mlb.service=alertmanager"
+      - "com.mlb.monitoring=alerting"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Node Exporter - System metrics
+  node_exporter:
+    image: prom/node-exporter:latest
+    container_name: mlb_node_exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    command:
+      - '--path.rootfs=/host'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /:/host:ro,rslave
+    networks:
+      - monitoring
+    labels:
+      - "com.mlb.service=node-exporter"
+      - "com.mlb.monitoring=system"
+
+  # cAdvisor - Container metrics
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: mlb_cadvisor
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    networks:
+      - monitoring
+    labels:
+      - "com.mlb.service=cadvisor"
+      - "com.mlb.monitoring=containers"
+
+  # Loki - Log aggregation
+  loki:
+    image: grafana/loki:latest
+    container_name: mlb_loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/loki.yml
+    volumes:
+      - ./loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/tmp/loki
+      - ../logs/loki:/var/log/loki
+    networks:
+      - monitoring
+    labels:
+      - "com.mlb.service=loki"
+      - "com.mlb.monitoring=logs"
+
+  # Promtail - Log shipper
+  promtail:
+    image: grafana/promtail:latest
+    container_name: mlb_promtail
+    restart: unless-stopped
+    volumes:
+      - ./promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      - ../logs:/var/log/mlb:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command: -config.file=/etc/promtail/promtail.yml
+    networks:
+      - monitoring
+    depends_on:
+      - loki
+    labels:
+      - "com.mlb.service=promtail"
+      - "com.mlb.monitoring=log-shipping"
+
+  # Blackbox Exporter - Endpoint monitoring
+  blackbox_exporter:
+    image: prom/blackbox-exporter:latest
+    container_name: mlb_blackbox_exporter
+    restart: unless-stopped
+    ports:
+      - "9115:9115"
+    volumes:
+      - ./blackbox/blackbox.yml:/etc/blackbox_exporter/blackbox.yml:ro
+    networks:
+      - monitoring
+    labels:
+      - "com.mlb.service=blackbox-exporter"
+      - "com.mlb.monitoring=endpoints"
+
+  # Custom MLB System Monitor
+  system_monitor:
+    build:
+      context: .
+      dockerfile: ./system-monitor/Dockerfile
+    container_name: mlb_system_monitor
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    environment:
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - MONITORING_INTERVAL=30
+      - ALERT_WEBHOOK=${ALERT_WEBHOOK_URL}
+    volumes:
+      - ../logs/system-monitor:/app/logs
+      - ./system-monitor/config.yml:/app/config.yml:ro
+    networks:
+      - monitoring
+      - mlb_network_prod
+    depends_on:
+      - prometheus
+    labels:
+      - "com.mlb.service=system-monitor"
+      - "com.mlb.monitoring=custom"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Betting Performance Monitor
+  betting_monitor:
+    build:
+      context: .
+      dockerfile: ./betting-monitor/Dockerfile
+    container_name: mlb_betting_monitor
+    restart: unless-stopped
+    ports:
+      - "8091:8091"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - MONITORING_INTERVAL=60
+      - PERFORMANCE_THRESHOLD_MS=1000
+      - ROI_ALERT_THRESHOLD=0.02
+      - MAX_EXPOSURE_ALERT=10000
+    volumes:
+      - ../logs/betting-monitor:/app/logs
+      - ./betting-monitor/config.yml:/app/config.yml:ro
+    networks:
+      - monitoring
+      - mlb_network_prod
+    depends_on:
+      - prometheus
+    labels:
+      - "com.mlb.service=betting-monitor"
+      - "com.mlb.monitoring=betting"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8091/health"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+
+volumes:
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+  loki_data:
+    driver: local
+
+networks:
+  monitoring:
+    driver: bridge
+    name: mlb_monitoring
+  mlb_network_prod:
+    external: true
+
+# Monitoring stack metadata
+x-monitoring-info:
+  version: "1.0.0"
+  stack: "mlb-betting-monitoring"
+  components: ["prometheus", "grafana", "alertmanager", "loki", "custom-monitors"]
+  purpose: "24/7 production monitoring and observability"
+  ports:
+    - "3000: Grafana Dashboard"
+    - "9090: Prometheus"
+    - "9093: Alertmanager"
+    - "3100: Loki"
+    - "8080: cAdvisor"
+    - "9100: Node Exporter"
+    - "9115: Blackbox Exporter"
+    - "8090: System Monitor"
+    - "8091: Betting Monitor"

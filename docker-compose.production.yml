@@ -1,0 +1,469 @@
+# 🚀 Production Docker Compose Configuration
+# MLB Betting System - Docker-based Production Deployment
+# Optimized for 24/7 operation with performance and reliability features
+
+services:
+  # PostgreSQL Database - Production-optimized with performance tuning
+  postgres:
+    image: postgres:15-alpine
+    container_name: mlb_postgres_prod
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    environment:
+      # Database Configuration
+      - POSTGRES_DB=${POSTGRES_DB:-mlb_betting}
+      - POSTGRES_USER=${POSTGRES_USER:-samlafell}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      # Performance optimization settings
+      - POSTGRES_INITDB_ARGS=--encoding=UTF8 --lc-collate=C --lc-ctype=C
+      # Connection settings for production load
+      - POSTGRES_MAX_CONNECTIONS=200
+      - POSTGRES_SHARED_BUFFERS=256MB
+      - POSTGRES_EFFECTIVE_CACHE_SIZE=1GB
+      - POSTGRES_MAINTENANCE_WORK_MEM=64MB
+      - POSTGRES_WORK_MEM=4MB
+      - POSTGRES_WAL_BUFFERS=16MB
+      - POSTGRES_CHECKPOINT_COMPLETION_TARGET=0.7
+      - POSTGRES_RANDOM_PAGE_COST=1.1
+    volumes:
+      # Data persistence with performance optimizations
+      - postgres_data_prod:/var/lib/postgresql/data
+      - ./docker/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./docker/postgres/init-production:/docker-entrypoint-initdb.d/
+      - ./logs/postgres:/var/log/postgresql
+      # Performance monitoring
+      - ./docker/postgres/performance:/var/lib/postgresql/performance
+      # Backup storage
+      - ./backups/postgres:/var/lib/postgresql/backups
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 1G
+          cpus: '1.0'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} -h localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    networks:
+      - mlb_network_prod
+    labels:
+      - "com.mlb.service=database"
+      - "com.mlb.environment=production"
+      - "com.mlb.backup.enable=true"
+      - "com.mlb.monitoring.enable=true"
+
+  # Redis - Production cache with persistence and performance optimization
+  redis:
+    image: redis:7-alpine
+    container_name: mlb_redis_prod
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: >
+      redis-server
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --appendfsync everysec
+      --auto-aof-rewrite-percentage 100
+      --auto-aof-rewrite-min-size 64mb
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --tcp-keepalive 300
+      --timeout 0
+      --databases 16
+      --maxclients 10000
+      --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data_prod:/data
+      - ./docker/redis/redis-production.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./logs/redis:/var/log/redis
+      - ./backups/redis:/var/lib/redis/backups
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - mlb_network_prod
+    labels:
+      - "com.mlb.service=cache"
+      - "com.mlb.environment=production"
+      - "com.mlb.backup.enable=true"
+
+  # MLflow - Production model registry with S3 storage
+  mlflow:
+    image: python:3.11-slim
+    container_name: mlb_mlflow_prod
+    restart: unless-stopped
+    ports:
+      - "${MLFLOW_PORT:-5001}:5000"
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - MLFLOW_DEFAULT_ARTIFACT_ROOT=./mlflow/artifacts
+      - MLFLOW_HOST=0.0.0.0
+      - MLFLOW_PORT=5000
+      - MLFLOW_WORKERS=2
+      - MLFLOW_MAX_REQUEST_SIZE=100MB
+    volumes:
+      - mlflow_artifacts_prod:/mlflow/artifacts
+      - ./logs/mlflow:/mlflow/logs
+      - ./backups/mlflow:/mlflow/backups
+    command: |
+      sh -c "
+        pip install --no-cache-dir mlflow[extras] psycopg2-binary gunicorn && 
+        mlflow server \
+          --backend-store-uri $${MLFLOW_BACKEND_STORE_URI} \
+          --default-artifact-root $${MLFLOW_DEFAULT_ARTIFACT_ROOT} \
+          --host $${MLFLOW_HOST} \
+          --port $${MLFLOW_PORT} \
+          --serve-artifacts \
+          --gunicorn-opts '--workers 2 --timeout 60 --keep-alive 2 --max-requests 1000'
+      "
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 120s
+    networks:
+      - mlb_network_prod
+    labels:
+      - "com.mlb.service=mlflow"
+      - "com.mlb.environment=production"
+
+  # FastAPI - Production ML service with performance optimization
+  fastapi:
+    build:
+      context: .
+      dockerfile: docker/fastapi/Dockerfile.production
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    container_name: mlb_fastapi_prod
+    restart: unless-stopped
+    ports:
+      - "${FASTAPI_PORT:-8000}:8000"
+    environment:
+      # Database configuration
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      # Redis configuration
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      # MLflow configuration
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      # Production application settings
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - MAX_WORKERS=4
+      - WORKER_TIMEOUT=300
+      - KEEPALIVE=2
+      - PRELOAD_APP=true
+      - MAX_REQUESTS=1000
+      - MAX_REQUESTS_JITTER=50
+      # Python configuration
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - UV_PROJECT_ENVIRONMENT=/app/.venv
+      # Security settings
+      - API_KEY=${API_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,https://localhost:3000}
+      # Performance settings
+      - ASYNC_POOL_SIZE=20
+      - CONNECTION_POOL_SIZE=20
+      - QUERY_TIMEOUT=30
+    volumes:
+      - ./src:/app/src:ro
+      - ./models:/app/models
+      - ./logs/fastapi:/app/logs
+      - ./config.toml:/app/config.toml:ro
+      - ./backups/models:/app/backups
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 1G
+          cpus: '1.0'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    networks:
+      - mlb_network_prod
+    labels:
+      - "com.mlb.service=api"
+      - "com.mlb.environment=production"
+      - "traefik.enable=true"
+      - "traefik.http.routers.fastapi.rule=PathPrefix(`/api`)"
+
+  # Nginx - Production reverse proxy with SSL and caching
+  nginx:
+    image: nginx:alpine
+    container_name: mlb_nginx_prod
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx-production.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./docker/nginx/ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+      - ./docker/nginx/cache:/var/cache/nginx
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
+    depends_on:
+      fastapi:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - mlb_network_prod
+    labels:
+      - "com.mlb.service=nginx"
+      - "com.mlb.environment=production"
+
+  # Prometheus - Metrics collection and monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: mlb_prometheus_prod
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--storage.tsdb.retention.size=10GB'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data_prod:/prometheus
+      - ./logs/prometheus:/var/log/prometheus
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    networks:
+      - mlb_network_prod
+    labels:
+      - "com.mlb.service=monitoring"
+      - "com.mlb.environment=production"
+
+  # Grafana - Visualization and alerting
+  grafana:
+    image: grafana/grafana:latest
+    container_name: mlb_grafana_prod
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data_prod:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./logs/grafana:/var/log/grafana
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    depends_on:
+      - prometheus
+    networks:
+      - mlb_network_prod
+    labels:
+      - "com.mlb.service=grafana"
+      - "com.mlb.environment=production"
+
+  # Data Collection Service - Separate container for data collection
+  data_collector:
+    build:
+      context: .
+      dockerfile: docker/collector/Dockerfile
+    container_name: mlb_data_collector_prod
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379/1
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - COLLECTION_SCHEDULE=${COLLECTION_SCHEDULE:-0 */15 * * *}
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./src:/app/src:ro
+      - ./config.toml:/app/config.toml:ro
+      - ./logs/collector:/app/logs
+      - ./data/cache:/app/data/cache
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import src.core.health_check; print('OK')"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 120s
+    networks:
+      - mlb_network_prod
+    labels:
+      - "com.mlb.service=collector"
+      - "com.mlb.environment=production"
+
+  # Backup Service - Automated backup solution
+  backup:
+    build:
+      context: .
+      dockerfile: docker/backup/Dockerfile
+    container_name: mlb_backup_prod
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - BACKUP_SCHEDULE=${BACKUP_SCHEDULE:-0 2 * * *}
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+      - S3_BUCKET=${S3_BACKUP_BUCKET}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+    volumes:
+      - ./backups:/app/backups
+      - ./logs/backup:/app/logs
+      - postgres_data_prod:/var/lib/postgresql/data:ro
+      - redis_data_prod:/var/lib/redis/data:ro
+      - mlflow_artifacts_prod:/var/lib/mlflow/artifacts:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mlb_network_prod
+    labels:
+      - "com.mlb.service=backup"
+      - "com.mlb.environment=production"
+
+volumes:
+  postgres_data_prod:
+    driver: local
+  redis_data_prod:
+    driver: local
+  mlflow_artifacts_prod:
+    driver: local
+  prometheus_data_prod:
+    driver: local
+  grafana_data_prod:
+    driver: local
+
+networks:
+  mlb_network_prod:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.30.0.0/16
+    driver_opts:
+      com.docker.network.bridge.name: br-mlb-prod
+      com.docker.network.bridge.enable_icc: "true"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+      com.docker.network.driver.mtu: 1500
+
+# Production deployment metadata
+x-production-info:
+  version: "1.0.0"
+  environment: "production"
+  stack: "mlb-betting-system"
+  maintainer: "MLB DevOps Team"
+  documentation: "https://github.com/mlb-betting/docs"
+  support: "devops@mlb-betting.com"
+  
+x-resource-limits:
+  total_memory: "8GB"
+  total_cpu: "8.0"
+  estimated_load: "medium"
+  scaling_strategy: "horizontal"

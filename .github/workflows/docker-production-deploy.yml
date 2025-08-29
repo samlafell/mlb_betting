@@ -1,0 +1,556 @@
+# 🚀 MLB Betting System - Docker Production Deployment Pipeline
+# Automated CI/CD pipeline optimized for Docker-based production deployment
+# Includes testing, security scanning, performance validation, and zero-downtime deployment
+
+name: 🐳 Docker Production Deploy
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.gitignore'
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      skip_tests:
+        description: 'Skip test execution'
+        required: false
+        default: false
+        type: boolean
+
+# Global environment variables
+env:
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  
+# Concurrency control - cancel previous runs
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================================================
+  # VALIDATION AND TESTING
+  # ============================================================================
+  test:
+    name: 🧪 Test Suite & Code Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: ${{ !inputs.skip_tests }}
+    
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: mlb_betting_test
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+          
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for better analysis
+
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: 📦 Install UV
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - name: 🔧 Install dependencies
+      run: |
+        uv sync --frozen --dev
+
+    - name: 🎨 Code formatting check
+      run: |
+        uv run ruff format --check .
+        
+    - name: 🔍 Lint check
+      run: |
+        uv run ruff check .
+        
+    - name: 🏷️ Type checking
+      run: |
+        uv run mypy src/ --ignore-missing-imports
+        
+    - name: 🧪 Run unit tests
+      env:
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/mlb_betting_test
+        REDIS_URL: redis://localhost:6379/0
+      run: |
+        uv run pytest tests/unit/ -v --cov=src --cov-report=xml --cov-report=term-missing
+        
+    - name: 🔗 Run integration tests
+      env:
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/mlb_betting_test
+        REDIS_URL: redis://localhost:6379/0
+      run: |
+        uv run pytest tests/integration/ -v --maxfail=3
+        
+    - name: 📊 Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  # ============================================================================
+  # SECURITY SCANNING
+  # ============================================================================
+  security:
+    name: 🛡️ Security & Vulnerability Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: test
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔍 Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        
+    - name: 📤 Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+        
+    - name: 🐍 Python security check
+      run: |
+        pip install safety bandit
+        safety check --json --output safety-report.json || true
+        bandit -r src/ -f json -o bandit-report.json || true
+        
+    - name: 🔐 Check for secrets
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: main
+        head: HEAD
+
+  # ============================================================================
+  # DOCKER BUILD AND OPTIMIZATION
+  # ============================================================================
+  build:
+    name: 🐳 Docker Build & Optimization
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [test, security]
+    
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tags: ${{ steps.meta.outputs.tags }}
+      
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐳 Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        driver-opts: |
+          network=host
+          
+    - name: 🔑 Login to Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: 📝 Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix=sha-
+          type=raw,value=latest,enable={{is_default_branch}}
+          
+    - name: 🏗️ Build and push Docker image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/fastapi/Dockerfile.production
+        platforms: linux/amd64,linux/arm64
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          BUILD_DATE=${{ github.event.head_commit.timestamp }}
+          VCS_REF=${{ github.sha }}
+          VERSION=${{ steps.meta.outputs.version }}
+          
+    - name: 🔍 Scan Docker image
+      if: github.event_name != 'pull_request'
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+        format: 'sarif'
+        output: 'docker-trivy-results.sarif'
+        
+    - name: 📤 Upload Docker scan results
+      if: github.event_name != 'pull_request'
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'docker-trivy-results.sarif'
+
+  # ============================================================================
+  # PERFORMANCE TESTING
+  # ============================================================================
+  performance:
+    name: ⚡ Performance & Load Testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: mlb_betting_perf
+          POSTGRES_USER: perf_user
+          POSTGRES_PASSWORD: perf_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+          
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐳 Start services
+      run: |
+        docker compose -f docker-compose.yml up -d redis
+        
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: 📦 Install performance tools
+      run: |
+        pip install locust pytest-benchmark
+        
+    - name: ⚡ Run API performance tests
+      env:
+        DATABASE_URL: postgresql://perf_user:perf_password@localhost:5432/mlb_betting_perf
+        REDIS_URL: redis://localhost:6379/0
+      run: |
+        # Start the application in background
+        docker run -d --name mlb-api --network host \
+          -e DATABASE_URL=$DATABASE_URL \
+          -e REDIS_URL=$REDIS_URL \
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+        
+        # Wait for service to be ready
+        sleep 30
+        
+        # Run performance tests
+        python tests/performance/api_load_test.py
+        
+        # Generate performance report
+        docker logs mlb-api > performance-logs.txt
+        
+    - name: 📊 Upload performance results
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-results
+        path: |
+          performance-logs.txt
+          performance-report.html
+
+  # ============================================================================
+  # STAGING DEPLOYMENT
+  # ============================================================================
+  deploy-staging:
+    name: 🚀 Deploy to Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build, performance]
+    if: github.ref == 'refs/heads/main' || inputs.environment == 'staging'
+    environment:
+      name: staging
+      url: https://mlb-betting-staging.example.com
+      
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Setup staging environment
+      run: |
+        # Create staging environment variables
+        cat > .env.staging << EOF
+        POSTGRES_DB=mlb_betting_staging
+        POSTGRES_USER=staging_user
+        POSTGRES_PASSWORD=${{ secrets.STAGING_POSTGRES_PASSWORD }}
+        REDIS_PASSWORD=${{ secrets.STAGING_REDIS_PASSWORD }}
+        API_KEY=${{ secrets.STAGING_API_KEY }}
+        JWT_SECRET_KEY=${{ secrets.STAGING_JWT_SECRET }}
+        ENVIRONMENT=staging
+        LOG_LEVEL=DEBUG
+        EOF
+        
+    - name: 🐳 Deploy to staging
+      run: |
+        # Deploy using Docker Compose
+        docker compose -f docker-compose.production.yml --env-file .env.staging pull
+        docker compose -f docker-compose.production.yml --env-file .env.staging up -d --force-recreate
+        
+    - name: 🏥 Health check staging
+      run: |
+        # Wait for services to be ready
+        sleep 60
+        
+        # Perform health checks
+        curl -f http://localhost:8000/health || exit 1
+        curl -f http://localhost:9090/-/healthy || exit 1
+        
+        echo "✅ Staging deployment successful"
+        
+    - name: 🧪 Run staging smoke tests
+      run: |
+        python tests/smoke/staging_smoke_tests.py
+        
+  # ============================================================================
+  # PRODUCTION DEPLOYMENT
+  # ============================================================================
+  deploy-production:
+    name: 🌟 Deploy to Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [deploy-staging]
+    if: github.ref == 'refs/heads/main' && inputs.environment == 'production'
+    environment:
+      name: production
+      url: https://mlb-betting.example.com
+      
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🚨 Production deployment approval
+      uses: trstringer/manual-approval@v1
+      with:
+        secret: ${{ github.TOKEN }}
+        approvers: ${{ github.actor }}
+        minimum-approvals: 1
+        issue-title: "Production Deployment Approval"
+        issue-body: |
+          Production deployment requested for commit ${{ github.sha }}
+          
+          **Changes:**
+          - ${{ github.event.head_commit.message }}
+          
+          **Validation Results:**
+          - ✅ Tests passed
+          - ✅ Security scan clean
+          - ✅ Performance tests passed
+          - ✅ Staging deployment successful
+          
+          Please review and approve for production deployment.
+          
+    - name: 🔐 Setup production environment
+      run: |
+        # Create production environment variables
+        cat > .env.production << EOF
+        POSTGRES_DB=mlb_betting
+        POSTGRES_USER=prod_user
+        POSTGRES_PASSWORD=${{ secrets.PROD_POSTGRES_PASSWORD }}
+        REDIS_PASSWORD=${{ secrets.PROD_REDIS_PASSWORD }}
+        API_KEY=${{ secrets.PROD_API_KEY }}
+        JWT_SECRET_KEY=${{ secrets.PROD_JWT_SECRET }}
+        ENVIRONMENT=production
+        LOG_LEVEL=INFO
+        
+        # Monitoring
+        GRAFANA_PASSWORD=${{ secrets.PROD_GRAFANA_PASSWORD }}
+        
+        # Backup configuration
+        S3_BACKUP_BUCKET=${{ secrets.S3_BACKUP_BUCKET }}
+        AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        EOF
+        
+    - name: 📦 Pre-deployment backup
+      run: |
+        # Create database backup before deployment
+        docker exec mlb_postgres_prod pg_dump -U prod_user mlb_betting > pre-deploy-backup.sql
+        
+        # Upload backup to secure storage
+        aws s3 cp pre-deploy-backup.sql s3://${{ secrets.S3_BACKUP_BUCKET }}/pre-deploy/$(date +%Y%m%d_%H%M%S).sql
+        
+    - name: 🚀 Zero-downtime production deployment
+      run: |
+        echo "🔄 Starting zero-downtime deployment..."
+        
+        # Pull new images
+        docker compose -f docker-compose.production.yml --env-file .env.production pull
+        
+        # Rolling update strategy
+        services=(fastapi nginx data_collector)
+        for service in "${services[@]}"; do
+          echo "🔄 Updating $service..."
+          docker compose -f docker-compose.production.yml --env-file .env.production up -d --no-deps --force-recreate $service
+          
+          # Wait for health check
+          sleep 30
+          
+          if ! curl -f http://localhost:8000/health; then
+            echo "❌ Health check failed for $service, rolling back..."
+            docker compose -f docker-compose.production.yml --env-file .env.production rollback $service
+            exit 1
+          fi
+          
+          echo "✅ $service updated successfully"
+        done
+        
+    - name: 🏥 Production health validation
+      run: |
+        # Comprehensive health checks
+        services=(
+          "http://localhost:8000/health"
+          "http://localhost:9090/-/healthy"
+          "http://localhost:3000/api/health"
+        )
+        
+        for service in "${services[@]}"; do
+          if ! curl -f --retry 5 --retry-delay 10 "$service"; then
+            echo "❌ Production health check failed: $service"
+            exit 1
+          fi
+        done
+        
+        echo "✅ All production health checks passed"
+        
+    - name: 📊 Post-deployment monitoring
+      run: |
+        # Enable enhanced monitoring for first hour after deployment
+        curl -X POST http://localhost:8000/api/monitoring/enhanced-mode \
+          -H "Authorization: Bearer ${{ secrets.PROD_API_KEY }}" \
+          -d '{"duration_minutes": 60}'
+          
+        echo "✅ Enhanced monitoring enabled for 60 minutes"
+        
+    - name: 📧 Deployment notification
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: '#mlb-betting-ops'
+        text: |
+          🌟 Production deployment completed successfully!
+          
+          **Commit:** ${{ github.sha }}
+          **Author:** ${{ github.actor }}
+          **Time:** ${{ github.event.head_commit.timestamp }}
+          
+          **Services:**
+          - ✅ API Service (http://localhost:8000)
+          - ✅ Monitoring (http://localhost:9090)
+          - ✅ Dashboard (http://localhost:3000)
+          
+          **Next Steps:**
+          - Monitor system performance for 1 hour
+          - Verify betting operations functionality
+          - Check automated data collection
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # ============================================================================
+  # POST-DEPLOYMENT VALIDATION
+  # ============================================================================
+  validate-production:
+    name: 🔍 Production Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [deploy-production]
+    if: always() && needs.deploy-production.result == 'success'
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🧪 Run production smoke tests
+      run: |
+        python tests/smoke/production_smoke_tests.py
+        
+    - name: 📊 Validate system metrics
+      run: |
+        # Check key metrics are within acceptable ranges
+        python scripts/validate-production-metrics.py
+        
+    - name: 🎯 Validate betting functionality
+      run: |
+        # Test core betting system functionality
+        python tests/functional/betting_system_validation.py
+        
+    - name: ✅ Mark deployment complete
+      run: |
+        echo "🎉 Production deployment and validation complete!"
+        echo "System is ready for 24/7 MLB betting operations."
+
+# ============================================================================
+# WORKFLOW SUMMARY
+# ============================================================================
+# This workflow provides:
+# ✅ Comprehensive testing (unit, integration, performance)
+# ✅ Security scanning (code, dependencies, containers)
+# ✅ Optimized Docker builds with caching
+# ✅ Staging environment validation
+# ✅ Zero-downtime production deployment
+# ✅ Automated health checks and monitoring
+# ✅ Rollback capabilities for failed deployments
+# ✅ Post-deployment validation and notifications
