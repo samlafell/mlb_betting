@@ -20,7 +20,8 @@ except ImportError:
     FeatureVector = None
     TemporalFeatures = None
     MarketFeatures = None
-    get_settings = None
+    def get_settings():
+        raise ImportError("Unified config system not available. Please check src.core.config module.")
 
 logger = logging.getLogger(__name__)
 

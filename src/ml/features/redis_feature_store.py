@@ -20,7 +20,8 @@ try:
     from ...core.config import get_settings
 except ImportError:
     # Fallback for environments where unified config is not available
-    get_settings = None
+    def get_settings():
+        raise ImportError("Unified config system not available. Please check src.core.config module.")
 
 # Import resilience components
 try:
@@ -85,7 +86,6 @@ class RedisFeatureStore:
 
         # Get ML pipeline configuration
         try:
-            from ...core.config import get_settings
             config = get_settings()
             ml_config = config.ml_pipeline
             configured_ttl = ml_config.feature_cache_ttl_seconds

@@ -28,7 +28,8 @@ try:
     from ...core.config import get_settings
 except ImportError:
     # Fallback for testing environments
-    get_settings = None
+    def get_settings():
+        raise ImportError("Unified config system not available. Please check src.core.config module.")
 
 # Import resource monitoring
 try:

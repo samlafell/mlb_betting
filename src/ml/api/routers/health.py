@@ -27,7 +27,8 @@ except ImportError:
     # Fallback for environments without these components
     RedisFeatureStore = None
     get_monitoring_system = None
-    get_settings = None
+    def get_settings():
+        raise ImportError("Unified config system not available. Please check src.core.config module.")
 
 logger = logging.getLogger(__name__)
 

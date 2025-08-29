@@ -14,7 +14,8 @@ from datetime import datetime, timedelta
 try:
     from ...core.config import get_settings
 except ImportError:
-    get_settings = None
+    def get_settings():
+        raise ImportError("Unified config system not available. Please check src.core.config module.")
 
 logger = logging.getLogger(__name__)
 
