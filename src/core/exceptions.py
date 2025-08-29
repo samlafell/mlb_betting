@@ -747,6 +747,75 @@ class SchedulingError(UnifiedBettingError):
         )
 
 
+class OptimizationError(UnifiedBettingError):
+    """Raised when hyperparameter optimization operations fail."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        optimization_job_id: str | None = None,
+        algorithm: str | None = None,
+        strategy_name: str | None = None,
+        evaluation_count: int | None = None,
+        **kwargs,
+    ):
+        details = kwargs.get("details", {})
+
+        if optimization_job_id:
+            details["optimization_job_id"] = optimization_job_id
+        if algorithm:
+            details["algorithm"] = algorithm
+        if strategy_name:
+            details["strategy_name"] = strategy_name
+        if evaluation_count:
+            details["evaluation_count"] = evaluation_count
+
+        super().__init__(
+            message,
+            component="optimization",
+            error_code="OPTIMIZATION_ERROR",
+            details=details,
+            **kwargs,
+        )
+
+
+class DataQualityError(UnifiedBettingError):
+    """Raised when data quality validation fails."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        quality_metric: str | None = None,
+        threshold_value: float | None = None,
+        actual_value: float | None = None,
+        data_source: str | None = None,
+        table_name: str | None = None,
+        **kwargs,
+    ):
+        details = kwargs.get("details", {})
+
+        if quality_metric:
+            details["quality_metric"] = quality_metric
+        if threshold_value is not None:
+            details["threshold_value"] = threshold_value
+        if actual_value is not None:
+            details["actual_value"] = actual_value
+        if data_source:
+            details["data_source"] = data_source
+        if table_name:
+            details["table_name"] = table_name
+
+        super().__init__(
+            message,
+            component="data_quality",
+            error_code="DATA_QUALITY_ERROR",
+            details=details,
+            **kwargs,
+        )
+
+
 # Legacy exception aliases for backward compatibility
 # MLBSharpBettingError removed - mlb_sharp_betting directory cleanup
 SportsbookReviewError = UnifiedBettingError  # For sportsbookreview module compatibility

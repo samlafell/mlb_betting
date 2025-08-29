@@ -55,6 +55,7 @@ class LogComponent(str, Enum):
     RATE_LIMITER = "rate_limiter"
     CIRCUIT_BREAKER = "circuit_breaker"
     MONITORING = "monitoring"
+    DATA_QUALITY = "data_quality"
     LEGACY_MLB_SHARP = "legacy_mlb_sharp"
     LEGACY_SBR = "legacy_sbr"
     LEGACY_ACTION = "legacy_action"
