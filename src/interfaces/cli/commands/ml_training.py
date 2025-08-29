@@ -422,7 +422,6 @@ def analyze_performance(days: int, model: Optional[str], detailed: bool):
     async def _analyze():
         try:
             import asyncpg
-            from src.core.config import get_settings
             
             settings = get_settings()
             
