@@ -19,6 +19,7 @@ import structlog
 
 from .base import BaseCollector, CollectorConfig, CollectionRequest, CollectionResult
 from .smart_line_movement_filter import SmartLineMovementFilter
+from ..database.connection import get_connection
 from ..models.unified.actionnetwork import (
     ActionNetworkBettingInfo,
     ActionNetworkHistoricalData,
@@ -560,23 +561,20 @@ class ActionNetworkCollector(BaseCollector):
         game_mappings = {}
         
         try:
-            conn = await asyncpg.connect(**self.db_config)
-            
-            for game in games:
-                game_id = game.get("id")
-                if not game_id:
-                    continue
-                
-                # Check if raw game data exists
-                existing_raw = await conn.fetchval("""
-                    SELECT id FROM raw_data.action_network_games WHERE external_game_id = $1
-                """, str(game_id))
-                
-                if existing_raw:
-                    game_mappings[str(game_id)] = str(game_id)
-                    logger.debug(f"Found existing raw game data for game {game_id}")
-            
-            await conn.close()
+            async with get_connection() as conn:
+                for game in games:
+                    game_id = game.get("id")
+                    if not game_id:
+                        continue
+                    
+                    # Check if raw game data exists
+                    existing_raw = await conn.fetchval("""
+                        SELECT id FROM raw_data.action_network_games WHERE external_game_id = $1
+                    """, str(game_id))
+                    
+                    if existing_raw:
+                        game_mappings[str(game_id)] = str(game_id)
+                        logger.debug(f"Found existing raw game data for game {game_id}")
             
         except Exception as e:
             logger.error("Error getting game mappings", error=str(e))
@@ -589,47 +587,40 @@ class ActionNetworkCollector(BaseCollector):
             return
             
         try:
-            conn = await asyncpg.connect(
-                host=self.db_config["host"],
-                port=self.db_config["port"],
-                database=self.db_config["database"],
-                user=self.db_config["user"],
-                password=self.db_config["password"]
-            )
-            
-            for game in games:
-                game_id = game.get('id')
-                if not game_id:
-                    continue
+            async with get_connection() as conn:
+                for game in games:
+                    game_id = game.get('id')
+                    if not game_id:
+                        continue
                 
-                # Extract readable game information
-                teams = game.get('teams', [])
-                home_team = None
-                away_team = None
-                home_team_abbr = None
-                away_team_abbr = None
-                
-                if len(teams) >= 2:
-                    # Use home_team_id and away_team_id to correctly map teams
-                    home_team_id = game.get('home_team_id')
-                    away_team_id = game.get('away_team_id')
+                    # Extract readable game information
+                    teams = game.get('teams', [])
+                    home_team = None
+                    away_team = None
+                    home_team_abbr = None
+                    away_team_abbr = None
                     
-                    # Find home and away teams by matching IDs
-                    for team in teams:
-                        team_id = team.get('id')
-                        if team_id == home_team_id:
-                            home_team = team.get('full_name', team.get('display_name', 'Unknown'))
-                            home_team_abbr = team.get('abbr', team.get('abbreviation'))
-                        elif team_id == away_team_id:
-                            away_team = team.get('full_name', team.get('display_name', 'Unknown'))
-                            away_team_abbr = team.get('abbr', team.get('abbreviation'))
+                    if len(teams) >= 2:
+                        # Use home_team_id and away_team_id to correctly map teams
+                        home_team_id = game.get('home_team_id')
+                        away_team_id = game.get('away_team_id')
+                        
+                        # Find home and away teams by matching IDs
+                        for team in teams:
+                            team_id = team.get('id')
+                            if team_id == home_team_id:
+                                home_team = team.get('full_name', team.get('display_name', 'Unknown'))
+                                home_team_abbr = team.get('abbr', team.get('abbreviation'))
+                            elif team_id == away_team_id:
+                                away_team = team.get('full_name', team.get('display_name', 'Unknown'))
+                                away_team_abbr = team.get('abbr', team.get('abbreviation'))
                 
-                game_status = game.get('status', 'unknown')
-                start_time = safe_game_datetime_parse(game.get('start_time'))
-                game_date = start_time.date() if start_time else now_est().date()
-                    
-                # Store raw game data with extracted readable fields
-                await conn.execute("""
+                    game_status = game.get('status', 'unknown')
+                    start_time = safe_game_datetime_parse(game.get('start_time'))
+                    game_date = start_time.date() if start_time else now_est().date()
+                        
+                    # Store raw game data with extracted readable fields
+                    await conn.execute("""
                     INSERT INTO raw_data.action_network_games (
                         external_game_id, raw_response, endpoint_url, response_status,
                         game_date, home_team, away_team, home_team_abbr, away_team_abbr,
@@ -645,72 +636,72 @@ class ActionNetworkCollector(BaseCollector):
                         start_time = EXCLUDED.start_time,
                         collected_at = EXCLUDED.collected_at
                 """,
-                str(game_id), 
-                json.dumps(game),  # Full raw data still preserved
-                endpoint_url or "https://api.actionnetwork.com/web/v2/scoreboard/publicbetting/mlb",
-                200,
-                game_date,
-                home_team,
-                away_team, 
-                home_team_abbr,
-                away_team_abbr,
-                game_status,
-                start_time,
-                now_est(),
-                now_est()
-                )
+                    str(game_id), 
+                    json.dumps(game),  # Full raw data still preserved
+                    endpoint_url or "https://api.actionnetwork.com/web/v2/scoreboard/publicbetting/mlb",
+                    200,
+                    game_date,
+                    home_team,
+                    away_team, 
+                    home_team_abbr,
+                    away_team_abbr,
+                    game_status,
+                    start_time,
+                    now_est(),
+                    now_est()
+                    )
             
-            await conn.close()
             logger.info(f"Stored {len(games)} games to raw_data.action_network_games with readable info")
             
         except Exception as e:
             logger.error("Error storing raw game data", error=str(e))
     
-    async def _store_raw_odds_data(self, game_id: str, odds_data: Dict[str, Any], sportsbook_key: str = None) -> None:
-        """Store raw odds data to raw_data.action_network_odds table."""
+    async def _store_raw_odds_data_batch(self, odds_batch: List[Dict[str, Any]]) -> None:
+        """Store multiple raw odds data records in a single database transaction for performance."""
+        if not odds_batch:
+            return
+            
         try:
-            logger.info(f"Attempting to store odds data for game {game_id}, sportsbook {sportsbook_key}")
+            logger.info(f"Storing batch of {len(odds_batch)} odds records")
             
-            conn = await asyncpg.connect(
-                host=self.db_config["host"],
-                port=self.db_config["port"],
-                database=self.db_config["database"],
-                user=self.db_config["user"],
-                password=self.db_config["password"]
-            )
-            
-            logger.info(f"Database connection established for game {game_id}")
-            
-            # Prepare data for insertion
-            collected_at = now_est()
-            created_at = now_est()
-            json_data = json.dumps(odds_data)
-            
-            logger.info(f"Prepared data: game_id={game_id}, sportsbook_key={sportsbook_key}, collected_at={collected_at}")
-            
-            await conn.execute("""
-                INSERT INTO raw_data.action_network_odds (
-                    external_game_id, sportsbook_key, raw_odds, collected_at, created_at
-                ) VALUES ($1, $2, $3, $4, $5)
-            """,
-            str(game_id),
-            sportsbook_key or "unknown", 
-            json_data,  # Convert dict to JSON string for JSONB storage
-            collected_at,
-            created_at
-            )
-            
-            await conn.close()
-            logger.info(f"✅ Successfully stored odds data for game {game_id}, sportsbook {sportsbook_key}")
+            # Use single connection for entire batch
+            async with get_connection() as conn:
+                # Prepare batch insert with executemany for performance
+                insert_data = []
+                for item in odds_batch:
+                    collected_at = now_est()
+                    created_at = now_est()
+                    json_data = json.dumps(item['odds_data'])
+                    
+                    insert_data.append((
+                        str(item['game_id']),
+                        item.get('sportsbook_key', 'unknown'),
+                        json_data,
+                        collected_at,
+                        created_at
+                    ))
+                
+                # Use executemany for batch insert (much more efficient)
+                await conn.executemany("""
+                    INSERT INTO raw_data.action_network_odds (
+                        external_game_id, sportsbook_key, raw_odds, collected_at, created_at
+                    ) VALUES ($1, $2, $3, $4, $5)
+                """, insert_data)
+                
+                logger.info(f"✅ Successfully stored batch of {len(odds_batch)} odds records")
             
         except Exception as e:
-            logger.error(f"❌ Error storing raw odds data for game {game_id}, sportsbook {sportsbook_key}: {str(e)}")
+            logger.error(f"❌ Error storing batch odds data: {str(e)}")
+            raise
             import traceback
             logger.error(f"Full traceback: {traceback.format_exc()}")
     
     async def _store_raw_current_odds(self, games: List[Dict[str, Any]]) -> None:
         """Extract and store raw odds data from current games to raw_data.action_network_odds table."""
         try:
+            # Collect all odds data for batch processing
+            odds_batch = []
+            
             for game in games:
                 game_id = game.get('id')
                 if not game_id:
@@ -720,9 +711,17 @@ class ActionNetworkCollector(BaseCollector):
                 for book_id_str, book_data in markets.items():
                     event_markets = book_data.get('event', {})
                     if event_markets:
-                        await self._store_raw_odds_data(str(game_id), event_markets, book_id_str)
+                        odds_batch.append({
+                            'game_id': str(game_id),
+                            'sportsbook_key': book_id_str,
+                            'odds_data': event_markets
+                        })
+            
+            # Store all odds in single batch operation
+            if odds_batch:
+                await self._store_raw_odds_data_batch(odds_batch)
                         
-            logger.info(f"Processed current odds for {len(games)} games")
+            logger.info(f"Processed current odds for {len(games)} games with {len(odds_batch)} odds records")
             
         except Exception as e:
             logger.error("Error storing raw current odds", error=str(e))
@@ -751,16 +750,9 @@ class ActionNetworkCollector(BaseCollector):
     async def _store_raw_historical_data(self, game_id: str, history_data: Dict[str, Any]) -> None:
         """Store raw historical data to raw_data.action_network_history table.""" 
         try:
-            conn = await asyncpg.connect(
-                host=self.db_config["host"],
-                port=self.db_config["port"], 
-                database=self.db_config["database"],
-                user=self.db_config["user"],
-                password=self.db_config["password"]
-            )
-            
-            # Create table if it doesn't exist
-            await conn.execute("""
+            async with get_connection() as conn:
+                # Create table if it doesn't exist
+                await conn.execute("""
                 CREATE TABLE IF NOT EXISTS raw_data.action_network_history (
                     id BIGSERIAL PRIMARY KEY,
                     external_game_id VARCHAR(255),
@@ -770,31 +762,33 @@ class ActionNetworkCollector(BaseCollector):
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     UNIQUE(external_game_id)
                 )
-            """)
+                """)
+                
+                await conn.execute("""
+                    INSERT INTO raw_data.action_network_history (
+                        external_game_id, raw_history, endpoint_url, collected_at, created_at
+                    ) VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (external_game_id) DO UPDATE SET
+                        raw_history = EXCLUDED.raw_history,
+                        collected_at = EXCLUDED.collected_at
+                """,
+                str(game_id),
+                json.dumps(history_data),
+                f"https://api.actionnetwork.com/web/v2/markets/event/{game_id}/history", 
+                now_est(),
+                now_est()
+                )
             
-            await conn.execute("""
-                INSERT INTO raw_data.action_network_history (
-                    external_game_id, raw_history, endpoint_url, collected_at, created_at
-                ) VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (external_game_id) DO UPDATE SET
-                    raw_history = EXCLUDED.raw_history,
-                    collected_at = EXCLUDED.collected_at
-            """,
-            str(game_id),
-            json.dumps(history_data),
-            f"https://api.actionnetwork.com/web/v2/markets/event/{game_id}/history", 
-            now_est(),
-            now_est()
-            )
-            
-            await conn.close()
             logger.debug(f"Stored historical data for game {game_id}")
             
         except Exception as e:
             logger.error("Error storing raw historical data", error=str(e), game_id=game_id)
     
     async def _process_current_lines(self, games: List[Dict[str, Any]]) -> None:
-        """Process current betting lines - stores to RAW layer only."""
+        """Process current betting lines - stores to RAW layer only using batch operations."""
+        # Collect all odds data for batch processing
+        odds_batch = []
+        
         for game in games:
             try:
                 game_id = game.get("id")
@@ -803,8 +797,12 @@ class ActionNetworkCollector(BaseCollector):
                 for book_id_str, book_data in markets.items():
                     event_markets = book_data.get("event", {})
                     
-                    # Store raw odds data to RAW layer only
-                    await self._store_raw_odds_data(str(game_id), event_markets, book_id_str)
+                    # Prepare odds data for batch
+                    odds_batch.append({
+                        'game_id': str(game_id),
+                        'sportsbook_key': book_id_str,
+                        'odds_data': event_markets
+                    })
                     
                     # Update statistics
                     for market_type in ["moneyline", "spread", "total"]:
@@ -824,6 +822,11 @@ class ActionNetworkCollector(BaseCollector):
             except Exception as e:
                 logger.error("Error processing current lines", 
                            game_id=game.get("id"), error=str(e))
+        
+        # Store all odds in single batch operation
+        if odds_batch:
+            await self._store_raw_odds_data_batch(odds_batch)
+            logger.info(f"Stored current lines batch with {len(odds_batch)} odds records")
     
     async def _process_historical_data(self, games: List[Dict[str, Any]]) -> None:
         """Process historical line movements."""
@@ -846,7 +849,10 @@ class ActionNetworkCollector(BaseCollector):
                            game_id=game.get("id"), error=str(e))
     
     async def _process_comprehensive_data(self, games: List[Dict[str, Any]], game_mappings: Dict[str, str]) -> None:
-        """Process comprehensive data - stores only to raw_data.action_network_odds."""
+        """Process comprehensive data - stores only to raw_data.action_network_odds using batch operations."""
+        # Collect all odds data for batch processing
+        odds_batch = []
+        
         for game in games:
             try:
                 game_id = str(game.get("id"))
@@ -865,22 +871,31 @@ class ActionNetworkCollector(BaseCollector):
                 
                 markets = game.get("markets", {})
                 
-                # Process each sportsbook - store to RAW layer only
+                # Process each sportsbook - prepare for batch storage
                 for book_id_str, book_data in markets.items():
                     book_id = int(book_id_str)
                     
                     event_markets = book_data.get("event", {})
                     
-                    # Store all odds data to raw_data.action_network_odds
-                    await self._store_comprehensive_odds_data(
+                    # Prepare comprehensive odds data for batch
+                    odds_item = self._prepare_comprehensive_odds_data(
                         game_id, book_id_str, event_markets, home_team, away_team, game_datetime
                     )
+                    odds_batch.append(odds_item)
+                    
+                    # Update statistics
+                    self._update_comprehensive_stats(event_markets)
                 
                 self.stats["games_processed"] += 1
                 
             except Exception as e:
                 logger.error("Error processing comprehensive data", 
                            game_id=game.get("id"), error=str(e))
+        
+        # Store all odds in single batch operation
+        if odds_batch:
+            await self._store_raw_odds_data_batch(odds_batch)
+            logger.info(f"Stored comprehensive data batch with {len(odds_batch)} odds records")
     
     async def _process_current_market(self, *args, **kwargs) -> None:
         """DEPRECATED: Use raw data storage methods instead."""
@@ -899,29 +914,34 @@ class ActionNetworkCollector(BaseCollector):
         logger.debug("Stored game history to raw data", game_id=game_id)
         self.stats["history_points"] += len(history_data)
     
-    async def _store_comprehensive_odds_data(self, game_id: str, sportsbook_key: str, 
-                                           event_markets: Dict[str, Any], home_team: str, 
-                                           away_team: str, game_datetime: datetime) -> None:
-        """Store comprehensive odds data to raw_data.action_network_odds."""
-        try:
-            # Add metadata to the odds data
-            enhanced_odds_data = {
-                "event_markets": event_markets,
-                "game_metadata": {
-                    "home_team": home_team,
-                    "away_team": away_team,
-                    "game_datetime": game_datetime.isoformat()
-                },
-                "collection_info": {
-                    "collection_mode": "comprehensive",
-                    "smart_filtering_applied": True,
-                    "timestamp": now_est().isoformat()
-                }
+    def _prepare_comprehensive_odds_data(self, game_id: str, sportsbook_key: str, 
+                                       event_markets: Dict[str, Any], home_team: str, 
+                                       away_team: str, game_datetime: datetime) -> Dict[str, Any]:
+        """Prepare comprehensive odds data for batch storage."""
+        # Add metadata to the odds data
+        enhanced_odds_data = {
+            "event_markets": event_markets,
+            "game_metadata": {
+                "home_team": home_team,
+                "away_team": away_team,
+                "game_datetime": game_datetime.isoformat()
+            },
+            "collection_info": {
+                "collection_mode": "comprehensive",
+                "smart_filtering_applied": True,
+                "timestamp": now_est().isoformat()
             }
-            
-            # Store to raw_data.action_network_odds
-            await self._store_raw_odds_data(game_id, enhanced_odds_data, sportsbook_key)
-            
+        }
+        
+        return {
+            'game_id': game_id,
+            'sportsbook_key': sportsbook_key,
+            'odds_data': enhanced_odds_data
+        }
+        
+    def _update_comprehensive_stats(self, event_markets: Dict[str, Any]) -> None:
+        """Update statistics for comprehensive data collection."""
+        try:
             # Update statistics
             for market_type in ["moneyline", "spread", "total"]:
                 market_data = event_markets.get(market_type, [])
@@ -932,11 +952,9 @@ class ActionNetworkCollector(BaseCollector):
                         self.stats["spread_inserted"] += len(market_data)
                     elif market_type == "total":
                         self.stats["totals_inserted"] += len(market_data)
-                    self.stats["total_inserted"] += len(market_data)
-                    
+                        self.stats["total_inserted"] += len(market_data)
         except Exception as e:
-            logger.error("Error storing comprehensive odds data", 
-                        game_id=game_id, sportsbook_key=sportsbook_key, error=str(e))
+            logger.error("Error updating comprehensive stats", error=str(e))
     
     async def _process_moneyline_markets(self, moneyline_data: List[Dict], 
                                        game_id: str, sportsbook_key: str,

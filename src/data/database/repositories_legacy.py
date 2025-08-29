@@ -916,7 +916,8 @@ def get_unified_repository() -> UnifiedRepository:
     Returns:
         UnifiedRepository: Configured repository instance
     """
-    from .connection import get_connection
+    from .connection import get_database_connection
 
-    connection = get_connection()
+    # Get the main database connection from the global pool
+    connection = get_database_connection()
     return UnifiedRepository(connection)
