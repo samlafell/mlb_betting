@@ -249,6 +249,47 @@ class PrometheusMetricsService:
             ["source", "metric"],
             registry=self.registry,
         )
+        
+        # Data Quality Validation Metrics
+        self.data_quality_validation_score = Gauge(
+            "mlb_data_quality_validation_score",
+            "Pipeline stage data quality validation score (0-1)",
+            ["stage", "dimension"],
+            registry=self.registry,
+        )
+        
+        self.data_quality_gate_status = Gauge(
+            "mlb_data_quality_gate_status",
+            "Data quality gate status (0=failed, 1=warning, 2=passed)",
+            ["stage"],
+            registry=self.registry,
+        )
+        
+        self.data_quality_rule_violations_total = Counter(
+            "mlb_data_quality_rule_violations_total",
+            "Total data quality rule violations",
+            ["stage", "rule_name", "severity"],
+            registry=self.registry,
+        )
+        
+        self.data_quality_validation_duration_seconds = Histogram(
+            "mlb_data_quality_validation_duration_seconds",
+            "Data quality validation execution time",
+            ["stage"],
+            buckets=getattr(
+                self.settings.monitoring,
+                "quality_validation_duration_buckets",
+                [0.1, 0.5, 1, 2, 5, 10, 30, 60],
+            ),
+            registry=self.registry,
+        )
+        
+        self.data_quality_records_validated_total = Counter(
+            "mlb_data_quality_records_validated_total",
+            "Total records validated in data quality checks",
+            ["stage"],
+            registry=self.registry,
+        )
 
         # Collection success rates
         self.data_collection_success_rate = Gauge(
@@ -818,6 +859,117 @@ class PrometheusMetricsService:
         """Update overall system health status."""
         status_mapping = {"healthy": 1, "warning": 2, "critical": 3, "unknown": 0}
         self.system_health_status.set(status_mapping.get(status, 0))
+
+    # Data Quality Metrics Methods
+
+    def update_data_quality_validation_score(self, stage: str, dimension: str, score: float):
+        """Update data quality validation score for a specific stage and dimension."""
+        # Input validation
+        if not stage or not stage.strip():
+            raise ValueError("Stage cannot be empty or None")
+        if not dimension or not dimension.strip():
+            raise ValueError("Dimension cannot be empty or None")
+        if not isinstance(score, (int, float)):
+            raise ValueError(f"Score must be a number, got: {type(score)}")
+        if not 0.0 <= score <= 1.0:
+            raise ValueError(f"Score must be between 0.0 and 1.0, got: {score}")
+
+        # Sanitize inputs
+        stage = stage.strip()
+        dimension = dimension.strip()
+
+        try:
+            self.data_quality_validation_score.labels(stage=stage, dimension=dimension).set(score)
+        except Exception as e:
+            self.logger.error(f"Error updating data quality validation score: {e}")
+            raise
+
+    def update_data_quality_gate_status(self, stage: str, status: str):
+        """Update data quality gate status for a pipeline stage."""
+        # Input validation
+        if not stage or not stage.strip():
+            raise ValueError("Stage cannot be empty or None")
+        if not status or not status.strip():
+            raise ValueError("Status cannot be empty or None")
+
+        # Validate status is in expected values
+        status_mapping = {"failed": 0, "warning": 1, "passed": 2}
+        if status.lower() not in status_mapping:
+            raise ValueError(f"Status must be one of {list(status_mapping.keys())}, got: {status}")
+
+        # Sanitize inputs
+        stage = stage.strip()
+        status = status.strip().lower()
+
+        try:
+            self.data_quality_gate_status.labels(stage=stage).set(status_mapping[status])
+        except Exception as e:
+            self.logger.error(f"Error updating data quality gate status: {e}")
+            raise
+
+    def record_data_quality_rule_violation(self, stage: str, rule_name: str, severity: str):
+        """Record a data quality rule violation."""
+        # Input validation
+        if not stage or not stage.strip():
+            raise ValueError("Stage cannot be empty or None")
+        if not rule_name or not rule_name.strip():
+            raise ValueError("Rule name cannot be empty or None")
+        if not severity or not severity.strip():
+            raise ValueError("Severity cannot be empty or None")
+
+        # Validate severity is in expected values
+        valid_severities = ["low", "medium", "high", "critical"]
+        if severity.lower() not in valid_severities:
+            raise ValueError(f"Severity must be one of {valid_severities}, got: {severity}")
+
+        # Sanitize inputs
+        stage = stage.strip()
+        rule_name = rule_name.strip()
+        severity = severity.strip().lower()
+
+        try:
+            self.data_quality_rule_violations_total.labels(
+                stage=stage, rule_name=rule_name, severity=severity
+            ).inc()
+        except Exception as e:
+            self.logger.error(f"Error recording data quality rule violation: {e}")
+            raise
+
+    def record_data_quality_validation_duration(self, stage: str, duration: float):
+        """Record data quality validation execution duration."""
+        # Input validation
+        if not stage or not stage.strip():
+            raise ValueError("Stage cannot be empty or None")
+        if not isinstance(duration, (int, float)):
+            raise ValueError(f"Duration must be a number, got: {type(duration)}")
+        if duration < 0:
+            raise ValueError(f"Duration must be non-negative, got: {duration}")
+
+        # Sanitize inputs
+        stage = stage.strip()
+
+        try:
+            self.data_quality_validation_duration_seconds.labels(stage=stage).observe(duration)
+        except Exception as e:
+            self.logger.error(f"Error recording data quality validation duration: {e}")
+            raise
+
+    def record_data_quality_records_validated(self, stage: str, count: int):
+        """Record the number of records validated in data quality checks."""
+        # Input validation
+        if not stage or not stage.strip():
+            raise ValueError("Stage cannot be empty or None")
+        if not isinstance(count, int) or count < 0:
+            raise ValueError(f"Count must be a non-negative integer, got: {count}")
+
+        # Sanitize inputs
+        stage = stage.strip()
+
+        try:
+            self.data_quality_records_validated_total.labels(stage=stage).inc(count)
+        except Exception as e:
+            self.logger.error(f"Error recording data quality records validated: {e}")
+            raise
 
     # Break-Glass Methods
 

@@ -295,7 +295,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Create trigger to automatically update line movement summary
+-- Create trigger to automatically update line movement summary (use DROP/CREATE pattern for reliability)
+DROP TRIGGER IF EXISTS trigger_update_line_movement_summary ON action_network.betting_lines;
 CREATE TRIGGER trigger_update_line_movement_summary
     AFTER INSERT OR UPDATE ON action_network.betting_lines
     FOR EACH ROW

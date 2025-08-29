@@ -30,6 +30,8 @@ import structlog
 from ..core.config import get_settings
 from ..core.exceptions import DataError
 from ..data.database.connection import get_connection
+from ..core.reliability_utils import safe_database_query, GracefulDegradation
+from ..core.database_schema_recovery import GameOutcomeSchemaFallback
 
 logger = structlog.get_logger(__name__)
 
@@ -568,6 +570,7 @@ class GameOutcomeService:
             results["errors"].append(f"Service error: {str(e)}")
             return results
 
+    @safe_database_query(fallback_value=[])
     async def _get_games_needing_outcomes(
         self, date_range: tuple[str, str], force_update: bool
     ) -> list[dict[str, Any]]:
@@ -579,7 +582,7 @@ class GameOutcomeService:
             force_update: Whether to include games that already have outcomes
 
         Returns:
-            List of game dictionaries from curated.games_complete
+            List of game dictionaries from curated.master_games
         """
         start_date_str, end_date_str = date_range
 
@@ -604,22 +607,22 @@ class GameOutcomeService:
             # Get all games in date range
             query = f"""
             SELECT g.id, g.mlb_stats_api_game_id, g.home_team, g.away_team,
-                   g.game_datetime, g.game_status
-            FROM curated.games_complete g
+                   g.game_date, g.game_status
+            FROM curated.master_games g
             {base_conditions}
-            ORDER BY g.game_datetime DESC
+            ORDER BY g.game_date DESC
             """
             params = [start_date, end_date]
         else:
             # Only get games without outcomes
             query = f"""
             SELECT g.id, g.mlb_stats_api_game_id, g.home_team, g.away_team,
-                   g.game_datetime, g.game_status
-            FROM curated.games_complete g
+                   g.game_date, g.game_status
+            FROM curated.master_games g
             LEFT JOIN curated.game_outcomes go ON g.id = go.game_id
             {base_conditions}
               AND go.game_id IS NULL
-            ORDER BY g.game_datetime DESC
+            ORDER BY g.game_date DESC
             """
             params = [start_date, end_date]
 
@@ -636,7 +639,7 @@ class GameOutcomeService:
                             "mlb_stats_api_game_id": row["mlb_stats_api_game_id"],
                             "home_team": row["home_team"],
                             "away_team": row["away_team"],
-                            "game_datetime": row["game_datetime"],
+                            "game_date": row["game_date"],
                             "game_status": row["game_status"],
                         }
                     )
@@ -724,7 +727,7 @@ class GameOutcomeService:
                 db_game_id=game_info.get("id"),
                 home_team=game_info.get("home_team"),
                 away_team=game_info.get("away_team"),
-                game_date=game_info.get("game_datetime"),
+                game_date=game_info.get("game_date"),
             )
             return None
 
@@ -794,7 +797,12 @@ class GameOutcomeService:
             est_timezone = timezone(timedelta(hours=-5))  # EST is UTC-5
             game_datetime = game_datetime.astimezone(est_timezone)
         else:
-            game_datetime = game_info["game_datetime"]
+            # Convert game_date to datetime for compatibility
+            game_date_obj = game_info["game_date"]
+            if isinstance(game_date_obj, str):
+                game_date_obj = datetime.strptime(game_date_obj, "%Y-%m-%d").date()
+            game_datetime = datetime.combine(game_date_obj, datetime.min.time())
+            game_datetime = game_datetime.replace(tzinfo=timezone(timedelta(hours=-5)))
 
         return GameOutcome(
             game_id=game_info["id"],
@@ -926,7 +934,7 @@ class GameOutcomeService:
         SELECT 
             t.total_line,
             s.home_spread
-        FROM curated.games_complete g
+        FROM curated.master_games g
         LEFT JOIN (
             SELECT game_id, total_line
             FROM curated.betting_lines_unified -- NOTE: Add WHERE market_type = 'totals'
@@ -1040,7 +1048,7 @@ class GameOutcomeService:
             go.game_date,
             g.game_status
         FROM curated.game_outcomes go
-        JOIN curated.games_complete g ON go.game_id = g.id
+        JOIN curated.master_games g ON go.game_id = g.id
         WHERE go.game_date >= NOW() - INTERVAL '1 day' * $1
         ORDER BY go.game_date DESC
         """
@@ -1089,7 +1097,7 @@ class GameOutcomeService:
         query = """
         SELECT go.*, g.id as game_id
         FROM curated.game_outcomes go
-        JOIN curated.games_complete g ON go.game_id = g.id
+        JOIN curated.master_games g ON go.game_id = g.id
         WHERE g.mlb_stats_api_game_id = $1
         LIMIT 1
         """
@@ -1206,7 +1214,7 @@ class GameOutcomeService:
             async with get_connection() as conn:
                 # First, try to find existing game record
                 game_query = """
-                SELECT id FROM curated.games_complete 
+                SELECT id FROM curated.master_games 
                 WHERE mlb_stats_api_game_id = $1
                 LIMIT 1
                 """
@@ -1225,12 +1233,11 @@ class GameOutcomeService:
                 else:
                     # Create minimal game record
                     insert_game_query = """
-                    INSERT INTO curated.games_complete (
+                    INSERT INTO curated.master_games (
                         mlb_stats_api_game_id, home_team, away_team, 
-                        game_datetime, game_date, game_status,
-                        created_at, updated_at
+                        game_date, season, game_status
                     ) VALUES (
-                        $1, $2, $3, $4, $5, 'Final', NOW(), NOW()
+                        $1, $2, $3, $4, $5, 'Final'
                     ) RETURNING id
                     """
 
@@ -1239,8 +1246,8 @@ class GameOutcomeService:
                         outcome.mlb_stats_api_game_id,
                         outcome.home_team,
                         outcome.away_team,
-                        outcome.game_datetime,
                         outcome.game_datetime.date(),
+                        outcome.game_datetime.year,
                     )
 
                     self.logger.info(

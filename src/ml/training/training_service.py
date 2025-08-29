@@ -18,7 +18,8 @@ try:
     from ...core.config import get_settings
 except ImportError:
     # Fallback for environments where unified config is not available
-    get_settings = None
+    def get_settings():
+        raise ImportError("Unified config system not available. Please check src.core.config module.")
 
 # Import MLflow for enhanced experiment tracking
 try:

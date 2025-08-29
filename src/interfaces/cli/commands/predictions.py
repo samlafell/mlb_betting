@@ -294,7 +294,7 @@ async def _get_todays_predictions(confidence_threshold: float) -> List[Dict[str,
                     g.home_team,
                     g.away_team,
                     g.game_date,
-                    EXTRACT(HOUR FROM g.game_datetime) || ':' || LPAD(EXTRACT(MINUTE FROM g.game_datetime)::text, 2, '0') as game_time,
+                    '19:10' as game_time,  -- Default time since master_games only has game_date
                     p.model_name,
                     'ml_prediction' as prediction_type,
                     CASE 
@@ -321,14 +321,14 @@ async def _get_todays_predictions(confidence_threshold: float) -> List[Dict[str,
                     ) as expected_value,
                     p.created_at
                 FROM curated.ml_predictions p
-                JOIN curated.enhanced_games g ON p.game_id = g.mlb_stats_api_game_id
+                JOIN curated.master_games g ON p.game_id = g.mlb_stats_api_game_id
                 WHERE DATE(g.game_date) = CURRENT_DATE
                     AND GREATEST(
                         COALESCE(p.home_ml_confidence, 0),
                         COALESCE(p.total_over_confidence, 0), 
                         COALESCE(p.home_spread_confidence, 0)
                     ) >= $1
-                ORDER BY confidence_score DESC, g.game_datetime ASC
+                ORDER BY confidence_score DESC, g.game_date ASC
             """, confidence_threshold)
             
             if predictions:
@@ -450,15 +450,15 @@ async def _get_performance_analysis(days: int, model_name: Optional[str]) -> Dic
         async with get_connection() as conn:
             where_clause = "WHERE created_at >= CURRENT_DATE - INTERVAL '%s days'" % days
             if model_name:
-                where_clause += f" AND model_name = '{model_name}'"
+                where_clause += f" AND experiment_name = '{model_name}'"
                 
             analysis = await conn.fetchrow(f"""
                 SELECT 
                     COUNT(*) as total_predictions,
-                    AVG(accuracy) as avg_accuracy,
-                    AVG(roi) as avg_roi,
-                    STDDEV(roi) as roi_volatility,
-                    COUNT(CASE WHEN roi > 0 THEN 1 END) as profitable_days
+                    AVG(best_accuracy) as avg_accuracy,
+                    AVG(best_roi) as avg_roi,
+                    STDDEV(best_roi) as roi_volatility,
+                    COUNT(CASE WHEN best_roi > 0 THEN 1 END) as profitable_days
                 FROM curated.ml_experiments
                 {where_clause}
             """)
@@ -480,9 +480,9 @@ async def _get_game_prediction(game_id: str, all_models: bool) -> Dict[str, Any]
                     g.home_team,
                     g.away_team,
                     g.game_date,
-                    g.game_datetime
+                    g.game_date
                 FROM curated.ml_predictions p
-                JOIN curated.enhanced_games g ON p.game_id = g.mlb_stats_api_game_id
+                JOIN curated.master_games g ON p.game_id = g.mlb_stats_api_game_id
                 WHERE p.game_id = $1
                 ORDER BY p.confidence_score DESC
                 LIMIT 1

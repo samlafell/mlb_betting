@@ -197,13 +197,9 @@ class UnifiedSharpActionProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
             splits_data = []
 
             # Import database connection for real data queries
-            from src.core.config import get_settings
-            from src.data.database.connection import DatabaseConnection
+            from src.data.database.connection import get_connection
 
-            config = get_settings()
-            db_connection = DatabaseConnection(config.database.connection_string)
-
-            async with db_connection.get_async_connection() as conn:
+            async with get_connection() as conn:
                 # Extract valid game IDs
                 game_ids = [game.get("game_id") for game in game_data if game.get("game_id")]
                 
@@ -700,13 +696,9 @@ class UnifiedSharpActionProcessor(BaseStrategyProcessor, StrategyProcessorMixin)
             List of game data dictionaries
         """
         try:
-            from src.core.config import get_settings
-            from src.data.database.connection import DatabaseConnection
+            from src.data.database.connection import get_connection
 
-            config = get_settings()
-            db_connection = DatabaseConnection(config.database.connection_string)
-
-            async with db_connection.get_async_connection() as conn:
+            async with get_connection() as conn:
                 # Get upcoming games that have betting data available
                 games_table = self.get_table_name('games')
                 betting_splits_table = self.get_table_name('betting_splits')

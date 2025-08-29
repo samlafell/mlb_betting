@@ -638,6 +638,49 @@ def get_database_connection(name: str | None = None) -> DatabaseConnection:
     return _connection_pool.get_connection(name)
 
 
+class DatabaseManager:
+    """
+    Simplified database manager for data quality validation.
+    Provides async query execution with proper connection management.
+    """
+    
+    def __init__(self, connection_pool: ConnectionPool):
+        self.connection_pool = connection_pool
+    
+    async def execute_query(self, query: str, *args) -> list[dict]:
+        """Execute a query and return results as list of dictionaries."""
+        db_connection = self.connection_pool.get_connection()
+        result = await db_connection.execute_async(query, *args, fetch="all")
+        
+        # Convert asyncpg.Record objects to dictionaries
+        if result:
+            return [dict(row) for row in result]
+        return []
+    
+    async def get_pool_status(self) -> dict[str, Any]:
+        """Get connection pool status information."""
+        db_connection = self.connection_pool.get_connection()
+        if db_connection._async_pool:
+            return {
+                "active_connections": db_connection._async_pool.get_size(),
+                "idle_connections": db_connection._async_pool.get_idle_size(),
+                "max_connections": db_connection.pool_size + db_connection.max_overflow,
+            }
+        return {"active_connections": 0, "idle_connections": 0, "max_connections": 0}
+
+
+# Global database manager instance
+_db_manager: DatabaseManager | None = None
+
+
+def get_db_manager() -> DatabaseManager:
+    """Get or create the global database manager instance."""
+    global _db_manager
+    if _db_manager is None:
+        _db_manager = DatabaseManager(_connection_pool)
+    return _db_manager
+
+
 def initialize_connections(settings: UnifiedSettings) -> None:
     """
     Initialize database connections from settings.
